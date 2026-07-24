@@ -36,14 +36,14 @@ function LinksWidget({ props }: { props: LinksProps }): React.ReactElement {
             '&:hover': { borderColor: c.border.strong },
           }}
         >
-          <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary, mb: 0.25 }}>
+          <Typography sx={{ fontSize: '0.6875rem', color: c.text.tertiary, mb: 0.25 }}>
             {hostOf(l.url)}
           </Typography>
-          <Typography sx={{ fontSize: '0.88rem', fontWeight: 600, color: c.text.primary }}>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>
             {l.title}
           </Typography>
           {l.description && (
-            <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, mt: 0.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, mt: 0.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
               {l.description}
             </Typography>
           )}

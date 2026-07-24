@@ -52,7 +52,7 @@ export const ModeControl: React.FC<Props> = ({
         }}
       >
         {modeConf.icon}
-        <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: 'inherit', lineHeight: 1 }}>
+        <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: 'inherit', lineHeight: 1 }}>
           {modeConf.label}
         </Typography>
         <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
@@ -84,7 +84,7 @@ export const ModeControl: React.FC<Props> = ({
               </ListItemIcon>
               <ListItemText
                 primary={m.name}
-                slotProps={{ primary: { sx: { fontSize: '0.8rem', color: mode === m.id ? m.color : c.text.secondary } } }}
+                slotProps={{ primary: { sx: { fontSize: '0.8125rem', color: mode === m.id ? m.color : c.text.secondary } } }}
               />
             </MenuItem>
           );
@@ -108,7 +108,7 @@ export const ModeControl: React.FC<Props> = ({
             transition: 'background 0.15s',
           }}
         >
-          <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
+          <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
             {(() => { const m = allModelFlat.find((m) => m.value === model); return m ? m.label : model; })()}
           </Typography>
           <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />

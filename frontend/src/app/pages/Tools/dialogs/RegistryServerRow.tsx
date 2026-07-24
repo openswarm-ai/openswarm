@@ -55,39 +55,39 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                         src={srv.iconUrl || undefined}
                         sx={{
                           width: 24, height: 24, flexShrink: 0, bgcolor: c.bg.secondary,
-                          fontSize: '0.7rem', fontWeight: 700, color: c.text.muted,
+                          fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted,
                         }}
                       >
                         {srv.iconUrl ? null : (srv.title || cleanServerName(srv.name)).charAt(0).toUpperCase()}
                       </Avatar>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.88rem', fontFamily: c.font.mono }}>
+                          <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.875rem', fontFamily: c.font.mono }}>
                             {srv.title || cleanServerName(srv.name)}
                           </Typography>
-                          {srv.version && <Chip label={`v${srv.version}`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />}
-                          {srv.remoteType && <Chip label={srv.remoteType} size="small" sx={{ bgcolor: '#3b82f615', color: '#3b82f6', fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />}
+                          {srv.version && <Chip label={`v${srv.version}`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />}
+                          {srv.remoteType && <Chip label={srv.remoteType} size="small" sx={{ bgcolor: '#3b82f615', color: '#3b82f6', fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />}
                           {srv.source === 'google' ? (
-                            <Chip icon={<CloudIcon sx={{ fontSize: 12 }} />} label="Google" size="small" sx={{ bgcolor: `${c.status.info}15`, color: c.status.info, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.status.info } }} />
+                            <Chip icon={<CloudIcon sx={{ fontSize: 12 }} />} label="Google" size="small" sx={{ bgcolor: `${c.status.info}15`, color: c.status.info, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.status.info } }} />
                           ) : (
-                            <Chip icon={<PublicIcon sx={{ fontSize: 12 }} />} label="Community" size="small" sx={{ bgcolor: 'rgba(174,86,48,0.08)', color: c.accent.primary, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.accent.primary } }} />
+                            <Chip icon={<PublicIcon sx={{ fontSize: 12 }} />} label="Community" size="small" sx={{ bgcolor: 'rgba(174,86,48,0.08)', color: c.accent.primary, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.accent.primary } }} />
                           )}
                           {srv.stars != null && (
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, ml: 0.5 }}>
                               <StarIcon sx={{ fontSize: 13, color: '#c89c00' }} />
-                              <Typography sx={{ color: c.text.muted, fontSize: '0.7rem', fontWeight: 600, lineHeight: 1 }}>
+                              <Typography sx={{ color: c.text.muted, fontSize: '0.6875rem', fontWeight: 600, lineHeight: 1 }}>
                                 {srv.stars >= 1000 ? `${(srv.stars / 1000).toFixed(1)}k` : srv.stars.toLocaleString()}
                               </Typography>
                             </Box>
                           )}
                           {devMode && !srv.remoteType && (
-                            <Chip label="stdio" size="small" sx={{ bgcolor: '#8b5cf615', color: '#8b5cf6', fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                            <Chip label="stdio" size="small" sx={{ bgcolor: '#8b5cf615', color: '#8b5cf6', fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
                           )}
                           {isInstalled && (
-                            <Chip icon={<CheckCircleIcon sx={{ fontSize: 12 }} />} label="Installed" size="small" sx={{ bgcolor: `${c.status.success}15`, color: c.status.success, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.status.success } }} />
+                            <Chip icon={<CheckCircleIcon sx={{ fontSize: 12 }} />} label="Installed" size="small" sx={{ bgcolor: `${c.status.success}15`, color: c.status.success, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, color: c.status.success } }} />
                           )}
                         </Box>
-                        <Typography sx={{ color: c.text.tertiary, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <Typography sx={{ color: c.text.tertiary, fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {srv.description}
                         </Typography>
                       </Box>
@@ -96,18 +96,18 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
 
                     <Collapse in={isExpanded} timeout={0} unmountOnExit>
                       <Box sx={{ ml: 4.5, mr: 1.5, mb: 1, px: 2, py: 1.5, bgcolor: c.bg.elevated, borderRadius: 1.5, borderLeft: '2px solid rgba(174,86,48,0.12)' }}>
-                        <Typography sx={{ color: c.text.secondary, fontSize: '0.85rem', mb: 1.5, lineHeight: 1.5 }}>
+                        <Typography sx={{ color: c.text.secondary, fontSize: '0.875rem', mb: 1.5, lineHeight: 1.5 }}>
                           {srv.description}
                         </Typography>
 
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
-                          <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem', fontFamily: c.font.mono }}>
+                          <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', fontFamily: c.font.mono }}>
                             {srv.name}
                           </Typography>
                           {srv.remoteUrl && (
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem', textTransform: 'uppercase' }}>Endpoint</Typography>
-                              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontFamily: c.font.mono }}>{srv.remoteUrl}</Typography>
+                              <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', textTransform: 'uppercase' }}>Endpoint</Typography>
+                              <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', fontFamily: c.font.mono }}>{srv.remoteUrl}</Typography>
                             </Box>
                           )}
                           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -119,7 +119,7 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                                 icon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
                                 label="Website"
                                 size="small"
-                                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 22 }}
+                                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 22 }}
                               />
                             )}
                             {srv.repositoryUrl && (
@@ -130,7 +130,7 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                                 icon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
                                 label="Repository"
                                 size="small"
-                                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 22 }}
+                                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 22 }}
                               />
                             )}
                           </Box>
@@ -145,16 +145,16 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                                 {(regDetail.keywords?.length > 0 || regDetail.license) && (
                                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
                                     {regDetail.license && (
-                                      <Chip label={regDetail.license} size="small" sx={{ bgcolor: `${c.status.info}15`, color: c.status.info, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                                      <Chip label={regDetail.license} size="small" sx={{ bgcolor: `${c.status.info}15`, color: c.status.info, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
                                     )}
                                     {regDetail.keywords?.map((kw) => (
-                                      <Chip key={kw} label={kw} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                                      <Chip key={kw} label={kw} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
                                     ))}
                                   </Box>
                                 )}
                                 {regDetail.environmentVariables?.length > 0 && (
                                   <Box sx={{ bgcolor: c.bg.page, borderRadius: 1.5, border: `1px solid ${c.border.subtle}`, px: 1.5, py: 1 }}>
-                                    <Typography sx={{ color: c.text.muted, fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.75 }}>
+                                    <Typography sx={{ color: c.text.muted, fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.75 }}>
                                       Required Environment Variables
                                     </Typography>
                                     {regDetail.environmentVariables.map((ev) => (
@@ -163,7 +163,7 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                                           {ev.name}
                                         </Typography>
                                         {ev.description && (
-                                          <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>
+                                          <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem' }}>
                                             {ev.description}
                                           </Typography>
                                         )}
@@ -182,7 +182,7 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                             variant="contained"
                             startIcon={<DownloadIcon sx={{ fontSize: 14 }} />}
                             onClick={(e) => { e.stopPropagation(); handleInstall(srv); }}
-                            sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.pressed }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5 }}
+                            sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.pressed }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5, py: 0.5 }}
                           >
                             Install
                           </Button>
@@ -191,7 +191,7 @@ const RegistryServerRow: React.FC<RegistryServerRowProps> = ({
                             variant="outlined"
                             startIcon={<EditIcon sx={{ fontSize: 14 }} />}
                             onClick={(e) => { e.stopPropagation(); handleEditInstall(srv); }}
-                            sx={{ borderColor: c.border.strong, color: c.text.secondary, '&:hover': { borderColor: c.accent.primary, color: c.text.primary }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5 }}
+                            sx={{ borderColor: c.border.strong, color: c.text.secondary, '&:hover': { borderColor: c.accent.primary, color: c.text.primary }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5, py: 0.5 }}
                           >
                             Edit & Install
                           </Button>

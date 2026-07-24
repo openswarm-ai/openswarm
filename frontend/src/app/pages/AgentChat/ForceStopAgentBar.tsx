@@ -28,7 +28,7 @@ export default function ForceStopAgentBar({ onStop, onSaveWorkflow, onContinueEd
           sx={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6,
             width: '100%', py: 0.9, borderRadius: 999, cursor: 'pointer',
-            fontSize: '0.85rem', fontWeight: 700,
+            fontSize: '0.875rem', fontWeight: 700,
             color: c.status.error, bgcolor: c.status.error + '14', border: `1px solid ${c.status.error}55`,
             '&:hover': { bgcolor: c.status.error + '22' },
           }}>
@@ -42,7 +42,7 @@ export default function ForceStopAgentBar({ onStop, onSaveWorkflow, onContinueEd
   const tone = testState === 'complete' ? c.status.success : c.status.error;
   return (
     <Box sx={{ px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: tone, fontSize: '0.8rem', fontWeight: 600 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: tone, fontSize: '0.8125rem', fontWeight: 600 }}>
         <CheckCircleOutlineRounded sx={{ fontSize: 16 }} />
         {testState === 'complete' ? 'Test finished' : 'Test stopped'}
       </Box>
@@ -52,7 +52,7 @@ export default function ForceStopAgentBar({ onStop, onSaveWorkflow, onContinueEd
           onClick={onContinueEditing}
           sx={{
             flex: 1, textAlign: 'center', py: 0.8, borderRadius: 999, cursor: 'pointer',
-            fontSize: '0.82rem', fontWeight: 600, color: c.text.secondary,
+            fontSize: '0.8125rem', fontWeight: 600, color: c.text.secondary,
             border: `1px solid ${c.border.medium}`,
             '&:hover': { bgcolor: c.bg.elevated, color: c.text.primary },
           }}>
@@ -63,7 +63,7 @@ export default function ForceStopAgentBar({ onStop, onSaveWorkflow, onContinueEd
           onClick={onSaveWorkflow}
           sx={{
             flex: 1, textAlign: 'center', py: 0.8, borderRadius: 999, cursor: 'pointer',
-            fontSize: '0.82rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary,
+            fontSize: '0.8125rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary,
             '&:hover': { filter: 'brightness(1.05)' },
           }}>
           Save workflow

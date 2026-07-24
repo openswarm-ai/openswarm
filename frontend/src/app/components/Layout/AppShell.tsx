@@ -727,7 +727,7 @@ const AppShell: React.FC = () => {
           }}
         >
           <ErrorSlime size={22} />
-          <Typography sx={{ fontSize: '0.86rem', color: '#ef4444', flex: 1, fontWeight: 500, letterSpacing: '0.01em' }}>
+          <Typography sx={{ fontSize: '0.875rem', color: '#ef4444', flex: 1, fontWeight: 500, letterSpacing: '0.01em' }}>
             {!isOnline
               ? 'No internet connection; agents cannot reach AI models or external services'
               : (
@@ -755,7 +755,7 @@ const AppShell: React.FC = () => {
 
       <Collapse in={showFreeTrialNudge && !fsHideChrome} timeout={300} unmountOnExit>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 0.5, flexShrink: 0 }}>
-          <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, flex: 1, letterSpacing: '0.01em' }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, flex: 1, letterSpacing: '0.01em' }}>
             {freeTrialSpent
               ? (refillLabel ? `Out of free runs, fresh ones in ${refillLabel}. ` : "You're out of free runs for now. ")
               : "Nice, you're rolling. "}
@@ -773,7 +773,7 @@ const AppShell: React.FC = () => {
               role="button"
               aria-label="Dismiss"
               onClick={() => { try { localStorage.setItem('os_ft_nudge_dismissed', '1'); } catch {} setFtNudgeDismissed(true); }}
-              sx={{ color: c.text.muted, cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1, px: 0.5, '&:hover': { color: c.text.secondary } }}
+              sx={{ color: c.text.muted, cursor: 'pointer', fontSize: '1rem', lineHeight: 1, px: 0.5, '&:hover': { color: c.text.secondary } }}
             >
               ×
             </Box>
@@ -790,14 +790,14 @@ const AppShell: React.FC = () => {
           {usageResetLabel && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, color: c.text.secondary }}>
               <Clock size={12} style={{ flexShrink: 0 }} />
-              <Typography sx={{ fontSize: '0.8rem', letterSpacing: '0.01em' }}>{usageResetLabel}</Typography>
+              <Typography sx={{ fontSize: '0.8125rem', letterSpacing: '0.01em' }}>{usageResetLabel}</Typography>
             </Box>
           )}
           {proMaxed && (
             <Box
               component="span"
               onClick={() => dispatch(openSettingsModal('models'))}
-              sx={{ color: c.accent.primary, cursor: 'pointer', fontSize: '0.8rem', '&:hover': { textDecoration: 'underline' } }}
+              sx={{ color: c.accent.primary, cursor: 'pointer', fontSize: '0.8125rem', '&:hover': { textDecoration: 'underline' } }}
             >
               Upgrade
             </Box>
@@ -819,7 +819,7 @@ const AppShell: React.FC = () => {
           }}
         >
           <SystemUpdateAltIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />
-          <Typography sx={{ fontSize: '0.8rem', color: c.text.secondary, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {updateStatus === 'available' && `OpenSwarm${verSuffix} is available`}
             {updateStatus === 'downloading' && `Downloading OpenSwarm${verSuffix}…`}
             {updateStatus === 'downloaded' && `OpenSwarm${verSuffix} is ready to install`}
@@ -839,7 +839,7 @@ const AppShell: React.FC = () => {
             />
           )}
           {updateStatus === 'downloading' && (
-            <Typography sx={{ fontSize: '0.72rem', color: c.text.tertiary, flexShrink: 0 }}>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, flexShrink: 0 }}>
               {Math.round(downloadPercent)}%
             </Typography>
           )}
@@ -979,8 +979,8 @@ const AppShell: React.FC = () => {
             }}
           >
             <SearchGlyph size={15} />
-            <Typography sx={{ flex: 1, textAlign: 'left', fontSize: '0.86rem', color: c.text.muted }}>Search</Typography>
-            <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, fontFamily: c.font.mono }}>{SEARCH_HOTKEY_LABEL}</Typography>
+            <Typography sx={{ flex: 1, textAlign: 'left', fontSize: '0.875rem', color: c.text.muted }}>Search</Typography>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, fontFamily: c.font.mono }}>{SEARCH_HOTKEY_LABEL}</Typography>
           </ButtonBase>
         </Box>
         <Box sx={{
@@ -1024,7 +1024,7 @@ const AppShell: React.FC = () => {
                 sx={{
                   '& .MuiListItemText-primary': {
                     color: isDashboardRoute ? c.text.primary : c.text.muted,
-                    fontSize: '0.9rem',
+                    fontSize: '0.875rem',
                     fontWeight: isDashboardRoute ? 600 : 400,
                   },
                 }}
@@ -1114,7 +1114,7 @@ const AppShell: React.FC = () => {
                           sx={{
                             flex: 1,
                             minWidth: 0,
-                            fontSize: '0.86rem',
+                            fontSize: '0.875rem',
                             fontWeight: isActive ? 500 : 400,
                             color: isActive ? c.text.secondary : c.text.ghost,
                             py: 0,
@@ -1135,7 +1135,7 @@ const AppShell: React.FC = () => {
                           }}
                           sx={{
                             color: isActive ? c.text.secondary : c.text.ghost,
-                            fontSize: '0.86rem',
+                            fontSize: '0.875rem',
                             fontWeight: isActive ? 500 : 400,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -1182,7 +1182,7 @@ const AppShell: React.FC = () => {
                 sx={{
                   '& .MuiListItemText-primary': {
                     color: isAppsRoute ? c.text.primary : c.text.muted,
-                    fontSize: '0.9rem',
+                    fontSize: '0.875rem',
                     fontWeight: isAppsRoute ? 600 : 400,
                   },
                 }}
@@ -1266,7 +1266,7 @@ const AppShell: React.FC = () => {
                           sx={{
                             flex: 1,
                             minWidth: 0,
-                            fontSize: '0.86rem',
+                            fontSize: '0.875rem',
                             fontWeight: isActive ? 500 : 400,
                             color: isActive ? c.text.secondary : c.text.ghost,
                             py: 0,
@@ -1285,7 +1285,7 @@ const AppShell: React.FC = () => {
                                 onDoubleClick={(e) => { e.stopPropagation(); handleStartAppRename(app.id, appName); }}
                                 sx={{
                                   color: isActive ? c.text.secondary : c.text.ghost,
-                                  fontSize: '0.86rem',
+                                  fontSize: '0.875rem',
                                   fontWeight: isActive ? 500 : 400,
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
@@ -1359,7 +1359,7 @@ const AppShell: React.FC = () => {
               sx={{
                 '& .MuiListItemText-primary': {
                   color: c.text.muted,
-                  fontSize: '0.9rem',
+                  fontSize: '0.875rem',
                   fontWeight: 400,
                 },
               }}
@@ -1461,7 +1461,7 @@ const AppShell: React.FC = () => {
               <Button
                 size="small"
                 onClick={() => setSnackbarDismissed(true)}
-                sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.8rem', minWidth: 'auto' }}
+                sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.8125rem', minWidth: 'auto' }}
               >
                 Dismiss
               </Button>
@@ -1474,7 +1474,7 @@ const AppShell: React.FC = () => {
                     bgcolor: c.accent.primary,
                     '&:hover': { bgcolor: c.accent.pressed },
                     textTransform: 'none',
-                    fontSize: '0.8rem',
+                    fontSize: '0.8125rem',
                     borderRadius: 1.5,
                     minWidth: 'auto',
                   }}
@@ -1494,7 +1494,7 @@ const AppShell: React.FC = () => {
                     '&:hover': { bgcolor: c.accent.pressed },
                     '&.Mui-disabled': { bgcolor: c.accent.primary, color: '#fff', opacity: 0.7 },
                     textTransform: 'none',
-                    fontSize: '0.8rem',
+                    fontSize: '0.8125rem',
                     borderRadius: 1.5,
                     minWidth: 'auto',
                   }}
@@ -1539,14 +1539,14 @@ const AppShell: React.FC = () => {
           {peek.thumbnail ? (
             <Box component="img" src={peek.thumbnail} alt="" sx={{ width: '100%', height: 150, objectFit: 'cover', objectPosition: 'top left', display: 'block' }} />
           ) : (
-            <Box sx={{ width: '100%', height: 92, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${c.text.tertiary}0A`, color: c.text.ghost, fontSize: '0.78rem' }}>
+            <Box sx={{ width: '100%', height: 92, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${c.text.tertiary}0A`, color: c.text.ghost, fontSize: '0.75rem' }}>
               No preview yet
             </Box>
           )}
           <Box sx={{ p: 1.25 }}>
-            <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{peek.name}</Typography>
+            <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{peek.name}</Typography>
             {peek.description && (
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mt: 0.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 0.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {peek.description}
               </Typography>
             )}
@@ -1590,7 +1590,7 @@ const AppShell: React.FC = () => {
             <Button
               size="small"
               onClick={handleUndoDeleteApp}
-              sx={{ color: c.accent.primary, textTransform: 'none', fontWeight: 700, fontSize: '0.8rem', minWidth: 'auto' }}
+              sx={{ color: c.accent.primary, textTransform: 'none', fontWeight: 700, fontSize: '0.8125rem', minWidth: 'auto' }}
             >
               Undo
             </Button>

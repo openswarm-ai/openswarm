@@ -101,16 +101,16 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
       <Box sx={{ color: selected ? c.accent.primary : c.text.tertiary, display: 'flex' }}>{icon}</Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography sx={{ fontSize: '0.88rem', fontWeight: 600, color: c.text.primary }}>{title}</Typography>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>{title}</Typography>
           {chip && (
             <Chip
               label={chip}
               size="small"
-              sx={{ height: 18, fontSize: '0.62rem', bgcolor: c.bg.secondary, color: c.text.muted }}
+              sx={{ height: 18, fontSize: '0.625rem', bgcolor: c.bg.secondary, color: c.text.muted }}
             />
           )}
         </Box>
-        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted }}>{subtitle}</Typography>
+        <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>{subtitle}</Typography>
       </Box>
     </Box>
   );
@@ -133,7 +133,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, pt: 2.5, pb: 1 }}>
-          <Typography sx={{ fontSize: '1.05rem', fontWeight: 700, color: c.text.primary }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary }}>
             Share {target.name}
           </Typography>
           <IconButton size="small" onClick={onClose} sx={{ color: c.text.tertiary }}>
@@ -156,10 +156,10 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                   <Box sx={{ display: 'flex', gap: 1.25 }}>
                     <WarningAmberRoundedIcon sx={{ fontSize: 20, color: c.status.warning, mt: '1px', flexShrink: 0 }} />
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, color: c.text.primary, mb: 0.25 }}>
+                      <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, mb: 0.25 }}>
                         This file may contain a secret
                       </Typography>
-                      <Typography sx={{ fontSize: '0.8rem', color: c.text.secondary, lineHeight: 1.5 }}>
+                      <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, lineHeight: 1.5 }}>
                         {error} If you export it, only send the file to people you trust.
                       </Typography>
                     </Box>
@@ -168,7 +168,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                     <Button
                       size="small"
                       onClick={load}
-                      sx={{ textTransform: 'none', fontSize: '0.8rem', color: c.text.secondary, minWidth: 0 }}
+                      sx={{ textTransform: 'none', fontSize: '0.8125rem', color: c.text.secondary, minWidth: 0 }}
                     >
                       Try again
                     </Button>
@@ -178,7 +178,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                       onClick={() => { setError(''); handleDownload(true); }}
                       disabled={downloading}
                       sx={{
-                        textTransform: 'none', fontSize: '0.8rem', fontWeight: 600,
+                        textTransform: 'none', fontSize: '0.8125rem', fontWeight: 600,
                         color: c.status.error, borderColor: `${c.status.error}80`, borderRadius: '8px',
                         '&:hover': { borderColor: c.status.error, bgcolor: `${c.status.error}0d` },
                       }}
@@ -189,7 +189,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                 </Box>
               ) : (
                 <Box sx={{ py: 1 }}>
-                  <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, mb: 1 }}>{error}</Typography>
+                  <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, mb: 1 }}>{error}</Typography>
                   <Button size="small" onClick={load} sx={{ textTransform: 'none', color: c.accent.primary }}>
                     Try again
                   </Button>
@@ -240,7 +240,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
                 borderRadius: `${c.radius.md}px`,
                 px: 2.5,
                 py: 0.6,
-                fontSize: '0.85rem',
+                fontSize: '0.875rem',
                 fontWeight: 600,
                 boxShadow: 'none',
               }}
@@ -261,7 +261,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
           severity="success"
           variant="outlined"
           onClose={() => setToast('')}
-          sx={{ bgcolor: c.bg.surface, color: c.text.primary, border: `1px solid ${c.border.medium}`, fontSize: '0.82rem' }}
+          sx={{ bgcolor: c.bg.surface, color: c.text.primary, border: `1px solid ${c.border.medium}`, fontSize: '0.8125rem' }}
         >
           {toast}
         </Alert>

@@ -69,7 +69,7 @@ const MessageEditSurface: React.FC<Props> = ({ userMessage, elementSuffix, eleme
       {elementLabels.length > 0 && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
           {elementLabels.map((label, i) => (
-            <Box key={i} sx={{ fontSize: '0.68rem', color: c.text.muted, bgcolor: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border.subtle}`, borderRadius: '999px', px: 0.9, py: 0.15, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <Box key={i} sx={{ fontSize: '0.6875rem', color: c.text.muted, bgcolor: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border.subtle}`, borderRadius: '999px', px: 0.9, py: 0.15, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {label}
             </Box>
           ))}

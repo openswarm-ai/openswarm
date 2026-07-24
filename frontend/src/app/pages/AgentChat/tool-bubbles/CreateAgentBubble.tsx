@@ -72,7 +72,7 @@ export const CreateAgentBubble: React.FC<CreateAgentBubbleProps> = ({
           <Typography
             sx={{
               color: c.accent.primary,
-              fontSize: '0.8rem',
+              fontSize: '0.8125rem',
               fontWeight: 600,
               flexShrink: 0,
             }}
@@ -94,7 +94,7 @@ export const CreateAgentBubble: React.FC<CreateAgentBubbleProps> = ({
             <Typography
               noWrap
               sx={{
-                fontSize: '0.72rem',
+                fontSize: '0.75rem',
                 fontWeight: 500,
                 color: c.text.secondary,
                 fontFamily: c.font.sans,
@@ -112,7 +112,7 @@ export const CreateAgentBubble: React.FC<CreateAgentBubbleProps> = ({
               sx={{
                 flex: 1,
                 minWidth: 0,
-                fontSize: '0.73rem',
+                fontSize: '0.75rem',
                 color: c.text.tertiary,
                 fontFamily: c.font.sans,
               }}
@@ -125,7 +125,7 @@ export const CreateAgentBubble: React.FC<CreateAgentBubbleProps> = ({
           {isDenied && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
               <BlockIcon sx={{ fontSize: 13, color: c.status.error }} />
-              <Typography sx={{ color: c.status.error, fontSize: '0.7rem', fontWeight: 500 }}>denied</Typography>
+              <Typography sx={{ color: c.status.error, fontSize: '0.6875rem', fontWeight: 500 }}>denied</Typography>
             </Box>
           )}
 
@@ -135,7 +135,7 @@ export const CreateAgentBubble: React.FC<CreateAgentBubbleProps> = ({
                 <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
               )}
               {resultElapsedMs != null && (
-                <Typography sx={{ fontSize: '0.65rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
+                <Typography sx={{ fontSize: '0.625rem', fontFamily: c.font.mono, color: c.text.tertiary }}>
                   {formatElapsed(resultElapsedMs)}
                 </Typography>
               )}

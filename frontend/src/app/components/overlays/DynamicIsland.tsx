@@ -113,7 +113,7 @@ const AgentStatusRow: React.FC<{
       <StatusDot status={agent.status} c={c} />
       <Typography
         sx={{
-          fontSize: '0.78rem',
+          fontSize: '0.75rem',
           fontWeight: 500,
           color: c.text.secondary,
           flex: 1,
@@ -126,7 +126,7 @@ const AgentStatusRow: React.FC<{
       </Typography>
       <Typography
         sx={{
-          fontSize: '0.6rem',
+          fontSize: '0.625rem',
           color: c.text.ghost,
           textTransform: 'uppercase',
           letterSpacing: '0.04em',
@@ -618,7 +618,7 @@ const CompactPill: React.FC<{
       <ActivityIndicator c={c} />
       <Typography
         sx={{
-          fontSize: '0.68rem',
+          fontSize: '0.6875rem',
           fontWeight: 500,
           color: c.text.tertiary,
           flex: 1,
@@ -702,7 +702,7 @@ const CompactActionablePill: React.FC<{
         </Box>
         <Typography
           sx={{
-            fontSize: '0.68rem',
+            fontSize: '0.6875rem',
             fontWeight: 600,
             color: isIntervention ? '#f59e0b' : c.text.secondary,
             flex: 1,
@@ -717,7 +717,7 @@ const CompactActionablePill: React.FC<{
         {remainingCount > 1 && (
           <Typography
             sx={{
-              fontSize: '0.6rem',
+              fontSize: '0.625rem',
               fontWeight: 600,
               color: c.text.ghost,
               flexShrink: 0,
@@ -756,7 +756,7 @@ const CompactActionablePill: React.FC<{
                 height: 18,
                 px: 0.5,
                 borderRadius: '4px',
-                fontSize: '0.58rem',
+                fontSize: '0.625rem',
                 fontWeight: 700,
                 color: '#fff',
                 bgcolor: c.status.success,
@@ -852,7 +852,7 @@ const ExpandedCard: React.FC<{
       >
         <Typography
           sx={{
-            fontSize: '0.76rem',
+            fontSize: '0.75rem',
             fontWeight: 600,
             color: c.text.muted,
             flex: 1,
@@ -863,7 +863,7 @@ const ExpandedCard: React.FC<{
         {badgeCount > 0 && (
           <Typography
             sx={{
-              fontSize: '0.65rem',
+              fontSize: '0.625rem',
               fontWeight: 600,
               color: c.text.ghost,
               flexShrink: 0,
@@ -904,7 +904,7 @@ const ExpandedCard: React.FC<{
             {hasAgents && (
               <Typography
                 sx={{
-                  fontSize: '0.58rem',
+                  fontSize: '0.625rem',
                   fontWeight: 600,
                   color: c.text.ghost,
                   textTransform: 'uppercase',
@@ -921,7 +921,7 @@ const ExpandedCard: React.FC<{
                 {groups.length > 1 && (
                   <Typography
                     sx={{
-                      fontSize: '0.65rem',
+                      fontSize: '0.625rem',
                       fontWeight: 600,
                       color: c.text.ghost,
                       textTransform: 'uppercase',
@@ -963,7 +963,7 @@ const ExpandedCard: React.FC<{
             {hasApprovals && (
               <Typography
                 sx={{
-                  fontSize: '0.58rem',
+                  fontSize: '0.625rem',
                   fontWeight: 600,
                   color: c.text.ghost,
                   textTransform: 'uppercase',
@@ -1007,7 +1007,7 @@ const ExpandedCard: React.FC<{
                 >
                   <Typography
                     sx={{
-                      fontSize: '0.58rem',
+                      fontSize: '0.625rem',
                       fontWeight: 600,
                       color: c.text.ghost,
                       textTransform: 'uppercase',
@@ -1021,7 +1021,7 @@ const ExpandedCard: React.FC<{
                     component="span"
                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); onClearAllFinished(); }}
                     sx={{
-                      fontSize: '0.58rem',
+                      fontSize: '0.625rem',
                       fontWeight: 600,
                       color: c.text.ghost,
                       cursor: 'pointer',

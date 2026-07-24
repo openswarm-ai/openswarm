@@ -491,7 +491,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                 placeholder="Search apps..."
                 sx={{
                   flex: 1,
-                  fontSize: '0.85rem',
+                  fontSize: '0.875rem',
                   color: c.text.primary,
                   fontFamily: c.font.sans,
                   '& input::placeholder': { color: c.text.ghost, opacity: 1 },
@@ -515,7 +515,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
             >
               {filteredOutputs.length === 0 ? (
                 <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
-                  <Typography sx={{ fontSize: '0.82rem', color: c.text.muted }}>
+                  <Typography sx={{ fontSize: '0.8125rem', color: c.text.muted }}>
                     {outputList.length === 0 ? 'No apps created yet' : 'No matching apps'}
                   </Typography>
                 </Box>
@@ -572,7 +572,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography
                         sx={{
-                          fontSize: '0.82rem',
+                          fontSize: '0.8125rem',
                           fontWeight: 500,
                           color: c.text.primary,
                           overflow: 'hidden',
@@ -585,7 +585,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
                       {output.description && (
                         <Typography
                           sx={{
-                            fontSize: '0.72rem',
+                            fontSize: '0.75rem',
                             color: c.text.muted,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',

@@ -18,11 +18,11 @@ export const DriveCard: React.FC<{ data: Record<string, any> }> = ({ data }) => 
       }}>
         <FolderIcon sx={{ fontSize: 16, color: TC_WARNING, opacity: 0.7 }} />
         <Box>
-          <span style={{ color: TC_HEADING, fontSize: '0.73rem', fontWeight: 500, display: 'block', fontFamily: c.font.sans }}>
+          <span style={{ color: TC_HEADING, fontSize: '0.75rem', fontWeight: 500, display: 'block', fontFamily: c.font.sans }}>
             {single.name}
           </span>
           {single.mimeType && (
-            <span style={{ color: TC_DIM, fontSize: '0.6rem', fontFamily: c.font.mono }}>{single.mimeType}</span>
+            <span style={{ color: TC_DIM, fontSize: '0.625rem', fontFamily: c.font.mono }}>{single.mimeType}</span>
           )}
         </Box>
       </Box>
@@ -40,9 +40,9 @@ export const DriveCard: React.FC<{ data: Record<string, any> }> = ({ data }) => 
             '&:hover': { bgcolor: TC_HOVER },
           }}>
             <FolderIcon sx={{ fontSize: 13, color: TC_WARNING, opacity: 0.5 }} />
-            <span style={{ color: TC_HEADING, fontSize: '0.7rem', fontFamily: c.font.sans }}>{f.name || f.id}</span>
+            <span style={{ color: TC_HEADING, fontSize: '0.6875rem', fontFamily: c.font.sans }}>{f.name || f.id}</span>
             {f.mimeType && (
-              <span style={{ color: TC_DIM, fontSize: '0.58rem', flexShrink: 0, fontFamily: c.font.mono }}>
+              <span style={{ color: TC_DIM, fontSize: '0.625rem', flexShrink: 0, fontFamily: c.font.mono }}>
                 {f.mimeType.split('/').pop()}
               </span>
             )}

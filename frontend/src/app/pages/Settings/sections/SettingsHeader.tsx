@@ -40,7 +40,7 @@ const SettingsHeader: React.FC<{
           '& .MuiTab-root': {
             minHeight: 30,
             textTransform: 'none',
-            fontSize: '0.85rem',
+            fontSize: '0.875rem',
             fontWeight: 500,
             color: c.text.muted,
             px: 1.75,

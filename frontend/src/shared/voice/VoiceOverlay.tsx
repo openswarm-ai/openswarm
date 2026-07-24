@@ -124,7 +124,7 @@ const VoiceOverlay: React.FC = () => {
         WebkitBackdropFilter: 'blur(20px) saturate(160%)',
         boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
         color: 'rgba(255,255,255,0.92)',
-        fontSize: '0.82rem',
+        fontSize: '0.8125rem',
         fontWeight: 500,
         '@keyframes vin': { from: { opacity: 0, transform: 'translate(-50%, 6px)' }, to: { opacity: 1, transform: 'translate(-50%, 0)' } },
         animation: 'vin 0.16s ease-out',

@@ -37,15 +37,15 @@ const SubscriptionCard: React.FC<{ provider: SubscriptionProvider; connected: bo
             } : {}),
           }} />
           <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: c.text.primary }}>{provider.name}</Typography>
-            <Typography noWrap sx={{ fontSize: '0.65rem', color: connecting ? c.accent.primary : c.text.muted, transition: 'color 0.2s ease' }}>
+            <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.primary }}>{provider.name}</Typography>
+            <Typography noWrap sx={{ fontSize: '0.625rem', color: connecting ? c.accent.primary : c.text.muted, transition: 'color 0.2s ease' }}>
               {connecting ? 'Waiting for authorization...' : provider.desc}
             </Typography>
           </Box>
         </Box>
 
         {isPreview ? (
-          <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost, fontStyle: 'italic', flexShrink: 0 }}>
+          <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost, fontStyle: 'italic', flexShrink: 0 }}>
             Coming soon
           </Typography>
         ) : connected ? (
@@ -53,26 +53,26 @@ const SubscriptionCard: React.FC<{ provider: SubscriptionProvider; connected: bo
             <CircularProgress size={14} sx={{ color: c.text.ghost }} />
           ) : (
             <Box sx={{ position: 'relative', flexShrink: 0, minWidth: 72, height: 16 }}>
-              <Typography className="sub-rest" sx={{ position: 'absolute', right: 0, top: 0, fontSize: '0.68rem', fontWeight: 500, color: c.status.success, transition: 'opacity 0.18s ease' }}>
+              <Typography className="sub-rest" sx={{ position: 'absolute', right: 0, top: 0, fontSize: '0.6875rem', fontWeight: 500, color: c.status.success, transition: 'opacity 0.18s ease' }}>
                 Connected
               </Typography>
-              <Typography className="sub-undo" onClick={onDisconnect} sx={{ position: 'absolute', right: 0, top: 0, fontSize: '0.68rem', color: c.text.tertiary, cursor: 'pointer', opacity: 0, pointerEvents: 'none', transition: 'opacity 0.18s ease', '&:hover': { color: c.status.error } }}>
+              <Typography className="sub-undo" onClick={onDisconnect} sx={{ position: 'absolute', right: 0, top: 0, fontSize: '0.6875rem', color: c.text.tertiary, cursor: 'pointer', opacity: 0, pointerEvents: 'none', transition: 'opacity 0.18s ease', '&:hover': { color: c.status.error } }}>
                 Disconnect
               </Typography>
             </Box>
           )
         ) : connecting && userCode ? (
           <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
-            <Typography sx={{ fontSize: '0.68rem', color: c.text.muted }}>Enter code:</Typography>
-            <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: c.accent.primary, fontFamily: c.font.mono, letterSpacing: '0.1em' }}>{userCode}</Typography>
+            <Typography sx={{ fontSize: '0.6875rem', color: c.text.muted }}>Enter code:</Typography>
+            <Typography sx={{ fontSize: '0.875rem', fontWeight: 700, color: c.accent.primary, fontFamily: c.font.mono, letterSpacing: '0.1em' }}>{userCode}</Typography>
           </Box>
         ) : connecting ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexShrink: 0 }}>
             <CircularProgress size={14} sx={{ color: c.accent.primary }} />
-            <Typography sx={{ fontSize: '0.68rem', color: c.accent.primary }}>Connecting...</Typography>
+            <Typography sx={{ fontSize: '0.6875rem', color: c.accent.primary }}>Connecting...</Typography>
           </Box>
         ) : (
-          <Button onClick={onConnect} variant="outlined" size="small" sx={{ textTransform: 'none', fontSize: '0.7rem', fontWeight: 600, color: c.text.primary, borderColor: c.border.medium, borderRadius: `${c.radius.sm}px`, minWidth: 72, flexShrink: 0, '&:hover': { borderColor: c.accent.primary, bgcolor: `${c.accent.primary}0a` }, transition: 'all 0.2s ease' }}>
+          <Button onClick={onConnect} variant="outlined" size="small" sx={{ textTransform: 'none', fontSize: '0.6875rem', fontWeight: 600, color: c.text.primary, borderColor: c.border.medium, borderRadius: `${c.radius.sm}px`, minWidth: 72, flexShrink: 0, '&:hover': { borderColor: c.accent.primary, bgcolor: `${c.accent.primary}0a` }, transition: 'all 0.2s ease' }}>
             Connect
           </Button>
         )}

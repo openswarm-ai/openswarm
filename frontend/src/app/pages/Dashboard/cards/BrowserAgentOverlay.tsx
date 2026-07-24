@@ -235,7 +235,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
 
         <Typography
           sx={{
-            fontSize: '0.7rem',
+            fontSize: '0.6875rem',
             fontWeight: 600,
             color: intervention ? '#f59e0b' : 'rgba(255,255,255,0.85)',
             flex: 1,
@@ -293,15 +293,15 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
       {/* Body: intervention prompt OR scrollable action log */}
       {intervention ? (
         <Box sx={{ flex: 1, px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
+          <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
             {interventionProblem}
           </Typography>
           {interventionInstruction && (
-            <Typography sx={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', lineHeight: 1.4 }}>
+            <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', lineHeight: 1.4 }}>
               {interventionInstruction}
             </Typography>
           )}
-          <Typography sx={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', lineHeight: 1.4 }}>
+          <Typography sx={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.3)', lineHeight: 1.4 }}>
             Resolve the issue in the browser above, then click Done.
           </Typography>
           {showSkipInput ? (
@@ -319,7 +319,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
                 }}
                 sx={{
                   flex: 1,
-                  fontSize: '0.68rem',
+                  fontSize: '0.6875rem',
                   color: 'rgba(255,255,255,0.8)',
                   bgcolor: 'rgba(255,255,255,0.08)',
                   borderRadius: '6px',
@@ -350,7 +350,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
                   bgcolor: '#f59e0b',
                   '&:hover': { bgcolor: '#d97706' },
                   textTransform: 'none',
-                  fontSize: '0.68rem',
+                  fontSize: '0.6875rem',
                   fontWeight: 600,
                   borderRadius: '6px',
                   px: 1.5,
@@ -368,7 +368,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
                   color: 'rgba(255,255,255,0.4)',
                   '&:hover': { color: 'rgba(255,255,255,0.7)' },
                   textTransform: 'none',
-                  fontSize: '0.68rem',
+                  fontSize: '0.6875rem',
                   px: 1,
                   py: 0.4,
                   minWidth: 'auto',
@@ -400,7 +400,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
           }}
         >
           {entries.length === 0 && isRunning && (
-            <Typography sx={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic' }}>
+            <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic' }}>
               Starting...
             </Typography>
           )}
@@ -421,7 +421,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
                   />
                   <Typography
                     sx={{
-                      fontSize: '0.68rem',
+                      fontSize: '0.6875rem',
                       color: 'rgba(255,255,255,0.6)',
                       lineHeight: 1.4,
                       overflow: 'hidden',
@@ -449,7 +449,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
                   />
                   <Typography
                     sx={{
-                      fontSize: '0.68rem',
+                      fontSize: '0.6875rem',
                       fontFamily: c.font.mono,
                       color: accentColor,
                       lineHeight: 1.4,

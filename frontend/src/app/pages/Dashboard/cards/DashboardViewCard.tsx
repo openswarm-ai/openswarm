@@ -121,9 +121,9 @@ const BootingBody: React.FC = () => {
           },
         }}
       />
-      <Typography sx={{ fontSize: '0.85rem', color: c.text.muted }}>Starting preview</Typography>
+      <Typography sx={{ fontSize: '0.875rem', color: c.text.muted }}>Starting preview</Typography>
       <Fade in={slow} timeout={400} unmountOnExit>
-        <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, maxWidth: 240 }}>
+        <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, maxWidth: 240 }}>
           First run sets the app up, this can take a moment.
         </Typography>
       </Fade>
@@ -642,7 +642,7 @@ const DashboardViewCard: React.FC<Props> = ({
         <Typography
           sx={{
             flex: 1,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             fontWeight: 600,
             color: c.text.primary,
             overflow: 'hidden',
@@ -653,7 +653,7 @@ const DashboardViewCard: React.FC<Props> = ({
           {output.name}
         </Typography>
         {instance > 1 && (
-          <Typography sx={{ fontSize: '0.66rem', fontWeight: 700, color: c.text.ghost, bgcolor: c.bg.page, borderRadius: 999, px: 0.75, py: 0.1, flexShrink: 0 }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.ghost, bgcolor: c.bg.page, borderRadius: 999, px: 0.75, py: 0.1, flexShrink: 0 }}>
             #{instance}
           </Typography>
         )}
@@ -845,10 +845,10 @@ const DashboardViewCard: React.FC<Props> = ({
             >
               <RestartAltIcon sx={{ fontSize: 18, color: c.text.muted, flexShrink: 0 }} />
               <Box>
-                <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: c.text.primary, lineHeight: 1.2 }}>
+                <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: c.text.primary, lineHeight: 1.2 }}>
                   Reset & Hard Reload
                 </Typography>
-                <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, mt: 0.25 }}>
+                <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, mt: 0.25 }}>
                   Restart backend.py + reload preview
                 </Typography>
               </Box>
@@ -895,7 +895,7 @@ const BuildingOverlay: React.FC<{ show: boolean }> = ({ show }) => {
             },
           }}
         />
-        <Typography sx={{ color: c.text.secondary, fontSize: '0.85rem', fontWeight: 500 }}>
+        <Typography sx={{ color: c.text.secondary, fontSize: '0.875rem', fontWeight: 500 }}>
           Building…
         </Typography>
       </Box>
@@ -993,14 +993,14 @@ const DashboardOutputPreview: React.FC<{
           textAlign: 'center',
         }}
       >
-        <Typography sx={{ color: tokens.text.secondary, fontSize: '0.9rem' }}>
+        <Typography sx={{ color: tokens.text.secondary, fontSize: '0.875rem' }}>
           This app's files are missing.
         </Typography>
         <Typography
           onClick={() => void removeViewCardCleanly(cardKey ?? output.id, dispatch)}
           sx={{
             color: tokens.accent.primary,
-            fontSize: '0.85rem',
+            fontSize: '0.875rem',
             fontWeight: 600,
             cursor: 'pointer',
             '&:hover': { textDecoration: 'underline' },
@@ -1031,8 +1031,8 @@ const DashboardOutputPreview: React.FC<{
           <Box sx={{ width: 44, height: 44, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${tokens.accent.primary}1F`, color: tokens.accent.primary }}>
             <VisibilityRoundedIcon sx={{ fontSize: 22 }} />
           </Box>
-          <Typography sx={{ color: tokens.text.primary, fontSize: '0.92rem', fontWeight: 600 }}>{output.name || 'Your app'}</Typography>
-          <Typography sx={{ color: tokens.text.muted, fontSize: '0.78rem' }}>Built for you, click to open</Typography>
+          <Typography sx={{ color: tokens.text.primary, fontSize: '0.875rem', fontWeight: 600 }}>{output.name || 'Your app'}</Typography>
+          <Typography sx={{ color: tokens.text.muted, fontSize: '0.75rem' }}>Built for you, click to open</Typography>
         </Box>
       );
     }
@@ -1042,7 +1042,7 @@ const DashboardOutputPreview: React.FC<{
           <Box component="img" src={suspendSnapshot} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top left', display: 'block', filter: 'saturate(0.9)' }} />
         ) : (
           <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Typography sx={{ color: tokens.text.ghost, fontSize: '0.82rem' }}>{output.name || 'App'}</Typography>
+            <Typography sx={{ color: tokens.text.ghost, fontSize: '0.8125rem' }}>{output.name || 'App'}</Typography>
           </Box>
         )}
       </Box>

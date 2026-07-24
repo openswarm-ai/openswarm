@@ -166,21 +166,21 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             }}
           >
             {webDomains && webDomains.length > 0 && <SourceFavicons domains={webDomains} size={16} />}
-            <Typography sx={{ fontSize: '0.8rem', fontWeight: 500, color: 'inherit' }}>
+            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit' }}>
               {webGroupLabel ?? `${group.callCount} tool call${group.callCount === 1 ? '' : 's'}`}
             </Typography>
             {!allDone && (
-              <Typography sx={{ fontSize: '0.7rem', color: 'inherit', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums' }}>
+              <Typography sx={{ fontSize: '0.6875rem', color: 'inherit', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums' }}>
                 {completedCount}/{group.callCount}
               </Typography>
             )}
             {allDone && webDomains && webDomains.length > 0 && (
-              <Typography sx={{ fontSize: '0.7rem', color: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
+              <Typography sx={{ fontSize: '0.6875rem', color: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
                 {webDomains.length} source{webDomains.length === 1 ? '' : 's'}
               </Typography>
             )}
             {deniedCount > 0 && (
-              <Typography sx={{ color: c.status.error, fontSize: '0.68rem' }}>
+              <Typography sx={{ color: c.status.error, fontSize: '0.6875rem' }}>
                 {deniedCount} denied
               </Typography>
             )}
@@ -217,7 +217,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
             <Typography
               sx={{
                 color: c.accent.primary,
-                fontSize: '0.8rem',
+                fontSize: '0.8125rem',
                 fontWeight: 600,
                 flex: 1,
               }}
@@ -227,7 +227,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
           )}
 
           {deniedCount > 0 && (
-            <Typography sx={{ color: c.status.error, fontSize: '0.68rem' }}>
+            <Typography sx={{ color: c.status.error, fontSize: '0.6875rem' }}>
               {deniedCount} denied
             </Typography>
           )}
@@ -236,12 +236,12 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               makes the separate ×N chip redundant. tabular-nums +
               minWidth keep the position stable as digits change. */}
           {allDone && completedCount > 0 && (
-            <Typography sx={{ color: c.status.success, fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums', fontFamily: c.font.mono, minWidth: 36, textAlign: 'right' }}>
+            <Typography sx={{ color: c.status.success, fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontFamily: c.font.mono, minWidth: 36, textAlign: 'right' }}>
               {completedCount}/{group.callCount}
             </Typography>
           )}
           {!allDone && pendingCount > 0 && (
-            <Typography sx={{ color: c.text.tertiary, fontSize: '0.68rem', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.6875rem', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
               {completedCount}/{group.callCount}
             </Typography>
           )}
@@ -282,7 +282,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               ) : (
                 <Typography
                   key={entry.id}
-                  sx={{ px: 1.5, py: 0.5, fontSize: '0.78rem', color: c.text.tertiary }}
+                  sx={{ px: 1.5, py: 0.5, fontSize: '0.75rem', color: c.text.tertiary }}
                 >
                   {entry.text}
                 </Typography>

@@ -110,7 +110,7 @@ export const ModelPickerMenu: React.FC<Props> = (props) => {
               bgcolor: 'rgba(239, 68, 68, 0.08)',
               border: '1px solid rgba(239, 68, 68, 0.18)',
               color: '#ef4444',
-              fontSize: '0.7rem',
+              fontSize: '0.6875rem',
               flexShrink: 0,
               overflow: 'hidden',
             }}

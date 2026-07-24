@@ -96,7 +96,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
             <Typography
               sx={{
                 color: c.accent.primary,
-                fontSize: '0.78rem',
+                fontSize: '0.75rem',
                 fontWeight: 600,
                 flexShrink: 0,
               }}
@@ -119,7 +119,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
               <Typography
                 sx={{
                   color: hideVerbLabel ? c.text.primary : c.text.secondary,
-                  fontSize: '0.74rem',
+                  fontSize: '0.75rem',
                   // Args are data (ids, URLs, params) and read in mono; web rows are SOURCES and read in body text.
                   fontFamily: isWebRow ? undefined : c.font.mono,
                   flex: 1,
@@ -143,7 +143,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           {isDenied && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
               <BlockIcon sx={{ fontSize: 12, color: c.status.error }} />
-              <Typography sx={{ color: c.status.error, fontSize: '0.68rem', fontWeight: 500 }}>denied</Typography>
+              <Typography sx={{ color: c.status.error, fontSize: '0.6875rem', fontWeight: 500 }}>denied</Typography>
             </Box>
           )}
           {result && !isDenied && (
@@ -154,7 +154,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
               {/* Timings are debug detail, not content: ghosted at rest, legible on row hover
                   (LibreChat/ChatGPT show none at all; we keep them one hover away). */}
               {resultElapsedMs != null && (
-                <Typography sx={{ fontSize: '0.63rem', fontFamily: c.font.mono, color: c.text.ghost, transition: 'color 120ms', '.osw-mcp-row:hover &': { color: c.text.tertiary } }}>
+                <Typography sx={{ fontSize: '0.625rem', fontFamily: c.font.mono, color: c.text.ghost, transition: 'color 120ms', '.osw-mcp-row:hover &': { color: c.text.tertiary } }}>
                   {formatElapsed(resultElapsedMs)}
                 </Typography>
               )}
@@ -170,7 +170,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           <Typography
             sx={{
               color: c.text.secondary,
-              fontSize: '0.74rem',
+              fontSize: '0.75rem',
               fontFamily: c.font.mono,
               whiteSpace: 'normal',
               overflowWrap: 'anywhere',
@@ -207,7 +207,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           ) : parsedResult ? (
             <pre style={{
               margin: 0, padding: '8px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              fontFamily: c.font.mono, fontSize: '0.73rem', lineHeight: 1.5, color: tc.OUTPUT_COLOR,
+              fontFamily: c.font.mono, fontSize: '0.75rem', lineHeight: 1.5, color: tc.OUTPUT_COLOR,
             }}>
               {parsedResult.type === 'text' ? parsedResult.content : ''}
             </pre>

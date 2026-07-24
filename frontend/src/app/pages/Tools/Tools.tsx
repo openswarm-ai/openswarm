@@ -108,7 +108,7 @@ const Tools: React.FC = () => {
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
           <Typography variant="h5" sx={{ color: c.text.primary, fontWeight: 700, mb: 0.5 }}>Tool Library</Typography>
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem' }}>Define and manage custom tools for your Claude Code agents.</Typography>
+          <Typography sx={{ color: c.text.tertiary, fontSize: '0.875rem' }}>Define and manage custom tools for your Claude Code agents.</Typography>
         </Box>
         <Box>
           <Button
@@ -126,11 +126,11 @@ const Tools: React.FC = () => {
             onClose={handleMenuClose}
             PaperProps={{ sx: { bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 2, mt: 0.5, minWidth: 200 } }}
           >
-            <MenuItem onClick={a.openCreate} sx={{ color: c.text.primary, fontSize: '0.88rem', gap: 1.5, '&:hover': { bgcolor: c.bg.secondary } }}>
+            <MenuItem onClick={a.openCreate} sx={{ color: c.text.primary, fontSize: '0.875rem', gap: 1.5, '&:hover': { bgcolor: c.bg.secondary } }}>
               <BuildIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
               Create Custom
             </MenuItem>
-            <MenuItem onClick={a.openRegistryBrowser} sx={{ color: c.text.primary, fontSize: '0.88rem', gap: 1.5, '&:hover': { bgcolor: c.bg.secondary } }}>
+            <MenuItem onClick={a.openRegistryBrowser} sx={{ color: c.text.primary, fontSize: '0.875rem', gap: 1.5, '&:hover': { bgcolor: c.bg.secondary } }}>
               <StorefrontIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
               Browse MCP Registry
             </MenuItem>
@@ -145,8 +145,8 @@ const Tools: React.FC = () => {
         >
           {builtinSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in</Typography>
-          <Chip label={coreTools.length + deferredTools.length + browserTools.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
+          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8125rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Built-in</Typography>
+          <Chip label={coreTools.length + deferredTools.length + browserTools.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={builtinSectionOpen} timeout={0} unmountOnExit>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
@@ -185,8 +185,8 @@ const Tools: React.FC = () => {
         <Box onClick={() => setCustomSectionOpen((v) => !v)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}>
           {customSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
           <BuildIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Connections</Typography>
-          <Chip label={tools.length + uninstalledIntegrations.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
+          <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8125rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Connections</Typography>
+          <Chip label={tools.length + uninstalledIntegrations.length} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
         </Box>
         <Collapse in={customSectionOpen} timeout={0} unmountOnExit>
           {loading ? (
@@ -198,7 +198,7 @@ const Tools: React.FC = () => {
           ) : (tools.length === 0 && uninstalledIntegrations.length === 0) ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6, color: c.text.ghost, gap: 1.5 }}>
               <BuildIcon sx={{ fontSize: 40, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.9rem' }}>No custom tools defined yet. Create one to get started.</Typography>
+              <Typography sx={{ fontSize: '0.875rem' }}>No custom tools defined yet. Create one to get started.</Typography>
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>

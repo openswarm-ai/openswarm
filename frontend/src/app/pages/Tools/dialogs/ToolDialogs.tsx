@@ -110,36 +110,36 @@ const ToolDialogs: React.FC<ToolDialogsProps> = ({
           {deviceCodeStatus === 'loading' && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 3, justifyContent: 'center' }}>
               <CircularProgress size={20} />
-              <Typography sx={{ color: c.text.muted, fontSize: '0.9rem' }}>Generating login code...</Typography>
+              <Typography sx={{ color: c.text.muted, fontSize: '0.875rem' }}>Generating login code...</Typography>
             </Box>
           )}
           {deviceCodeStatus === 'awaiting' && (
             <>
-              <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.6 }}>
+              <Typography sx={{ color: c.text.muted, fontSize: '0.875rem', lineHeight: 1.6 }}>
                 Open the link below and enter the code to sign in:
               </Typography>
               <Box sx={{ bgcolor: c.bg.page, border: `1px solid ${c.border.subtle}`, borderRadius: 2, p: 2, display: 'flex', flexDirection: 'column', gap: 1.5, alignItems: 'center' }}>
-                <Typography component="a" href={deviceCodeUrl} target="_blank" rel="noopener" sx={{ color: c.status.info, fontSize: '0.9rem', fontWeight: 500 }}>
+                <Typography component="a" href={deviceCodeUrl} target="_blank" rel="noopener" sx={{ color: c.status.info, fontSize: '0.875rem', fontWeight: 500 }}>
                   {deviceCodeUrl}
                 </Typography>
-                <Typography sx={{ fontFamily: c.font.mono, fontSize: '1.5rem', fontWeight: 700, color: c.text.primary, letterSpacing: 2 }}>
+                <Typography sx={{ fontFamily: c.font.mono, fontSize: '1.375rem', fontWeight: 700, color: c.text.primary, letterSpacing: 2 }}>
                   {deviceCode}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center', py: 1 }}>
                 <CircularProgress size={14} />
-                <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem' }}>Waiting for you to sign in...</Typography>
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem' }}>Waiting for you to sign in...</Typography>
               </Box>
             </>
           )}
           {deviceCodeStatus === 'connected' && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2, justifyContent: 'center' }}>
               <CheckCircleIcon sx={{ color: c.status.success, fontSize: 20 }} />
-              <Typography sx={{ color: c.status.success, fontSize: '0.9rem', fontWeight: 500 }}>Connected successfully!</Typography>
+              <Typography sx={{ color: c.status.success, fontSize: '0.875rem', fontWeight: 500 }}>Connected successfully!</Typography>
             </Box>
           )}
           {deviceCodeStatus === 'error' && (
-            <Typography sx={{ color: c.status.error, fontSize: '0.85rem', py: 2, textAlign: 'center' }}>
+            <Typography sx={{ color: c.status.error, fontSize: '0.875rem', py: 2, textAlign: 'center' }}>
               Login failed. Please try again.
             </Typography>
           )}
@@ -171,13 +171,13 @@ const ToolDialogs: React.FC<ToolDialogsProps> = ({
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
           {credDialogIntegration?.id === 'slack' ? (
-            <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
+            <Typography sx={{ color: c.text.muted, fontSize: '0.875rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
               Click <strong>Sign in with Slack</strong> below; a Slack window will open. Sign in normally and the window will close automatically once you reach your workspace.
             </Typography>
           ) : (
             <>
               {credDialogIntegration?.connectInstructions && (
-                <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
+                <Typography sx={{ color: c.text.muted, fontSize: '0.875rem', lineHeight: 1.5, bgcolor: c.bg.secondary, px: 2, py: 1.5, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
                   {credDialogIntegration.connectInstructions}
                 </Typography>
               )}
@@ -191,7 +191,7 @@ const ToolDialogs: React.FC<ToolDialogsProps> = ({
                   fullWidth
                   size="small"
                   helperText={field.helpText}
-                  sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page, fontFamily: c.font.mono, fontSize: '0.85rem' } }}
+                  sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page, fontFamily: c.font.mono, fontSize: '0.875rem' } }}
                 />
               ))}
             </>

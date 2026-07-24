@@ -21,7 +21,7 @@ export default function ScheduleTestWarningDialog({ open, onClose, onTestFirst, 
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle sx={{ fontSize: '1rem', fontWeight: 700 }}>Test before scheduling?</DialogTitle>
       <DialogContent>
-        <Typography sx={{ fontSize: '0.86rem', color: c.text.secondary, lineHeight: 1.5 }}>
+        <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.5 }}>
           Scheduled runs can&apos;t pause to ask for permission. If this workflow uses tools that
           need your approval, it could fail when it runs on its own. A quick test run lets you
           approve those tools now.
@@ -31,13 +31,13 @@ export default function ScheduleTestWarningDialog({ open, onClose, onTestFirst, 
         <Box
           role="button"
           onClick={onScheduleAnyway}
-          sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.secondary, cursor: 'pointer', px: 1, py: 0.5, '&:hover': { color: c.text.primary } }}>
+          sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.secondary, cursor: 'pointer', px: 1, py: 0.5, '&:hover': { color: c.text.primary } }}>
           Schedule anyway
         </Box>
         <Box
           role="button"
           onClick={onTestFirst}
-          sx={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: 999, cursor: 'pointer', px: 1.5, py: 0.6, '&:hover': { filter: 'brightness(1.06)' } }}>
+          sx={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: 999, cursor: 'pointer', px: 1.5, py: 0.6, '&:hover': { filter: 'brightness(1.06)' } }}>
           Test first
         </Box>
       </DialogActions>

@@ -66,7 +66,7 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
         }}
       >
         <DashboardGlyph name={label} size={15} color="rgba(255,255,255,0.85)" />
-        <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: 'rgba(255,255,255,0.92)' }}>
+        <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'rgba(255,255,255,0.92)' }}>
           {label}
         </Typography>
       </Box>
@@ -125,7 +125,7 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
                   </Box>
                   <Typography
                     sx={{
-                      fontSize: '0.82rem',
+                      fontSize: '0.8125rem',
                       fontWeight: done || active ? 500 : 400,
                       color: done || active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.45)',
                       whiteSpace: 'nowrap',
@@ -162,7 +162,7 @@ function AgentNarratorPill({ label, running, todos, artifact, browserShot, selec
             boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
           }}
         >
-          <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.6)' }}>
+          <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
             Thinking...
           </Typography>
         </Box>

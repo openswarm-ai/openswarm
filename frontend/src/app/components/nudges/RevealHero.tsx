@@ -85,10 +85,10 @@ const RevealHero: React.FC = () => {
               <Sparkles size={18} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '1.02rem', fontWeight: 700, color: c.text.primary, letterSpacing: '-0.01em' }}>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary, letterSpacing: '-0.01em' }}>
                 {userName ? `${userName}, while you set up I got to work` : `While you set up, I got to work`}
               </div>
-              <div style={{ fontSize: '0.8rem', color: c.text.tertiary, marginTop: 2 }}>
+              <div style={{ fontSize: '0.8125rem', color: c.text.tertiary, marginTop: 2 }}>
                 {doneCount === jobs.length ? `All done, here on your canvas` : `${doneCount} of ${jobs.length} done, the rest are running`}
               </div>
             </div>
@@ -114,17 +114,17 @@ const RevealHero: React.FC = () => {
                   }}>
                     {iconFor(job.kind)}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0, fontSize: '0.9rem', fontWeight: 500, color: c.text.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: 500, color: c.text.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {lineFor(job, st)}
                   </div>
                   {st === 'done' ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.74rem', fontWeight: 600, color: c.status.success, flexShrink: 0 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', fontWeight: 600, color: c.status.success, flexShrink: 0 }}>
                       <Check size={13} /> done
                     </span>
                   ) : st === 'snag' ? (
-                    <span style={{ fontSize: '0.74rem', fontWeight: 600, color: c.status.warning, flexShrink: 0 }}>needs a look</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: c.status.warning, flexShrink: 0 }}>needs a look</span>
                   ) : (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.74rem', fontWeight: 600, color: c.text.tertiary, flexShrink: 0 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, flexShrink: 0 }}>
                       <span style={{
                         width: 7, height: 7, borderRadius: 999, background: c.accent.primary,
                         animation: 'revealHeroPulse 1.3s ease-in-out infinite',
@@ -136,7 +136,7 @@ const RevealHero: React.FC = () => {
               );
             })}
           </div>
-          <div style={{ padding: '9px 18px 13px', borderTop: `1px solid ${c.border.subtle}`, fontSize: '0.76rem', color: c.text.ghost }}>
+          <div style={{ padding: '9px 18px 13px', borderTop: `1px solid ${c.border.subtle}`, fontSize: '0.75rem', color: c.text.ghost }}>
             It's all on your canvas below. Nothing's saved or deleted without you, keep it or clear it anytime.
           </div>
           <style>{`@keyframes revealHeroPulse { 0%,100% { opacity: 0.35; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }`}</style>

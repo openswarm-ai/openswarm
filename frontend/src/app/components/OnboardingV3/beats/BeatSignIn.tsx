@@ -84,9 +84,9 @@ const BeatSignIn: React.FC<{
               <CheckRoundedIcon sx={{ fontSize: 20, color: '#1a9e6a' }} />
             </span>
             <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-              <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#2a2a27' }}>You're signed in</span>
+              <span style={{ fontSize: '1rem', fontWeight: 600, color: '#2a2a27' }}>You're signed in</span>
               {userEmail && (
-                <span style={{ fontSize: '0.8rem', color: '#8a8a86', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</span>
+                <span style={{ fontSize: '0.8125rem', color: '#8a8a86', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</span>
               )}
             </span>
           </motion.div>
@@ -109,12 +109,12 @@ const BeatSignIn: React.FC<{
                 }}
               >
                 <span style={{ position: 'absolute', left: 18, display: 'flex', alignItems: 'center' }}>{row.icon}</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#2a2a27' }}>
+                <span style={{ fontSize: '1rem', fontWeight: 600, color: '#2a2a27' }}>
                   {row.hint ? row.hint : row.name}
                 </span>
               </motion.button>
             ))}
-            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.65)', textAlign: 'center', marginTop: 2 }}>
+            <div style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.65)', textAlign: 'center', marginTop: 2 }}>
               Sign in to continue.
             </div>
           </>

@@ -43,11 +43,11 @@ const FeedbackDialog: React.FC<Props> = ({ open, sentiment, sessionId, messageId
       PaperProps={{ sx: { bgcolor: c.bg.elevated, borderRadius: 3, p: 1, minWidth: 420, maxWidth: 480 } }}
     >
       <Box sx={{ p: 2 }}>
-        <Typography sx={{ color: c.text.primary, fontSize: '1.15rem', fontWeight: 600, mb: 2 }}>
+        <Typography sx={{ color: c.text.primary, fontSize: '1.125rem', fontWeight: 600, mb: 2 }}>
           {isUp ? 'Give positive feedback' : 'Give negative feedback'}
         </Typography>
 
-        <Typography sx={{ color: c.text.secondary, fontSize: '0.85rem', mb: 1 }}>
+        <Typography sx={{ color: c.text.secondary, fontSize: '0.875rem', mb: 1 }}>
           Please provide details: (optional)
         </Typography>
         <TextField
@@ -62,7 +62,7 @@ const FeedbackDialog: React.FC<Props> = ({ open, sentiment, sessionId, messageId
             '& .MuiOutlinedInput-root': {
               bgcolor: c.bg.page,
               color: c.text.primary,
-              fontSize: '0.9rem',
+              fontSize: '0.875rem',
               '& fieldset': { borderColor: c.border.medium },
               '&:hover fieldset': { borderColor: c.border.strong },
               '&.Mui-focused fieldset': { borderColor: c.accent.primary },

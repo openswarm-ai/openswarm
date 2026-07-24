@@ -36,7 +36,7 @@ function LetterTile({ name }: { name: string }): React.ReactElement {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '1.3rem',
+        fontSize: '1.375rem',
         fontWeight: 700,
         color: 'rgba(255,255,255,0.85)',
       }}
@@ -123,8 +123,8 @@ function ApplicationsWindow({ onClose }: ApplicationsWindowProps): React.ReactEl
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 1.5 }}>
-          <Typography sx={{ fontSize: '1.15rem' }}>🐙</Typography>
-          <Typography sx={{ fontSize: '1.05rem', fontWeight: 600, color: 'rgba(255,255,255,0.75)' }}>
+          <Typography sx={{ fontSize: '1.125rem' }}>🐙</Typography>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: 'rgba(255,255,255,0.75)' }}>
             Applications
           </Typography>
         </Box>
@@ -141,7 +141,7 @@ function ApplicationsWindow({ onClose }: ApplicationsWindowProps): React.ReactEl
                   borderRadius: 999,
                   flexShrink: 0,
                   cursor: 'pointer',
-                  fontSize: '0.72rem',
+                  fontSize: '0.75rem',
                   fontWeight: 500,
                   color: category === cat ? '#fff' : 'rgba(255,255,255,0.6)',
                   background: category === cat ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)',
@@ -161,7 +161,7 @@ function ApplicationsWindow({ onClose }: ApplicationsWindowProps): React.ReactEl
             </Box>
           )}
           {error && (
-            <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.85rem', textAlign: 'center', py: 5 }}>
+            <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.875rem', textAlign: 'center', py: 5 }}>
               Could not read /Applications.
             </Typography>
           )}
@@ -188,7 +188,7 @@ function ApplicationsWindow({ onClose }: ApplicationsWindowProps): React.ReactEl
                   ) : (
                     <LetterTile name={name} />
                   )}
-                  <Typography sx={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.82)', textAlign: 'center', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.82)', textAlign: 'center', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {name}
                   </Typography>
                 </Box>

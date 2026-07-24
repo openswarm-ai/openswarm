@@ -68,7 +68,7 @@ export const ModelPickerHeader: React.FC<Props> = ({
           placeholder="Search models…"
           fullWidth
           sx={{
-            fontSize: '0.85rem',
+            fontSize: '0.875rem',
             color: c.text.primary,
             '& input': { padding: 0 },
             '& input::placeholder': { color: c.text.ghost, opacity: 1 },
@@ -138,7 +138,7 @@ export const ModelPickerHeader: React.FC<Props> = ({
                 cursor: 'pointer', userSelect: 'none',
                 px: 0.85, height: 20,
                 display: 'inline-flex', alignItems: 'center',
-                fontSize: '0.66rem', fontWeight: 600,
+                fontSize: '0.6875rem', fontWeight: 600,
                 letterSpacing: '0.04em',
                 borderRadius: '4px',
                 border: `1px solid ${active ? c.accent.primary : c.border.subtle}`,
@@ -161,7 +161,7 @@ export const ModelPickerHeader: React.FC<Props> = ({
             }}
             sx={{
               cursor: 'pointer', userSelect: 'none',
-              fontSize: '0.66rem', fontWeight: 500,
+              fontSize: '0.6875rem', fontWeight: 500,
               color: c.text.ghost,
               ml: 0.5, px: 0.5,
               '&:hover': { color: c.text.muted },
@@ -186,7 +186,7 @@ export const ModelPickerHeader: React.FC<Props> = ({
             height: 22,
           }}>
             <Box sx={{
-              fontSize: '0.65rem', fontWeight: 500,
+              fontSize: '0.625rem', fontWeight: 500,
               color: c.text.tertiary,
               letterSpacing: '0.02em',
             }}>
@@ -220,7 +220,7 @@ export const ModelPickerHeader: React.FC<Props> = ({
               }}
             />
             <Box sx={{
-              fontSize: '0.65rem', fontWeight: 600,
+              fontSize: '0.625rem', fontWeight: 600,
               color: row.idx > 0 ? c.accent.primary : c.text.ghost,
               fontVariantNumeric: 'tabular-nums',
               textAlign: 'right',

@@ -27,10 +27,10 @@ const Analytics: React.FC = () => {
               <circle cx="20" cy="7" r="1.5" fill={c.accent.primary} />
             </svg>
           </Box>
-          <Typography sx={{ color: c.text.primary, fontSize: '1.1rem', fontWeight: 600, mb: 1 }}>
+          <Typography sx={{ color: c.text.primary, fontSize: '1.125rem', fontWeight: 600, mb: 1 }}>
             Your usage
           </Typography>
-          <Typography sx={{ color: c.text.muted, fontSize: '0.85rem', lineHeight: 1.6, mb: 3, maxWidth: 500, mx: 'auto' }}>
+          <Typography sx={{ color: c.text.muted, fontSize: '0.875rem', lineHeight: 1.6, mb: 3, maxWidth: 500, mx: 'auto' }}>
             Usage data is automatically collected: sessions, costs, tool usage, model distribution, and task categories.
             All data is anonymous and can be disabled in Settings.
           </Typography>
@@ -45,10 +45,10 @@ const Analytics: React.FC = () => {
               { label: 'Retention & Funnels', desc: 'User engagement, feature adoption, onboarding flow' },
             ].map((item) => (
               <Box key={item.label} sx={{ p: 2, borderRadius: `${c.radius.md}px`, bgcolor: c.bg.elevated }}>
-                <Typography sx={{ color: c.text.primary, fontSize: '0.82rem', fontWeight: 600, mb: 0.5 }}>
+                <Typography sx={{ color: c.text.primary, fontSize: '0.8125rem', fontWeight: 600, mb: 0.5 }}>
                   {item.label}
                 </Typography>
-                <Typography sx={{ color: c.text.muted, fontSize: '0.72rem', lineHeight: 1.4 }}>
+                <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', lineHeight: 1.4 }}>
                   {item.desc}
                 </Typography>
               </Box>

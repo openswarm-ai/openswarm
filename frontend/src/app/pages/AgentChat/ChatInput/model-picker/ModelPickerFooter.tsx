@@ -20,7 +20,7 @@ export const ModelPickerFooter: React.FC<Props> = ({ c, pickerSummary, tooltipSl
         bgcolor: c.bg.surface,
         borderTop: `1px solid ${c.border.subtle}`,
         px: 1.25, py: 0.5,
-        fontSize: '0.65rem', color: c.text.ghost,
+        fontSize: '0.625rem', color: c.text.ghost,
         display: 'flex', justifyContent: 'space-between',
         gap: 1,
       }}
@@ -38,9 +38,9 @@ export const ModelPickerFooter: React.FC<Props> = ({ c, pickerSummary, tooltipSl
           ['1M+ context',   pickerSummary.longContext],
         ] as Array<[string, number]>).filter(([, n]) => n > 0);
         const breakdownTooltip = breakdown.length > 0 ? (
-          <Box sx={{ fontSize: '0.74rem', lineHeight: 1.6, minWidth: 180 }}>
+          <Box sx={{ fontSize: '0.75rem', lineHeight: 1.6, minWidth: 180 }}>
             <Box sx={{
-              fontWeight: 600, fontSize: '0.78rem',
+              fontWeight: 600, fontSize: '0.75rem',
               color: c.text.primary,
               pb: 0.6, mb: 0.6,
               borderBottom: `1px solid ${c.border.subtle}`,

@@ -28,7 +28,7 @@ const CompactionMarker: React.FC<{ collapsedCount: number }> = ({ collapsedCount
         }}
       >
         <UnfoldLessOutlinedIcon sx={{ fontSize: 13, opacity: 0.7 }} />
-        <Typography sx={{ fontSize: '0.7rem', lineHeight: 1, fontWeight: 500 }}>
+        <Typography sx={{ fontSize: '0.6875rem', lineHeight: 1, fontWeight: 500 }}>
           {label}
         </Typography>
       </Box>

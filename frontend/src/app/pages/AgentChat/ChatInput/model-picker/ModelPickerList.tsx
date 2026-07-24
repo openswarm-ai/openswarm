@@ -59,14 +59,14 @@ export const ModelPickerList: React.FC<Props> = ({
         <Box
           sx={{
             px: 2, py: 1.5,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             color: c.text.ghost,
             textAlign: 'center',
             fontStyle: 'italic',
           }}
         >
           {modelSearch.trim() ? (
-            <>No models match "{modelSearch.trim()}".{anyFilterActive && (<><br/><Box component="span" sx={{ fontSize: '0.7rem' }}>Try clearing the filters above.</Box></>)}</>
+            <>No models match "{modelSearch.trim()}".{anyFilterActive && (<><br/><Box component="span" sx={{ fontSize: '0.6875rem' }}>Try clearing the filters above.</Box></>)}</>
           ) : (
             <>No models match the current filters.</>
           )}
@@ -136,7 +136,7 @@ export const ModelPickerList: React.FC<Props> = ({
                 flexShrink: 0,
               }} />
               <Typography sx={{
-                fontSize: '0.7rem', fontWeight: 700,
+                fontSize: '0.6875rem', fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase',
                 flex: 1,
                 ...(isOpenSwarmPro
@@ -150,7 +150,7 @@ export const ModelPickerList: React.FC<Props> = ({
               }}>
                 {prov}
               </Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost, fontWeight: 500 }}>
+              <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost, fontWeight: 500 }}>
                 {ms.length}
               </Typography>
             </Box>
@@ -200,7 +200,7 @@ export const ModelPickerList: React.FC<Props> = ({
                     >
                       <ListItemText
                         primary={highlightMatch(displayLabel)}
-                        slotProps={{ primary: { sx: { fontSize: '0.8rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
+                        slotProps={{ primary: { sx: { fontSize: '0.8125rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
                       />
                       {(() => {
                         const win = (opt.context_window as number) || 0;
@@ -217,11 +217,11 @@ export const ModelPickerList: React.FC<Props> = ({
                         return (
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
                             {(cannotPdf || cannotImg) && (
-                              <Box sx={{ fontSize: '0.62rem', color: '#ef4444', border: '1px solid #ef444440', borderRadius: '4px', px: 0.5, py: 0.05, lineHeight: 1.4 }}>
+                              <Box sx={{ fontSize: '0.625rem', color: '#ef4444', border: '1px solid #ef444440', borderRadius: '4px', px: 0.5, py: 0.05, lineHeight: 1.4 }}>
                                 No {cannotPdf ? 'PDF' : 'image'}
                               </Box>
                             )}
-                            <Typography sx={{ fontSize: '0.66rem', color: c.text.ghost, fontVariantNumeric: 'tabular-nums' }}>
+                            <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, fontVariantNumeric: 'tabular-nums' }}>
                               {formatTokenCount(win)}
                             </Typography>
                           </Box>

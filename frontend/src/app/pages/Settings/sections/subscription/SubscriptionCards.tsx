@@ -169,10 +169,10 @@ const SubscriptionCards: React.FC = () => {
     return (
       <Box sx={{ p: 2, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`, textAlign: 'center' }}>
         <CircularProgress size={18} sx={{ color: c.text.ghost, mb: 1 }} />
-        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 0.5 }}>
+        <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mb: 0.5 }}>
           Starting subscription service...
         </Typography>
-        <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost }}>
+        <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost }}>
           This connects your existing AI subscriptions. If this doesn't load, make sure Node.js is installed.
         </Typography>
       </Box>
@@ -187,14 +187,14 @@ const SubscriptionCards: React.FC = () => {
           borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`,
           bgcolor: c.bg.surface,
         }}>
-          <Typography sx={{ fontSize: '0.72rem', color: c.text.secondary, flex: 1, lineHeight: 1.4 }}>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, flex: 1, lineHeight: 1.4 }}>
             {connectError}
           </Typography>
           <Box
             role="button"
             aria-label="Dismiss"
             onClick={() => setConnectError(null)}
-            sx={{ color: c.text.muted, cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1, px: 0.3, '&:hover': { color: c.text.secondary } }}
+            sx={{ color: c.text.muted, cursor: 'pointer', fontSize: '0.875rem', lineHeight: 1, px: 0.3, '&:hover': { color: c.text.secondary } }}
           >
             ×
           </Box>

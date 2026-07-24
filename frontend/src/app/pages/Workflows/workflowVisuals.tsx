@@ -73,7 +73,7 @@ export function StatusDot({ status }: { status: LastRunStatus | null | undefined
         flexShrink: 0,
       }}>
         <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: dotColor, boxShadow: status === 'failure' ? `0 0 4px ${c.status.error}` : 'none' }} />
-        <Typography sx={{ fontSize: '0.66rem', fontWeight: 700, color: dotColor, letterSpacing: '0.02em' }}>
+        <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: dotColor, letterSpacing: '0.02em' }}>
           {word}
         </Typography>
       </Box>
@@ -115,7 +115,7 @@ export function WeekdayDots({ on_days }: { on_days: number[] }) {
           <Box key={`${lbl}-${idx}`} sx={{
             width: 12, height: 12, borderRadius: '50%',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.6rem', fontWeight: 700,
+            fontSize: '0.625rem', fontWeight: 700,
             color: active ? '#fff' : c.text.ghost,
             bgcolor: active ? c.accent.primary : 'transparent',
             border: `1px solid ${active ? c.accent.primary : c.border.subtle}`,
@@ -149,7 +149,7 @@ export function PermissionChip({ workflow }: { workflow: Workflow }) {
     <Tooltip title={label}>
       <Box sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.35,
-        fontSize: '0.74rem', fontWeight: 500,
+        fontSize: '0.75rem', fontWeight: 500,
         color: c.text.secondary,
         bgcolor: c.bg.elevated,
         border: `1px solid ${c.border.subtle}`,
@@ -158,7 +158,7 @@ export function PermissionChip({ workflow }: { workflow: Workflow }) {
         {tiers.map((t, i) => (
           <React.Fragment key={i}>
             {permIcon(t.kind)}
-            {i < tiers.length - 1 && <Box sx={{ fontSize: '0.7rem', color: c.text.ghost, mx: 0.1 }}>→</Box>}
+            {i < tiers.length - 1 && <Box sx={{ fontSize: '0.6875rem', color: c.text.ghost, mx: 0.1 }}>→</Box>}
           </React.Fragment>
         ))}
       </Box>
@@ -189,7 +189,7 @@ export function ScheduleChip({ workflow }: { workflow: Workflow }) {
           role={enabled ? 'button' : undefined}
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.4,
-            fontSize: '0.74rem', fontWeight: 600,
+            fontSize: '0.75rem', fontWeight: 600,
             color: enabled ? c.accent.primary : c.text.muted,
             bgcolor: enabled ? c.accent.primary + '14' : c.bg.elevated,
             border: `1px solid ${enabled ? c.accent.primary + '40' : c.border.subtle}`,
@@ -211,7 +211,7 @@ export function ScheduleChip({ workflow }: { workflow: Workflow }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
         <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 220 }}>
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em' }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em' }}>
             QUICK TIME EDIT
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -223,17 +223,17 @@ export function ScheduleChip({ workflow }: { workflow: Workflow }) {
                 const isPm = sched.hour >= 12;
                 patchSched({ hour: (h12 % 12) + (isPm ? 12 : 0) });
               }}
-              sx={{ fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } }}>
+              sx={{ fontSize: '0.75rem', '& .MuiSelect-select': { py: 0.4 } }}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
                 <MenuItem key={h} value={h}>{h}</MenuItem>
               ))}
             </Select>
-            <Typography sx={{ fontSize: '0.85rem' }}>:</Typography>
+            <Typography sx={{ fontSize: '0.875rem' }}>:</Typography>
             <Select
               size="small"
               value={sched.minute}
               onChange={(e) => patchSched({ minute: Number(e.target.value) })}
-              sx={{ fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } }}>
+              sx={{ fontSize: '0.75rem', '& .MuiSelect-select': { py: 0.4 } }}>
               {[0, 15, 30, 45].map((m) => (
                 <MenuItem key={m} value={m}>{String(m).padStart(2, '0')}</MenuItem>
               ))}
@@ -247,12 +247,12 @@ export function ScheduleChip({ workflow }: { workflow: Workflow }) {
                 if (wasPm === willBePm) return;
                 patchSched({ hour: willBePm ? sched.hour + 12 : sched.hour - 12 });
               }}
-              sx={{ fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } }}>
+              sx={{ fontSize: '0.75rem', '& .MuiSelect-select': { py: 0.4 } }}>
               <MenuItem value="AM">AM</MenuItem>
               <MenuItem value="PM">PM</MenuItem>
             </Select>
           </Box>
-          <Typography sx={{ fontSize: '0.68rem', color: c.text.ghost, mt: 0.25 }}>
+          <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, mt: 0.25 }}>
             Saved as you change.
           </Typography>
         </Box>
@@ -330,7 +330,7 @@ export function CostChip({ workflow, connectionMode }: { workflow: Workflow; con
 function chipSx(c: ReturnType<typeof useClaudeTokens>) {
   return {
     display: 'inline-flex', alignItems: 'center', gap: 0.3,
-    fontSize: '0.74rem', fontWeight: 600,
+    fontSize: '0.75rem', fontWeight: 600,
     color: c.text.secondary,
     bgcolor: c.bg.elevated,
     border: `1px solid ${c.border.subtle}`,
@@ -345,7 +345,7 @@ export function LastFiredHint({ workflow }: { workflow: Workflow }) {
   const ms = Date.now() - new Date(workflow.last_run_at).getTime();
   const ago = relTime(ms);
   return (
-    <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost }}>Last ran {ago}</Typography>
+    <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>Last ran {ago}</Typography>
   );
 }
 
@@ -408,7 +408,7 @@ export function StreakBadge({ runs }: { runs: WorkflowRun[] | undefined }) {
     <Tooltip title={`${n} successful runs in a row.`}>
       <Box sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.3,
-        fontSize: '0.72rem', fontWeight: 700,
+        fontSize: '0.75rem', fontWeight: 700,
         color: c.status.success,
         bgcolor: c.status.successBg,
         border: `1px solid ${c.status.success + '60'}`,

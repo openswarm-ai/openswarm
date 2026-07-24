@@ -41,7 +41,7 @@ const BranchNavigator: React.FC<Props> = ({ currentIndex, totalBranches, onPrevi
         >
           <ChevronLeftIcon sx={{ fontSize: 16 }} />
         </IconButton>
-        <Typography sx={{ color: c.text.tertiary, fontSize: '0.7rem', minWidth: 28, textAlign: 'center', userSelect: 'none' }}>
+        <Typography sx={{ color: c.text.tertiary, fontSize: '0.6875rem', minWidth: 28, textAlign: 'center', userSelect: 'none' }}>
           {currentIndex + 1} / {totalBranches}
         </Typography>
         <IconButton

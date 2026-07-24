@@ -53,9 +53,9 @@ export function useModelTooltip(c: ClaudeTokens) {
       (opt.context_window ?? 0) >= 1_000_000 && '1M+ context',
     ].filter(Boolean).join(' · ');
     return (
-      <Box sx={{ fontSize: '0.74rem', lineHeight: 1.55, minWidth: 256 }}>
+      <Box sx={{ fontSize: '0.75rem', lineHeight: 1.55, minWidth: 256 }}>
         <Box sx={{
-          fontWeight: 600, fontSize: '0.85rem', mb: 0.85,
+          fontWeight: 600, fontSize: '0.875rem', mb: 0.85,
           color: c.text.primary,
           letterSpacing: '-0.01em',
           pb: 0.6,
@@ -113,7 +113,7 @@ export function useModelTooltip(c: ClaudeTokens) {
         boxShadow: '0 12px 32px rgba(0, 0, 0, 0.32)',
         padding: '12px 14px',
         maxWidth: 340,
-        fontSize: '0.78rem',
+        fontSize: '0.75rem',
         fontFamily: c.font.sans,
       },
     },

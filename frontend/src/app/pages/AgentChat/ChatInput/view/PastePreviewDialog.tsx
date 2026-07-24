@@ -27,7 +27,7 @@ const PasteEditor: React.FC<{ pasteId: string; initial: string; onSave: Props['o
         resize: 'vertical',
         overflowY: 'auto',
         fontFamily: c.font.mono,
-        fontSize: '0.78rem',
+        fontSize: '0.75rem',
         lineHeight: 1.5,
         color: c.text.primary,
         background: 'transparent',
@@ -65,7 +65,7 @@ export const PastePreviewDialog: React.FC<Props> = ({ pasteId, onClose, onSave }
       </Box>
       <Box sx={{ p: 2, bgcolor: c.bg.surface }}>
         {original === undefined || pasteId === null ? (
-          <Typography sx={{ color: c.text.tertiary, fontSize: '0.85rem', fontStyle: 'italic' }}>
+          <Typography sx={{ color: c.text.tertiary, fontSize: '0.875rem', fontStyle: 'italic' }}>
             This pasted text is no longer available. Re-paste to restore it.
           </Typography>
         ) : (

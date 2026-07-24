@@ -164,7 +164,7 @@ const ACPopup: React.FC<Props> = ({ text, offset = { x: 0, y: 14 } }) => {
         <Typography
           sx={{
             // 0.85rem with bold weight reads cleanly without dominating.
-            fontSize: '0.85rem',
+            fontSize: '0.875rem',
             color: c.text.primary,
             fontWeight: 600,
             lineHeight: 1.4,

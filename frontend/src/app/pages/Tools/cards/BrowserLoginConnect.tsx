@@ -79,7 +79,7 @@ const BrowserLoginConnect: React.FC<Props> = ({ ig, isDisabled }) => {
           label="Signed in"
           size="small"
           onClick={(e) => { e.stopPropagation(); check(); }}
-          sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.7rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, flexShrink: 0 }}
+          sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.6875rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, flexShrink: 0 }}
         />
       </Tooltip>
     );
@@ -94,7 +94,7 @@ const BrowserLoginConnect: React.FC<Props> = ({ ig, isDisabled }) => {
           size="small"
           variant="outlined"
           startIcon={<LinkIcon sx={{ fontSize: 14 }} />}
-          sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
+          sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
         >
           {ig.connectLabel || 'Sign in'}
         </Button>

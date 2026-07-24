@@ -415,7 +415,7 @@ const AttachedContextSection: React.FC<{
             {g.icon}
           </Box>
         ))}
-        <Typography sx={{ fontSize: '0.68rem', fontWeight: 500, color: c.text.muted }}>
+        <Typography sx={{ fontSize: '0.6875rem', fontWeight: 500, color: c.text.muted }}>
           {groups.map((g) => g.label).join(' · ')}
         </Typography>
         <ExpandMoreIcon
@@ -430,13 +430,13 @@ const AttachedContextSection: React.FC<{
       <Collapse in={expanded}>
         {groups.map((g) => (
           <Box key={g.key} sx={{ mt: 0.5 }}>
-            <Typography sx={{ fontSize: '0.62rem', fontWeight: 600, color: g.color, textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.25 }}>
+            <Typography sx={{ fontSize: '0.625rem', fontWeight: 600, color: g.color, textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.25 }}>
               {g.label}
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
               {g.chips.map((chip, i) => (
                 <Tooltip key={i} title={chip.tooltip || chip.label} arrow placement="top"
-                  slotProps={{ tooltip: { sx: { fontFamily: c.font.mono, fontSize: '0.68rem', maxWidth: 400 } } }}
+                  slotProps={{ tooltip: { sx: { fontFamily: c.font.mono, fontSize: '0.6875rem', maxWidth: 400 } } }}
                 >
                   <Chip
                     icon={chip.icon as React.ReactElement}
@@ -445,7 +445,7 @@ const AttachedContextSection: React.FC<{
                     sx={{
                       bgcolor: `${g.color}18`,
                       color: g.color,
-                      fontSize: '0.68rem',
+                      fontSize: '0.6875rem',
                       fontFamily: c.font.mono,
                       height: 22,
                       '& .MuiChip-icon': { color: g.color },
@@ -667,7 +667,7 @@ const ThinkingBubble: React.FC<{
     }
     const { total, input, output } = tokenBreakdown ?? { total: 0, input: null, output: null };
     const tooltipBody = (
-      <Box sx={{ p: 0.5, fontFamily: c.font.sans, fontSize: '0.78rem', lineHeight: 1.5 }}>
+      <Box sx={{ p: 0.5, fontFamily: c.font.sans, fontSize: '0.75rem', lineHeight: 1.5 }}>
         {input != null && output != null ? (
           <>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
@@ -689,7 +689,7 @@ const ThinkingBubble: React.FC<{
           </Box>
         )}
         {input != null && output != null && (
-          <Box sx={{ mt: 0.5, color: c.text.ghost, fontSize: '0.7rem', fontStyle: 'italic' }}>
+          <Box sx={{ mt: 0.5, color: c.text.ghost, fontSize: '0.6875rem', fontStyle: 'italic' }}>
             Input shown is your message, history, and tool outputs. The fixed
             framework preamble (system prompt, tool defs, MCP descriptions) is
             excluded, since it's constant overhead from the agent runtime,
@@ -729,7 +729,7 @@ const ThinkingBubble: React.FC<{
           gap: 0.75,
           cursor: 'pointer',
           color: c.text.tertiary,
-          fontSize: '0.78rem',
+          fontSize: '0.75rem',
           py: 0.5,
           px: 1,
           ml: -1,
@@ -742,7 +742,7 @@ const ThinkingBubble: React.FC<{
         <PsychologyOutlinedIcon sx={{ fontSize: 14, opacity: 0.75 }} />
         <Typography
           sx={{
-            fontSize: '0.78rem',
+            fontSize: '0.75rem',
             fontWeight: 500,
             ...(isStreaming ? {
               background: `linear-gradient(90deg, ${shimmerBase} 0%, ${shimmerBase} 40%, ${shimmerHighlight} 50%, ${shimmerBase} 60%, ${shimmerBase} 100%)`,
@@ -774,7 +774,7 @@ const ThinkingBubble: React.FC<{
             pl: 1.5,
             borderLeft: `2px solid ${c.border.subtle}`,
             color: c.text.tertiary,
-            fontSize: '0.85rem',
+            fontSize: '0.875rem',
             lineHeight: 1.55,
             fontStyle: 'normal',
             whiteSpace: 'pre-wrap',
@@ -876,7 +876,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     }
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
-        <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem', fontStyle: 'italic' }}>
+        <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', fontStyle: 'italic' }}>
           {sysText}
         </Typography>
       </Box>
@@ -1137,7 +1137,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                 borderRadius: 1.5,
                 p: 1.5,
                 overflow: 'auto',
-                fontSize: '0.8rem',
+                fontSize: '0.8125rem',
                 fontFamily: c.font.mono,
                 border: `1px solid ${c.border.subtle}`,
                 '&::-webkit-scrollbar': { height: 5, width: 5 },
@@ -1155,7 +1155,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                 px: 0.5,
                 py: 0.25,
                 borderRadius: 0.5,
-                fontSize: '0.8rem',
+                fontSize: '0.8125rem',
                 fontFamily: c.font.mono,
               },
               '& pre code': { bgcolor: 'transparent', p: 0 },
@@ -1163,7 +1163,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                 width: '100%',
                 borderCollapse: 'collapse',
                 my: 1.5,
-                fontSize: '0.82rem',
+                fontSize: '0.8125rem',
                 border: `1px solid ${c.border.subtle}`,
                 borderRadius: 1,
                 overflow: 'hidden',
@@ -1212,11 +1212,11 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <ErrorSlime size={22} />
-                  <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>
+                  <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>
                     {openswarmError.title}
                   </Typography>
                 </Box>
-                <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, lineHeight: 1.5 }}>
+                <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, lineHeight: 1.5 }}>
                   {openswarmError.detail}
                 </Typography>
                 {openswarmError.ctaLabel && (
@@ -1240,7 +1240,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                       }}
                       sx={{
                         textTransform: 'none',
-                        fontSize: '0.78rem',
+                        fontSize: '0.75rem',
                         borderColor: c.border.medium,
                         color: c.text.primary,
                         borderRadius: `${c.radius.md}px`,

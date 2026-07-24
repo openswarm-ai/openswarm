@@ -89,7 +89,7 @@ const ACMultiChoice: React.FC<Props> = ({
       >
         <Typography
           sx={{
-            fontSize: '0.84rem',
+            fontSize: '0.8125rem',
             fontWeight: 600,
             color: c.text.primary,
             lineHeight: 1.4,
@@ -118,7 +118,7 @@ const ACMultiChoice: React.FC<Props> = ({
                 borderRadius: '10px',
                 px: 1.1,
                 py: 0.7,
-                fontSize: '0.78rem',
+                fontSize: '0.75rem',
                 fontWeight: 500,
                 fontFamily: c.font.sans,
                 transition: 'all 0.12s',

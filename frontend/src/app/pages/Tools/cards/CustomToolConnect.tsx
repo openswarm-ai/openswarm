@@ -40,7 +40,7 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
                             variant="outlined"
                             startIcon={<LinkIcon sx={{ fontSize: 14 }} />}
                             onClick={(e) => { e.stopPropagation(); handleOAuthConnect(tool.id); }}
-                            sx={{ borderColor: `${c.status.info}40`, color: c.status.info, '&:hover': { borderColor: c.status.info, bgcolor: `${c.status.info}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
+                            sx={{ borderColor: `${c.status.info}40`, color: c.status.info, '&:hover': { borderColor: c.status.info, bgcolor: `${c.status.info}10` }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
                           >
                             {ig?.id === 'discord' && tool.auth_status === 'connected' ? 'Add server' : `Connect ${tool.name}`}
                           </Button>
@@ -51,7 +51,7 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
                             variant="outlined"
                             startIcon={<LinkIcon sx={{ fontSize: 14 }} />}
                             onClick={(e) => { e.stopPropagation(); handleDeviceCodeConnect(tool.id); }}
-                            sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
+                            sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
                           >
                             Connect Microsoft 365
                           </Button>
@@ -62,7 +62,7 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
                             variant="outlined"
                             startIcon={<LinkIcon sx={{ fontSize: 14 }} />}
                             onClick={(e) => { e.stopPropagation(); openCredentialsDialog(tool.id, ig); }}
-                            sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
+                            sx={{ borderColor: `${ig.color}40`, color: ig.color, '&:hover': { borderColor: ig.color, bgcolor: `${ig.color}10` }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5, py: 0.5, flexShrink: 0 }}
                           >
                             {ig.connectLabel || 'Connect'}
                           </Button>
@@ -75,7 +75,7 @@ const CustomToolConnect: React.FC<CustomToolConnectProps> = ({
                               size="small"
                               onDelete={(ig.credentialFields || ig.authType === 'oauth2' || ig.authType === 'device_code') ? (e: React.SyntheticEvent) => { e.stopPropagation(); ig.authType === 'device_code' ? handleM365Disconnect(tool.id) : handleDisconnectIntegration(tool.id, ig); } : undefined}
                               onClick={(e) => e.stopPropagation()}
-                              sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.7rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, '& .MuiChip-deleteIcon': { color: c.status.success, '&:hover': { color: c.status.error } }, flexShrink: 0 }}
+                              sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.6875rem', height: 22, '& .MuiChip-icon': { color: c.status.success }, '& .MuiChip-deleteIcon': { color: c.status.success, '&:hover': { color: c.status.error } }, flexShrink: 0 }}
                             />
                           </Tooltip>
                         )}

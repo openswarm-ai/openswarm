@@ -95,7 +95,7 @@ function MinimizedStack({ browserCards, onRestore }: MinimizedStackProps): React
                 ) : (
                   <LanguageIcon sx={{ fontSize: 20, color: '#8a8494' }} />
                 )}
-                <Typography sx={{ fontSize: '0.62rem', color: '#3c3744', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                <Typography sx={{ fontSize: '0.625rem', color: '#3c3744', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
                   {activeTab?.title || 'Browser'}
                 </Typography>
               </Box>

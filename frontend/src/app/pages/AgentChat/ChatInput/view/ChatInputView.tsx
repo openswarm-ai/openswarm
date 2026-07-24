@@ -145,7 +145,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
           }}
         >
           <AttachFileIcon sx={{ fontSize: 16, color: c.accent.primary, mr: 0.5 }} />
-          <Typography sx={{ color: c.accent.primary, fontSize: '0.85rem', fontWeight: 500 }}>
+          <Typography sx={{ color: c.accent.primary, fontSize: '0.875rem', fontWeight: 500 }}>
             Drop files here
           </Typography>
         </Box>
@@ -166,7 +166,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
           }}
         >
           <CircularProgress size={14} sx={{ color: c.accent.primary, mr: 1 }} />
-          <Typography sx={{ color: c.accent.primary, fontSize: '0.85rem', fontWeight: 500 }}>
+          <Typography sx={{ color: c.accent.primary, fontSize: '0.875rem', fontWeight: 500 }}>
             Attaching files…
           </Typography>
         </Box>
@@ -198,7 +198,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
             }}
           >
             <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: p.runContext.color, flex: 'none' }} />
-            <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: c.text.secondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Typography sx={{ fontSize: '0.6875rem', fontWeight: 600, color: c.text.secondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               Run attached · {p.runContext.title}
             </Typography>
             <Box

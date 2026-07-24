@@ -131,7 +131,7 @@ function AskUiBubble({ pair, sessionId, isPending, suppressReveal }: AskUiBubble
             onChange={(e) => setFreeText(e.target.value)}
             placeholder="Or type your own answer..."
             inputProps={{ 'aria-label': 'Type your own answer' }}
-            sx={{ flex: 1, fontSize: '0.8rem' }}
+            sx={{ flex: 1, fontSize: '0.8125rem' }}
           />
           <IconButton type="submit" size="small" disabled={!freeText.trim()} aria-label="Send answer">
             <ArrowUpwardRoundedIcon sx={{ fontSize: 16 }} />
@@ -139,15 +139,15 @@ function AskUiBubble({ pair, sessionId, isPending, suppressReveal }: AskUiBubble
         </Box>
       )}
       {freeTextAnswer !== null && (
-        <Box sx={{ fontSize: '0.78rem', opacity: 0.75, pt: 0.75 }}>
+        <Box sx={{ fontSize: '0.75rem', opacity: 0.75, pt: 0.75 }}>
           &#10003; Answered: {freeTextAnswer}
         </Box>
       )}
       {submitted && pair.result === null && (
-        <Box sx={{ fontSize: '0.72rem', opacity: 0.55, pt: 0.5 }}>Sent to the agent...</Box>
+        <Box sx={{ fontSize: '0.75rem', opacity: 0.55, pt: 0.5 }}>Sent to the agent...</Box>
       )}
       {orphaned && (
-        <Box sx={{ fontSize: '0.72rem', opacity: 0.55, pt: 0.5 }}>
+        <Box sx={{ fontSize: '0.75rem', opacity: 0.55, pt: 0.5 }}>
           No agent is waiting for this answer (the request expired or this is an old transcript).
         </Box>
       )}

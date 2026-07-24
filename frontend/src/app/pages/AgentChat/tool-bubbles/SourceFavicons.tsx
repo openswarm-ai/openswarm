@@ -74,7 +74,7 @@ export const SourceFavicons: React.FC<{ domains: string[]; size?: number }> = ({
             border: `1.5px solid ${c.bg.elevated}`,
             bgcolor: c.bg.secondary,
             color: c.text.tertiary,
-            fontSize: '0.6rem',
+            fontSize: '0.625rem',
             fontWeight: 600,
             display: 'inline-flex',
             alignItems: 'center',

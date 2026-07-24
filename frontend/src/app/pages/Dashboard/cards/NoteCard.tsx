@@ -345,7 +345,7 @@ const NoteCard: React.FC<Props> = ({
           <WindowControls onClose={() => handleRemove()} onMinimize={onMinimize} onTile={onTile} tiled={!!tileZone} fullscreen={tileZone === 'fullscreen'} />
         </Box>
         {isMinimized && (
-          <Box sx={{ flex: 1, minWidth: 0, fontSize: '0.8rem', color: palette.text, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Box sx={{ flex: 1, minWidth: 0, fontSize: '0.8125rem', color: palette.text, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {content.trim() || 'Note'}
           </Box>
         )}

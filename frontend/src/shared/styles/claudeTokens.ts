@@ -2,6 +2,8 @@
 // reads as noise; snap to these 7 steps so type feels intentional and consistent. px comments assume a
 // 16px root. Use c.font.size.* instead of a raw rem string in anything you touch.
 export interface FontSizeScale {
+  micro: string;   // 10px, densest chrome (badges, kbd hints)
+  xxs: string;     // 11px, tiny meta / timestamps
   xs: string;      // 12px, captions, meta, micro labels
   sm: string;      // 13px, secondary / small body
   base: string;    // 14px, default body + most UI text
@@ -12,6 +14,8 @@ export interface FontSizeScale {
 }
 
 export const fontSize: FontSizeScale = {
+  micro: '0.625rem',
+  xxs: '0.6875rem',
   xs: '0.75rem',
   sm: '0.8125rem',
   base: '0.875rem',

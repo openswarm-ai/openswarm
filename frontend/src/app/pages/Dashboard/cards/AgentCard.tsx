@@ -1088,14 +1088,14 @@ const AgentCard: React.FC<Props> = ({
             <InlineEditableTitle
               value={displayChatTitle(session)}
               onCommit={(name) => dispatch(renameSession({ sessionId: session.id, name }))}
-              sx={{ flex: '0 1 auto', minWidth: 0, maxWidth: '100%', color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}
+              sx={{ flex: '0 1 auto', minWidth: 0, maxWidth: '100%', color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}
             >
               <Typewriter
                 value={displayChatTitle(session)}
                 enabled={!!session.name && !isLegacyAutoName(session.name)}
               >
                 {(t) => (
-                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t}
                   </Typography>
                 )}
@@ -1131,7 +1131,7 @@ const AgentCard: React.FC<Props> = ({
                     color: accentColor,
                     border: `1px solid ${accentColor}33`,
                     fontWeight: 600,
-                    fontSize: '0.68rem',
+                    fontSize: '0.6875rem',
                     height: 22,
                     flexShrink: 0,
                     '& .MuiChip-icon': { ml: '4px' },
@@ -1225,7 +1225,7 @@ const AgentCard: React.FC<Props> = ({
                 variant="body2"
                 sx={{
                   color: isStreaming ? c.text.secondary : c.text.muted,
-                  fontSize: '0.8rem',
+                  fontSize: '0.8125rem',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -1277,7 +1277,7 @@ const AgentCard: React.FC<Props> = ({
                       <Typography
                         sx={{
                           color: c.text.muted,
-                          fontSize: '0.7rem',
+                          fontSize: '0.6875rem',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
@@ -1341,7 +1341,7 @@ const AgentCard: React.FC<Props> = ({
                       bgcolor: c.status.success,
                       '&:hover': { bgcolor: '#1e4d15' },
                       fontWeight: 600,
-                      fontSize: '0.72rem',
+                      fontSize: '0.75rem',
                       textTransform: 'none',
                       borderRadius: 1.5,
                       px: 1.25,
@@ -1366,7 +1366,7 @@ const AgentCard: React.FC<Props> = ({
                       color: c.status.error,
                       '&:hover': { borderColor: '#8f2828', bgcolor: 'rgba(181,51,51,0.04)' },
                       fontWeight: 600,
-                      fontSize: '0.72rem',
+                      fontSize: '0.75rem',
                       textTransform: 'none',
                       borderRadius: 1.5,
                       px: 1.25,

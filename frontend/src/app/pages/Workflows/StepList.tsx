@@ -150,7 +150,7 @@ export default function StepList(props: Props) {
                         resize: 'none',
                         boxSizing: 'border-box',
                         fontFamily: 'inherit',
-                        fontSize: '0.92rem',
+                        fontSize: '0.875rem',
                         color: c.text.primary,
                         border: framed ? `1px solid ${c.border.medium}` : '1px solid transparent',
                         borderRadius: `${c.radius.md}px`,
@@ -165,7 +165,7 @@ export default function StepList(props: Props) {
                   ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minHeight: CIRCLE_SIZE }}>
                       <Typography sx={{
-                        fontSize: '0.92rem',
+                        fontSize: '0.875rem',
                         fontWeight: isActive ? 600 : 500,
                         color: c.text.primary,
                         lineHeight: 1.45,
@@ -177,7 +177,7 @@ export default function StepList(props: Props) {
                         {label}
                       </Typography>
                       {isActive && activeStepDuration && (
-                        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mr: hasExpandableBody ? 0 : 0.5, flexShrink: 0 }}>
+                        <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mr: hasExpandableBody ? 0 : 0.5, flexShrink: 0 }}>
                           {activeStepDuration}
                         </Typography>
                       )}
@@ -198,7 +198,7 @@ export default function StepList(props: Props) {
                       "what the agent is doing right now". */}
                   {isActive && activeStepSubtitle && (
                     <Typography sx={{
-                      fontSize: '0.82rem',
+                      fontSize: '0.8125rem',
                       color: c.text.secondary,
                       mt: 0.4,
                       display: 'flex', alignItems: 'center', gap: 0.5,
@@ -217,7 +217,7 @@ export default function StepList(props: Props) {
                       borderRadius: `${c.radius.md}px`,
                       bgcolor: c.bg.elevated,
                     }}>
-                      <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                      <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                         {rawBody}
                       </Typography>
                     </Box>
@@ -232,7 +232,7 @@ export default function StepList(props: Props) {
       </Box>
       {hiddenCount > 0 && (
         <Typography sx={{
-          fontSize: '0.86rem',
+          fontSize: '0.875rem',
           color: c.text.secondary,
           mt: 0.6,
           ml: 0,

@@ -412,7 +412,7 @@ const CommandPicker: React.FC<Props> = ({ trigger, filter, onSelect, onClose, vi
                 component="span"
                 sx={{
                   color: c.text.primary,
-                  fontSize: '0.8rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 500,
                   fontFamily: c.font.mono,
                   whiteSpace: 'nowrap',
@@ -425,7 +425,7 @@ const CommandPicker: React.FC<Props> = ({ trigger, filter, onSelect, onClose, vi
                 component="span"
                 sx={{
                   color: c.text.muted,
-                  fontSize: '0.72rem',
+                  fontSize: '0.75rem',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -459,7 +459,7 @@ const CommandPicker: React.FC<Props> = ({ trigger, filter, onSelect, onClose, vi
           <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.375 }}>
             <Typography
               sx={{
-                fontSize: '0.58rem',
+                fontSize: '0.625rem',
                 fontFamily: c.font.mono,
                 color: c.text.ghost,
                 bgcolor: c.bg.secondary,
@@ -472,7 +472,7 @@ const CommandPicker: React.FC<Props> = ({ trigger, filter, onSelect, onClose, vi
             >
               {keys}
             </Typography>
-            <Typography sx={{ fontSize: '0.58rem', color: c.text.ghost }}>
+            <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost }}>
               {label}
             </Typography>
           </Box>

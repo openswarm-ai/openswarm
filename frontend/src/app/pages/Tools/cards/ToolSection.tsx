@@ -109,13 +109,13 @@ const ToolSection: React.FC<ToolSectionProps> = ({
         </Box>
         <Box sx={{ flex: 1, minWidth: 0, opacity: enabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>{label}</Typography>
-            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>{label}</Typography>
+            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
             {deferred && (
-              <Chip label="on-demand" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+              <Chip label="on-demand" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
             )}
           </Box>
-          <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{sectionDescription}</Typography>
+          <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>{sectionDescription}</Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
           <Switch
@@ -139,8 +139,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-            <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
-            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
+            <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
+            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.625rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
           </Box>
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -158,8 +158,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost, transition: 'transform 0.15s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
-                    <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', fontWeight: 600 }}>{meta.label}</Typography>
-                    <Chip label={catTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                    <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', fontWeight: 600 }}>{meta.label}</Typography>
+                    <Chip label={catTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
                   </Box>
                   <PermToggle value={catPolicy === 'mixed' ? 'ask' : catPolicy} onChange={(v) => onCategoryPermissionChange(catTools.map((t) => t.name), v)} />
                 </Box>
@@ -170,8 +170,8 @@ const ToolSection: React.FC<ToolSectionProps> = ({
                       return (
                         <Box key={bt.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
                           <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
-                            <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
-                            {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(bt.description)}</Typography>}
+                            <Typography sx={{ color: c.text.primary, fontSize: '0.8125rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
+                            {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstSentence(bt.description)}</Typography>}
                           </Box>
                           <PermToggle value={toolPolicy} onChange={(v) => onPermissionChange(bt.name, v)} size={14} />
                         </Box>

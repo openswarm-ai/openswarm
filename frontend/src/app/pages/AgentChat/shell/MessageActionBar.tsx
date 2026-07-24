@@ -117,7 +117,7 @@ const MessageActionBar: React.FC<Props> = ({
               <Typography
                 sx={{
                   color: c.text.tertiary,
-                  fontSize: '0.7rem',
+                  fontSize: '0.6875rem',
                   minWidth: 28,
                   textAlign: 'center',
                   userSelect: 'none',

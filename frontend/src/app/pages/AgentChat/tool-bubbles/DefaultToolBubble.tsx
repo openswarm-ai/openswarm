@@ -131,7 +131,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
             <Typography
               sx={{
                 color: c.text.tertiary,
-                fontSize: '0.65rem',
+                fontSize: '0.625rem',
                 opacity: 0.7,
                 flexShrink: 0,
               }}
@@ -169,7 +169,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
           {isDenied && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
               <BlockIcon sx={{ fontSize: 13, color: c.status.error }} />
-              <Typography sx={{ color: c.status.error, fontSize: '0.7rem', fontWeight: 500 }}>
+              <Typography sx={{ color: c.status.error, fontSize: '0.6875rem', fontWeight: 500 }}>
                 denied
               </Typography>
             </Box>
@@ -180,7 +180,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
                 <>
                   <ErrorOutlineIcon sx={{ fontSize: 13, color: c.status.error }} />
                   {resultSummary && (
-                    <Typography sx={{ color: c.status.error, fontSize: '0.7rem', fontWeight: 500 }}>
+                    <Typography sx={{ color: c.status.error, fontSize: '0.6875rem', fontWeight: 500 }}>
                       {resultSummary}
                     </Typography>
                   )}
@@ -189,7 +189,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
               {resultElapsedMs != null && (
                 <Typography
                   sx={{
-                    fontSize: '0.65rem',
+                    fontSize: '0.625rem',
                     fontFamily: c.font.mono,
                     color: c.text.tertiary,
                   }}
@@ -234,7 +234,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 fontFamily: c.font.mono,
-                fontSize: '0.73rem',
+                fontSize: '0.75rem',
                 lineHeight: 1.5,
               }}
             >
@@ -278,7 +278,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                   fontFamily: c.font.mono,
-                  fontSize: '0.73rem',
+                  fontSize: '0.75rem',
                   lineHeight: 1.5,
                 }}
               >
@@ -324,7 +324,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
                 <Typography
                   sx={{
                     color: c.text.secondary,
-                    fontSize: '0.72rem',
+                    fontSize: '0.75rem',
                     fontFamily: c.font.mono,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',

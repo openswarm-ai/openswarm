@@ -34,8 +34,8 @@ const AgentWorkflowsSection: React.FC = () => {
       >
         {open ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 18, color: c.text.tertiary, transition: 'color 0.15s' }} />}
         <AccountTreeIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
-        <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Workflows agents can run</Typography>
-        <Chip label={`${exposedCount}/${list.length}`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
+        <Typography sx={{ color: c.text.muted, fontWeight: 600, fontSize: '0.8125rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Workflows agents can run</Typography>
+        <Chip label={`${exposedCount}/${list.length}`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 18, minWidth: 24, '& .MuiChip-label': { px: 0.8 } }} />
       </Box>
       <Collapse in={open} timeout={0} unmountOnExit>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, pl: 1 }}>
@@ -45,9 +45,9 @@ const AgentWorkflowsSection: React.FC = () => {
           {list.map((w) => (
             <Box key={w.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, px: 1, borderRadius: 1, border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface }}>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title || 'Untitled workflow'}</Typography>
+                <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title || 'Untitled workflow'}</Typography>
                 {w.description && (
-                  <Typography sx={{ color: c.text.tertiary, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.description}</Typography>
+                  <Typography sx={{ color: c.text.tertiary, fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.description}</Typography>
                 )}
               </Box>
               <Switch

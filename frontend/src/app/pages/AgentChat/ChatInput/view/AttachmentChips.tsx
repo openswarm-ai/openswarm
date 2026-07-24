@@ -119,7 +119,7 @@ export const AttachmentChips: React.FC<Props> = ({
                   tooltip: {
                     sx: {
                       fontFamily: c.font.mono,
-                      fontSize: '0.7rem',
+                      fontSize: '0.6875rem',
                       maxWidth: 280,
                       wordBreak: 'break-all',
                     },
@@ -154,7 +154,7 @@ export const AttachmentChips: React.FC<Props> = ({
                   sx={{
                     bgcolor: `${chipColor}12`,
                     color: chipColor,
-                    fontSize: '0.72rem',
+                    fontSize: '0.75rem',
                     fontFamily: c.font.mono,
                     height: 26,
                     maxWidth: 280,
@@ -187,7 +187,7 @@ export const AttachmentChips: React.FC<Props> = ({
               sx={{
                 bgcolor: `${c.status.info}15`,
                 color: c.status.info,
-                fontSize: '0.72rem',
+                fontSize: '0.75rem',
                 fontFamily: c.font.mono,
                 height: 26,
                 maxWidth: 220,
@@ -224,7 +224,7 @@ export const AttachmentChips: React.FC<Props> = ({
                   tooltip: {
                     sx: {
                       fontFamily: c.font.mono,
-                      fontSize: '0.7rem',
+                      fontSize: '0.6875rem',
                       maxWidth: 420,
                       wordBreak: 'break-all',
                     },
@@ -239,7 +239,7 @@ export const AttachmentChips: React.FC<Props> = ({
                   sx={{
                     bgcolor: 'rgba(59, 130, 246, 0.1)',
                     color: '#3b82f6',
-                    fontSize: '0.72rem',
+                    fontSize: '0.75rem',
                     fontFamily: c.font.mono,
                     height: 26,
                     maxWidth: 220,

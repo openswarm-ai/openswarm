@@ -72,7 +72,7 @@ const DirectionHints: React.FC<Props> = ({ hasLeft, hasRight, hasUp, hasDown, sh
           ...(shakeDirection === 'left' ? shakingSx('left') : hintSx),
           left: 16, top: '50%', transform: 'translateY(-50%)',
         }}>
-          <ChevronLeftIcon sx={{ fontSize: '1.1rem' }} />
+          <ChevronLeftIcon sx={{ fontSize: '1.125rem' }} />
         </Box>
       )}
       {showRight && (
@@ -80,7 +80,7 @@ const DirectionHints: React.FC<Props> = ({ hasLeft, hasRight, hasUp, hasDown, sh
           ...(shakeDirection === 'right' ? shakingSx('right') : hintSx),
           right: 16, top: '50%', transform: 'translateY(-50%)',
         }}>
-          <ChevronRightIcon sx={{ fontSize: '1.1rem' }} />
+          <ChevronRightIcon sx={{ fontSize: '1.125rem' }} />
         </Box>
       )}
       {showUp && (
@@ -88,7 +88,7 @@ const DirectionHints: React.FC<Props> = ({ hasLeft, hasRight, hasUp, hasDown, sh
           ...(shakeDirection === 'up' ? shakingSx('up') : hintSx),
           top: 16, left: '50%', transform: 'translateX(-50%)',
         }}>
-          <KeyboardArrowUpIcon sx={{ fontSize: '1.1rem' }} />
+          <KeyboardArrowUpIcon sx={{ fontSize: '1.125rem' }} />
         </Box>
       )}
       {showDown && (
@@ -96,7 +96,7 @@ const DirectionHints: React.FC<Props> = ({ hasLeft, hasRight, hasUp, hasDown, sh
           ...(shakeDirection === 'down' ? shakingSx('down') : hintSx),
           bottom: 56, left: '50%', transform: 'translateX(-50%)',
         }}>
-          <KeyboardArrowDownIcon sx={{ fontSize: '1.1rem' }} />
+          <KeyboardArrowDownIcon sx={{ fontSize: '1.125rem' }} />
         </Box>
       )}
     </>

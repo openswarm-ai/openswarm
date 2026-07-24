@@ -40,7 +40,7 @@ function HelpPill(): React.ReactElement {
       }}
       onClick={() => dispatch(addBrowserCard({ url: HELP_URL }))}
     >
-      <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.72)', fontWeight: 500 }}>
+      <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.72)', fontWeight: 500 }}>
         {recording ? 'Listening' : transcribing ? 'Transcribing' : preparing ? `Preparing ${pct}%` : 'Help'}
       </Typography>
       <Tooltip title={recording ? 'Stop dictation' : preparing ? 'Downloading voice model' : 'Dictate (Cmd+Shift+D)'} placement="bottom" arrow>

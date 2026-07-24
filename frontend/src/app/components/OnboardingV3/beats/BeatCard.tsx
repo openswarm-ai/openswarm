@@ -240,17 +240,17 @@ const BeatCard: React.FC<{
               placeholder="Your name"
               style={{
                 marginTop: 20, border: 'none', outline: 'none', background: 'transparent',
-                fontSize: '1.7rem', fontWeight: 800, color: ink, fontFamily: 'inherit',
+                fontSize: '1.75rem', fontWeight: 800, color: ink, fontFamily: 'inherit',
                 width: '100%', padding: 0,
               }}
             />
-            <div style={{ marginTop: 5, fontFamily: MONO, fontSize: '0.66rem', letterSpacing: '0.14em', color: ink }}>
+            <div style={{ marginTop: 5, fontFamily: MONO, fontSize: '0.6875rem', letterSpacing: '0.14em', color: ink }}>
               {epithet}
             </div>
             <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7,
-                fontFamily: MONO, fontSize: '0.56rem', letterSpacing: '0.08em',
+                fontFamily: MONO, fontSize: '0.625rem', letterSpacing: '0.08em',
                 color: ink, border: `1px solid ${ink}55`, borderRadius: 5, padding: '3px 7px',
               }}>
                 OPENSWARM
@@ -260,7 +260,7 @@ const BeatCard: React.FC<{
                 }} />
                 {today.toUpperCase()}
               </span>
-              <span style={{ fontSize: '0.6rem', letterSpacing: '0.06em', color: ink, fontWeight: 800, textAlign: 'right', lineHeight: 1.35 }}>
+              <span style={{ fontSize: '0.625rem', letterSpacing: '0.06em', color: ink, fontWeight: 800, textAlign: 'right', lineHeight: 1.35 }}>
                 OPEN<br />SWARM
               </span>
             </div>

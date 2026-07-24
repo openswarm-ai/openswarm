@@ -144,7 +144,7 @@ const PlanPicker: React.FC<PlanPickerProps> = ({
           sx={{
             '& .MuiToggleButton-root': {
               textTransform: 'none',
-              fontSize: '0.78rem',
+              fontSize: '0.75rem',
               fontWeight: 500,
               px: 2,
               py: 0.5,

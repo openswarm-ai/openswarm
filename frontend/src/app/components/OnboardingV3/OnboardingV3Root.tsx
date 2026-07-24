@@ -86,7 +86,7 @@ const IntroBeat: React.FC<{ c: ClaudeTokens; line: string; sub?: string; onNext:
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.8 }}
-        style={{ position: 'relative', margin: '14px 0 0', fontSize: '1.02rem', color: 'rgba(255,255,255,0.75)' }}
+        style={{ position: 'relative', margin: '14px 0 0', fontSize: '1rem', color: 'rgba(255,255,255,0.75)' }}
       >
         {sub}
       </motion.p>

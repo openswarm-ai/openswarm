@@ -60,8 +60,8 @@ const AccountCard: React.FC = () => {
   if (!userId && !hasBearer) {
     return (
       <Box sx={{ p: 2, mb: 2, borderRadius: `${c.radius.lg}px`, border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface }}>
-        <Typography sx={{ fontSize: '0.85rem', color: c.text.primary, mb: 0.5 }}>Not signed in</Typography>
-        <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 1.25 }}>
+        <Typography sx={{ fontSize: '0.875rem', color: c.text.primary, mb: 0.5 }}>Not signed in</Typography>
+        <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mb: 1.25 }}>
           Sign in to sync settings across devices and back up your data.
         </Typography>
         <Button
@@ -70,7 +70,7 @@ const AccountCard: React.FC = () => {
           onClick={() => setSignInOpen(true)}
           sx={{
             textTransform: 'none',
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             borderColor: c.border.medium,
             color: c.text.primary,
             '&:hover': { borderColor: c.accent.primary, color: c.accent.primary, bgcolor: 'transparent' },
@@ -88,14 +88,14 @@ const AccountCard: React.FC = () => {
     <Box sx={{ p: 2, mb: 2, borderRadius: `${c.radius.lg}px`, border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography sx={{ fontSize: '0.9rem', fontWeight: 600, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {userEmail || 'Signed in'}
           </Typography>
           {methodLabel && (
-            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mt: 0.25 }}>{methodLabel}</Typography>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 0.25 }}>{methodLabel}</Typography>
           )}
           {!userId && hasBearer && (
-            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mt: 0.25 }}>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 0.25 }}>
               Subscription connected. Sign in to also link this device to your account.
             </Typography>
           )}

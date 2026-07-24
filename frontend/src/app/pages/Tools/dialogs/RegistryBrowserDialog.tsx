@@ -97,10 +97,10 @@ const RegistryBrowserDialog: React.FC<RegistryBrowserDialogProps> = ({
                       : `${regStats.total.toLocaleString()} servers`
                 }
                 size="small"
-                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, ml: 'auto' }}
+                sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 20, ml: 'auto' }}
               />
               {devMode && regStats.lastUpdated > 0 && (
-                <Typography sx={{ color: c.text.ghost, fontSize: '0.68rem', flexShrink: 0 }}>
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', flexShrink: 0 }}>
                   Synced {Math.round((Date.now() / 1000 - regStats.lastUpdated) / 60)}m ago
                 </Typography>
               )}
@@ -139,7 +139,7 @@ const RegistryBrowserDialog: React.FC<RegistryBrowserDialogProps> = ({
                 flexShrink: 0,
                 '& .MuiToggleButton-root': {
                   color: c.text.ghost, border: `1px solid ${c.border.medium}`, textTransform: 'none',
-                  fontSize: '0.72rem', py: 0.5, px: 1.2, lineHeight: 1.4,
+                  fontSize: '0.75rem', py: 0.5, px: 1.2, lineHeight: 1.4,
                   '&.Mui-selected': { bgcolor: c.bg.secondary, color: c.text.primary, borderColor: c.border.strong },
                   '&:hover': { bgcolor: c.bg.secondary },
                 },
@@ -180,7 +180,7 @@ const RegistryBrowserDialog: React.FC<RegistryBrowserDialogProps> = ({
           ) : regServers.length === 0 ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: c.text.ghost, gap: 1.5 }}>
               <SearchIcon sx={{ fontSize: 40, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.9rem' }}>No servers found matching "{regQuery}"</Typography>
+              <Typography sx={{ fontSize: '0.875rem' }}>No servers found matching "{regQuery}"</Typography>
             </Box>
           ) : (
             <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 0.5,
@@ -213,7 +213,7 @@ const RegistryBrowserDialog: React.FC<RegistryBrowserDialogProps> = ({
                   <Button
                     onClick={handleLoadMore}
                     disabled={regLoading}
-                    sx={{ color: c.accent.primary, textTransform: 'none', fontSize: '0.85rem' }}
+                    sx={{ color: c.accent.primary, textTransform: 'none', fontSize: '0.875rem' }}
                   >
                     {regLoading ? <CircularProgress size={16} sx={{ color: c.accent.primary, mr: 1 }} /> : null}
                     Load More

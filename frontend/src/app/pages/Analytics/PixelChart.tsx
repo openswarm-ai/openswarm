@@ -360,7 +360,7 @@ const PixelChart: React.FC<PixelChartProps> = ({
               key={xl.idx}
               sx={{
                 color: c.text.ghost,
-                fontSize: '0.58rem',
+                fontSize: '0.625rem',
                 fontFamily: c.font.mono,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -383,7 +383,7 @@ const PixelChart: React.FC<PixelChartProps> = ({
           transition: 'opacity 0.12s',
           bgcolor: c.bg.inverse,
           color: c.text.inverse,
-          fontSize: '0.7rem',
+          fontSize: '0.6875rem',
           fontFamily: c.font.mono,
           fontWeight: 500,
           px: 1,

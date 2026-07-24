@@ -25,10 +25,10 @@ const RunInDesktopMessage: React.FC<Props> = ({ kind = 'browser' }) => {
         userSelect: 'none',
       }}
     >
-      <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: '#bbb' }}>
+      <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: '#bbb' }}>
         Open this in the OpenSwarm desktop app
       </Typography>
-      <Typography sx={{ fontSize: '0.82rem', lineHeight: 1.5, maxWidth: 360 }}>
+      <Typography sx={{ fontSize: '0.8125rem', lineHeight: 1.5, maxWidth: 360 }}>
         {noun} run inside the OpenSwarm desktop window, not a regular web browser. It looks like you opened the dev URL directly in a browser; launch OpenSwarm (the Electron window from <code>bash run.sh</code>) and use it there instead.
       </Typography>
     </Box>

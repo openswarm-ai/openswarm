@@ -72,7 +72,7 @@ const GeneralAgentDefaults: React.FC<{
           sx={{
             '& .MuiOutlinedInput-root': {
               fontFamily: c.font.mono,
-              fontSize: '0.8rem',
+              fontSize: '0.8125rem',
               lineHeight: 1.6,
               color: c.text.secondary,
             },
@@ -110,7 +110,7 @@ const GeneralAgentDefaults: React.FC<{
               textTransform: 'none',
               whiteSpace: 'nowrap',
               minWidth: 'auto',
-              fontSize: '0.8rem',
+              fontSize: '0.8125rem',
               '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
             }}
           >
@@ -128,7 +128,7 @@ const GeneralAgentDefaults: React.FC<{
           <Select
             value={form.default_model}
             onChange={(e) => setForm({ ...form, default_model: e.target.value })}
-            sx={{ fontSize: '0.85rem' }}
+            sx={{ fontSize: '0.875rem' }}
             MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
             renderValue={(val) => {
               const m = modelOptions.flat.find((x) => x.value === val);
@@ -136,7 +136,7 @@ const GeneralAgentDefaults: React.FC<{
               return (
                 <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
                   <span>{m.label}</span>
-                  <Typography component="span" sx={{ fontSize: '0.65rem', color: c.text.ghost }}>
+                  <Typography component="span" sx={{ fontSize: '0.625rem', color: c.text.ghost }}>
                     · {m.provider}
                   </Typography>
                 </Box>
@@ -171,7 +171,7 @@ const GeneralAgentDefaults: React.FC<{
                     />
                     <Typography
                       sx={{
-                        fontSize: '0.68rem',
+                        fontSize: '0.6875rem',
                         fontWeight: 700,
                         letterSpacing: '0.08em',
                         textTransform: 'uppercase',
@@ -190,7 +190,7 @@ const GeneralAgentDefaults: React.FC<{
                   </Box>
                 </ListSubheader>,
                 ...models.map((m) => (
-                  <MenuItem key={m.value} value={m.value} sx={{ fontSize: '0.85rem', pl: 3 }}>
+                  <MenuItem key={m.value} value={m.value} sx={{ fontSize: '0.875rem', pl: 3 }}>
                     {m.label}
                   </MenuItem>
                 )),
@@ -209,7 +209,7 @@ const GeneralAgentDefaults: React.FC<{
           <Select
             value={form.default_mode}
             onChange={(e) => setForm({ ...form, default_mode: e.target.value })}
-            sx={{ fontSize: '0.85rem' }}
+            sx={{ fontSize: '0.875rem' }}
             MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
           >
             {modesList.map((m) => (
@@ -228,7 +228,7 @@ const GeneralAgentDefaults: React.FC<{
           <Select
             value={form.default_thinking_level}
             onChange={(e) => setForm({ ...form, default_thinking_level: e.target.value as AppSettings['default_thinking_level'] })}
-            sx={{ fontSize: '0.85rem' }}
+            sx={{ fontSize: '0.875rem' }}
             MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
           >
             <MenuItem value="auto">Auto</MenuItem>

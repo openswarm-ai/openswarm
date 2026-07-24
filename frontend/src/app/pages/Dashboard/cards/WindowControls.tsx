@@ -118,7 +118,7 @@ function WindowControls({ onClose, onMinimize, onTile, tiled, fullscreen, noTile
           }}>
           {GROUPS.map((g) => (
             <Box key={g.label} sx={{ mb: 0.75, '&:last-of-type': { mb: 0 } }}>
-              <Box sx={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(115,114,108,0.65)', textTransform: 'uppercase', mb: 0.5 }}>{g.label}</Box>
+              <Box sx={{ fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(115,114,108,0.65)', textTransform: 'uppercase', mb: 0.5 }}>{g.label}</Box>
               <Box sx={{ display: 'flex', gap: '7px' }}>
                 {g.zones.map((zone) => {
                   const z = TILE_ZONES[zone];

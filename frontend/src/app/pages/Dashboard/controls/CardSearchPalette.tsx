@@ -159,7 +159,7 @@ const CardSearchPalette: React.FC<Props> = ({
       >
         {/* Search input */}
         <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 1.5, borderBottom: `1px solid ${c.border.subtle}` }}>
-          <SearchIcon sx={{ fontSize: '1.25rem', color: c.text.muted, mr: 1.5 }} />
+          <SearchIcon sx={{ fontSize: '1.125rem', color: c.text.muted, mr: 1.5 }} />
           <InputBase
             inputRef={inputRef}
             value={query}
@@ -167,7 +167,7 @@ const CardSearchPalette: React.FC<Props> = ({
             placeholder="Search cards..."
             fullWidth
             sx={{
-              fontSize: '0.9375rem',
+              fontSize: '0.875rem',
               fontFamily: c.font.sans,
               color: c.text.primary,
               '& input::placeholder': { color: c.text.muted, opacity: 1 },

@@ -49,7 +49,7 @@ const PlanPickerModal: React.FC<Props> = ({
         boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
       }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 1.5 }}>
-          <Typography sx={{ fontSize: '1.05rem', fontWeight: 700, color: c.text.primary }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary }}>
             {title}
           </Typography>
           <IconButton

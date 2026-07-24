@@ -107,10 +107,10 @@ const BeatConnect: React.FC<{
                 boxShadow: isConnected ? 'inset 0 0 0 3px #ffffff' : 'none',
               }} />
               <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '11px 0' }}>
-                <span style={{ fontSize: '0.98rem', fontWeight: 600, color: '#3d3d3a' }}>{p.name}</span>
+                <span style={{ fontSize: '1rem', fontWeight: 600, color: '#3d3d3a' }}>{p.name}</span>
                 {/* The green ring + filled radio already signal connected, so no redundant "Connected" text. */}
                 {!isConnected && isThis && !connected
-                  ? <span style={{ fontSize: '0.78rem', fontWeight: 400, color: '#8a8a86' }}>waiting for sign-in...</span>
+                  ? <span style={{ fontSize: '0.75rem', fontWeight: 400, color: '#8a8a86' }}>waiting for sign-in...</span>
                   : null}
               </span>
               {/* Arc's icon tile: a full-height soft-tinted zone on the row's right edge, real brand mark inside. */}
@@ -124,12 +124,12 @@ const BeatConnect: React.FC<{
           );
         })}
         {userCode && !connected && (
-          <div style={{ textAlign: 'center', padding: '6px 0', fontSize: '0.9rem', color: 'rgba(255,255,255,0.92)' }}>
+          <div style={{ textAlign: 'center', padding: '6px 0', fontSize: '0.875rem', color: 'rgba(255,255,255,0.92)' }}>
             Your code: <strong style={{ fontFamily: c.font.mono, letterSpacing: '0.08em' }}>{userCode}</strong>
           </div>
         )}
         {!canContinue && (
-          <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
+          <div style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
             Pick a subscription above to continue.
           </div>
         )}

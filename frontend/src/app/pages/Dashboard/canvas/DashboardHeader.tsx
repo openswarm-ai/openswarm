@@ -144,7 +144,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         <Typography
           noWrap
           sx={{
-            fontSize: '0.9rem',
+            fontSize: '0.875rem',
             fontWeight: 600,
             color: c.text.primary,
             lineHeight: 1,
@@ -222,12 +222,12 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     />
                     <Typography
                       noWrap
-                      sx={{ fontSize: '0.8rem', color: c.text.primary, flex: 1, minWidth: 0 }}
+                      sx={{ fontSize: '0.8125rem', color: c.text.primary, flex: 1, minWidth: 0 }}
                     >
                       {item.name}
                     </Typography>
                     <Typography
-                      sx={{ fontSize: '0.7rem', color: c.text.ghost, flexShrink: 0 }}
+                      sx={{ fontSize: '0.6875rem', color: c.text.ghost, flexShrink: 0 }}
                     >
                       {friendlyStatusLabel(item.status)}
                     </Typography>
@@ -242,7 +242,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                   <ItemRow key={item.id} onClick={() => handleFocus(item.id, item.card)} c={c}>
                     <Typography
                       noWrap
-                      sx={{ fontSize: '0.8rem', color: c.text.primary, flex: 1, minWidth: 0 }}
+                      sx={{ fontSize: '0.8125rem', color: c.text.primary, flex: 1, minWidth: 0 }}
                     >
                       {item.name}
                     </Typography>
@@ -257,13 +257,13 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                   <ItemRow key={item.id} onClick={() => handleFocus(item.id, item.card)} c={c}>
                     <Typography
                       noWrap
-                      sx={{ fontSize: '0.8rem', color: c.text.primary, flex: 1, minWidth: 0 }}
+                      sx={{ fontSize: '0.8125rem', color: c.text.primary, flex: 1, minWidth: 0 }}
                     >
                       {item.title}
                     </Typography>
                     <Typography
                       noWrap
-                      sx={{ fontSize: '0.68rem', color: c.text.ghost, maxWidth: 120, flexShrink: 0 }}
+                      sx={{ fontSize: '0.6875rem', color: c.text.ghost, maxWidth: 120, flexShrink: 0 }}
                     >
                       {cleanUrl(item.url)}
                     </Typography>
@@ -305,10 +305,10 @@ const CategoryGroup: React.FC<{
       }}
     >
       <Box sx={{ display: 'flex', color: c.text.tertiary, '& > svg': { fontSize: 15 } }}>{icon}</Box>
-      <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         {label}
       </Typography>
-      <Typography sx={{ fontSize: '0.68rem', color: c.text.ghost }}>
+      <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost }}>
         {count}
       </Typography>
     </Box>

@@ -51,7 +51,7 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
     <Box>
       {/* Lead: the bundle's type + a one-line count. The name is in the title. */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-        <Typography sx={{ fontSize: '0.85rem', color: c.text.muted }}>
+        <Typography sx={{ fontSize: '0.875rem', color: c.text.muted }}>
           <Box component="span" sx={{ color: c.text.primary, fontWeight: 600 }}>{rootLabel}</Box>
           {countLine && `  ·  ${countLine}`}
         </Typography>
@@ -60,7 +60,7 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
             onClick={() => setExpanded((v) => !v)}
             sx={{ display: 'flex', alignItems: 'center', gap: 0.25, color: c.text.tertiary, cursor: 'pointer', '&:hover': { color: c.accent.primary } }}
           >
-            <Typography sx={{ fontSize: '0.72rem' }}>{expanded ? 'Hide' : 'Show'}</Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>{expanded ? 'Hide' : 'Show'}</Typography>
             <KeyboardArrowDownIcon sx={{ fontSize: 14, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s' }} />
           </Box>
         )}
@@ -70,10 +70,10 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
         <Box sx={{ mt: 0.5, maxHeight: 184, overflowY: 'auto' }}>
           {includes.map((it, i) => (
             <Box key={`inc-${i}`} sx={{ display: 'flex', gap: 1, py: 0.4 }}>
-              <Typography sx={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: c.text.tertiary, minWidth: 56, flexShrink: 0, mt: '2px' }}>
+              <Typography sx={{ fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: c.text.tertiary, minWidth: 56, flexShrink: 0, mt: '2px' }}>
                 {KIND_LABEL[it.type] || it.type}
               </Typography>
-              <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {it.name}
               </Typography>
             </Box>
@@ -83,7 +83,7 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
 
       {summary.requirements.length > 0 && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75, mt: 1.5 }}>
-          <Typography sx={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: c.text.tertiary, mr: 0.25 }}>
+          <Typography sx={{ fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: c.text.tertiary, mr: 0.25 }}>
             Needs
           </Typography>
           {summary.requirements.map((r, i) => (
@@ -97,7 +97,7 @@ const IncludesList: React.FC<{ summary: BundleSummary }> = ({ summary }) => {
                 }}
               >
                 {REQ_ICON[r.kind] || <ExtensionOutlinedIcon sx={{ fontSize: 14 }} />}
-                <Typography sx={{ fontSize: '0.76rem', color: c.text.secondary, whiteSpace: 'nowrap' }}>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, whiteSpace: 'nowrap' }}>
                   {r.label}
                 </Typography>
               </Box>

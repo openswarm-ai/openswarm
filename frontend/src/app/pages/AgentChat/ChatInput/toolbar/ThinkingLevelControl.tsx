@@ -46,7 +46,7 @@ export const ThinkingLevelControl: React.FC<Props> = ({
         }}
       >
         <PsychologyOutlinedIcon sx={{ fontSize: 14, opacity: 0.7 }} />
-        <Typography sx={{ fontSize: '0.8rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
+        <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
           {current.label}
         </Typography>
         <KeyboardArrowDownIcon sx={{ fontSize: 15, color: 'inherit', opacity: 0.7 }} />
@@ -62,7 +62,7 @@ export const ThinkingLevelControl: React.FC<Props> = ({
         MenuListProps={{ autoFocusItem: true }}
       >
         <MenuItem disabled sx={{ opacity: '1 !important', py: 0.5, px: 1.5, minHeight: 'auto', pointerEvents: 'none' }}>
-          <Typography sx={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.text.tertiary }}>
+          <Typography sx={{ fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.text.tertiary }}>
             Thinking Level
           </Typography>
         </MenuItem>
@@ -72,7 +72,7 @@ export const ThinkingLevelControl: React.FC<Props> = ({
           if (!isGemini3 || thinkingLevel === 'off') return null;
           return (
             <MenuItem disabled sx={{ opacity: '1 !important', py: 0.6, px: 1.5, minHeight: 'auto', pointerEvents: 'none', mx: 0.5, my: 0.25, borderRadius: 1, bgcolor: 'rgba(245, 158, 11, 0.06)', border: '1px solid rgba(245, 158, 11, 0.18)' }}>
-              <Typography sx={{ fontSize: '0.66rem', color: c.text.muted, lineHeight: 1.4, whiteSpace: 'normal', maxWidth: 240 }}>
+              <Typography sx={{ fontSize: '0.6875rem', color: c.text.muted, lineHeight: 1.4, whiteSpace: 'normal', maxWidth: 240 }}>
                 Web search breaks on Gemini 3 preview while thinking is on. Set to <strong>Off</strong> if you need search.
               </Typography>
             </MenuItem>
@@ -86,10 +86,10 @@ export const ThinkingLevelControl: React.FC<Props> = ({
             sx={{ py: 0.6 }}
           >
             <Box>
-              <Typography sx={{ fontSize: '0.8rem', color: thinkingLevel === lvl.value ? c.text.primary : c.text.muted }}>
+              <Typography sx={{ fontSize: '0.8125rem', color: thinkingLevel === lvl.value ? c.text.primary : c.text.muted }}>
                 {lvl.label}
               </Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost, mt: 0.1 }}>
+              <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost, mt: 0.1 }}>
                 {lvl.desc}
               </Typography>
             </Box>

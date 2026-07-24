@@ -33,22 +33,22 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
               '&:hover': { bgcolor: TC_HOVER },
             }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
-                <span style={{ color: TC_HEADING, fontSize: '0.74rem', fontWeight: 600, fontFamily: c.font.sans }}>
+                <span style={{ color: TC_HEADING, fontSize: '0.75rem', fontWeight: 600, fontFamily: c.font.sans }}>
                   {m.subject}
                 </span>
                 {m.date && (
-                  <span style={{ color: TC_DIM, fontSize: '0.6rem', flexShrink: 0, fontFamily: c.font.mono }}>
+                  <span style={{ color: TC_DIM, fontSize: '0.625rem', flexShrink: 0, fontFamily: c.font.mono }}>
                     {m.date}
                   </span>
                 )}
               </Box>
               {m.from && (
-                <span style={{ color: TC_MUTED, fontSize: '0.68rem', fontFamily: c.font.sans }}>
+                <span style={{ color: TC_MUTED, fontSize: '0.6875rem', fontFamily: c.font.sans }}>
                   {m.from}
                 </span>
               )}
               {(m.snippet || m.bodyPreview) && (
-                <span style={{ color: TC_BODY, fontSize: '0.68rem', lineHeight: 1.45, fontFamily: c.font.sans }}>
+                <span style={{ color: TC_BODY, fontSize: '0.6875rem', lineHeight: 1.45, fontFamily: c.font.sans }}>
                   {(m.snippet || m.bodyPreview).slice(0, 120)}
                   {(m.snippet || m.bodyPreview).length > 120 ? '…' : ''}
                 </span>
@@ -57,7 +57,7 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
           );
         })}
         {messages.length > 5 && (
-          <span style={{ color: TC_DIM, fontSize: '0.66rem', fontStyle: 'italic', textAlign: 'center', display: 'block' }}>
+          <span style={{ color: TC_DIM, fontSize: '0.6875rem', fontStyle: 'italic', textAlign: 'center', display: 'block' }}>
             +{messages.length - 5} more
           </span>
         )}
@@ -82,7 +82,7 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
           ) : (
             <EmailIcon sx={{ fontSize: 14, color: TC_ACCENT, opacity: 0.8 }} />
           )}
-          <span style={{ color: TC_HEADING, fontSize: '0.78rem', fontWeight: 600, flex: 1, fontFamily: c.font.sans }}>
+          <span style={{ color: TC_HEADING, fontSize: '0.75rem', fontWeight: 600, flex: 1, fontFamily: c.font.sans }}>
             {email.subject}
           </span>
         </Box>
@@ -92,20 +92,20 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
         {(email.from || email.to || email.date) && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
             {email.from && (
-              <Box sx={{ display: 'flex', gap: 0.75, fontSize: '0.7rem', alignItems: 'baseline' }}>
-                <span style={{ color: TC_DIM, minWidth: 32, fontFamily: c.font.mono, fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>From</span>
+              <Box sx={{ display: 'flex', gap: 0.75, fontSize: '0.6875rem', alignItems: 'baseline' }}>
+                <span style={{ color: TC_DIM, minWidth: 32, fontFamily: c.font.mono, fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>From</span>
                 <span style={{ color: TC_BODY, fontFamily: c.font.sans }}>{email.from}</span>
               </Box>
             )}
             {email.to && (
-              <Box sx={{ display: 'flex', gap: 0.75, fontSize: '0.7rem', alignItems: 'baseline' }}>
-                <span style={{ color: TC_DIM, minWidth: 32, fontFamily: c.font.mono, fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>To</span>
+              <Box sx={{ display: 'flex', gap: 0.75, fontSize: '0.6875rem', alignItems: 'baseline' }}>
+                <span style={{ color: TC_DIM, minWidth: 32, fontFamily: c.font.mono, fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>To</span>
                 <span style={{ color: TC_BODY, fontFamily: c.font.sans }}>{email.to}</span>
               </Box>
             )}
             {email.date && (
-              <Box sx={{ display: 'flex', gap: 0.75, fontSize: '0.7rem', alignItems: 'baseline' }}>
-                <span style={{ color: TC_DIM, minWidth: 32, fontFamily: c.font.mono, fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Date</span>
+              <Box sx={{ display: 'flex', gap: 0.75, fontSize: '0.6875rem', alignItems: 'baseline' }}>
+                <span style={{ color: TC_DIM, minWidth: 32, fontFamily: c.font.mono, fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Date</span>
                 <span style={{ color: TC_BODY, fontFamily: c.font.sans }}>{email.date}</span>
               </Box>
             )}
@@ -120,7 +120,7 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
                 bgcolor: `${TC_ACCENT}18`, borderRadius: 0.75,
                 px: 0.6, py: 0.1,
               }}>
-                <span style={{ fontSize: '0.56rem', color: TC_ACCENT, fontFamily: c.font.mono, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{l}</span>
+                <span style={{ fontSize: '0.625rem', color: TC_ACCENT, fontFamily: c.font.mono, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{l}</span>
               </Box>
             ))}
           </Box>
@@ -131,7 +131,7 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
             mt: 0.25, pt: 0.5, borderTop: `1px solid ${TC_BORDER}`,
             color: TC_BODY,
             fontFamily: c.font.sans,
-            fontSize: '0.7rem',
+            fontSize: '0.6875rem',
             lineHeight: 1.6,
             overflowWrap: 'anywhere',
             wordBreak: 'break-word',
@@ -140,8 +140,8 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
               color: TC_HEADING, fontFamily: c.font.sans,
               mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 },
             },
-            '& h1': { fontSize: '0.82rem' }, '& h2': { fontSize: '0.78rem' },
-            '& h3': { fontSize: '0.74rem' }, '& h4, & h5, & h6': { fontSize: '0.7rem' },
+            '& h1': { fontSize: '0.8125rem' }, '& h2': { fontSize: '0.75rem' },
+            '& h3': { fontSize: '0.75rem' }, '& h4, & h5, & h6': { fontSize: '0.6875rem' },
             '& strong': { color: TC_HEADING, fontWeight: 600 },
             '& em': { fontStyle: 'italic' },
             '& a': { color: TC_ACCENT, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } },
@@ -154,11 +154,11 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
             },
             '& code': {
               bgcolor: `${TC_BORDER}`, px: 0.4, py: 0.15,
-              borderRadius: 0.5, fontSize: '0.65rem', fontFamily: c.font.mono,
+              borderRadius: 0.5, fontSize: '0.625rem', fontFamily: c.font.mono,
             },
             '& pre': {
               bgcolor: `${TC_BORDER}`, borderRadius: 1, p: 1,
-              overflow: 'auto', fontSize: '0.65rem', fontFamily: c.font.mono,
+              overflow: 'auto', fontSize: '0.625rem', fontFamily: c.font.mono,
               m: 0, mb: 0.75,
             },
             '& pre code': { bgcolor: 'transparent', p: 0 },
@@ -183,7 +183,7 @@ export const GmailCard: React.FC<{ data: Record<string, any>; action: string; hi
                 px: 0.6, py: 0.1,
               }}>
                 <AttachFileIcon sx={{ fontSize: 9, color: TC_WARNING, opacity: 0.7 }} />
-                <span style={{ fontSize: '0.58rem', color: TC_WARNING, fontFamily: c.font.mono }}>
+                <span style={{ fontSize: '0.625rem', color: TC_WARNING, fontFamily: c.font.mono }}>
                   {a.filename || a.name || 'attachment'}
                 </span>
               </Box>

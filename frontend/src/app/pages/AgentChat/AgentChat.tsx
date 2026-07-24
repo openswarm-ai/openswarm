@@ -179,7 +179,7 @@ const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
         <Box
           component="span"
           sx={{
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             fontWeight: 500,
             background: `linear-gradient(90deg, ${shimmerBase} 0%, ${shimmerBase} 40%, ${shimmerHighlight} 50%, ${shimmerBase} 60%, ${shimmerBase} 100%)`,
             backgroundSize: '200% 100%',
@@ -1910,7 +1910,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   role="button"
                   aria-label="Dismiss"
                   onClick={() => id && dispatch(clearMcpSuggestions({ sessionId: id }))}
-                  sx={{ alignSelf: 'flex-start', color: c.text.muted, cursor: 'pointer', fontSize: '0.72rem', '&:hover': { color: c.text.secondary } }}
+                  sx={{ alignSelf: 'flex-start', color: c.text.muted, cursor: 'pointer', fontSize: '0.75rem', '&:hover': { color: c.text.secondary } }}
                 >
                   Dismiss
                 </Box>
@@ -1954,7 +1954,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   }}
                 >
                   <PlayArrowIcon sx={{ fontSize: 14, color: c.accent.primary }} />
-                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 500, color: c.accent.primary }}>
+                  <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.accent.primary }}>
                     Resume Agent Response
                   </Typography>
                 </Box>
@@ -2011,7 +2011,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               borderRadius: 2.5,
               cursor: 'pointer',
               fontWeight: 600,
-              fontSize: '0.85rem',
+              fontSize: '0.875rem',
               color: c.accent.primary,
               border: `1.5px solid ${c.accent.primary}`,
               background: `${c.accent.primary}08`,
@@ -2052,7 +2052,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       ? <KeyboardArrowDownIcon sx={{ fontSize: 12, color: c.text.tertiary }} />
                       : <KeyboardArrowUpIcon sx={{ fontSize: 12, color: c.text.tertiary }} />
                     }
-                    <Typography sx={{ fontSize: '0.68rem', fontWeight: 600, color: c.text.muted, letterSpacing: 0.2 }}>
+                    <Typography sx={{ fontSize: '0.6875rem', fontWeight: 600, color: c.text.muted, letterSpacing: 0.2 }}>
                       {queueLength} queued
                     </Typography>
                     <Tooltip title="Clear all">
@@ -2156,7 +2156,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                                 }}
                                 sx={{
                                   '& .MuiOutlinedInput-root': {
-                                    fontSize: '0.78rem',
+                                    fontSize: '0.75rem',
                                     color: c.text.primary,
                                     '& fieldset': { borderColor: c.border.medium },
                                     '&.Mui-focused fieldset': { borderColor: c.accent.primary },
@@ -2182,7 +2182,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                             <Typography
                               sx={{
                                 flex: 1,
-                                fontSize: '0.78rem',
+                                fontSize: '0.75rem',
                                 color: c.text.secondary,
                                 lineHeight: 1.5,
                                 overflow: 'hidden',
@@ -2252,10 +2252,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       <ErrorSlime size={20} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: '0.86rem', fontWeight: 600, color: c.text.primary, mb: 0.4 }}>
+                      <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, mb: 0.4 }}>
                         Haiku may run out of room with {enabledMcpCount} apps connected
                       </Typography>
-                      <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.45 }}>
+                      <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, lineHeight: 1.45 }}>
                         Haiku is the fastest Claude model but holds the least at once.
                         Each connected app adds instructions Claude has to read first.
                         If your message fails with “Prompt is too long,” turn off a few
@@ -2445,7 +2445,7 @@ function WorkflowModelNotice({ c, label }: { c: ReturnType<typeof useClaudeToken
         px: 1.75, py: 1, zIndex: 6,
       }}>
         <SwapHorizRoundedIcon sx={{ fontSize: 17, color: c.accent.primary, flexShrink: 0 }} />
-        <Box sx={{ fontSize: '0.83rem', color: c.text.primary, lineHeight: 1.4 }}>
+        <Box sx={{ fontSize: '0.8125rem', color: c.text.primary, lineHeight: 1.4 }}>
           This workflow will now be using <b>{display}</b>.
         </Box>
       </Box>
@@ -2468,7 +2468,7 @@ function FreeTrialModelNotice({ c, notice }: { c: ReturnType<typeof useClaudeTok
         px: 1.75, py: 1, zIndex: 6,
       }}>
         <InfoOutlinedIcon sx={{ fontSize: 17, color: c.accent.primary, flexShrink: 0 }} />
-        <Box sx={{ fontSize: '0.83rem', color: c.text.primary, lineHeight: 1.4 }}>
+        <Box sx={{ fontSize: '0.8125rem', color: c.text.primary, lineHeight: 1.4 }}>
           {display.kind === 'spent' ? (
             <>You're out of free runs, connect a model in Settings to use <b>{display.label}</b>.</>
           ) : (

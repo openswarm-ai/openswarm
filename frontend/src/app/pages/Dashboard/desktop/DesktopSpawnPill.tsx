@@ -103,7 +103,7 @@ function DesktopSpawnPill({
               }}
             >
               <ItemIcon sx={{ fontSize: 17, color: 'rgba(255,255,255,0.75)' }} />
-              <Typography sx={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>
+              <Typography sx={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>
                 {label}
               </Typography>
             </Box>
@@ -130,7 +130,7 @@ function DesktopSpawnPill({
       >
         <Typography
           sx={{
-            fontSize: '0.82rem',
+            fontSize: '0.8125rem',
             color: 'rgba(255,255,255,0.55)',
             fontWeight: 400,
             userSelect: 'none',

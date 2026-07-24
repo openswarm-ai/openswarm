@@ -51,10 +51,10 @@ export const ModelPickerRecents: React.FC<Props> = ({
             }}
           />
           <AccessTimeIcon sx={{ fontSize: 12, color: c.text.tertiary }} />
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.text.tertiary, flex: 1 }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.text.tertiary, flex: 1 }}>
             Recent
           </Typography>
-          <Typography sx={{ fontSize: '0.65rem', color: c.text.ghost, fontWeight: 500 }}>
+          <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost, fontWeight: 500 }}>
             {recentMaterialised.length}
           </Typography>
         </Box>
@@ -78,7 +78,7 @@ export const ModelPickerRecents: React.FC<Props> = ({
             >
               <ListItemText
                 primary={opt.label}
-                slotProps={{ primary: { sx: { fontSize: '0.8rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
+                slotProps={{ primary: { sx: { fontSize: '0.8125rem', color: model === opt.value ? c.text.primary : c.text.muted } } }}
               />
             </MenuItem>
           </Tooltip>

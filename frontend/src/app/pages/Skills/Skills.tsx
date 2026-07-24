@@ -253,7 +253,7 @@ const Skills: React.FC = () => {
           sx={{
             '& .MuiToggleButton-root': {
               color: c.text.tertiary, border: `1px solid ${c.border.medium}`,
-              textTransform: 'none', fontSize: '0.74rem', py: 0.25, px: 1.2, lineHeight: 1.4,
+              textTransform: 'none', fontSize: '0.75rem', py: 0.25, px: 1.2, lineHeight: 1.4,
               '&.Mui-selected': { bgcolor: c.bg.secondary, color: c.text.primary, borderColor: c.border.strong },
               '&:hover': { bgcolor: 'rgba(0,0,0,0.03)' },
             },
@@ -274,7 +274,7 @@ const Skills: React.FC = () => {
           '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3 },
         }}>
           <Typography component="pre" sx={{
-            color: c.text.secondary, fontSize: '0.8rem', fontFamily: c.font.mono,
+            color: c.text.secondary, fontSize: '0.8125rem', fontFamily: c.font.mono,
             whiteSpace: 'pre-wrap', wordBreak: 'break-word', m: 0, lineHeight: 1.65,
           }}>
             {content}
@@ -288,12 +288,12 @@ const Skills: React.FC = () => {
           overflow: 'auto',
           '&::-webkit-scrollbar': { width: 5 },
           '&::-webkit-scrollbar-thumb': { background: c.border.medium, borderRadius: 3 },
-          '& h1': { fontSize: '1.3rem', fontWeight: 700, color: c.text.primary, mt: 0, mb: 1.5, fontFamily: c.font.sans },
-          '& h2': { fontSize: '1.1rem', fontWeight: 600, color: c.text.primary, mt: 2, mb: 1, fontFamily: c.font.sans },
-          '& h3': { fontSize: '0.95rem', fontWeight: 600, color: c.text.primary, mt: 1.5, mb: 0.75, fontFamily: c.font.sans },
-          '& p': { fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.7, mb: 1.5 },
-          '& ul, & ol': { pl: 2.5, mb: 1.5, '& li': { fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.7, mb: 0.5 } },
-          '& code': { fontFamily: c.font.mono, fontSize: '0.82rem', bgcolor: 'rgba(0,0,0,0.04)', px: 0.5, py: 0.15, borderRadius: `${c.radius.xs}px` },
+          '& h1': { fontSize: '1.375rem', fontWeight: 700, color: c.text.primary, mt: 0, mb: 1.5, fontFamily: c.font.sans },
+          '& h2': { fontSize: '1.125rem', fontWeight: 600, color: c.text.primary, mt: 2, mb: 1, fontFamily: c.font.sans },
+          '& h3': { fontSize: '1rem', fontWeight: 600, color: c.text.primary, mt: 1.5, mb: 0.75, fontFamily: c.font.sans },
+          '& p': { fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.7, mb: 1.5 },
+          '& ul, & ol': { pl: 2.5, mb: 1.5, '& li': { fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.7, mb: 0.5 } },
+          '& code': { fontFamily: c.font.mono, fontSize: '0.8125rem', bgcolor: 'rgba(0,0,0,0.04)', px: 0.5, py: 0.15, borderRadius: `${c.radius.xs}px` },
           '& pre': { bgcolor: c.bg.secondary, borderRadius: `${c.radius.sm}px`, p: 2, mb: 1.5, overflow: 'auto',
             '& code': { bgcolor: 'transparent', color: c.text.secondary, px: 0, py: 0 },
           },
@@ -329,7 +329,7 @@ const Skills: React.FC = () => {
       {icon ?? <DescriptionIcon sx={{ fontSize: 15, color: c.text.tertiary, flexShrink: 0 }} />}
       <Typography
         sx={{
-          fontSize: '0.82rem', color: selected ? c.text.primary : c.text.secondary,
+          fontSize: '0.8125rem', color: selected ? c.text.primary : c.text.secondary,
           fontWeight: selected ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}
       >
@@ -348,7 +348,7 @@ const Skills: React.FC = () => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, pt: 2, pb: 1 }}>
-          <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: c.text.primary }}>Skills</Typography>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 700, color: c.text.primary }}>Skills</Typography>
           <Box sx={{ display: 'flex', gap: 0.25 }}>
             <Tooltip title="Import .swarm">
               <IconButton
@@ -392,7 +392,7 @@ const Skills: React.FC = () => {
             fullWidth
             sx={{
               textTransform: 'none',
-              fontSize: '0.86rem',
+              fontSize: '0.875rem',
               fontWeight: 500,
               color: c.accent.primary,
               justifyContent: 'center',
@@ -426,7 +426,7 @@ const Skills: React.FC = () => {
               }}
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  bgcolor: c.bg.surface, borderRadius: `${c.radius.sm}px`, fontSize: '0.82rem',
+                  bgcolor: c.bg.surface, borderRadius: `${c.radius.sm}px`, fontSize: '0.8125rem',
                   '& fieldset': { borderColor: c.border.medium },
                 },
               }}
@@ -454,10 +454,10 @@ const Skills: React.FC = () => {
                 {collapsedCats['__local']
                   ? <KeyboardArrowRightIcon sx={{ fontSize: 16, color: c.text.ghost }} />
                   : <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost }} />}
-                <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   My Skills
                 </Typography>
-                <Typography sx={{ fontSize: '0.68rem', color: c.text.ghost, ml: 0.5 }}>({filteredLocal.length})</Typography>
+                <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, ml: 0.5 }}>({filteredLocal.length})</Typography>
               </Box>
               <Collapse in={!collapsedCats['__local']} timeout={0} unmountOnExit>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, mt: 0.25 }}>
@@ -500,10 +500,10 @@ const Skills: React.FC = () => {
                     {isCollapsed
                       ? <KeyboardArrowRightIcon sx={{ fontSize: 16, color: c.text.ghost }} />
                       : <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost }} />}
-                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       {cat}
                     </Typography>
-                    <Typography sx={{ fontSize: '0.68rem', color: c.text.ghost, ml: 0.5 }}>({group.length})</Typography>
+                    <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, ml: 0.5 }}>({group.length})</Typography>
                   </Box>
                   <Collapse in={!isCollapsed} timeout={0} unmountOnExit>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, mt: 0.25 }}>
@@ -532,7 +532,7 @@ const Skills: React.FC = () => {
           <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
+                <Typography sx={{ fontSize: '1.375rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
                   {builderPreview.name || 'Untitled Skill'}
                 </Typography>
                 <Chip
@@ -542,7 +542,7 @@ const Skills: React.FC = () => {
                     bgcolor: `${c.accent.primary}15`,
                     color: c.accent.primary,
                     fontWeight: 600,
-                    fontSize: '0.68rem',
+                    fontSize: '0.6875rem',
                     height: 22,
                   }}
                 />
@@ -557,22 +557,22 @@ const Skills: React.FC = () => {
                   size="small"
                   sx={{
                     bgcolor: 'rgba(174,86,48,0.08)', color: c.accent.primary,
-                    fontWeight: 500, fontSize: '0.78rem', height: 26,
+                    fontWeight: 500, fontSize: '0.75rem', height: 26,
                   }}
                 />
               </Box>
             )}
 
             <Box sx={{ mb: 1, flexShrink: 0 }}>
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost }}>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>
                 Generated by <strong style={{ color: c.accent.primary, fontWeight: 600 }}>Skill Builder</strong>
               </Typography>
             </Box>
 
             {builderPreview.description && (
               <Box sx={{ mb: 2, flexShrink: 0 }}>
-                <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost, mb: 0.5 }}>Description</Typography>
-                <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.6 }}>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, mb: 0.5 }}>Description</Typography>
+                <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.6 }}>
                   {builderPreview.description}
                 </Typography>
               </Box>
@@ -583,7 +583,7 @@ const Skills: React.FC = () => {
         ) : !selection ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: c.text.ghost, gap: 2 }}>
             <DescriptionIcon sx={{ fontSize: 48, opacity: 0.3 }} />
-            <Typography sx={{ fontSize: '0.9rem' }}>Select a skill to view its details</Typography>
+            <Typography sx={{ fontSize: '0.875rem' }}>Select a skill to view its details</Typography>
           </Box>
         ) : selection.type === 'registry' ? (
           regDetailLoading && !selectedReg ? (
@@ -593,7 +593,7 @@ const Skills: React.FC = () => {
           ) : selectedReg ? (
             <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
-                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
+                <Typography sx={{ fontSize: '1.375rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
                   {selectedReg.name}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -606,7 +606,7 @@ const Skills: React.FC = () => {
                     sx={{
                       bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.pressed },
                       textTransform: 'none', borderRadius: `${c.radius.md}px`, px: 2, py: 0.5,
-                      fontSize: '0.8rem', fontWeight: 600, boxShadow: 'none',
+                      fontSize: '0.8125rem', fontWeight: 600, boxShadow: 'none',
                     }}
                   >
                     Install
@@ -620,7 +620,7 @@ const Skills: React.FC = () => {
                       borderColor: c.border.strong, color: c.text.secondary,
                       '&:hover': { borderColor: c.accent.primary, color: c.accent.primary, bgcolor: 'rgba(174,86,48,0.04)' },
                       textTransform: 'none', borderRadius: `${c.radius.md}px`, px: 2, py: 0.5,
-                      fontSize: '0.8rem', fontWeight: 600,
+                      fontSize: '0.8125rem', fontWeight: 600,
                     }}
                   >
                     Edit & Install
@@ -641,12 +641,12 @@ const Skills: React.FC = () => {
               </Box>
 
               <Box sx={{ mb: 1, flexShrink: 0 }}>
-                <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost }}>Added by <strong style={{ color: c.text.secondary, fontWeight: 600 }}>Anthropic</strong></Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>Added by <strong style={{ color: c.text.secondary, fontWeight: 600 }}>Anthropic</strong></Typography>
               </Box>
 
               <Box sx={{ mb: 2, flexShrink: 0 }}>
-                <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost, mb: 0.5 }}>Description</Typography>
-                <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.6 }}>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, mb: 0.5 }}>Description</Typography>
+                <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.6 }}>
                   {selectedReg.description}
                 </Typography>
               </Box>
@@ -658,7 +658,7 @@ const Skills: React.FC = () => {
           <Box sx={{ p: 4, pb: 3, maxWidth: 1100, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexShrink: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography sx={{ fontSize: '1.4rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
+                <Typography sx={{ fontSize: '1.375rem', fontWeight: 700, color: c.text.primary, fontFamily: c.font.sans }}>
                   {selectedLocal.name}
                 </Typography>
                 {selectedLocal.built_in && (
@@ -669,7 +669,7 @@ const Skills: React.FC = () => {
                       bgcolor: 'rgba(174,86,48,0.12)',
                       color: c.accent.primary,
                       fontWeight: 600,
-                      fontSize: '0.7rem',
+                      fontSize: '0.6875rem',
                       height: 20,
                     }}
                   />
@@ -678,7 +678,7 @@ const Skills: React.FC = () => {
                   <Chip
                     label="Update available"
                     size="small"
-                    sx={{ bgcolor: `${c.status.warning}22`, color: c.status.warning, fontWeight: 600, fontSize: '0.7rem', height: 20 }}
+                    sx={{ bgcolor: `${c.status.warning}22`, color: c.status.warning, fontWeight: 600, fontSize: '0.6875rem', height: 20 }}
                   />
                 )}
               </Box>
@@ -690,7 +690,7 @@ const Skills: React.FC = () => {
                     startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
                     disabled={updatingId === selectedLocal.id}
                     onClick={() => handleUpdate(selectedLocal)}
-                    sx={{ textTransform: 'none', fontSize: '0.78rem', py: 0.3, bgcolor: c.status.warning, '&:hover': { bgcolor: c.status.warning } }}
+                    sx={{ textTransform: 'none', fontSize: '0.75rem', py: 0.3, bgcolor: c.status.warning, '&:hover': { bgcolor: c.status.warning } }}
                   >
                     {updatingId === selectedLocal.id ? 'Updating...' : 'Update'}
                   </Button>
@@ -719,20 +719,20 @@ const Skills: React.FC = () => {
                   size="small"
                   sx={{
                     bgcolor: 'rgba(174,86,48,0.08)', color: c.accent.primary,
-                    fontWeight: 500, fontSize: '0.78rem', height: 26,
+                    fontWeight: 500, fontSize: '0.75rem', height: 26,
                   }}
                 />
               </Box>
             )}
 
             <Box sx={{ mb: 1, flexShrink: 0 }}>
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost }}>Added by <strong style={{ color: c.text.secondary, fontWeight: 600 }}>You</strong></Typography>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>Added by <strong style={{ color: c.text.secondary, fontWeight: 600 }}>You</strong></Typography>
             </Box>
 
             {selectedLocal.description && (
               <Box sx={{ mb: 2, flexShrink: 0 }}>
-                <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost, mb: 0.5 }}>Description</Typography>
-                <Typography sx={{ fontSize: '0.88rem', color: c.text.secondary, lineHeight: 1.6 }}>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, mb: 0.5 }}>Description</Typography>
+                <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.6 }}>
                   {selectedLocal.description}
                 </Typography>
               </Box>
@@ -791,7 +791,7 @@ const Skills: React.FC = () => {
             maxRows={24}
             sx={{
               '& .MuiOutlinedInput-root': {
-                bgcolor: c.bg.secondary, fontFamily: c.font.mono, fontSize: '0.85rem',
+                bgcolor: c.bg.secondary, fontFamily: c.font.mono, fontSize: '0.875rem',
               },
             }}
           />

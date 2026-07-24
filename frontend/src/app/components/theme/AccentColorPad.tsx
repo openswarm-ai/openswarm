@@ -195,7 +195,7 @@ const AccentColorPad: React.FC<{
           onClick={() => onChange(null)}
           style={{
             marginLeft: 'auto', border: 'none', background: 'transparent', padding: 0,
-            color: '#8a8a86', fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+            color: '#8a8a86', fontSize: '0.8125rem', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
           }}
         >
           Reset

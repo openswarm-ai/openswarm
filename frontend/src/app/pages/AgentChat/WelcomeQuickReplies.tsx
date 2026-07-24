@@ -22,7 +22,7 @@ const AnchorButton: React.FC<{ c: ClaudeTokens; onPick: (p: string) => void; del
       display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', width: '100%',
       padding: '10px 14px', borderRadius: 11,
       border: `1px solid ${c.border.medium}`, background: c.bg.surface,
-      color: c.text.secondary, fontSize: '0.88rem', fontWeight: 500,
+      color: c.text.secondary, fontSize: '0.875rem', fontWeight: 500,
       cursor: 'pointer', fontFamily: 'inherit',
     }}
   >
@@ -61,7 +61,7 @@ const WelcomeQuickReplies: React.FC<{
       <AnimatePresence mode="wait" initial={false}>
         {!showCategories && expanded === null ? (
           <motion.div key="personal" initial={false} style={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1.1 }}>
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', mb: 1.1 }}>
               made for you, or just type below
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.7 }}>
@@ -76,7 +76,7 @@ const WelcomeQuickReplies: React.FC<{
                     display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
                     padding: '10px 14px', borderRadius: 11,
                     border: `1px solid ${c.border.medium}`, background: c.bg.surface,
-                    color: c.text.secondary, fontSize: '0.88rem', fontWeight: 500,
+                    color: c.text.secondary, fontSize: '0.875rem', fontWeight: 500,
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
@@ -85,7 +85,7 @@ const WelcomeQuickReplies: React.FC<{
               ))}
               <AnchorButton c={c} onPick={onPick} delay={0.08 + personalized.length * 0.06} />
             </Box>
-            <Typography sx={{ color: c.text.ghost, fontSize: '0.78rem', mt: 1.4, mb: 0.6 }}>
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', mt: 1.4, mb: 0.6 }}>
               worth putting on a schedule
             </Typography>
             <AutomationChips c={c} />
@@ -95,7 +95,7 @@ const WelcomeQuickReplies: React.FC<{
               sx={{
                 alignSelf: 'flex-start', mt: 0.9, px: 0.6, py: 0.3,
                 border: 'none', background: 'transparent',
-                color: c.text.ghost, fontSize: '0.82rem',
+                color: c.text.ghost, fontSize: '0.8125rem',
                 cursor: 'pointer', fontFamily: 'inherit',
                 '&:hover': { color: c.text.secondary },
               }}
@@ -113,7 +113,7 @@ const WelcomeQuickReplies: React.FC<{
                   display: 'inline-flex', alignItems: 'center', gap: 0.5,
                   alignSelf: 'flex-start', mb: 0.9, px: 0.6, py: 0.3,
                   border: 'none', background: 'transparent',
-                  color: c.text.ghost, fontSize: '0.85rem',
+                  color: c.text.ghost, fontSize: '0.875rem',
                   cursor: 'pointer', fontFamily: 'inherit',
                   '&:hover': { color: c.text.secondary },
                 }}
@@ -121,7 +121,7 @@ const WelcomeQuickReplies: React.FC<{
                 <ArrowLeft size={14} /> your starters
               </Box>
             )}
-            <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1.1 }}>
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', mb: 1.1 }}>
               pick one, or just type below
             </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
@@ -139,7 +139,7 @@ const WelcomeQuickReplies: React.FC<{
                     border: `1px solid ${c.border.medium}`,
                     background: c.bg.surface,
                     color: c.text.secondary,
-                    fontSize: '0.9rem', fontWeight: 500,
+                    fontSize: '0.875rem', fontWeight: 500,
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
@@ -170,7 +170,7 @@ const WelcomeQuickReplies: React.FC<{
                 display: 'inline-flex', alignItems: 'center', gap: 0.5,
                 alignSelf: 'flex-start', mb: 0.9, px: 0.6, py: 0.3,
                 border: 'none', background: 'transparent',
-                color: c.text.ghost, fontSize: '0.85rem',
+                color: c.text.ghost, fontSize: '0.875rem',
                 cursor: 'pointer', fontFamily: 'inherit',
                 '&:hover': { color: c.text.secondary },
               }}
@@ -179,7 +179,7 @@ const WelcomeQuickReplies: React.FC<{
             </Box>
             {isSchedule ? (
               <>
-                <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem', mb: 1.1 }}>
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', mb: 1.1 }}>
                   one click puts it on a schedule
                 </Typography>
                 <AutomationChips c={c} />
@@ -200,7 +200,7 @@ const WelcomeQuickReplies: React.FC<{
                     border: `1px solid ${c.border.medium}`,
                     background: c.bg.surface,
                     color: c.text.secondary,
-                    fontSize: '0.88rem',
+                    fontSize: '0.875rem',
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >

@@ -140,7 +140,7 @@ const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, o
               onClick={onFitToView}
               data-onboarding="canvas-fit-to-view"
               sx={{
-                fontSize: '0.72rem',
+                fontSize: '0.75rem',
                 fontWeight: 500,
                 color: 'rgba(255,255,255,0.78)',
                 minWidth: 38,

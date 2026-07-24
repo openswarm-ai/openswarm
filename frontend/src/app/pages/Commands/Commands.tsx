@@ -55,7 +55,7 @@ const SectionHeader: React.FC<{
             size="small"
             sx={{
               height: 20,
-              fontSize: '0.7rem',
+              fontSize: '0.6875rem',
               fontWeight: 600,
               bgcolor: `${c.accent.primary}15`,
               color: c.accent.primary,
@@ -63,7 +63,7 @@ const SectionHeader: React.FC<{
           />
         )}
       </Box>
-      <Typography sx={{ color: c.text.tertiary, fontSize: '0.8rem' }}>{subtitle}</Typography>
+      <Typography sx={{ color: c.text.tertiary, fontSize: '0.8125rem' }}>{subtitle}</Typography>
     </Box>
   </Box>
 );
@@ -230,7 +230,7 @@ export const CommandsContent: React.FC = () => {
               }}
             >
               <TerminalIcon sx={{ fontSize: 36, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.85rem' }}>
+              <Typography sx={{ fontSize: '0.875rem' }}>
                 No slash commands yet. Create skills or modes to see them here.
               </Typography>
             </Box>
@@ -264,7 +264,7 @@ export const CommandsContent: React.FC = () => {
                   <Typography
                     sx={{
                       color: c.text.primary,
-                      fontSize: '0.85rem',
+                      fontSize: '0.875rem',
                       fontFamily: c.font.mono,
                       fontWeight: 500,
                       minWidth: 140,
@@ -277,7 +277,7 @@ export const CommandsContent: React.FC = () => {
                     size="small"
                     sx={{
                       height: 20,
-                      fontSize: '0.65rem',
+                      fontSize: '0.625rem',
                       fontWeight: 600,
                       textTransform: 'uppercase',
                       bgcolor: cmd.type === 'mode' ? `${modesMap[cmd.id]?.color || c.accent.primary}15`
@@ -289,7 +289,7 @@ export const CommandsContent: React.FC = () => {
                   <Typography
                     sx={{
                       color: c.text.muted,
-                      fontSize: '0.8rem',
+                      fontSize: '0.8125rem',
                       flex: 1,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -327,7 +327,7 @@ export const CommandsContent: React.FC = () => {
               }}
             >
               <AlternateEmailIcon sx={{ fontSize: 36, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.85rem' }}>
+              <Typography sx={{ fontSize: '0.875rem' }}>
                 No @ commands yet. Install MCP actions to see them here.
               </Typography>
             </Box>
@@ -367,7 +367,7 @@ export const CommandsContent: React.FC = () => {
                     size="small"
                     sx={{
                       height: 20,
-                      fontSize: '0.65rem',
+                      fontSize: '0.625rem',
                       fontWeight: 600,
                       textTransform: 'uppercase',
                       bgcolor: cmd.source === 'builtin' ? `${c.accent.primary}12` : cmd.source === 'view' ? '#f472b615' : `${c.status.info}15`,
@@ -377,7 +377,7 @@ export const CommandsContent: React.FC = () => {
                   <Typography
                     sx={{
                       color: c.text.muted,
-                      fontSize: '0.8rem',
+                      fontSize: '0.8125rem',
                       flex: 1,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',

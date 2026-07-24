@@ -134,13 +134,13 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 1.25, gap: 1 }}>
-        <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: c.text.primary }}>History</Typography>
+        <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary }}>History</Typography>
         <Button
           size="small"
           startIcon={<BookmarkAddOutlinedIcon sx={{ fontSize: 16 }} />}
           onClick={handleSave}
           disabled={saving || isAgentActive}
-          sx={{ textTransform: 'none', fontSize: '0.78rem', color: c.accent.primary, '&:hover': { bgcolor: `${c.accent.primary}12` } }}
+          sx={{ textTransform: 'none', fontSize: '0.75rem', color: c.accent.primary, '&:hover': { bgcolor: `${c.accent.primary}12` } }}
         >
           {saving ? 'Saving' : 'Save this version'}
         </Button>
@@ -148,7 +148,7 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
 
       <Fade in={!!status} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
         <Box sx={{
-          mx: 1.5, mb: 1, px: 1.25, py: 0.75, borderRadius: 2, fontSize: '0.8rem',
+          mx: 1.5, mb: 1, px: 1.25, py: 0.75, borderRadius: 2, fontSize: '0.8125rem',
           color: status?.kind === 'err' ? c.status.error : c.text.secondary,
           bgcolor: status?.kind === 'err' ? `${c.status.error}14` : `${c.accent.primary}12`,
         }}>
@@ -164,7 +164,7 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
         ) : versions.length === 0 ? (
           <Box sx={{ textAlign: 'center', pt: 6, px: 2 }}>
             <HistoryIcon sx={{ fontSize: 34, color: c.text.tertiary, opacity: 0.5, mb: 1 }} />
-            <Typography sx={{ fontSize: '0.85rem', color: c.text.muted, lineHeight: 1.5 }}>
+            <Typography sx={{ fontSize: '0.875rem', color: c.text.muted, lineHeight: 1.5 }}>
               No history yet. Every time you change your app, we'll save a snapshot here so you can go back.
             </Typography>
           </Box>
@@ -172,7 +172,7 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
           <>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
               <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.accent.primary, flexShrink: 0 }} />
-              <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: c.text.secondary }}>Now (current)</Typography>
+              <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.secondary }}>Now (current)</Typography>
             </Box>
             {versions.map((v) => (
               <Box
@@ -192,10 +192,10 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
                     : <HistoryIcon sx={{ fontSize: 18, color: c.text.tertiary, opacity: 0.5 }} />}
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: '0.84rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Typography sx={{ fontSize: '0.8125rem', color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {describe(v)}
                   </Typography>
-                  <Typography sx={{ fontSize: '0.74rem', color: c.text.muted }}>
+                  <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>
                     {timeAgo(v.created_at)}{v.source === 'manual' ? ' · saved by you' : v.source === 'pre_restore' ? ' · auto-backup' : ''}
                   </Typography>
                 </Box>
@@ -205,7 +205,7 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
                     startIcon={busyId === v.id ? <CircularProgress size={13} /> : <RestoreIcon sx={{ fontSize: 15 }} />}
                     onClick={() => setConfirmId(v.id)}
                     disabled={!!busyId || isAgentActive}
-                    sx={{ textTransform: 'none', fontSize: '0.74rem', color: c.text.secondary, minWidth: 0, '&:hover': { bgcolor: `${c.text.primary}08` } }}
+                    sx={{ textTransform: 'none', fontSize: '0.75rem', color: c.text.secondary, minWidth: 0, '&:hover': { bgcolor: `${c.text.primary}08` } }}
                   >
                     Restore
                   </Button>
@@ -214,7 +214,7 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
                     startIcon={<ContentCopyIcon sx={{ fontSize: 14 }} />}
                     onClick={() => handleBranch(v.id)}
                     disabled={!!busyId}
-                    sx={{ textTransform: 'none', fontSize: '0.74rem', color: c.text.secondary, minWidth: 0, '&:hover': { bgcolor: `${c.text.primary}08` } }}
+                    sx={{ textTransform: 'none', fontSize: '0.75rem', color: c.text.secondary, minWidth: 0, '&:hover': { bgcolor: `${c.text.primary}08` } }}
                   >
                     Save as new app
                   </Button>
@@ -227,10 +227,10 @@ const HistoryPanel: React.FC<Props> = ({ outputId, isAgentActive, saveLabel, onB
 
       <Dialog open={!!confirmTarget} onClose={() => setConfirmId(null)} PaperProps={{ sx: { borderRadius: 3, bgcolor: c.bg.surface, p: 0.5, maxWidth: 380 } }}>
         <Box sx={{ p: 2.5 }}>
-          <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: c.text.primary, mb: 1 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary, mb: 1 }}>
             Go back to this version?
           </Typography>
-          <Typography sx={{ fontSize: '0.84rem', color: c.text.muted, lineHeight: 1.5, mb: 2.5 }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.muted, lineHeight: 1.5, mb: 2.5 }}>
             This brings your app back to how it was here. Your current version is saved first, so you can always come back.
           </Typography>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>

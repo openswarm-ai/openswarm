@@ -139,16 +139,16 @@ const OpenSwarmProCard: React.FC = () => {
               <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: c.border.medium }} />
               <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
-                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: c.text.primary }}>
+                  <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.primary }}>
                     OpenSwarm Pro
                   </Typography>
                   <Box sx={{ px: 0.7, py: 0.15, borderRadius: 999, bgcolor: `${c.accent.primary}12` }}>
-                    <Typography sx={{ fontSize: '0.58rem', color: c.accent.primary, fontWeight: 600, letterSpacing: '0.03em' }}>
+                    <Typography sx={{ fontSize: '0.625rem', color: c.accent.primary, fontWeight: 600, letterSpacing: '0.03em' }}>
                       RECOMMENDED
                     </Typography>
                   </Box>
                 </Box>
-                <Typography noWrap sx={{ fontSize: '0.65rem', color: c.text.muted }}>
+                <Typography noWrap sx={{ fontSize: '0.625rem', color: c.text.muted }}>
                   {copy.desc}
                 </Typography>
               </Box>
@@ -158,7 +158,7 @@ const OpenSwarmProCard: React.FC = () => {
               variant="contained"
               size="small"
               sx={{
-                textTransform: 'none', fontSize: '0.7rem', minWidth: 70,
+                textTransform: 'none', fontSize: '0.6875rem', minWidth: 70,
                 borderRadius: `${c.radius.md}px`,
                 bgcolor: c.accent.primary, boxShadow: 'none',
                 '&:hover': { bgcolor: c.accent.hover, boxShadow: 'none' },
@@ -218,7 +218,7 @@ const OpenSwarmProCard: React.FC = () => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-          <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: c.text.primary }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary }}>
             OpenSwarm Pro
           </Typography>
           <Box
@@ -236,7 +236,7 @@ const OpenSwarmProCard: React.FC = () => {
             px: 1.2, py: 0.6, mb: 1.2, borderRadius: `${c.radius.sm}px`,
             bgcolor: `${c.status.warning}15`, border: `1px solid ${c.status.warning}40`,
           }}>
-            <Typography sx={{ fontSize: '0.72rem', color: c.status.warning, fontWeight: 500 }}>
+            <Typography sx={{ fontSize: '0.75rem', color: c.status.warning, fontWeight: 500 }}>
               Subscription canceled. You still have access until {expiresLabel || 'the end of the period'}.
             </Typography>
           </Box>
@@ -245,10 +245,10 @@ const OpenSwarmProCard: React.FC = () => {
         {/* Usage bar; percentage only, no raw counts. */}
         <Box sx={{ mb: 1.2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.5 }}>
-            <Typography sx={{ fontSize: '0.78rem', color: c.text.secondary, fontWeight: 500 }}>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, fontWeight: 500 }}>
               Current usage
             </Typography>
-            <Typography sx={{ fontSize: '0.72rem', color: c.text.muted }}>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>
               {pct}% used
             </Typography>
           </Box>
@@ -266,7 +266,7 @@ const OpenSwarmProCard: React.FC = () => {
             }}
           />
           {windowEndsAt && (
-            <Typography sx={{ fontSize: '0.68rem', color: c.text.muted, mt: 0.4 }}>
+            <Typography sx={{ fontSize: '0.6875rem', color: c.text.muted, mt: 0.4 }}>
               Resets {(() => {
                 const diff = windowEndsAt - Date.now();
                 if (diff <= 0) return 'soon';
@@ -279,7 +279,7 @@ const OpenSwarmProCard: React.FC = () => {
           )}
         </Box>
         {expiresLabel && !isCanceled && (
-          <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, mb: 1.5 }}>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mb: 1.5 }}>
             Renews on {expiresLabel}
           </Typography>
         )}
@@ -289,7 +289,7 @@ const OpenSwarmProCard: React.FC = () => {
               onClick={() => setPickerOpen(true)}
               size="small"
               variant="contained"
-              sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
+              sx={{ textTransform: 'none', fontSize: '0.75rem', borderRadius: `${c.radius.md}px` }}
             >
               Resubscribe
             </Button>
@@ -299,7 +299,7 @@ const OpenSwarmProCard: React.FC = () => {
             disabled={managing}
             size="small"
             variant={isCanceled ? 'outlined' : 'contained'}
-            sx={{ textTransform: 'none', fontSize: '0.78rem', borderRadius: `${c.radius.md}px` }}
+            sx={{ textTransform: 'none', fontSize: '0.75rem', borderRadius: `${c.radius.md}px` }}
           >
             {managing ? 'Opening…' : 'Manage in Stripe'}
           </Button>

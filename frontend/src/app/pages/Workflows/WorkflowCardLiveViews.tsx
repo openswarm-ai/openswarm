@@ -101,7 +101,7 @@ function PillButton({ label, onClick, icon, tone, filled, disabled }: {
       role="button"
       sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.5,
-        fontSize: '0.86rem', fontWeight: 700,
+        fontSize: '0.875rem', fontWeight: 700,
         px: 1.4, py: 0.55, borderRadius: 999,
         cursor: disabled ? 'not-allowed' : 'pointer',
         color: fg, bgcolor: bg,
@@ -122,7 +122,7 @@ function GhostTextBtn({ label, onClick }: { label: string; onClick: () => void }
       onClick={onClick}
       role="button"
       sx={{
-        fontSize: '0.86rem', fontWeight: 500, color: c.text.secondary,
+        fontSize: '0.875rem', fontWeight: 500, color: c.text.secondary,
         cursor: 'pointer', px: 0.75, py: 0.5,
         '&:hover': { color: c.text.primary },
       }}>
@@ -171,7 +171,7 @@ export function RunningView({ workflow, steps, runs, mode = 'card' }: {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-        <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: c.status.success }}>
+        <Typography sx={{ fontSize: '0.875rem', fontWeight: 700, color: c.status.success }}>
           {completeCount} of {total} complete
         </Typography>
       </Box>
@@ -275,7 +275,7 @@ export function CompletedView({ workflow, steps, runs, mode = 'card' }: {
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minHeight: '100%' }}>
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.6 }}>
         <Box component="span" sx={{ color: c.status.success, fontSize: 18, lineHeight: 1, mr: 0.25 }}>✓</Box>
-        <Typography sx={{ fontSize: '0.92rem', fontWeight: 700, color: c.status.success }}>
+        <Typography sx={{ fontSize: '0.875rem', fontWeight: 700, color: c.status.success }}>
           {steps.length} of {steps.length} complete
         </Typography>
       </Box>
@@ -300,10 +300,10 @@ export function CompletedView({ workflow, steps, runs, mode = 'card' }: {
           <RocketLaunchRounded sx={{ fontSize: 16 }} />
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
             Workflow Success!
           </Typography>
-          <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
             If you&apos;re curious, you can click the green button below to see exactly what the agent did.
           </Typography>
         </Box>
@@ -407,10 +407,10 @@ export function FailedView({ workflow, steps, runs, mode = 'card' }: {
           <BuildRounded sx={{ fontSize: 16 }} />
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
             Fix with an Agent
           </Typography>
-          <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
             Have an agent modify, test, and iterate on the workflow until it works as expected.
           </Typography>
         </Box>
@@ -479,7 +479,7 @@ export function useHeaderActions(workflow: Workflow | null, view: string): Heade
         <Box
           onClick={() => dispatch(updateWorkflowCard({ workflowId: workflow.id, patch: { view: 'history' } }))}
           role="button"
-          sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.82rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>
+          sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.8125rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>
           <HistoryIcon sx={{ fontSize: 15 }} />
           History
         </Box>
@@ -488,7 +488,7 @@ export function useHeaderActions(workflow: Workflow | null, view: string): Heade
           role="button"
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.35,
-            fontSize: '0.82rem', fontWeight: 700,
+            fontSize: '0.8125rem', fontWeight: 700,
             px: 1.1, py: 0.4, borderRadius: 999,
             bgcolor: c.accent.primary, color: '#fff', cursor: 'pointer',
             '&:hover': { filter: 'brightness(1.05)' },
@@ -502,13 +502,13 @@ export function useHeaderActions(workflow: Workflow | null, view: string): Heade
       return {
         right: (
           <>
-            <Box role="button" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, fontSize: '0.82rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>
+            <Box role="button" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, fontSize: '0.8125rem', fontWeight: 600, px: 1, py: 0.4, color: c.text.secondary, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>
               <StopRounded sx={{ fontSize: 15 }} />
               Stop
             </Box>
             <Box role="button" sx={{
               display: 'inline-flex', alignItems: 'center', gap: 0.35,
-              fontSize: '0.82rem', fontWeight: 700,
+              fontSize: '0.8125rem', fontWeight: 700,
               px: 1.1, py: 0.4, borderRadius: 999,
               bgcolor: c.accent.primary, color: '#fff', cursor: 'pointer',
               '&:hover': { filter: 'brightness(1.05)' },

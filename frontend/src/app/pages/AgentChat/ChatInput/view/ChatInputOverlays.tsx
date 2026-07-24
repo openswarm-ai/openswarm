@@ -71,7 +71,7 @@ const OversizePopup: React.FC<OversizePopupProps> = ({
             flexShrink: 0,
           }} />
           <Box sx={{
-            color: c.text.primary, fontSize: '0.88rem', lineHeight: 1.45,
+            color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.45,
             flex: '1 1 auto', minWidth: 0,
           }}>
             {label}
@@ -104,7 +104,7 @@ const ErrorToast: React.FC<{ c: ClaudeTokens; message: string | null; onClose: (
         }}
       >
         <Box sx={{
-          color: c.text.primary, fontSize: '0.88rem', lineHeight: 1.45,
+          color: c.text.primary, fontSize: '0.875rem', lineHeight: 1.45,
           flex: '1 1 auto', minWidth: 0,
         }}>
           {display}

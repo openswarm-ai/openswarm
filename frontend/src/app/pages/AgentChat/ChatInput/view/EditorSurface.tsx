@@ -55,7 +55,7 @@ export const EditorSurface: React.FC<Props> = ({
           border: 'none',
           outline: 'none',
           color: c.text.primary,
-          fontSize: '0.95rem',
+          fontSize: '1rem',
           lineHeight: '1.55',
           fontFamily: 'inherit',
           wordBreak: 'break-word',
@@ -71,7 +71,7 @@ export const EditorSurface: React.FC<Props> = ({
             right: 0,
             padding: `${hasAttachments ? 4 : 10}px 12px`,
             color: c.text.tertiary,
-            fontSize: '0.95rem',
+            fontSize: '1rem',
             lineHeight: '1.5',
             fontFamily: 'inherit',
             pointerEvents: 'none',
@@ -88,7 +88,7 @@ export const EditorSurface: React.FC<Props> = ({
             <span
               style={{
                 flexShrink: 0,
-                fontSize: '0.7rem',
+                fontSize: '0.6875rem',
                 fontWeight: 600,
                 letterSpacing: '0.02em',
                 color: c.text.tertiary,

@@ -418,7 +418,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
           alignItems: 'center',
           justifyContent: 'center',
           color: '#888',
-          fontSize: '0.85rem',
+          fontSize: '0.875rem',
           fontStyle: 'italic',
           ...style,
         }}
@@ -511,7 +511,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
           }}
         >
           <Skeleton variant="card" width={140} height={14} delayMs={0} />
-          <Typography sx={{ fontSize: '0.78rem', color: '#888', letterSpacing: '0.01em' }}>
+          <Typography sx={{ fontSize: '0.75rem', color: '#888', letterSpacing: '0.01em' }}>
             Restoring preview...
           </Typography>
         </Box>

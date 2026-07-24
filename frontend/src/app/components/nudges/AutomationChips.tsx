@@ -66,7 +66,7 @@ const AutomationChips: React.FC<{ c: ClaudeTokens }> = ({ c }) => {
               border: `1px dashed ${done ? c.status.success : c.border.strong}`,
               background: done ? c.status.successBg : 'transparent',
               color: done ? c.status.success : c.text.secondary,
-              fontSize: '0.88rem', fontWeight: 500,
+              fontSize: '0.875rem', fontWeight: 500,
               cursor: done ? 'default' : 'pointer', fontFamily: 'inherit',
             }}
           >

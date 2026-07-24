@@ -25,7 +25,7 @@ export function renderUserTextWithPills(text: string, c: ReturnType<typeof useCl
         sx={{
           bgcolor: `${SKILL_COLOR}18`,
           color: SKILL_COLOR,
-          fontSize: '0.72rem',
+          fontSize: '0.75rem',
           fontFamily: c.font.mono,
           height: 20,
           mx: 0.25,

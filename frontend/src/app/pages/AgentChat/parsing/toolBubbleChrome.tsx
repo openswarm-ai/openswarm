@@ -55,7 +55,7 @@ export const ElapsedTimer: React.FC<{ startTime: string }> = ({ startTime }) => 
       />
       <Typography
         sx={{
-          fontSize: '0.7rem',
+          fontSize: '0.6875rem',
           fontFamily: c.font.mono,
           color: c.text.tertiary,
           minWidth: 28,

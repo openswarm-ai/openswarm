@@ -35,7 +35,7 @@ const CustomProvidersEditor: React.FC<{
           const allReady = readyCount === list.length;
           return (
             <Typography sx={{
-              fontSize: '0.6rem',
+              fontSize: '0.625rem',
               fontWeight: 600,
               color: allReady ? c.status.success : c.status.warning,
               bgcolor: allReady ? `${c.status.success}15` : `${c.status.warning}1F`,
@@ -105,7 +105,7 @@ const CustomProvidersEditor: React.FC<{
             >
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: -0.25 }}>
                 <Typography sx={{
-                  fontSize: '0.62rem',
+                  fontSize: '0.625rem',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
                   textTransform: 'uppercase' as const,
@@ -147,7 +147,7 @@ const CustomProvidersEditor: React.FC<{
                   required
                   error={dupeNameWithEarlier}
                   helperText={dupeNameWithEarlier ? 'Name must be unique' : undefined}
-                  InputLabelProps={{ shrink: true, sx: { fontSize: '0.72rem', color: c.text.tertiary } }}
+                  InputLabelProps={{ shrink: true, sx: { fontSize: '0.75rem', color: c.text.tertiary } }}
                   sx={fieldSx}
                 />
                 <TextField
@@ -158,7 +158,7 @@ const CustomProvidersEditor: React.FC<{
                   placeholder="https://ollama.com/v1"
                   label="Base URL"
                   required
-                  InputLabelProps={{ shrink: true, sx: { fontSize: '0.72rem', color: c.text.tertiary } }}
+                  InputLabelProps={{ shrink: true, sx: { fontSize: '0.75rem', color: c.text.tertiary } }}
                   sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
                 />
                 <TextField
@@ -169,7 +169,7 @@ const CustomProvidersEditor: React.FC<{
                   fullWidth
                   placeholder="Leave blank for local servers (LM Studio, Ollama, ...)"
                   label="API Key (optional)"
-                  InputLabelProps={{ shrink: true, sx: { fontSize: '0.72rem', color: c.text.tertiary } }}
+                  InputLabelProps={{ shrink: true, sx: { fontSize: '0.75rem', color: c.text.tertiary } }}
                   sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
                   InputProps={{
                     endAdornment: (
@@ -184,11 +184,11 @@ const CustomProvidersEditor: React.FC<{
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.25 }}>
-                <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                <Typography sx={{ fontSize: '0.625rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
                   Models
                 </Typography>
                 {((cp.models || []).length === 0) ? (
-                  <Typography sx={{ fontSize: '0.7rem', color: c.text.muted, fontStyle: 'italic', px: 0.5 }}>
+                  <Typography sx={{ fontSize: '0.6875rem', color: c.text.muted, fontStyle: 'italic', px: 0.5 }}>
                     No models yet, add the model IDs this endpoint serves.
                   </Typography>
                 ) : (
@@ -200,7 +200,7 @@ const CustomProvidersEditor: React.FC<{
                         size="small"
                         fullWidth
                         placeholder="e.g. gpt-oss:120b"
-                        sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono, fontSize: '0.78rem' } }}
+                        sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono, fontSize: '0.75rem' } }}
                       />
                       <IconButton
                         onClick={() => removeModel(mIdx)}
@@ -224,7 +224,7 @@ const CustomProvidersEditor: React.FC<{
                     mt: 0.25,
                     textTransform: 'none',
                     color: c.accent.primary,
-                    fontSize: '0.72rem',
+                    fontSize: '0.75rem',
                     minWidth: 'auto',
                     px: 0.75,
                     py: 0.25,
@@ -254,7 +254,7 @@ const CustomProvidersEditor: React.FC<{
             color: c.text.primary,
             borderColor: c.border.medium,
             borderStyle: 'dashed',
-            fontSize: '0.78rem',
+            fontSize: '0.75rem',
             px: 1.5,
             py: 0.6,
             '&:hover': { borderColor: c.accent.primary, bgcolor: `${c.accent.primary}08` },

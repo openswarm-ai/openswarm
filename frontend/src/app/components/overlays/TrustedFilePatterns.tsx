@@ -76,10 +76,10 @@ export const TrustedFilePatterns: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+      <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
         Trusted file patterns
       </Typography>
-      <Typography sx={{ fontSize: '0.8rem', color: c.text.secondary, lineHeight: 1.45 }}>
+      <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, lineHeight: 1.45 }}>
         Files like SSH keys and shell startup files normally ask before each write, even when you've set Write to "always allow". Patterns you've chosen to always allow appear below. Remove one to start asking again.
       </Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', border: `1px solid ${c.border.subtle}`, borderRadius: 1.5, overflow: 'hidden', mt: 0.5 }}>
@@ -97,10 +97,10 @@ export const TrustedFilePatterns: React.FC = () => {
             }}
           >
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography sx={{ fontSize: '0.82rem', color: c.text.primary, fontWeight: 500 }}>
+              <Typography sx={{ fontSize: '0.8125rem', color: c.text.primary, fontWeight: 500 }}>
                 {PATTERN_LABELS[pat] || pat}
               </Typography>
-              <Typography sx={{ fontSize: '0.72rem', color: c.text.tertiary, fontFamily: c.font.mono, mt: 0.15 }}>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, fontFamily: c.font.mono, mt: 0.15 }}>
                 {pat}
               </Typography>
             </Box>

@@ -22,7 +22,7 @@ const ModelsTab: React.FC<{
     <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, gap: 2.5, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-        <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
           Connect a Subscription
         </Typography>
 
@@ -41,7 +41,7 @@ const ModelsTab: React.FC<{
       </Box>
 
       <Box data-onboarding="settings-api-keys" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-        <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
+        <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, mt: 1 }}>
           Or Connect With API Keys
         </Typography>
 

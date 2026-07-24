@@ -73,7 +73,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
       maxHeight: 400,
       boxShadow: c.shadow.lg,
       '& .MuiMenuItem-root': {
-        fontSize: '0.8rem',
+        fontSize: '0.8125rem',
         color: c.text.secondary,
         py: 0.75,
         px: 1.5,

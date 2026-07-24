@@ -1078,7 +1078,7 @@ const BrowserCard: React.FC<Props> = ({
                 <Typography
                   sx={{
                     flex: 1,
-                    fontSize: '0.7rem',
+                    fontSize: '0.6875rem',
                     fontWeight: isActive ? 600 : 400,
                     color: isActive ? CHROME_TEXT : CHROME_TEXT_MUTED,
                     overflow: 'hidden',
@@ -1169,7 +1169,7 @@ const BrowserCard: React.FC<Props> = ({
                   },
                 }}
               />
-              <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: accentColor, lineHeight: 1 }}>
+              <Typography sx={{ fontSize: '0.625rem', fontWeight: 600, color: accentColor, lineHeight: 1 }}>
                 AI
               </Typography>
             </Box>
@@ -1260,7 +1260,7 @@ const BrowserCard: React.FC<Props> = ({
             placeholder="Search Google or enter URL..."
             sx={{
               flex: 1,
-              fontSize: '0.74rem',
+              fontSize: '0.75rem',
               fontFamily: c.font.mono,
               color: CHROME_TEXT,
               py: 0,
@@ -1330,7 +1330,7 @@ const BrowserCard: React.FC<Props> = ({
                   bgcolor: c.bg.surface,
                 }}
               >
-                <Typography sx={{ color: c.text.ghost, fontSize: '0.9rem', px: 2, textAlign: 'center' }}>
+                <Typography sx={{ color: c.text.ghost, fontSize: '0.875rem', px: 2, textAlign: 'center' }}>
                   {activeTitle || activeUrl}
                 </Typography>
               </Box>
@@ -1379,14 +1379,14 @@ const BrowserCard: React.FC<Props> = ({
                   bgcolor: c.bg.surface,
                 }}
               >
-                <Typography sx={{ color: c.text.primary, fontSize: '0.95rem', fontWeight: 500 }}>
+                <Typography sx={{ color: c.text.primary, fontSize: '1rem', fontWeight: 500 }}>
                   {endingState?.status === 'error' ? 'Task ended with an error.' : 'Task done.'}
                 </Typography>
                 <Button
                   onClick={() => dispatch(cancelBrowserCardEnding(browserId))}
                   sx={{
                     textTransform: 'none',
-                    fontSize: '0.82rem',
+                    fontSize: '0.8125rem',
                     fontWeight: 600,
                     bgcolor: c.accent.primary,
                     color: '#fff',
@@ -1414,7 +1414,7 @@ const BrowserCard: React.FC<Props> = ({
                   bgcolor: c.bg.surface,
                 }}
               >
-                <Typography sx={{ color: c.text.primary, fontSize: '0.95rem', fontWeight: 500 }}>
+                <Typography sx={{ color: c.text.primary, fontSize: '1rem', fontWeight: 500 }}>
                   This page stopped responding.
                 </Typography>
                 <Button
@@ -1422,7 +1422,7 @@ const BrowserCard: React.FC<Props> = ({
                   startIcon={<RefreshIcon sx={{ fontSize: '1rem' }} />}
                   sx={{
                     textTransform: 'none',
-                    fontSize: '0.82rem',
+                    fontSize: '0.8125rem',
                     fontWeight: 600,
                     bgcolor: c.accent.primary,
                     color: '#fff',
@@ -1455,7 +1455,7 @@ const BrowserCard: React.FC<Props> = ({
             Passkeys aren't supported
           </DialogTitle>
           <DialogContent sx={{ pb: 1 }}>
-            <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, lineHeight: 1.5 }}>
+            <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.5 }}>
               Sorry, OpenSwarm doesn't support passkeys. Please sign in with a password or another method.
             </Typography>
           </DialogContent>
@@ -1464,7 +1464,7 @@ const BrowserCard: React.FC<Props> = ({
               onClick={() => setPasskeyDialogOpen(false)}
               sx={{
                 textTransform: 'none',
-                fontSize: '0.82rem',
+                fontSize: '0.8125rem',
                 fontWeight: 600,
                 bgcolor: c.accent.primary,
                 color: '#fff',

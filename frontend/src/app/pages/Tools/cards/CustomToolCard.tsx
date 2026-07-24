@@ -111,7 +111,7 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                         {ig && (
                           <Box sx={{
                             width: 36, height: 36, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            bgcolor: `${ig.color}18`, fontSize: '1.1rem', fontWeight: 700, color: ig.color, flexShrink: 0,
+                            bgcolor: `${ig.color}18`, fontSize: '1.125rem', fontWeight: 700, color: ig.color, flexShrink: 0,
                             opacity: isDisabled ? 0.4 : 1, transition: 'opacity 0.2s',
                           }}>
                             {ig.icon}
@@ -119,23 +119,23 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                         )}
                         <Box sx={{ flex: 1, minWidth: 0, opacity: isDisabled ? 0.4 : 1, transition: 'opacity 0.2s' }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-                            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>{tool.name}</Typography>
+                            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>{tool.name}</Typography>
                             {isMcp && <Chip icon={<ExtensionIcon sx={{ fontSize: 12 }} />} label={isStdio ? 'MCP · stdio' : 'MCP'} size="small" sx={{ bgcolor: `${c.status.warning}20`, color: c.status.warning, fontSize: '0.75rem', height: 24 }} />}
-                            {tool.command && <Chip icon={<TerminalIcon sx={{ fontSize: 12 }} />} label={`/${tool.command}`} size="small" sx={{ bgcolor: 'rgba(174,86,48,0.12)', color: c.accent.hover, fontSize: '0.72rem', height: 22 }} />}
+                            {tool.command && <Chip icon={<TerminalIcon sx={{ fontSize: 12 }} />} label={`/${tool.command}`} size="small" sx={{ bgcolor: 'rgba(174,86,48,0.12)', color: c.accent.hover, fontSize: '0.75rem', height: 22 }} />}
                             {tool.auth_status === 'connected' && !ig && (
-                              <Chip icon={<CheckCircleIcon sx={{ fontSize: 12 }} />} label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'} size="small" sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.7rem', height: 20, '& .MuiChip-icon': { color: c.status.success } }} />
+                              <Chip icon={<CheckCircleIcon sx={{ fontSize: 12 }} />} label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'} size="small" sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.6875rem', height: 20, '& .MuiChip-icon': { color: c.status.success } }} />
                             )}
                             {tool.auth_status === 'configured' && !ig?.credentialFields && (
-                              <Chip icon={<SettingsIcon sx={{ fontSize: 12 }} />} label="Configured" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.7rem', height: 20, '& .MuiChip-icon': { color: c.status.warning } }} />
+                              <Chip icon={<SettingsIcon sx={{ fontSize: 12 }} />} label="Configured" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.6875rem', height: 20, '& .MuiChip-icon': { color: c.status.warning } }} />
                             )}
                             {ig && totalToolCount > 0 && (
-                              <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+                              <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.6875rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                             )}
                             {ig && (
-                              <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
+                              <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
                             )}
                           </Box>
-                          {tool.description && <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>{tool.description}</Typography>}
+                          {tool.description && <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>{tool.description}</Typography>}
                         </Box>
                         <CustomToolConnect
                           tool={tool}
@@ -190,19 +190,19 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-                              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
-                              {hasPerms && <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />}
+                              <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
+                              {hasPerms && <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.625rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               {hasPerms && (
                                 <>
                                   <Tooltip title="Allow all read-only tools">
-                                    <Button size="small" onClick={() => handleBulkReadOnly(tool.id)} sx={{ color: c.status.info, textTransform: 'none', fontSize: '0.7rem', minWidth: 'auto', px: 1, py: 0.25 }}>
+                                    <Button size="small" onClick={() => handleBulkReadOnly(tool.id)} sx={{ color: c.status.info, textTransform: 'none', fontSize: '0.6875rem', minWidth: 'auto', px: 1, py: 0.25 }}>
                                       Allow reads
                                     </Button>
                                   </Tooltip>
                                   <Tooltip title="Reset all to Ask">
-                                    <Button size="small" onClick={() => handleResetPermissions(tool.id)} sx={{ color: c.text.ghost, textTransform: 'none', fontSize: '0.7rem', minWidth: 'auto', px: 1, py: 0.25 }}>
+                                    <Button size="small" onClick={() => handleResetPermissions(tool.id)} sx={{ color: c.text.ghost, textTransform: 'none', fontSize: '0.6875rem', minWidth: 'auto', px: 1, py: 0.25 }}>
                                       Reset
                                     </Button>
                                   </Tooltip>
@@ -224,19 +224,19 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
                           {!hasPerms ? (
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 3, gap: 1.5 }}>
                               <ExtensionIcon sx={{ fontSize: 28, color: c.text.ghost, opacity: 0.4 }} />
-                              <Typography sx={{ color: c.text.ghost, fontSize: '0.82rem' }}>No tools discovered yet</Typography>
+                              <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem' }}>No tools discovered yet</Typography>
                               <Button
                                 size="small"
                                 variant="outlined"
                                 startIcon={discovering ? <CircularProgress size={12} /> : <SearchIcon sx={{ fontSize: 14 }} />}
                                 onClick={() => handleDiscover(tool.id)}
                                 disabled={discovering || !canDiscover}
-                                sx={{ borderColor: c.border.medium, color: c.text.secondary, '&:hover': { borderColor: c.accent.primary, color: c.accent.primary }, textTransform: 'none', fontSize: '0.78rem', borderRadius: 1.5 }}
+                                sx={{ borderColor: c.border.medium, color: c.text.secondary, '&:hover': { borderColor: c.accent.primary, color: c.accent.primary }, textTransform: 'none', fontSize: '0.75rem', borderRadius: 1.5 }}
                               >
                                 Discover Tools
                               </Button>
                               {!canDiscover && (
-                                <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem' }}>Add an MCP configuration to enable tool discovery</Typography>
+                                <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem' }}>Add an MCP configuration to enable tool discovery</Typography>
                               )}
                             </Box>
                           ) : (

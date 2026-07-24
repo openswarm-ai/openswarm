@@ -149,7 +149,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
             sx={{
               '& .MuiOutlinedInput-root': {
                 bgcolor: c.bg.page,
-                fontSize: '0.85rem',
+                fontSize: '0.875rem',
                 fontFamily: c.font.mono,
               },
             }}
@@ -192,7 +192,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
                 component="button"
                 underline="hover"
                 onClick={() => browse('/')}
-                sx={{ color: c.text.tertiary, fontSize: '0.78rem' }}
+                sx={{ color: c.text.tertiary, fontSize: '0.75rem' }}
               >
                 /
               </Link>
@@ -200,7 +200,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
                 const fullPath = '/' + pathSegments.slice(0, i + 1).join('/');
                 const isLast = i === pathSegments.length - 1;
                 return isLast ? (
-                  <Typography key={fullPath} sx={{ color: c.text.primary, fontSize: '0.78rem', fontWeight: 500 }}>
+                  <Typography key={fullPath} sx={{ color: c.text.primary, fontSize: '0.75rem', fontWeight: 500 }}>
                     {seg}
                   </Typography>
                 ) : (
@@ -209,7 +209,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
                     component="button"
                     underline="hover"
                     onClick={() => browse(fullPath)}
-                    sx={{ color: c.text.tertiary, fontSize: '0.78rem' }}
+                    sx={{ color: c.text.tertiary, fontSize: '0.75rem' }}
                   >
                     {seg}
                   </Link>
@@ -220,7 +220,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
         )}
 
         {error && (
-          <Typography sx={{ color: c.status.error, fontSize: '0.82rem', px: 1 }}>
+          <Typography sx={{ color: c.status.error, fontSize: '0.8125rem', px: 1 }}>
             {error}
           </Typography>
         )}
@@ -250,7 +250,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
             </Box>
           ) : !hasEntries ? (
             <Box sx={{ py: 4, textAlign: 'center' }}>
-              <Typography sx={{ color: c.text.ghost, fontSize: '0.85rem' }}>
+              <Typography sx={{ color: c.text.ghost, fontSize: '0.875rem' }}>
                 Empty directory
               </Typography>
             </Box>
@@ -277,7 +277,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
                   </ListItemIcon>
                   <ListItemText
                     primary={dir}
-                    primaryTypographyProps={{ sx: { fontSize: '0.84rem', color: c.text.primary } }}
+                    primaryTypographyProps={{ sx: { fontSize: '0.8125rem', color: c.text.primary } }}
                   />
                 </ListItemButton>
               ))}
@@ -301,7 +301,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
                   </ListItemIcon>
                   <ListItemText
                     primary={file}
-                    primaryTypographyProps={{ sx: { fontSize: '0.84rem', color: c.text.secondary } }}
+                    primaryTypographyProps={{ sx: { fontSize: '0.8125rem', color: c.text.secondary } }}
                   />
                 </ListItemButton>
               ))}
@@ -310,7 +310,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ open, onClose, onSe
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
-        <Typography sx={{ color: c.text.ghost, fontSize: '0.72rem', pl: 1 }}>
+        <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', pl: 1 }}>
           {selected
             ? `Selected: ${selected.name}`
             : 'Click to select, double-click folders to open'}

@@ -27,11 +27,11 @@ function PlanWidget({ props }: { props: PlanProps }): React.ReactElement {
       }}
     >
       {props.title && (
-        <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary, mb: 1.5 }}>
+        <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, mb: 1.5 }}>
           {props.title}
         </Typography>
       )}
-      <Typography sx={{ fontSize: '0.72rem', color: c.text.tertiary, mb: 0.5 }}>
+      <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, mb: 0.5 }}>
         {done} of {props.steps.length} complete
       </Typography>
       <Box sx={{ height: 4, borderRadius: 2, bgcolor: c.border.subtle, mb: 1.5, overflow: 'hidden' }}>
@@ -48,7 +48,7 @@ function PlanWidget({ props }: { props: PlanProps }): React.ReactElement {
           )}
           <Typography
             sx={{
-              fontSize: '0.82rem',
+              fontSize: '0.8125rem',
               fontWeight: step.status === 'in_progress' ? 600 : 500,
               color: step.status === 'pending' ? c.text.muted : c.text.primary,
               overflow: 'hidden',

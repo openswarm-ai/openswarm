@@ -389,11 +389,11 @@ function DesktopDock({
             <Box component="img" src={previewImage} alt="" sx={{ width: '100%', display: 'block' }} />
           ) : (
             <Box sx={{ p: 1.25 }}>
-              <Typography sx={{ color: '#fff', fontSize: '0.78rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <Typography sx={{ color: '#fff', fontSize: '0.75rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {hoveredEntry.label}
               </Typography>
               {hoveredEntry.snippet && (
-                <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.7rem', mt: 0.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.6875rem', mt: 0.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {hoveredEntry.snippet}
                 </Typography>
               )}

@@ -130,7 +130,7 @@ export default function SchedulePopover({
         {!chatHistoryOnly && mode !== 'schedule' && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
             {([['search', 'Chat history'], ['runs', 'Scheduled tasks']] as const).map(([m, label]) => (
-              <Box key={m} onClick={() => onModeChange(m)} role="button" sx={{ fontSize: '0.85rem', fontWeight: mode === m ? 700 : 500, px: 0.75, pt: 0.4, pb: 0.55, color: mode === m ? c.text.primary : c.text.muted, borderBottom: `2px solid ${mode === m ? c.accent.primary : 'transparent'}`, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>{label}</Box>
+              <Box key={m} onClick={() => onModeChange(m)} role="button" sx={{ fontSize: '0.875rem', fontWeight: mode === m ? 700 : 500, px: 0.75, pt: 0.4, pb: 0.55, color: mode === m ? c.text.primary : c.text.muted, borderBottom: `2px solid ${mode === m ? c.accent.primary : 'transparent'}`, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>{label}</Box>
             ))}
           </Box>
         )}
@@ -151,10 +151,10 @@ export default function SchedulePopover({
                 value={historyQuery}
                 onChange={(e) => onHistoryQueryChange(e.target.value)}
                 placeholder="Search past chats..."
-                sx={{ flex: 1, fontSize: '0.85rem', color: c.text.primary, '& input::placeholder': { color: c.text.ghost, opacity: 1 } }}
+                sx={{ flex: 1, fontSize: '0.875rem', color: c.text.primary, '& input::placeholder': { color: c.text.ghost, opacity: 1 } }}
               />
               {!hideTopChrome && (
-                <Box onClick={onNewChat} role="button" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.78rem', fontWeight: 500, color: c.text.secondary, px: 1, py: 0.45, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated } }}>
+                <Box onClick={onNewChat} role="button" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.75rem', fontWeight: 500, color: c.text.secondary, px: 1, py: 0.45, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated } }}>
                   <AddIcon sx={{ fontSize: 12 }} />
                   New
                 </Box>
@@ -162,13 +162,13 @@ export default function SchedulePopover({
             </Box>
             <Box ref={historyScrollRef} onScroll={onHistoryScroll} sx={{ flex: 1, overflowY: 'auto', borderTop: `1px solid ${c.border.subtle}` }}>
               {historyResults.length === 0 && !historyLoading && (
-                <Typography sx={{ px: 1.5, py: 2.5, fontSize: '0.82rem', color: c.text.muted, textAlign: 'center' }}>{historyQuery ? 'No matching chats' : 'No chat history yet'}</Typography>
+                <Typography sx={{ px: 1.5, py: 2.5, fontSize: '0.8125rem', color: c.text.muted, textAlign: 'center' }}>{historyQuery ? 'No matching chats' : 'No chat history yet'}</Typography>
               )}
               {historyResults.map((entry) => {
                 const hasWorkflow = Boolean(workflowIconMap[entry.id]);
                 return (
                   <Box key={entry.id} onClick={() => onHistorySelect(entry.id)} sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.9, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
-                    <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</Typography>
+                    <Typography sx={{ flex: 1, fontSize: '0.8125rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</Typography>
                     {/* Only annotate chats that became saved workflows.
                         A small workflow glyph reads as a tag, where the
                         old single-letter chip read as a random initial. */}
@@ -179,7 +179,7 @@ export default function SchedulePopover({
                         </Box>
                       </Tooltip>
                     )}
-                    <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, flexShrink: 0, whiteSpace: 'nowrap' }}>{relTime(entry.closed_at)}</Typography>
+                    <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, flexShrink: 0, whiteSpace: 'nowrap' }}>{relTime(entry.closed_at)}</Typography>
                   </Box>
                 );
               })}
@@ -191,7 +191,7 @@ export default function SchedulePopover({
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, py: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
               {allRunsLoading && allRuns.length === 0 ? (
-                <Typography sx={{ px: 0.5, py: 2.5, fontSize: '0.82rem', color: c.text.muted, textAlign: 'center' }}>Loading runs...</Typography>
+                <Typography sx={{ px: 0.5, py: 2.5, fontSize: '0.8125rem', color: c.text.muted, textAlign: 'center' }}>Loading runs...</Typography>
               ) : (
                 <HistoryList runs={allRuns} onOpen={onRunOpen} showWorkflow workflowTitleFor={workflowTitleFor} />
               )}
@@ -203,10 +203,10 @@ export default function SchedulePopover({
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
               {(['List', 'Week', 'Month'] as const).map((v) => (
-                <Box key={v} onClick={() => setCalendarView(v)} role="button" sx={{ fontSize: '0.85rem', fontWeight: calendarView === v ? 700 : 500, px: 0.75, pt: 0.4, pb: 0.55, color: calendarView === v ? c.text.primary : c.text.muted, borderBottom: `2px solid ${calendarView === v ? c.accent.primary : 'transparent'}`, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>{v}</Box>
+                <Box key={v} onClick={() => setCalendarView(v)} role="button" sx={{ fontSize: '0.875rem', fontWeight: calendarView === v ? 700 : 500, px: 0.75, pt: 0.4, pb: 0.55, color: calendarView === v ? c.text.primary : c.text.muted, borderBottom: `2px solid ${calendarView === v ? c.accent.primary : 'transparent'}`, cursor: 'pointer', '&:hover': { color: c.text.primary } }}>{v}</Box>
               ))}
               <Box sx={{ flex: 1 }} />
-              <Box onClick={onExpand} role="button" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.78rem', fontWeight: 500, color: c.text.secondary, px: 1, py: 0.35, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated } }}>
+              <Box onClick={onExpand} role="button" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, fontSize: '0.75rem', fontWeight: 500, color: c.text.secondary, px: 1, py: 0.35, border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated } }}>
                 <OpenInFullIcon sx={{ fontSize: 12 }} />
                 Expand
               </Box>
@@ -219,14 +219,14 @@ export default function SchedulePopover({
                 onClick={() => setRefDate(new Date())}
                 role="button"
                 sx={{
-                  fontSize: '0.78rem', fontWeight: 600, color: c.text.secondary,
+                  fontSize: '0.75rem', fontWeight: 600, color: c.text.secondary,
                   border: `1px solid ${c.border.subtle}`, px: 0.95, py: 0.3,
                   borderRadius: `${c.radius.md}px`, cursor: 'pointer',
                   '&:hover': { color: c.text.primary, borderColor: c.border.medium },
                 }}>Today</Box>
               <IconButton size="small" onClick={onPrev} sx={{ p: 0.3, color: c.text.muted, '&:hover': { color: c.text.primary } }}><ChevronLeftIcon sx={{ fontSize: 17 }} /></IconButton>
               <IconButton size="small" onClick={onNext} sx={{ p: 0.3, color: c.text.muted, '&:hover': { color: c.text.primary } }}><ChevronRightIcon sx={{ fontSize: 17 }} /></IconButton>
-              <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary, ml: 0.25 }}>{periodLabel}</Typography>
+              <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.primary, ml: 0.25 }}>{periodLabel}</Typography>
             </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', px: 1.5, pt: 0, pb: 1, borderTop: `1px solid ${c.border.subtle}`, minHeight: 0 }}>
               <ScheduleCalendar view={calendarView} density="compact" onSelectWorkflow={onWorkflowSelect} refDate={refDate} />
@@ -250,7 +250,7 @@ function ModeChip({ label, icon, active, onClick }: { label: string; icon: React
       role="button"
       sx={{
         display: 'inline-flex', alignItems: 'center', gap: 0.5,
-        fontSize: '0.82rem', fontWeight: active ? 700 : 500,
+        fontSize: '0.8125rem', fontWeight: active ? 700 : 500,
         px: 1.1, py: 0.45,
         cursor: 'pointer',
         color: active ? c.text.primary : c.text.muted,

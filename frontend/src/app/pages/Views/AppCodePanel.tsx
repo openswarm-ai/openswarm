@@ -101,7 +101,7 @@ const AppCodePanel: React.FC<Props> = ({ workspaceId, onFileSaved }) => {
           <FileTreeItem key={node.path} node={node} depth={0} activeFile={activeFile} onSelect={setActiveFile} c={c} />
         ))}
         {filePaths.length === 0 && (
-          <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost, px: 1.5, py: 1 }}>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, px: 1.5, py: 1 }}>
             Loading files…
           </Typography>
         )}
@@ -109,7 +109,7 @@ const AppCodePanel: React.FC<Props> = ({ workspaceId, onFileSaved }) => {
       <Box sx={{ flex: 1, overflow: 'hidden' }}>
         {activeFile && oversizeFiles[activeFile] != null ? (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', px: 3 }}>
-            <Typography sx={{ color: c.text.muted, fontSize: '0.8rem', textAlign: 'center', maxWidth: 320, lineHeight: 1.5 }}>
+            <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem', textAlign: 'center', maxWidth: 320, lineHeight: 1.5 }}>
               This file is {(oversizeFiles[activeFile] / (1024 * 1024)).toFixed(1)} MB, too large to edit here.
             </Typography>
           </Box>
@@ -123,7 +123,7 @@ const AppCodePanel: React.FC<Props> = ({ workspaceId, onFileSaved }) => {
           />
         ) : (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <Typography sx={{ color: c.text.ghost, fontSize: '0.8rem' }}>
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem' }}>
               Select a file to edit
             </Typography>
           </Box>

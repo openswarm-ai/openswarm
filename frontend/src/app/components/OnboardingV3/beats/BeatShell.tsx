@@ -106,7 +106,7 @@ const BeatShell: React.FC<{
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
             marginBottom: 18, padding: 0, border: 'none', background: 'transparent',
-            color: 'rgba(255,255,255,0.47)', fontSize: '0.85rem', cursor: 'pointer', fontFamily: 'inherit',
+            color: 'rgba(255,255,255,0.47)', fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit',
             position: wide ? 'absolute' : 'relative', top: wide ? 24 : undefined, left: wide ? 28 : undefined,
           }}
         >
@@ -117,7 +117,7 @@ const BeatShell: React.FC<{
       <motion.h1 {...enter(0.12)} style={{ margin: 0, fontSize: wide ? 'clamp(2.1rem, 2.8vw, 2.7rem)' : 'clamp(2.1rem, 3.2vw, 3rem)', lineHeight: 1.06, fontWeight: 800, letterSpacing: '-0.02em', fontFamily: 'inherit' }}>
         {title}
       </motion.h1>
-      <motion.p {...enter(0.26)} style={{ margin: '18px 0 0', fontSize: '1.04rem', lineHeight: 1.6, color: 'rgba(255,255,255,0.72)', maxWidth: '36ch', whiteSpace: 'pre-line' }}>
+      <motion.p {...enter(0.26)} style={{ margin: '18px 0 0', fontSize: '1rem', lineHeight: 1.6, color: 'rgba(255,255,255,0.72)', maxWidth: '36ch', whiteSpace: 'pre-line' }}>
         {body}
       </motion.p>
       {/* Arc pins the CTA to the panel's bottom on card beats; on the wide account beat it follows the content. */}
@@ -141,7 +141,7 @@ const BeatShell: React.FC<{
             onClick={() => armed && onSecondary()}
             style={{
               marginTop: 12, width: '100%', border: 'none', background: 'transparent',
-              color: 'rgba(255,255,255,0.55)', fontSize: '0.88rem', fontWeight: 500,
+              color: 'rgba(255,255,255,0.55)', fontSize: '0.875rem', fontWeight: 500,
               cursor: 'pointer', fontFamily: 'inherit', padding: 4,
             }}
           >

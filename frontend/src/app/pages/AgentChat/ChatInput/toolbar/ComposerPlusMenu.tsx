@@ -83,7 +83,7 @@ export const ComposerPlusMenu: React.FC<{ c: ClaudeTokens; items: PlusMenuItem[]
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', color: 'inherit', flexShrink: 0 }}>{it.icon}</Box>
-            <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: 'inherit', flex: 1 }}>{it.label}</Typography>
+            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit', flex: 1 }}>{it.label}</Typography>
             {it.toggle && it.active && <CheckRoundedIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />}
           </MenuItem>
         ))}
@@ -128,7 +128,7 @@ export const ActiveTogglePills: React.FC<{ c: ClaudeTokens; items: PlusMenuItem[
           >
             <Box component="span" className="osw-pill-icon" sx={{ display: 'inline-flex' }}>{it.icon}</Box>
             <Box component="span" className="osw-pill-x" sx={{ alignItems: 'center' }}><CloseRoundedIcon /></Box>
-            <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: 'inherit', whiteSpace: 'nowrap' }}>
+            <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'inherit', whiteSpace: 'nowrap' }}>
               {it.label}
             </Typography>
           </Box>

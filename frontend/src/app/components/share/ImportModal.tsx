@@ -43,7 +43,7 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
       {preflight && (
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, pt: 2.5, pb: 1 }}>
-            <Typography sx={{ fontSize: '1.05rem', fontWeight: 700, color: c.text.primary }}>
+            <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary }}>
               Add {preflight.summary.root.name}?
             </Typography>
             <IconButton size="small" onClick={onClose} sx={{ color: c.text.tertiary }}>
@@ -55,13 +55,13 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
             {preflight.review && preflight.review.findings.length > 0 && (
               <Box sx={{ mt: 1.75, display: 'flex', gap: 0.85, alignItems: 'center' }}>
                 <ShieldOutlinedIcon sx={{ fontSize: 15, color: c.status.warning, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, lineHeight: 1.4 }}>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, lineHeight: 1.4 }}>
                   {preflight.review.findings.join(' ')}
                 </Typography>
               </Box>
             )}
             {preflight.conflicts.length > 0 && (
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mt: 1.5 }}>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 1.5 }}>
                 Some items already exist and will be added as copies.
               </Typography>
             )}
@@ -82,7 +82,7 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
                   borderRadius: `${c.radius.md}px`,
                   px: 2.5,
                   py: 0.6,
-                  fontSize: '0.85rem',
+                  fontSize: '0.875rem',
                   fontWeight: 600,
                   boxShadow: 'none',
                 }}

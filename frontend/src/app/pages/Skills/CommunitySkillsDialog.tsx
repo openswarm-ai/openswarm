@@ -113,12 +113,12 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
       PaperProps={{ sx: { bgcolor: c.bg.secondary, borderRadius: `${c.radius.md}px` } }}>
       <DialogTitle sx={{ color: c.text.primary, fontSize: '1rem', fontWeight: 700, pb: 0.5 }}>
         Browse community skills
-        <Typography sx={{ fontSize: '0.78rem', color: c.text.tertiary, fontWeight: 400 }}>
+        <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, fontWeight: 400 }}>
           From the skills.sh registry. Community-published and unvetted; you'll see exactly what installs before it lands.
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 360 }}>
-        {error && <Alert severity="error" sx={{ fontSize: '0.8rem' }}>{error}</Alert>}
+        {error && <Alert severity="error" sx={{ fontSize: '0.8125rem' }}>{error}</Alert>}
 
         {!selected && (
           <>
@@ -132,7 +132,7 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
             />
             {loading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress size={22} /></Box>}
             {!loading && results.length === 0 && (
-              <Typography sx={{ fontSize: '0.82rem', color: c.text.tertiary, textAlign: 'center', py: 3 }}>
+              <Typography sx={{ fontSize: '0.8125rem', color: c.text.tertiary, textAlign: 'center', py: 3 }}>
                 {query.trim() ? 'No matching skills.' : 'Type to search the community registry.'}
               </Typography>
             )}
@@ -145,11 +145,11 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
                   '&:hover': { borderColor: c.accent.primary, bgcolor: `${c.accent.primary}08` },
                 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
-                  <Typography sx={{ fontSize: '0.86rem', fontWeight: 600, color: c.text.primary }}>{s.name}</Typography>
+                  <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>{s.name}</Typography>
                   <Chip label={`${s.installs.toLocaleString()} installs`} size="small"
-                    sx={{ height: 18, fontSize: '0.66rem', bgcolor: c.bg.elevated, color: c.text.tertiary }} />
+                    sx={{ height: 18, fontSize: '0.6875rem', bgcolor: c.bg.elevated, color: c.text.tertiary }} />
                 </Box>
-                <Typography sx={{ fontSize: '0.74rem', color: c.text.tertiary, fontFamily: c.font.mono }}>{s.source}</Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, fontFamily: c.font.mono }}>{s.source}</Typography>
               </Box>
             ))}
           </>
@@ -158,46 +158,46 @@ const CommunitySkillsDialog: React.FC<Props> = ({ open, onClose, onInstalled }) 
         {selected && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Button onClick={() => { previewSeq.current++; setSelected(null); setDisclosure(null); }} size="small"
-              sx={{ alignSelf: 'flex-start', textTransform: 'none', color: c.text.tertiary, fontSize: '0.78rem' }}>
+              sx={{ alignSelf: 'flex-start', textTransform: 'none', color: c.text.tertiary, fontSize: '0.75rem' }}>
               ← Back to results
             </Button>
             {busy && !disclosure && <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress size={22} /></Box>}
             {disclosure && (
               <>
-                <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: c.text.primary }}>{disclosure.name}</Typography>
+                <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary }}>{disclosure.name}</Typography>
                 {disclosure.description && (
-                  <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary }}>{disclosure.description}</Typography>
+                  <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary }}>{disclosure.description}</Typography>
                 )}
                 <Box
                   component="a" href={disclosure.repo_url} target="_blank" rel="noreferrer"
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: '0.76rem', color: c.accent.primary, textDecoration: 'none', fontFamily: c.font.mono }}>
+                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: '0.75rem', color: c.accent.primary, textDecoration: 'none', fontFamily: c.font.mono }}>
                   {selected.source} <OpenInNewIcon sx={{ fontSize: 13 }} />
                 </Box>
 
                 {/* The real risk for an agent platform: SKILL.md is injected as instructions the
                     agent follows, with its full tool surface. Say that plainly, not just "scripts". */}
-                <Alert severity="info" icon={<WarningAmberIcon fontSize="small" />} sx={{ fontSize: '0.78rem', py: 0 }}>
+                <Alert severity="info" icon={<WarningAmberIcon fontSize="small" />} sx={{ fontSize: '0.75rem', py: 0 }}>
                   This is an unvetted community skill. Its SKILL.md becomes instructions your agent will follow, and it can use your agent's tools (files, browser, settings). Only install from a source you trust, read it below first.
                 </Alert>
 
                 {disclosure.secret_findings.length > 0 && (
-                  <Alert severity="error" icon={<WarningAmberIcon fontSize="small" />} sx={{ fontSize: '0.78rem', py: 0 }}>
+                  <Alert severity="error" icon={<WarningAmberIcon fontSize="small" />} sx={{ fontSize: '0.75rem', py: 0 }}>
                     {disclosure.secret_findings.length} file{disclosure.secret_findings.length === 1 ? '' : 's'} contain secret-shaped text ({disclosure.secret_findings.slice(0, 3).join(', ')}{disclosure.secret_findings.length > 3 ? '…' : ''}). A trustworthy skill shouldn't ship credentials; treat this as a red flag.
                   </Alert>
                 )}
 
                 {disclosure.has_scripts && (
-                  <Alert severity="warning" icon={<WarningAmberIcon fontSize="small" />} sx={{ fontSize: '0.78rem', py: 0 }}>
+                  <Alert severity="warning" icon={<WarningAmberIcon fontSize="small" />} sx={{ fontSize: '0.75rem', py: 0 }}>
                     Includes {disclosure.scripts.length} script file{disclosure.scripts.length === 1 ? '' : 's'} that can run code when an agent uses this skill. Installing only writes the files; nothing runs until an agent does, and that still goes through normal command approval.
                   </Alert>
                 )}
 
-                <Typography sx={{ fontSize: '0.72rem', color: c.text.tertiary, mt: 0.5 }}>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, mt: 0.5 }}>
                   {disclosure.files.length} file{disclosure.files.length === 1 ? '' : 's'} will be installed:
                 </Typography>
                 <Box sx={{ maxHeight: 120, overflow: 'auto', border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.sm}px`, p: 1 }}>
                   {disclosure.files.map((f) => (
-                    <Typography key={f} sx={{ fontSize: '0.74rem', fontFamily: c.font.mono, color: disclosure.scripts.includes(f) ? c.status.warning : c.text.secondary }}>
+                    <Typography key={f} sx={{ fontSize: '0.75rem', fontFamily: c.font.mono, color: disclosure.scripts.includes(f) ? c.status.warning : c.text.secondary }}>
                       {disclosure.scripts.includes(f) ? '⚙ ' : ''}{f}
                     </Typography>
                   ))}

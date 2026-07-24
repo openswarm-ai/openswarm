@@ -19,7 +19,7 @@ export const SendBlockBanner: React.FC<Props> = ({ sendBlock, c }) => {
       bgcolor: c.bg.surface,
       border: `1px solid ${c.border.medium}`,
     }}>
-      <Typography sx={{ fontSize: '0.88rem', color: c.text.primary, lineHeight: 1.45 }}>
+      <Typography sx={{ fontSize: '0.875rem', color: c.text.primary, lineHeight: 1.45 }}>
         That message is too long to send. Try shortening it or splitting it into a few smaller ones.
       </Typography>
     </Box>

@@ -250,7 +250,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
         }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', pr: 1, pb: 0.5 }}>
             {!compact && (
-              <Typography sx={{ fontSize: '0.62rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
+              <Typography sx={{ fontSize: '0.625rem', color: c.text.ghost, fontWeight: 500 }}>{TZ_LABEL}</Typography>
             )}
           </Box>
           {days.map((d) => {
@@ -346,7 +346,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
             reads cleanly in both light and dark themes. */}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', flexShrink: 0, position: 'sticky', top: 0, bgcolor: c.bg.surface, zIndex: 2, borderBottom: `1px solid ${c.border.subtle}`, pt: 1.25, pb: 0.6 }}>
           {WEEKDAY_LABEL_SHORT.map((l, i) => (
-            <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: '0.74rem', color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</Typography>
+            <Typography key={`${l}-${i}`} sx={{ textAlign: 'center', fontSize: '0.75rem', color: c.text.muted, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</Typography>
           ))}
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: `repeat(5, minmax(${compact ? 70 : 96}px, 1fr))`, flex: 1, minHeight: 0, gap: 0, borderLeft: `1px solid ${c.border.subtle}` }}>
@@ -362,7 +362,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                       Calendar shows them in a muted shade, not invisible).
                       Color tweak instead of opacity so dark themes stay
                       readable. */}
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 600 : 500, fontSize: '0.82rem', lineHeight: 1, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${accent}` : 'none' }}>{d.getDate()}</Box>
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box', width: 22, height: 22, borderRadius: '50%', bgcolor: isToday ? accent : 'transparent', color: isToday ? '#fff' : inMonth ? c.text.primary : c.text.ghost, fontWeight: isToday ? 600 : 500, fontSize: '0.8125rem', lineHeight: 1, boxShadow: isToday ? `0 0 0 1.5px ${c.bg.surface}, 0 0 0 3px ${accent}` : 'none' }}>{d.getDate()}</Box>
                 </Box>
                 {evs.slice(0, compact ? 3 : 4).map((e, idx) => (
                   <Box
@@ -403,7 +403,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
       onScroll={windowing.onScroll}
       sx={{ display: 'flex', flexDirection: 'column', maxHeight: '100%', overflow: 'auto', overflowAnchor: 'auto', bgcolor: c.bg.surface }}>
       {rows.length === 0 && (
-        <Typography sx={{ fontSize: '0.85rem', color: c.text.muted, textAlign: 'center', py: 3 }}>No scheduled</Typography>
+        <Typography sx={{ fontSize: '0.875rem', color: c.text.muted, textAlign: 'center', py: 3 }}>No scheduled</Typography>
       )}
       {windowing.topSpacer > 0 && (
         <Box aria-hidden sx={{ height: windowing.topSpacer, flexShrink: 0, overflowAnchor: 'none' }} />
@@ -420,13 +420,13 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                 px: 2, pt: rowIdx === 0 ? 1.5 : 2, pb: 0.5,
                 borderTop: rowIdx === 0 ? 'none' : `1px dashed ${c.border.subtle}`,
               }}>
-              <Typography sx={{ fontSize: '1.15rem', fontWeight: 700, color: row.isToday ? accent : c.text.primary, lineHeight: 1, letterSpacing: '-0.01em' }}>
+              <Typography sx={{ fontSize: '1.125rem', fontWeight: 700, color: row.isToday ? accent : c.text.primary, lineHeight: 1, letterSpacing: '-0.01em' }}>
                 {row.date.getDate()}
               </Typography>
-              <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, color: row.isToday ? accent : c.text.secondary, lineHeight: 1 }}>
+              <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: row.isToday ? accent : c.text.secondary, lineHeight: 1 }}>
                 {WEEKDAY_FULL[row.date.getDay()]}
               </Typography>
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, lineHeight: 1 }}>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, lineHeight: 1 }}>
                 {row.date.toLocaleString('en', { month: 'short' })}
               </Typography>
             </Box>
@@ -435,7 +435,7 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
         if (row.kind === 'empty') {
           return (
             <Box key={row.id} data-wl-id={row.id} sx={{ px: 2, pb: 1 }}>
-              <Typography sx={{ fontSize: '0.85rem', color: c.text.ghost }}>No events today</Typography>
+              <Typography sx={{ fontSize: '0.875rem', color: c.text.ghost }}>No events today</Typography>
             </Box>
           );
         }
@@ -454,8 +454,8 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
             }}>
             <Box sx={{ width: 3, alignSelf: 'stretch', minHeight: 22, bgcolor: accent, borderRadius: c.radius.sm, flexShrink: 0 }} />
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              <Typography className="ev-title" sx={{ fontSize: '0.9rem', fontWeight: 500, color: c.text.primary, lineHeight: 1.3 }}>{e.workflow.title}</Typography>
-              <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, lineHeight: 1.3 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+              <Typography className="ev-title" sx={{ fontSize: '0.875rem', fontWeight: 500, color: c.text.primary, lineHeight: 1.3 }}>{e.workflow.title}</Typography>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, lineHeight: 1.3 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
             </Box>
           </Box>
         );
@@ -543,7 +543,7 @@ function EventStack({ events, paused, now, maxVisible, onSelectWorkflow, eventFo
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Box sx={{ minWidth: 220, p: 1 }}>
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
             {rest.length} more at this hour
           </Typography>
           {rest.map((e, idx) => (
@@ -552,8 +552,8 @@ function EventStack({ events, paused, now, maxVisible, onSelectWorkflow, eventFo
               onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id, e.date); }}
               sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
               <Box sx={{ width: 8, height: 8, borderRadius: '50%', boxSizing: 'border-box', bgcolor: accent, flexShrink: 0 }} />
-              <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 600 }}>{e.workflow.title}</Typography>
-              <Typography sx={{ fontSize: '0.74rem', color: c.text.muted }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+              <Typography sx={{ flex: 1, fontSize: '0.8125rem', color: c.text.primary, fontWeight: 600 }}>{e.workflow.title}</Typography>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
             </Box>
           ))}
         </Box>
@@ -589,7 +589,7 @@ function MonthDayOverflow({ date, count, events, now, fontSize, onSelectWorkflow
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
         <Box sx={{ minWidth: 240, maxHeight: 360, overflowY: 'auto', p: 1 }}>
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
             {`${events.length} scheduled · ${date.toLocaleString('en', { weekday: 'short', month: 'short', day: 'numeric' })}`}
           </Typography>
           {events.map((e, idx) => (
@@ -598,8 +598,8 @@ function MonthDayOverflow({ date, count, events, now, fontSize, onSelectWorkflow
               onClick={() => { setAnchor(null); onSelectWorkflow?.(e.workflow.id, e.date); }}
               sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.5, borderRadius: `${c.radius.md}px`, cursor: 'pointer', '&:hover': { bgcolor: c.bg.elevated } }}>
               <Box sx={{ width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', bgcolor: accent, flexShrink: 0 }} />
-              <Typography sx={{ flex: 1, fontSize: '0.82rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.workflow.title}</Typography>
-              <Typography sx={{ fontSize: '0.74rem', color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
+              <Typography sx={{ flex: 1, fontSize: '0.8125rem', color: c.text.primary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.workflow.title}</Typography>
+              <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, flexShrink: 0 }}>{formatTime(e.date.getHours(), e.date.getMinutes())}</Typography>
             </Box>
           ))}
         </Box>
@@ -614,7 +614,7 @@ function EventTooltipBody({ event }: { event: { workflow: Workflow; date: Date }
   const cost = wf.cost_estimate?.last_run_usd;
   const monthly = wf.cost_estimate?.monthly_usd;
   return (
-    <Box sx={{ fontSize: '0.72rem', lineHeight: 1.5 }}>
+    <Box sx={{ fontSize: '0.75rem', lineHeight: 1.5 }}>
       <div style={{ fontWeight: 700 }}>{wf.title}</div>
       <div>{`Fires at ${formatTime(event.date.getHours(), event.date.getMinutes())}`}</div>
       {status && <div>{`Last run: ${status}`}</div>}

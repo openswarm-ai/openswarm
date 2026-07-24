@@ -54,15 +54,15 @@ const McpConfigDialog: React.FC<McpConfigDialogProps> = ({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, bgcolor: c.bg.page, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
               <Avatar
                 src={mcpConfigServer.iconUrl || undefined}
-                sx={{ width: 32, height: 32, bgcolor: c.bg.secondary, fontSize: '0.8rem', fontWeight: 700, color: c.text.muted }}
+                sx={{ width: 32, height: 32, bgcolor: c.bg.secondary, fontSize: '0.8125rem', fontWeight: 700, color: c.text.muted }}
               >
                 {mcpConfigServer.iconUrl ? null : (mcpConfigServer.title || cleanServerName(mcpConfigServer.name)).charAt(0).toUpperCase()}
               </Avatar>
               <Box>
-                <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.9rem' }}>
+                <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.875rem' }}>
                   {mcpConfigServer.title || cleanServerName(mcpConfigServer.name)}
                 </Typography>
-                <Typography sx={{ color: c.text.tertiary, fontSize: '0.78rem' }}>{mcpConfigServer.description}</Typography>
+                <Typography sx={{ color: c.text.tertiary, fontSize: '0.75rem' }}>{mcpConfigServer.description}</Typography>
               </Box>
             </Box>
           )}
@@ -77,7 +77,7 @@ const McpConfigDialog: React.FC<McpConfigDialogProps> = ({
             maxRows={8}
             error={!!mcpConfigError}
             helperText={mcpConfigError || 'Transport config passed to claude_agent_sdk (type, url, command, args, etc.)'}
-            sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page, fontFamily: c.font.mono, fontSize: '0.85rem' } }}
+            sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.page, fontFamily: c.font.mono, fontSize: '0.875rem' } }}
           />
 
           <FormControl fullWidth size="small">
@@ -100,7 +100,7 @@ const McpConfigDialog: React.FC<McpConfigDialogProps> = ({
 
           {mcpAuthType !== 'none' && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5, bgcolor: c.bg.page, borderRadius: 2, border: `1px solid ${c.border.subtle}` }}>
-              <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Environment Variables
               </Typography>
               {Object.entries(mcpCredentials).map(([key, val]) => (
@@ -112,14 +112,14 @@ const McpConfigDialog: React.FC<McpConfigDialogProps> = ({
                   fullWidth
                   size="small"
                   type={key.toLowerCase().includes('secret') ? 'password' : 'text'}
-                  sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.elevated, fontFamily: c.font.mono, fontSize: '0.85rem' } }}
+                  sx={{ '& .MuiOutlinedInput-root': { bgcolor: c.bg.elevated, fontFamily: c.font.mono, fontSize: '0.875rem' } }}
                 />
               ))}
               {mcpAuthType === 'env_vars' && (
                 <Button
                   size="small"
                   onClick={() => setMcpCredentials({ ...mcpCredentials, [`VAR_${Object.keys(mcpCredentials).length + 1}`]: '' })}
-                  sx={{ color: c.accent.primary, textTransform: 'none', fontSize: '0.78rem', alignSelf: 'flex-start' }}
+                  sx={{ color: c.accent.primary, textTransform: 'none', fontSize: '0.75rem', alignSelf: 'flex-start' }}
                 >
                   + Add Variable
                 </Button>

@@ -76,14 +76,14 @@ const TerminalPanel: React.FC<Props> = ({ lines }) => {
           px: 1.5,
           py: 1,
           fontFamily: c.font.mono,
-          fontSize: '0.74rem',
+          fontSize: '0.75rem',
           lineHeight: 1.55,
           '&::-webkit-scrollbar': { width: 6, height: 6 },
           '&::-webkit-scrollbar-thumb': { background: '#21262d', borderRadius: 3 },
         }}
       >
         {lines.length === 0 ? (
-          <Typography sx={{ color: '#8b949e', fontFamily: c.font.mono, fontSize: '0.78rem', fontStyle: 'italic' }}>
+          <Typography sx={{ color: '#8b949e', fontFamily: c.font.mono, fontSize: '0.75rem', fontStyle: 'italic' }}>
             Waiting for output... backend stdout/stderr and the running app's console.log will show here.
           </Typography>
         ) : (

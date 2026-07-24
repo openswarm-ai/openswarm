@@ -87,7 +87,7 @@ const SoftwareUpdateRow: React.FC<{ styles: SettingsStyles }> = ({ styles }) => 
                 color: c.text.secondary,
                 borderColor: c.border.medium,
                 textTransform: 'none',
-                fontSize: '0.8rem',
+                fontSize: '0.8125rem',
                 whiteSpace: 'nowrap',
                 '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
               }}
@@ -105,7 +105,7 @@ const SoftwareUpdateRow: React.FC<{ styles: SettingsStyles }> = ({ styles }) => 
                 color: c.accent.primary,
                 borderColor: c.accent.primary,
                 textTransform: 'none',
-                fontSize: '0.8rem',
+                fontSize: '0.8125rem',
                 whiteSpace: 'nowrap',
                 '&:hover': { bgcolor: `${c.accent.primary}10` },
               }}
@@ -127,7 +127,7 @@ const SoftwareUpdateRow: React.FC<{ styles: SettingsStyles }> = ({ styles }) => 
                 '&:hover': { bgcolor: c.accent.pressed },
                 '&.Mui-disabled': { bgcolor: c.accent.primary, color: '#fff', opacity: 0.7 },
                 textTransform: 'none',
-                fontSize: '0.8rem',
+                fontSize: '0.8125rem',
                 whiteSpace: 'nowrap',
                 borderRadius: 1.5,
               }}

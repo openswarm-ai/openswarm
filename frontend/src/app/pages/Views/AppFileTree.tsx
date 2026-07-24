@@ -128,7 +128,7 @@ export const FileTreeItem: React.FC<FileTreeItemProps> = ({ node, depth, activeF
         >
           <ExpandMoreIcon sx={{ fontSize: 12, color: c.text.ghost, transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: '0.15s' }} />
           <FolderIcon sx={{ fontSize: 14, color: c.text.muted }} />
-          <Typography sx={{ fontSize: '0.74rem', color: c.text.secondary, fontFamily: c.font.mono }}>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, fontFamily: c.font.mono }}>
             {node.name}
           </Typography>
         </Box>
@@ -167,7 +167,7 @@ export const FileTreeItem: React.FC<FileTreeItemProps> = ({ node, depth, activeF
       </Box>
       <Typography
         sx={{
-          fontSize: '0.74rem',
+          fontSize: '0.75rem',
           fontFamily: c.font.mono,
           color: isActive ? c.text.primary : c.text.secondary,
           fontWeight: isActive ? 500 : 400,

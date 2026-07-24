@@ -45,7 +45,7 @@ const ShareButton: React.FC<Props> = ({
   return (
     <>
       {variant === 'menuItem' ? (
-        <MenuItem onClick={start} sx={{ fontSize: '0.85rem', color: c.text.primary, gap: 1 }}>
+        <MenuItem onClick={start} sx={{ fontSize: '0.875rem', color: c.text.primary, gap: 1 }}>
           <ListItemIcon sx={{ minWidth: 0, color: c.text.tertiary }}>
             <IosShareIcon sx={{ fontSize: 16 }} />
           </ListItemIcon>

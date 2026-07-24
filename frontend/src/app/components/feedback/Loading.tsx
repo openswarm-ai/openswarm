@@ -105,7 +105,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ icon, title, hint, delay
       }}
     >
       {icon && <Box sx={{ opacity: 0.5, fontSize: 32 }}>{icon}</Box>}
-      <Typography sx={{ fontSize: '0.9rem', fontWeight: 500, color: c.text.muted }}>
+      <Typography sx={{ fontSize: '0.875rem', fontWeight: 500, color: c.text.muted }}>
         {title}
       </Typography>
       {hint && (

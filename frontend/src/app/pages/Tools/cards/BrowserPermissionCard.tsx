@@ -63,10 +63,10 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
               </Box>
               <Box sx={{ flex: 1, minWidth: 0, opacity: browserSectionEnabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.95rem' }}>Browser</Typography>
-                  <Chip label={`${browserTools.length} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.7rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>Browser</Typography>
+                  <Chip label={`${browserTools.length} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
                 </Box>
-                <Typography sx={{ color: c.text.muted, fontSize: '0.84rem' }}>Browser automation delegation and individual browser tools</Typography>
+                <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>Browser automation delegation and individual browser tools</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                 <Switch
@@ -90,8 +90,8 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />
-                  <Typography sx={{ color: c.text.muted, fontSize: '0.78rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
-                  <Chip label={`${browserTools.length} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.65rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
+                  <Typography sx={{ color: c.text.muted, fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tool Permissions</Typography>
+                  <Chip label={`${browserTools.length} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.625rem', height: 18, ml: 0.5, '& .MuiChip-label': { px: 0.6 } }} />
                 </Box>
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -109,8 +109,8 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
                       >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost, transition: 'transform 0.15s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
-                          <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', fontWeight: 600 }}>Delegation</Typography>
-                          <Chip label={browserDelegationTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                          <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', fontWeight: 600 }}>Delegation</Typography>
+                          <Chip label={browserDelegationTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
                         </Box>
                         <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
                           <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserDelegationTools.map((t) => t.name), 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: groupPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
@@ -125,8 +125,8 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
                             return (
                               <Box key={bt.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
                                 <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
-                                  <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
-                                  {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bt.description}</Typography>}
+                                  <Typography sx={{ color: c.text.primary, fontSize: '0.8125rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
+                                  {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bt.description}</Typography>}
                                 </Box>
                                 <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
                                   <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: toolPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>
@@ -156,8 +156,8 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
                       >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <KeyboardArrowDownIcon sx={{ fontSize: 16, color: c.text.ghost, transition: 'transform 0.15s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
-                          <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', fontWeight: 600 }}>Browser Tools</Typography>
-                          <Chip label={browserActionTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.65rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
+                          <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', fontWeight: 600 }}>Browser Tools</Typography>
+                          <Chip label={browserActionTools.length} size="small" sx={{ bgcolor: c.bg.page, color: c.text.muted, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
                         </Box>
                         <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
                           <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinCategoryPermissionChange(browserActionTools.map((t) => t.name), 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: groupPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: groupPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
@@ -172,8 +172,8 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
                             return (
                               <Box key={bt.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.4, px: 1.5, borderRadius: 1, '&:hover': { bgcolor: c.bg.secondary } }}>
                                 <Box sx={{ minWidth: 0, flex: 1, mr: 1 }}>
-                                  <Typography sx={{ color: c.text.primary, fontSize: '0.8rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
-                                  {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bt.description}</Typography>}
+                                  <Typography sx={{ color: c.text.primary, fontSize: '0.8125rem', fontWeight: 500 }}>{bt.display_name || bt.name}</Typography>
+                                  {bt.description && <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bt.description}</Typography>}
                                 </Box>
                                 <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
                                   <Tooltip title="Always allow"><IconButton size="small" onClick={() => handleBuiltinPermissionChange(bt.name, 'always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: toolPolicy === 'always_allow' ? `${c.status.success}20` : 'transparent', color: toolPolicy === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: 14 }} /></IconButton></Tooltip>

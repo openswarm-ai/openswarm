@@ -12,7 +12,7 @@ function StatsWidget({ props }: { props: StatsProps }): React.ReactElement {
   return (
     <Box sx={{ maxWidth: 460 }}>
       {props.title && (
-        <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary, mb: 1 }}>
+        <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, mb: 1 }}>
           {props.title}
         </Typography>
       )}
@@ -30,10 +30,10 @@ function StatsWidget({ props }: { props: StatsProps }): React.ReactElement {
               py: 1.25,
             }}
           >
-            <Typography sx={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: c.text.tertiary }}>
+            <Typography sx={{ fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: c.text.tertiary }}>
               {s.label}
             </Typography>
-            <Typography sx={{ fontSize: '1.15rem', fontWeight: 700, color: c.text.primary, mt: 0.25, fontVariantNumeric: 'tabular-nums' }}>
+            <Typography sx={{ fontSize: '1.125rem', fontWeight: 700, color: c.text.primary, mt: 0.25, fontVariantNumeric: 'tabular-nums' }}>
               {s.value}
             </Typography>
             {s.delta && (
@@ -43,7 +43,7 @@ function StatsWidget({ props }: { props: StatsProps }): React.ReactElement {
                 ) : (
                   <ArrowUpwardIcon sx={{ fontSize: 12, color: c.status.success }} />
                 )}
-                <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: s.direction === 'down' ? c.status.error : c.status.success }}>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: s.direction === 'down' ? c.status.error : c.status.success }}>
                   {s.delta}
                 </Typography>
               </Box>

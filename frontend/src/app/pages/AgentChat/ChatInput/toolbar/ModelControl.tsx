@@ -35,7 +35,7 @@ export const ModelControl: React.FC<Props> = ({ c, setModelAnchor, allModelFlat,
         transition: 'background 0.15s',
       }}
     >
-      <Typography sx={{ fontSize: '0.82rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
+      <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
         {(() => { const m = allModelFlat.find((m) => m.value === model); return m ? m.label : model; })()}
       </Typography>
       <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />

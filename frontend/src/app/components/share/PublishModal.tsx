@@ -153,7 +153,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       return center(
         <>
           <CircularProgress size={22} sx={{ color: c.accent.primary }} />
-          <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary }}>Checking your app before it goes live...</Typography>
+          <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary }}>Checking your app before it goes live...</Typography>
           <SlowHint active color={c.text.tertiary} />
         </>,
       );
@@ -162,7 +162,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       return center(
         <>
           <CircularProgress size={22} sx={{ color: c.accent.primary }} />
-          <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary }}>Building and publishing your app...</Typography>
+          <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary }}>Building and publishing your app...</Typography>
           <SlowHint active color={c.text.tertiary} />
         </>,
       );
@@ -170,8 +170,8 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
     if (phase === 'error') {
       return center(
         <>
-          <Typography sx={{ fontSize: '0.9rem', fontWeight: 600, color: c.text.primary }}>Something went wrong</Typography>
-          <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, textAlign: 'center' }}>{errorMsg}</Typography>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>Something went wrong</Typography>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, textAlign: 'center' }}>{errorMsg}</Typography>
         </>,
       );
     }
@@ -179,8 +179,8 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       if (confirmUnpublish) {
         return center(
           <>
-            <Typography sx={{ fontSize: '0.9rem', fontWeight: 600, color: c.text.primary }}>Take this app offline?</Typography>
-            <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, textAlign: 'center' }}>
+            <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>Take this app offline?</Typography>
+            <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, textAlign: 'center' }}>
               The public link will stop working for anyone you've shared it with.
             </Typography>
           </>,
@@ -190,7 +190,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
         <Box sx={{ px: 2.5, py: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <CheckCircleOutlineIcon sx={{ color: c.status.success, fontSize: 22 }} />
-            <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: c.text.primary }}>Your app is live</Typography>
+            <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary }}>Your app is live</Typography>
           </Box>
           <Box
             sx={{
@@ -198,7 +198,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
               border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.secondary,
             }}
           >
-            <Typography sx={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: c.text.primary, fontFamily: 'ui-monospace, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <Typography sx={{ flex: 1, minWidth: 0, fontSize: '0.8125rem', color: c.text.primary, fontFamily: 'ui-monospace, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {liveUrl}
             </Typography>
             <IconButton size="small" onClick={copyLink} sx={{ color: c.text.tertiary }}><ContentCopyIcon sx={{ fontSize: 16 }} /></IconButton>
@@ -212,7 +212,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       return center(
         <>
           <CheckCircleOutlineIcon sx={{ color: c.status.success, fontSize: 26 }} />
-          <Typography sx={{ fontSize: '0.88rem', color: c.text.primary }}>Looks good. Ready to publish.</Typography>
+          <Typography sx={{ fontSize: '0.875rem', color: c.text.primary }}>Looks good. Ready to publish.</Typography>
         </>,
       );
     }
@@ -220,18 +220,18 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       <Box sx={{ px: 2.5, py: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <WarningAmberIcon sx={{ color: c.status.warning, fontSize: 22 }} />
-          <Typography sx={{ fontSize: '0.92rem', fontWeight: 600, color: c.text.primary }}>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>
             {findings.length} security risk{findings.length === 1 ? '' : 's'} found
           </Typography>
         </Box>
-        <Typography sx={{ fontSize: '0.8rem', color: c.text.secondary }}>
+        <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary }}>
           You can still publish, fix them first, or cancel.
         </Typography>
-        <Button onClick={() => setShowDetails((s) => !s)} sx={{ alignSelf: 'flex-start', textTransform: 'none', color: c.accent.primary, fontSize: '0.78rem', px: 0.5 }}>
+        <Button onClick={() => setShowDetails((s) => !s)} sx={{ alignSelf: 'flex-start', textTransform: 'none', color: c.accent.primary, fontSize: '0.75rem', px: 0.5 }}>
           {showDetails ? 'Hide details' : 'Show details'}
         </Button>
         {showDetails && (
-          <Box component="ul" sx={{ m: 0, pl: 2.5, color: c.text.secondary, fontSize: '0.76rem', lineHeight: 1.55, maxHeight: 160, overflow: 'auto' }}>
+          <Box component="ul" sx={{ m: 0, pl: 2.5, color: c.text.secondary, fontSize: '0.75rem', lineHeight: 1.55, maxHeight: 160, overflow: 'auto' }}>
             {findings.map((f, i) => (
               <li key={i}>{f}</li>
             ))}
@@ -302,7 +302,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, pt: 2.5, pb: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <PublicIcon sx={{ fontSize: 18, color: c.accent.primary }} />
-            <Typography sx={{ fontSize: '1.02rem', fontWeight: 700, color: c.text.primary }}>Publish {outputName}</Typography>
+            <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary }}>Publish {outputName}</Typography>
           </Box>
           <IconButton size="small" onClick={onClose} sx={{ color: c.text.tertiary }}><CloseIcon sx={{ fontSize: 18 }} /></IconButton>
         </Box>

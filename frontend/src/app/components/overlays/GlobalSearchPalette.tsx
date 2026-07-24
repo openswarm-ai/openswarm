@@ -233,7 +233,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
       >
         {/* Input row */}
         <Box sx={{ display: 'flex', alignItems: 'center', px: 2.25, py: 1.75, borderBottom: `1px solid ${c.border.subtle}` }}>
-          <SearchIcon sx={{ fontSize: '1.4rem', color: c.text.muted, mr: 1.5 }} />
+          <SearchIcon sx={{ fontSize: '1.375rem', color: c.text.muted, mr: 1.5 }} />
           <InputBase
             inputRef={inputRef}
             value={query}
@@ -241,14 +241,14 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
             placeholder="Search, or type a command…"
             fullWidth
             sx={{
-              fontSize: '1.05rem',
+              fontSize: '1rem',
               fontFamily: c.font.sans,
               color: c.text.primary,
               '& input::placeholder': { color: c.text.muted, opacity: 1 },
             }}
           />
           {isStillSearching && <CircularProgress size={16} sx={{ color: c.text.muted, ml: 1 }} />}
-          <Typography sx={{ fontSize: '0.78rem', color: c.text.ghost, ml: 1.5, fontFamily: c.font.mono }}>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost, ml: 1.5, fontFamily: c.font.mono }}>
             esc
           </Typography>
         </Box>
@@ -256,7 +256,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
         {/* Results */}
         <Box sx={{ overflowY: 'auto', flex: 1 }}>
           {results.length === 0 ? (
-            <Typography sx={{ px: 2, py: 3, fontSize: '0.85rem', color: c.text.muted, textAlign: 'center' }}>
+            <Typography sx={{ px: 2, py: 3, fontSize: '0.875rem', color: c.text.muted, textAlign: 'center' }}>
               {query.trim() ? 'No matches' : 'No dashboards or chats yet'}
             </Typography>
           ) : (
@@ -330,7 +330,7 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
             gap: 1.5,
             alignItems: 'center',
             color: c.text.ghost,
-            fontSize: '0.7rem',
+            fontSize: '0.6875rem',
           }}
         >
           <span>↑↓ navigate</span>
@@ -348,7 +348,7 @@ const SectionHeader: React.FC<{ label: string; c: ReturnType<typeof useClaudeTok
       px: 2.25,
       pt: 1.5,
       pb: 0.5,
-      fontSize: '0.72rem',
+      fontSize: '0.75rem',
       fontWeight: 600,
       letterSpacing: '0.06em',
       textTransform: 'uppercase',
@@ -389,7 +389,7 @@ const ResultRow: React.FC<RowProps> = ({ icon, title, subtitle, selected, onClic
     <Box sx={{ flex: 1, minWidth: 0 }}>
       <Typography
         sx={{
-          fontSize: '0.95rem',
+          fontSize: '1rem',
           fontWeight: 500,
           color: c.text.primary,
           overflow: 'hidden',
@@ -402,7 +402,7 @@ const ResultRow: React.FC<RowProps> = ({ icon, title, subtitle, selected, onClic
       {subtitle && (
         <Typography
           sx={{
-            fontSize: '0.78rem',
+            fontSize: '0.75rem',
             color: c.text.muted,
             overflow: 'hidden',
             textOverflow: 'ellipsis',

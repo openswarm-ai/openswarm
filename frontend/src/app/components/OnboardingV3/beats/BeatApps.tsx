@@ -44,7 +44,7 @@ const BeatApps: React.FC<{
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderBottom: `1px solid ${c.border.subtle}`, background: c.bg.elevated }}>
-          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: c.text.tertiary, letterSpacing: '0.04em' }}>OpenSwarm</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, letterSpacing: '0.04em' }}>OpenSwarm</span>
         </div>
         <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 12 }}>
           {entries.map((entry, i) => {
@@ -68,7 +68,7 @@ const BeatApps: React.FC<{
                 }}
               >
                 <span style={{ width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{entry.icon}</span>
-                <span style={{ fontSize: '0.76rem', fontWeight: 500, color: picked ? c.text.primary : c.text.secondary, textAlign: 'center' }}>{entry.name}</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: picked ? c.text.primary : c.text.secondary, textAlign: 'center' }}>{entry.name}</span>
               </motion.button>
             );
           })}

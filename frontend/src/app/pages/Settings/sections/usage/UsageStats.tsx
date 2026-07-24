@@ -94,9 +94,9 @@ const UsageStats: React.FC = () => {
     bgcolor: c.bg.elevated,
     border: `1px solid ${c.border.subtle}`,
   };
-  const labelSx = { fontSize: '0.58rem', fontWeight: 700, color: c.text.ghost, textTransform: 'uppercase' as const, letterSpacing: '0.06em', mb: 0.25 };
-  const valueSx = { fontSize: '1.05rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.2 };
-  const subSx = { fontSize: '0.62rem', color: c.text.tertiary, mt: 0.25 };
+  const labelSx = { fontSize: '0.625rem', fontWeight: 700, color: c.text.ghost, textTransform: 'uppercase' as const, letterSpacing: '0.06em', mb: 0.25 };
+  const valueSx = { fontSize: '1rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.2 };
+  const subSx = { fontSize: '0.625rem', color: c.text.tertiary, mt: 0.25 };
 
   const modelEntries = Object.entries(stats.models_used || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
   const providerEntries = Object.entries(stats.providers_used || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
@@ -140,8 +140,8 @@ const UsageStats: React.FC = () => {
           bgcolor: `${c.accent.primary}0F`, border: `1px solid ${c.accent.primary}26`,
           display: 'flex', alignItems: 'center', gap: 1,
         }}>
-          <Typography sx={{ fontSize: '0.95rem', lineHeight: 1 }}>✨</Typography>
-          <Typography sx={{ fontSize: '0.74rem', color: c.text.secondary, fontStyle: 'italic', lineHeight: 1.4 }}>
+          <Typography sx={{ fontSize: '1rem', lineHeight: 1 }}>✨</Typography>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary, fontStyle: 'italic', lineHeight: 1.4 }}>
             {savingsQuip}
           </Typography>
         </Box>
@@ -220,8 +220,8 @@ const UsageStats: React.FC = () => {
             return (
               <Box key={model} sx={{ mb: 1 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0 }}>
-                  <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, fontWeight: 500 }}>{model}</Typography>
-                  <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
+                  <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, fontWeight: 500 }}>{model}</Typography>
+                  <Typography sx={{ fontSize: '0.6875rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
                     {count} ({pct}%)
                   </Typography>
                 </Box>
@@ -239,8 +239,8 @@ const UsageStats: React.FC = () => {
             return (
               <Box key={tool} sx={{ mb: 1 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0 }}>
-                  <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, fontWeight: 500 }}>{shortName}</Typography>
-                  <Typography sx={{ fontSize: '0.62rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
+                  <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, fontWeight: 500 }}>{shortName}</Typography>
+                  <Typography sx={{ fontSize: '0.625rem', color: c.text.tertiary, fontFamily: c.font.mono }}>
                     {count} call{count !== 1 ? 's' : ''} ({pct}%)
                   </Typography>
                 </Box>

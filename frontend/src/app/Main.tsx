@@ -389,7 +389,7 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
           severity="info"
           variant="filled"
           onClose={() => setSessionSwitch(null)}
-          sx={{ fontSize: '0.8rem' }}
+          sx={{ fontSize: '0.8125rem' }}
         >
           {sessionSwitch && (sessionSwitch.toFreeTrial ? (
             <>Your model isn't connected, you're on the free trial now{sessionSwitch.runs != null ? <> ({sessionSwitch.runs} runs left)</> : null}.</>
@@ -430,7 +430,7 @@ const CrashRecoveryChip: React.FC = () => {
         bgcolor: 'background.paper',
         border: '1px solid', borderColor: 'divider',
         boxShadow: 3, borderRadius: '10px',
-        px: 1.75, py: 1, fontSize: '0.85rem',
+        px: 1.75, py: 1, fontSize: '0.875rem',
         maxWidth: 360,
       }}>
         <Box component="span" sx={{

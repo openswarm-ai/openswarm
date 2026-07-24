@@ -79,7 +79,7 @@ export function ActionBtn({ label, tone, disabled, onClick, icon }: { label: str
       sx={{
         // Compact pill matching target #58/#63. Smaller padding + smaller glyphs so the buttons stop overshadowing the step body.
         display: 'inline-flex', alignItems: 'center', gap: 0.4,
-        fontSize: '0.78rem', fontWeight: 600,
+        fontSize: '0.75rem', fontWeight: 600,
         px: 1, py: 0.35,
         borderRadius: c.radius.full,
         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -226,10 +226,10 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
           <CalendarMonthRounded sx={{ fontSize: 18 }} />
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
             Schedule this workflow?
           </Typography>
-          <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
             You can have workflows run on a recurring basis, automatically.
           </Typography>
         </Box>
@@ -239,7 +239,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
           onClick={onIgnore}
           role="button"
           sx={{
-            fontSize: '0.86rem', fontWeight: 500, color: c.text.secondary,
+            fontSize: '0.875rem', fontWeight: 500, color: c.text.secondary,
             cursor: busy ? 'wait' : 'pointer', px: 0.75, py: 0.5,
             opacity: busy ? 0.6 : 1,
             '&:hover': { color: c.text.primary },
@@ -252,7 +252,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
           title={canSave ? undefined : 'Add at least one step before saving'}
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.5,
-            fontSize: '0.88rem', fontWeight: 700,
+            fontSize: '0.875rem', fontWeight: 700,
             px: 1.75, py: 0.6, borderRadius: c.radius.full,
             color: '#fff', bgcolor: c.accent.primary,
             cursor: busy ? 'wait' : canSave ? 'pointer' : 'not-allowed',
@@ -265,7 +265,7 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
       <Dialog open={savePromptOpen} onClose={() => setSavePromptOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: '1rem', fontWeight: 700 }}>Save workflow?</DialogTitle>
         <DialogContent>
-          <Typography sx={{ fontSize: '0.86rem', color: c.text.secondary }}>
+          <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary }}>
             Save this workflow under Unscheduled. It will not run until you choose a schedule.
           </Typography>
         </DialogContent>
@@ -273,20 +273,20 @@ export function PreviewView({ workflowId, steps, sourceSessionId, initialDraft, 
           <Box
             role="button"
             onClick={onDontSave}
-            sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.status.error, cursor: busy ? 'wait' : 'pointer', px: 1, py: 0.5, opacity: busy ? 0.6 : 1 }}>
+            sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.status.error, cursor: busy ? 'wait' : 'pointer', px: 1, py: 0.5, opacity: busy ? 0.6 : 1 }}>
             Don't Save
           </Box>
           <Box
             role="button"
             onClick={() => setSavePromptOpen(false)}
-            sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.secondary, cursor: busy ? 'wait' : 'pointer', px: 1, py: 0.5, opacity: busy ? 0.6 : 1 }}>
+            sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.secondary, cursor: busy ? 'wait' : 'pointer', px: 1, py: 0.5, opacity: busy ? 0.6 : 1 }}>
             Cancel
           </Box>
           <Box
             role="button"
             onClick={canSave ? onSaveDraft : undefined}
             title={canSave ? undefined : 'Add at least one step before saving'}
-            sx={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: c.radius.full, cursor: busy ? 'wait' : canSave ? 'pointer' : 'not-allowed', px: 1.5, py: 0.6, opacity: busy || !canSave ? 0.6 : 1, '&:hover': { filter: 'brightness(1.06)' } }}>
+            sx={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff', bgcolor: c.accent.primary, borderRadius: c.radius.full, cursor: busy ? 'wait' : canSave ? 'pointer' : 'not-allowed', px: 1.5, py: 0.6, opacity: busy || !canSave ? 0.6 : 1, '&:hover': { filter: 'brightness(1.06)' } }}>
             Save
           </Box>
         </DialogActions>
@@ -426,10 +426,10 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
             <CalendarMonthRounded sx={{ fontSize: 18 }} />
           </Box>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
+            <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary, lineHeight: 1.3 }}>
               Schedule this workflow?
             </Typography>
-            <Typography sx={{ fontSize: '0.82rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
+            <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, mt: 0.25, lineHeight: 1.45 }}>
               You can have workflows run on a recurring basis, automatically.
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1.5, mt: 1.25 }}>
@@ -437,7 +437,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
                 onClick={onNotNow}
                 role="button"
                 sx={{
-                  fontSize: '0.86rem', fontWeight: 500, color: c.text.secondary,
+                  fontSize: '0.875rem', fontWeight: 500, color: c.text.secondary,
                   cursor: 'pointer', px: 0.75, py: 0.5,
                   '&:hover': { color: c.text.primary },
                 }}>
@@ -448,7 +448,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
                 role="button"
                 sx={{
                   display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                  fontSize: '0.88rem', fontWeight: 700,
+                  fontSize: '0.875rem', fontWeight: 700,
                   px: 1.75, py: 0.6, borderRadius: c.radius.full,
                   color: '#fff', bgcolor: c.accent.primary,
                   cursor: 'pointer',
@@ -467,7 +467,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
           role={scheduleClickable ? 'button' : undefined}
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.6,
-            color: c.text.secondary, fontSize: '0.86rem', minWidth: 0,
+            color: c.text.secondary, fontSize: '0.875rem', minWidth: 0,
             cursor: scheduleClickable ? 'pointer' : 'default',
             '&:hover': scheduleClickable ? { color: c.text.primary } : {},
           }}>
@@ -480,7 +480,7 @@ export function SavedView({ workflow, steps, runs, activeRunId }: { workflow: Wo
           role="button"
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.45,
-            fontSize: '0.82rem', fontWeight: 600,
+            fontSize: '0.8125rem', fontWeight: 600,
             px: 1.25, py: 0.5,
             borderRadius: c.radius.full,
             cursor: 'pointer',
@@ -568,7 +568,7 @@ function AuditTraceLink({ workflowId }: { workflowId: string }) {
       <Tooltip title="Recent edits to this workflow">
         <Box onClick={open} role="button" sx={{
           display: 'inline-flex', alignItems: 'center', gap: 0.3,
-          fontSize: '0.7rem', color: c.text.muted, cursor: 'pointer',
+          fontSize: '0.6875rem', color: c.text.muted, cursor: 'pointer',
           px: 0.5, py: 0.25, borderRadius: c.radius.sm,
           '&:hover': { color: c.accent.primary, bgcolor: c.bg.elevated },
         }}>
@@ -583,12 +583,12 @@ function AuditTraceLink({ workflowId }: { workflowId: string }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Box sx={{ minWidth: 280, maxWidth: 360, p: 1 }}>
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mb: 0.5 }}>
             RECENT EDITS
           </Typography>
-          {loading && <Typography sx={{ fontSize: '0.78rem', color: c.text.muted }}>Loading…</Typography>}
+          {loading && <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>Loading…</Typography>}
           {!loading && (entries === null || entries.length === 0) && (
-            <Typography sx={{ fontSize: '0.78rem', color: c.text.muted }}>No edits yet.</Typography>
+            <Typography sx={{ fontSize: '0.75rem', color: c.text.muted }}>No edits yet.</Typography>
           )}
           {!loading && entries && entries.map((e, idx) => {
             const fields = Object.keys(e.diff || {}).filter((k) => k !== 'updated_at');
@@ -596,10 +596,10 @@ function AuditTraceLink({ workflowId }: { workflowId: string }) {
             return (
               <Box key={idx} sx={{ display: 'flex', flexDirection: 'column', py: 0.5, borderTop: idx === 0 ? 'none' : `1px solid ${c.border.subtle}` }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography sx={{ fontSize: '0.78rem', color: c.text.primary, fontWeight: 600 }}>{e.who || 'user'}</Typography>
-                  <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost }}>{relTimeShort(e.ts)}</Typography>
+                  <Typography sx={{ fontSize: '0.75rem', color: c.text.primary, fontWeight: 600 }}>{e.who || 'user'}</Typography>
+                  <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost }}>{relTimeShort(e.ts)}</Typography>
                 </Box>
-                <Typography sx={{ fontSize: '0.74rem', color: c.text.secondary }}>{summary}</Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: c.text.secondary }}>{summary}</Typography>
               </Box>
             );
           })}
@@ -666,20 +666,20 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
     return out;
   }, [filtered]);
   if (!runs || runs.length === 0) {
-    return <Typography sx={{ fontSize: '0.88rem', color: c.text.muted, py: 1.5, textAlign: 'center' }}>No runs yet</Typography>;
+    return <Typography sx={{ fontSize: '0.875rem', color: c.text.muted, py: 1.5, textAlign: 'center' }}>No runs yet</Typography>;
   }
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75 }}>
         {groups.length > 0 && (
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em' }}>
+          <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em' }}>
             {groups[0].key.toUpperCase()}
           </Typography>
         )}
         <Box sx={{ flex: 1 }} />
         {(['all', 'success', 'failure', 'skipped'] as const).map((k) => (
           <Box key={k} onClick={() => setFilter(k)} role="button" sx={{
-            fontSize: '0.72rem', fontWeight: 600,
+            fontSize: '0.75rem', fontWeight: 600,
             color: filter === k ? c.accent.primary : c.text.muted,
             bgcolor: filter === k ? c.accent.primary + '14' : 'transparent',
             border: `1px solid ${filter === k ? c.accent.primary + '40' : c.border.subtle}`,
@@ -693,7 +693,7 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
       {groups.map(({ key, runs: gRuns }, gi) => (
         <Box key={key} sx={{ display: 'flex', flexDirection: 'column' }}>
           {gi > 0 && (
-            <Typography sx={{ fontSize: '0.7rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mt: 0.5, mb: 0.25 }}>
+            <Typography sx={{ fontSize: '0.6875rem', fontWeight: 700, color: c.text.muted, letterSpacing: '0.06em', mt: 0.5, mb: 0.25 }}>
               {key.toUpperCase()}
             </Typography>
           )}
@@ -705,35 +705,35 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
                 <Box
                   onClick={() => setExpandedId(expanded ? null : r.id)}
                   sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.6, px: 0.5, cursor: 'pointer', borderRadius: c.radius.sm, '&:hover': { bgcolor: c.bg.elevated } }}>
-                  <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(r.status, c), bgcolor: statusBg(r.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm, minWidth: 64, textAlign: 'center' }}>
+                  <Box sx={{ fontSize: '0.75rem', fontWeight: 700, color: statusColor(r.status, c), bgcolor: statusBg(r.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm, minWidth: 64, textAlign: 'center' }}>
                     {labelForStatus(r.status)}
                   </Box>
                   {showWorkflow && workflowTitleFor ? (
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: '0.84rem', fontWeight: 600, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{workflowTitleFor(r.workflow_id)}</Typography>
-                      <Typography sx={{ fontSize: '0.72rem', color: c.text.ghost }}>{formatRunDate(r.started_at)}</Typography>
+                      <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{workflowTitleFor(r.workflow_id)}</Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>{formatRunDate(r.started_at)}</Typography>
                     </Box>
                   ) : (
-                    <Typography sx={{ fontSize: '0.88rem', color: c.text.primary, flex: 1 }}>{formatRunDate(r.started_at)}</Typography>
+                    <Typography sx={{ fontSize: '0.875rem', color: c.text.primary, flex: 1 }}>{formatRunDate(r.started_at)}</Typography>
                   )}
-                  {dur && <Typography sx={{ fontSize: '0.74rem', color: c.text.ghost }}>{dur}</Typography>}
-                  {r.cost_usd > 0 && <Typography sx={{ fontSize: '0.74rem', color: c.text.ghost }}>${r.cost_usd.toFixed(4)}</Typography>}
+                  {dur && <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>{dur}</Typography>}
+                  {r.cost_usd > 0 && <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>${r.cost_usd.toFixed(4)}</Typography>}
                   {/* Chevron makes the row read as expandable instead of
                       static text. Rotates 180° while open so the affordance
                       stays visible after click. */}
-                  <Box sx={{ fontSize: '0.7rem', color: c.text.ghost, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>▾</Box>
+                  <Box sx={{ fontSize: '0.6875rem', color: c.text.ghost, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>▾</Box>
                 </Box>
                 {expanded && (
                   <Box sx={{ ml: 8, mt: 0.25, mb: 0.75, px: 1, py: 0.75, bgcolor: c.bg.elevated, borderRadius: c.radius.sm, border: `1px solid ${c.border.subtle}`, display: 'flex', alignItems: 'center' }}>
 
                     {r.error ? (
-                      <Typography sx={{ fontSize: '0.78rem', color: c.status.error, lineHeight: 1.4 }}>{r.error}</Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: c.status.error, lineHeight: 1.4 }}>{r.error}</Typography>
                     ) : r.session_id ? (
-                      <Box onClick={(e) => { e.stopPropagation(); onOpen(r); }} role="button" sx={{ fontSize: '0.78rem', fontWeight: 600, color: c.accent.primary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
+                      <Box onClick={(e) => { e.stopPropagation(); onOpen(r); }} role="button" sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.accent.primary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
                         Click to see the full conversation →
                       </Box>
                     ) : (
-                      <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, lineHeight: 1.4 }}>No session was recorded for this run.</Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, lineHeight: 1.4 }}>No session was recorded for this run.</Typography>
                     )}
                   </Box>
                 )}
@@ -748,20 +748,20 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
 
 export function HistoryDetail({ run, onBack }: { run: WorkflowRun | null; onBack: () => void }) {
   const c = useClaudeTokens();
-  if (!run) return <Typography sx={{ fontSize: '0.88rem', color: c.text.muted }}>Run not found</Typography>;
+  if (!run) return <Typography sx={{ fontSize: '0.875rem', color: c.text.muted }}>Run not found</Typography>;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Box onClick={onBack} role="button" sx={{ fontSize: '0.82rem', color: c.text.muted, cursor: 'pointer', '&:hover': { color: c.accent.primary } }}>← back</Box>
-        <Box sx={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor(run.status, c), bgcolor: statusBg(run.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm }}>{labelForStatus(run.status)}</Box>
-        <Typography sx={{ fontSize: '0.88rem', color: c.text.primary, fontWeight: 600 }}>{formatRunDate(run.started_at)}</Typography>
+        <Box onClick={onBack} role="button" sx={{ fontSize: '0.8125rem', color: c.text.muted, cursor: 'pointer', '&:hover': { color: c.accent.primary } }}>← back</Box>
+        <Box sx={{ fontSize: '0.75rem', fontWeight: 700, color: statusColor(run.status, c), bgcolor: statusBg(run.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm }}>{labelForStatus(run.status)}</Box>
+        <Typography sx={{ fontSize: '0.875rem', color: c.text.primary, fontWeight: 600 }}>{formatRunDate(run.started_at)}</Typography>
       </Box>
       {run.error && (
-        <Typography sx={{ fontSize: '0.85rem', color: c.status.error, bgcolor: c.status.errorBg, p: 1, borderRadius: c.radius.sm }}>{run.error}</Typography>
+        <Typography sx={{ fontSize: '0.875rem', color: c.status.error, bgcolor: c.status.errorBg, p: 1, borderRadius: c.radius.sm }}>{run.error}</Typography>
       )}
-      <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary, lineHeight: 1.5 }}>Started {formatRunDate(run.started_at)}, finished {run.finished_at ? formatRunDate(run.finished_at) : 'in progress'}.</Typography>
+      <Typography sx={{ fontSize: '0.875rem', color: c.text.secondary, lineHeight: 1.5 }}>Started {formatRunDate(run.started_at)}, finished {run.finished_at ? formatRunDate(run.finished_at) : 'in progress'}.</Typography>
       {run.session_id && (
-        <Box sx={{ fontSize: '0.82rem', color: c.accent.primary, mt: 0.5 }}>Session: {run.session_id.slice(0, 8)}</Box>
+        <Box sx={{ fontSize: '0.8125rem', color: c.accent.primary, mt: 0.5 }}>Session: {run.session_id.slice(0, 8)}</Box>
       )}
     </Box>
   );

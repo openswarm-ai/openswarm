@@ -18,7 +18,7 @@ export const McpResultCard: React.FC<{ parsed: ParsedMcpResult; compact?: boolea
   if (data.error || data.is_error) {
     return (
       <Box sx={{ p: 1 }}>
-        <span style={{ color: tc.STDERR_COLOR, fontSize: '0.73rem' }}>
+        <span style={{ color: tc.STDERR_COLOR, fontSize: '0.75rem' }}>
           {data.error || data.message || JSON.stringify(data, null, 2)}
         </span>
       </Box>
@@ -40,7 +40,7 @@ export const McpResultCard: React.FC<{ parsed: ParsedMcpResult; compact?: boolea
       <Box sx={{ px: 1.5, py: 1 }}>
         <span style={{
           color: TC_BODY,
-          fontSize: '0.72rem',
+          fontSize: '0.75rem',
           fontFamily: c.font.sans,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',

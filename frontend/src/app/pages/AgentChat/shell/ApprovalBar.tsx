@@ -230,7 +230,7 @@ const ToolPreview: React.FC<ToolPreviewProps> = ({ request, tokens: c }) => {
       return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
           {tool_input.description && (
-            <Typography sx={{ color: c.text.muted, fontSize: '0.78rem' }}>
+            <Typography sx={{ color: c.text.muted, fontSize: '0.75rem' }}>
               {tool_input.description}
             </Typography>
           )}
@@ -242,8 +242,8 @@ const ToolPreview: React.FC<ToolPreviewProps> = ({ request, tokens: c }) => {
     case 'Read':
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <DescriptionIcon sx={{ fontSize: '0.9rem', color: c.text.muted }} />
-          <Typography sx={{ color: c.text.secondary, fontSize: '0.8rem', fontFamily: c.font.mono }}>
+          <DescriptionIcon sx={{ fontSize: '0.875rem', color: c.text.muted }} />
+          <Typography sx={{ color: c.text.secondary, fontSize: '0.8125rem', fontFamily: c.font.mono }}>
             {tool_input.file_path || tool_input.path || JSON.stringify(tool_input)}
           </Typography>
         </Box>
@@ -256,8 +256,8 @@ const ToolPreview: React.FC<ToolPreviewProps> = ({ request, tokens: c }) => {
       return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <EditIcon sx={{ fontSize: '0.9rem', color: c.text.muted }} />
-            <Typography sx={{ color: c.text.secondary, fontSize: '0.8rem', fontFamily: c.font.mono }}>
+            <EditIcon sx={{ fontSize: '0.875rem', color: c.text.muted }} />
+            <Typography sx={{ color: c.text.secondary, fontSize: '0.8125rem', fontFamily: c.font.mono }}>
               {path}
             </Typography>
           </Box>
@@ -417,7 +417,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
         <Box sx={{ color: c.accent.primary, display: 'flex', alignItems: 'center' }}>
           <QuestionAnswerIcon sx={{ fontSize: '1rem' }} />
         </Box>
-        <Typography sx={{ color: c.accent.primary, fontWeight: 700, fontSize: '0.85rem' }}>
+        <Typography sx={{ color: c.accent.primary, fontWeight: 700, fontSize: '0.875rem' }}>
           Agent has a question
         </Typography>
       </Box>
@@ -430,11 +430,11 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
           return (
             <Box key={i}>
               {q.header && (
-                <Typography sx={{ color: c.text.muted, fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.25 }}>
+                <Typography sx={{ color: c.text.muted, fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.25 }}>
                   {q.header}
                 </Typography>
               )}
-              <Typography sx={{ color: c.text.primary, fontSize: '0.85rem', fontWeight: 500, mb: 0.75 }}>
+              <Typography sx={{ color: c.text.primary, fontSize: '0.875rem', fontWeight: 500, mb: 0.75 }}>
                 {q.question || q.prompt || q.text || '(question)'}
               </Typography>
               {hasOptions ? (
@@ -450,7 +450,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
                           size="small"
                           onClick={() => toggleOption(i, key, multi)}
                           sx={{
-                            fontSize: '0.78rem',
+                            fontSize: '0.75rem',
                             fontWeight: selected ? 600 : 400,
                             cursor: 'pointer',
                             color: selected ? c.accent.primary : c.text.secondary,
@@ -472,7 +472,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
                       size="small"
                       onClick={() => toggleOther(i, multi)}
                       sx={{
-                        fontSize: '0.78rem',
+                        fontSize: '0.75rem',
                         fontWeight: isOtherActive ? 600 : 400,
                         fontStyle: 'italic',
                         cursor: 'pointer',
@@ -501,7 +501,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
                         mt: 0.25,
                         '& .MuiOutlinedInput-root': {
                           color: c.text.primary,
-                          fontSize: '0.82rem',
+                          fontSize: '0.8125rem',
                           '& fieldset': { borderColor: c.border.medium },
                           '&:hover fieldset': { borderColor: c.border.strong },
                           '&.Mui-focused fieldset': { borderColor: c.accent.primary },
@@ -522,7 +522,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       color: c.text.primary,
-                      fontSize: '0.82rem',
+                      fontSize: '0.8125rem',
                       '& fieldset': { borderColor: c.border.medium },
                       '&:hover fieldset': { borderColor: c.border.strong },
                       '&.Mui-focused fieldset': { borderColor: c.accent.primary },
@@ -544,7 +544,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
             bgcolor: c.accent.primary,
             '&:hover': { bgcolor: c.accent.hover || c.accent.primary, filter: 'brightness(0.9)' },
             fontWeight: 600,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
           }}
         >
           Submit
@@ -557,7 +557,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, 
             color: c.text.secondary,
             '&:hover': { borderColor: c.text.secondary, bgcolor: `${c.text.secondary}08` },
             fontWeight: 600,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
           }}
         >
           Dismiss
@@ -600,7 +600,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
           <Box sx={{ color: c.status.warning, display: 'flex', alignItems: 'center' }}>
             {getToolIcon(request.tool_name)}
           </Box>
-          <Typography sx={{ color: c.status.warning, fontWeight: 700, fontSize: '0.85rem' }}>
+          <Typography sx={{ color: c.status.warning, fontWeight: 700, fontSize: '0.875rem' }}>
             {isSensitive ? 'Sensitive file' : 'Permission Required'}
           </Typography>
           <Chip
@@ -608,7 +608,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             size="small"
             sx={{
               height: 20,
-              fontSize: '0.7rem',
+              fontSize: '0.6875rem',
               fontWeight: 600,
               fontFamily: c.font.mono,
               bgcolor: 'rgba(128,92,31,0.15)',
@@ -633,11 +633,11 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
           >
             <WarningAmberIcon sx={{ fontSize: 18, color: c.status.error, mt: 0.1, flexShrink: 0 }} />
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.82rem', lineHeight: 1.3 }}>
+              <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.3 }}>
                 This file is sensitive: {request.sensitive_label}
               </Typography>
               {request.sensitive_why && (
-                <Typography sx={{ color: c.text.secondary, fontSize: '0.78rem', lineHeight: 1.35, mt: 0.3 }}>
+                <Typography sx={{ color: c.text.secondary, fontSize: '0.75rem', lineHeight: 1.35, mt: 0.3 }}>
                   {request.sensitive_why} OpenSwarm asks every time because a bad change here is hard to undo. Approve only if you asked for this.
                 </Typography>
               )}
@@ -655,7 +655,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
               mb: 1,
               ml: 0,
               alignItems: 'flex-start',
-              '& .MuiFormControlLabel-label': { fontSize: '0.78rem', color: c.text.secondary, lineHeight: 1.35, pt: 0.5 },
+              '& .MuiFormControlLabel-label': { fontSize: '0.75rem', color: c.text.secondary, lineHeight: 1.35, pt: 0.5 },
             }}
             control={
               <Checkbox
@@ -678,7 +678,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             variant="contained"
             startIcon={<CheckIcon />}
             onClick={() => onApprove(request.id, undefined, isSensitive && trustPattern)}
-            sx={{ bgcolor: c.status.success, '&:hover': { bgcolor: '#1e4d15' }, fontWeight: 600, fontSize: '0.8rem' }}
+            sx={{ bgcolor: c.status.success, '&:hover': { bgcolor: '#1e4d15' }, fontWeight: 600, fontSize: '0.8125rem' }}
           >
             Approve
           </Button>
@@ -687,7 +687,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
               variant="outlined"
               startIcon={<DoneAllIcon />}
               onClick={() => onApprove(request.id, undefined, false, true)}
-              sx={{ borderColor: c.status.success, color: c.status.success, '&:hover': { borderColor: '#1e4d15', bgcolor: 'rgba(45,122,31,0.06)' }, fontWeight: 600, fontSize: '0.8rem' }}
+              sx={{ borderColor: c.status.success, color: c.status.success, '&:hover': { borderColor: '#1e4d15', bgcolor: 'rgba(45,122,31,0.06)' }, fontWeight: 600, fontSize: '0.8125rem' }}
             >
               Always approve
             </Button>
@@ -696,7 +696,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             variant="outlined"
             startIcon={<CloseIcon />}
             onClick={() => onDeny(request.id)}
-            sx={{ borderColor: c.status.error, color: c.status.error, '&:hover': { borderColor: '#8f2828', bgcolor: 'rgba(181,51,51,0.04)' }, fontWeight: 600, fontSize: '0.8rem' }}
+            sx={{ borderColor: c.status.error, color: c.status.error, '&:hover': { borderColor: '#8f2828', bgcolor: 'rgba(181,51,51,0.04)' }, fontWeight: 600, fontSize: '0.8125rem' }}
           >
             Deny
           </Button>
@@ -736,7 +736,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.9rem' }}>
+            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.875rem' }}>
               {displayName}
             </Typography>
             <Chip
@@ -744,7 +744,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
               size="small"
               sx={{
                 height: 18,
-                fontSize: '0.65rem',
+                fontSize: '0.625rem',
                 fontWeight: 500,
                 bgcolor: `${accentColor}12`,
                 color: accentColor,
@@ -757,7 +757,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             <Typography
               sx={{
                 color: c.text.tertiary,
-                fontSize: '0.78rem',
+                fontSize: '0.75rem',
                 lineHeight: 1.3,
                 mt: 0.15,
                 overflow: 'hidden',
@@ -786,7 +786,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             <Typography
               sx={{
                 color: c.text.secondary,
-                fontSize: '0.82rem',
+                fontSize: '0.8125rem',
                 flex: 1,
                 minWidth: 0,
                 overflow: 'hidden',
@@ -819,7 +819,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             bgcolor: c.status.success,
             '&:hover': { bgcolor: '#1e4d15' },
             fontWeight: 600,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             textTransform: 'none',
             borderRadius: 1.5,
             px: 2,
@@ -836,7 +836,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             color: c.status.success,
             '&:hover': { borderColor: '#1e4d15', bgcolor: 'rgba(45,122,31,0.06)' },
             fontWeight: 600,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             textTransform: 'none',
             borderRadius: 1.5,
             px: 2,
@@ -853,7 +853,7 @@ const GenericApprovalBar: React.FC<Props> = ({ request, onApprove, onDeny }) => 
             color: c.status.error,
             '&:hover': { borderColor: '#8f2828', bgcolor: 'rgba(181,51,51,0.04)' },
             fontWeight: 600,
-            fontSize: '0.8rem',
+            fontSize: '0.8125rem',
             textTransform: 'none',
             borderRadius: 1.5,
             px: 2,
@@ -957,7 +957,7 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
               bgcolor: c.status.warningBg,
             }}
           >
-            <Typography sx={{ fontSize: '0.85rem', fontWeight: 700, color: c.status.warning, flex: 1 }}>
+            <Typography sx={{ fontSize: '0.875rem', fontWeight: 700, color: c.status.warning, flex: 1 }}>
               {nonQuestions.length} pending approvals
             </Typography>
             <Button
@@ -969,7 +969,7 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
                 bgcolor: c.status.success,
                 '&:hover': { bgcolor: '#1e4d15' },
                 fontWeight: 600,
-                fontSize: '0.78rem',
+                fontSize: '0.75rem',
                 textTransform: 'none',
                 borderRadius: 1.5,
                 px: 1.5,
@@ -988,7 +988,7 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
                 color: c.status.success,
                 '&:hover': { borderColor: '#1e4d15', bgcolor: 'rgba(45,122,31,0.06)' },
                 fontWeight: 600,
-                fontSize: '0.78rem',
+                fontSize: '0.75rem',
                 textTransform: 'none',
                 borderRadius: 1.5,
                 px: 1.5,
@@ -1007,7 +1007,7 @@ export const BatchApprovalBar: React.FC<BatchApprovalBarProps> = ({ requests, on
                 color: c.status.error,
                 '&:hover': { borderColor: '#8f2828', bgcolor: 'rgba(181,51,51,0.04)' },
                 fontWeight: 600,
-                fontSize: '0.78rem',
+                fontSize: '0.75rem',
                 textTransform: 'none',
                 borderRadius: 1.5,
                 px: 1.5,
@@ -1087,7 +1087,7 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, expanded, onToggle, onApprov
             : getToolIcon(group.toolName)}
         </Box>
 
-        <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, color: c.text.primary, flex: 1 }}>
+        <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, flex: 1 }}>
           {group.parsed.isMcp ? group.parsed.displayName : group.toolName}
         </Typography>
 
@@ -1097,7 +1097,7 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, expanded, onToggle, onApprov
           sx={{
             height: 20,
             minWidth: 24,
-            fontSize: '0.72rem',
+            fontSize: '0.75rem',
             fontWeight: 700,
             bgcolor: `${accentColor}18`,
             color: accentColor,
@@ -1114,7 +1114,7 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, expanded, onToggle, onApprov
               sx={{
                 color: c.status.success,
                 fontWeight: 600,
-                fontSize: '0.72rem',
+                fontSize: '0.75rem',
                 textTransform: 'none',
                 minWidth: 0,
                 px: 1,
@@ -1130,7 +1130,7 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, expanded, onToggle, onApprov
               sx={{
                 color: c.status.error,
                 fontWeight: 600,
-                fontSize: '0.72rem',
+                fontSize: '0.75rem',
                 textTransform: 'none',
                 minWidth: 0,
                 px: 1,

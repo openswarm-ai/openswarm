@@ -159,7 +159,7 @@ const DashboardSelection: React.FC = () => {
             <Typography variant="h4" sx={{ fontWeight: 700, color: c.text.primary }}>
               Dashboards
             </Typography>
-            <Typography sx={{ color: c.text.tertiary, fontSize: '0.9rem', mt: 0.5 }}>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.875rem', mt: 0.5 }}>
               Monitor and manage your agents from a single workspace.
             </Typography>
           </Box>
@@ -212,10 +212,10 @@ const DashboardSelection: React.FC = () => {
           </Box>
         ) : dashboards.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 10, color: c.text.muted }}>
-            <Typography sx={{ fontSize: '1.1rem', mb: 1 }}>
+            <Typography sx={{ fontSize: '1.125rem', mb: 1 }}>
               {search ? 'No dashboards match your search' : 'No dashboards yet'}
             </Typography>
-            <Typography sx={{ fontSize: '0.85rem', color: c.text.tertiary }}>
+            <Typography sx={{ fontSize: '0.875rem', color: c.text.tertiary }}>
               {search ? 'Try a different search term' : 'Create your first dashboard to get started'}
             </Typography>
           </Box>
@@ -320,7 +320,7 @@ const DashboardSelection: React.FC = () => {
                       onClick={(e) => e.stopPropagation()}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          fontSize: '0.95rem',
+                          fontSize: '1rem',
                           fontWeight: 600,
                         },
                       }}
@@ -328,7 +328,7 @@ const DashboardSelection: React.FC = () => {
                   ) : (
                     <Typography
                       sx={{
-                        fontSize: '0.95rem',
+                        fontSize: '1rem',
                         fontWeight: 600,
                         color: c.text.primary,
                         overflow: 'hidden',
