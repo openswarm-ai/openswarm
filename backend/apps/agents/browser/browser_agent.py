@@ -64,6 +64,7 @@ from backend.apps.agents.browser import browser_extract
 from backend.apps.agents.browser import browser_metrics
 from backend.apps.agents.browser import browser_send_script
 from backend.apps.agents.browser import browser_send_parse
+from backend.apps.agents.browser import browser_login_handoff
 from backend.apps.agents.browser import browser_delivery_check
 from backend.apps.agents.browser import browser_submit_click
 from backend.apps.agents.browser import browser_playbook
@@ -1115,6 +1116,7 @@ async def run_browser_agent(
     loop_trigger_count = 0
     card_gone_streak = 0  # consecutive "card is gone" results -> fail fast, don't spin
     route_hinted_hosts: set[str] = set()  # surface the fast network tier once per host
+    p_login_prompted: set[str] = set()  # login-once handoff: at most one sign-in pause per domain per run
 
     # Stagnation state: busy-but-stuck detection (no URL change + failures across a run of actions), distinct from the exact-repeat loop above.
     stagnation_streak = 0
@@ -1651,6 +1653,33 @@ async def run_browser_agent(
                 break
             if done_called or cancel_event.is_set():
                 break
+
+            # Login-once handoff: if we've landed on a login wall, pause so the user can sign in ONCE
+            # in this card (the persistent partition keeps the session, so future runs won't ask
+            # again), then continue. At most one pause per domain per run; the model's own
+            # RequestHumanIntervention stays as the fallback for walls this detector misses.
+            p_wall_dom = browser_login_handoff.login_wall_domain(
+                last_seen_url, "\n".join(attached_state_seen))
+            if p_wall_dom and p_wall_dom not in p_login_prompted:
+                p_login_prompted.add(p_wall_dom)
+                p_login_problem, p_login_instruction = browser_login_handoff.prompt_copy(p_wall_dom)
+                p_login_decision = await p_request_browser_approval(
+                    session, "RequestHumanIntervention",
+                    {"problem": p_login_problem, "instruction": p_login_instruction})
+                if cancel_event.is_set():
+                    break
+                if p_login_decision.get("behavior") != "deny":
+                    browser_login_handoff.record_login(p_wall_dom)
+                    p_signed_note = (f"You are now signed in to {p_wall_dom}. The page has changed; "
+                                     "look at it fresh and continue the task.")
+                    if messages and messages[-1].get("role") == "user":
+                        p_prev = messages[-1]["content"]
+                        if isinstance(p_prev, list):
+                            p_prev.append({"type": "text", "text": p_signed_note})
+                        else:
+                            messages[-1]["content"] = f"{p_prev}\n\n{p_signed_note}"
+                    else:
+                        messages.append({"role": "user", "content": p_signed_note})
 
             # Drop stale screenshots before each call: keep first + previous + current, stub the rest. Images are ~1.3-2k tokens each and get re-read every turn, so this is the biggest per-turn context win on any visual task (measured ~2.9x fewer image tokens, ~5x less upload).
             browser_history.prune_old_screenshots(messages)

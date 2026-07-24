@@ -1765,3 +1765,47 @@ def test_autosend_finishes_the_send_after_the_model_fills(monkeypatch):
     assert "sent" in str(result.get("summary", "")).lower()
     # the model was called ONCE (the fill turn); autosend ended the run, no second send turn
     assert len(primary.calls) == 1, f"model called {len(primary.calls)}x; the send should cost zero model turns"
+
+
+def test_login_wall_pauses_and_remembers_the_site(monkeypatch, tmp_path):
+    """Landing on a login wall auto-fires the RequestHumanIntervention pause with sign-in wording,
+    and once the user resolves it (Done), the domain is remembered so future runs skip re-prompting."""
+    from backend.apps.agents.browser import browser_login_handoff as H
+    monkeypatch.setattr(H, "P_STORE_PATH", str(tmp_path / "auth.json"))
+
+    approvals = []
+
+    async def p_fake_approval(session, tool_name, tool_input):
+        approvals.append((tool_name, tool_input))
+        return {"behavior": "allow"}
+    monkeypatch.setattr(BA, "p_request_browser_approval", p_fake_approval)
+
+    primary = FakeLLM([
+        Resp([p_rp("open the login page"), p_tu("BrowserNavigate", url="https://acme.example/login")]),
+        Resp([p_tu("Done", message="all set")]),
+    ])
+    p_install(monkeypatch, primary, FakeAux())
+    p_run_settled(task="log into acme and open my dashboard", browser_id="b1", model="sonnet")
+
+    assert any(t == "RequestHumanIntervention" and "sign in" in ti["problem"].lower()
+               for t, ti in approvals), approvals
+    assert H.is_authenticated("acme.example")
+
+
+def test_login_wall_skip_does_not_remember(monkeypatch, tmp_path):
+    """Skipping the sign-in (deny) leaves the site UNremembered and lets the run continue."""
+    from backend.apps.agents.browser import browser_login_handoff as H
+    monkeypatch.setattr(H, "P_STORE_PATH", str(tmp_path / "auth.json"))
+
+    async def p_deny(session, tool_name, tool_input):
+        return {"behavior": "deny", "message": "Skipped by user"}
+    monkeypatch.setattr(BA, "p_request_browser_approval", p_deny)
+
+    primary = FakeLLM([
+        Resp([p_rp("open the login page"), p_tu("BrowserNavigate", url="https://acme.example/login")]),
+        Resp([p_tu("Done", message="ok")]),
+    ])
+    p_install(monkeypatch, primary, FakeAux())
+    p_run_settled(task="log into acme", browser_id="b1", model="sonnet")
+
+    assert not H.is_authenticated("acme.example")
