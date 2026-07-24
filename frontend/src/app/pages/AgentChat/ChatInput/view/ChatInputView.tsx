@@ -285,6 +285,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
         handleSend={p.handleSend}
         webSearchOn={p.webSearchOn}
         onToggleWebSearch={p.onToggleWebSearch}
+        onAttachSkill={(skillId) => p.handlePickerSelect({ id: skillId, type: 'skill', category: '', name: '', description: '', command: '', icon: null })}
       />
 
       <ChatInputOverlays

@@ -52,6 +52,7 @@ interface Props {
   handleSend: () => void;
   webSearchOn?: boolean;
   onToggleWebSearch?: () => void;
+  onAttachSkill?: (skillId: string) => void;
 }
 
 export const ChatInputToolbar: React.FC<Props> = (p) => {
@@ -176,6 +177,7 @@ export const ChatInputToolbar: React.FC<Props> = (p) => {
         handleSend={handleSend}
         webSearchOn={webSearchOn}
         onToggleWebSearch={onToggleWebSearch}
+        onAttachSkill={p.onAttachSkill}
       />
     </Box>
   );
