@@ -101,6 +101,38 @@ const GeneralInterface: React.FC<{
         </ToggleButtonGroup>
       </Box>
 
+      <Box sx={inlineRowSx} {...settingSelectAttrs('voice_hold_to_talk', 'Dictation', 'Interface', 'Hold to talk, or tap to start and stop.')}>
+        <Box sx={{ mr: 3 }}>
+          <Typography sx={labelSx}>Dictation</Typography>
+          <Typography sx={descSx}>Hold the mic or Cmd+Shift+D to talk, or tap to start and stop.</Typography>
+        </Box>
+        <ToggleButtonGroup
+          value={form.voice_hold_to_talk ?? true}
+          exclusive
+          onChange={(_, v) => { if (v !== null) setForm({ ...form, voice_hold_to_talk: v }); }}
+          size="small"
+          sx={{
+            '& .MuiToggleButton-root': {
+              color: c.text.muted,
+              borderColor: c.border.medium,
+              textTransform: 'none',
+              px: 1.75,
+              py: 0.5,
+              fontSize: '0.8rem',
+              '&.Mui-selected': {
+                bgcolor: `${c.accent.primary}15`,
+                color: c.accent.primary,
+                borderColor: c.accent.primary,
+                '&:hover': { bgcolor: `${c.accent.primary}20` },
+              },
+            },
+          }}
+        >
+          <ToggleButton value={true}>Hold to talk</ToggleButton>
+          <ToggleButton value={false}>Tap to toggle</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
       <Box sx={rowSx} {...settingSelectAttrs('accent_color', 'Accent color', 'Interface', 'The accent color used across the app.')}>
         <Typography sx={labelSx}>Accent color</Typography>
         <Typography sx={{ ...descSx, mb: 1.5 }}>

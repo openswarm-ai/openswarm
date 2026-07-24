@@ -41,7 +41,7 @@ function DesktopSpawnPill({
 }: DesktopSpawnPillProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const { state: voiceState, pct: voicePct, toggle: toggleVoice } = useVoice();
+  const { state: voiceState, pct: voicePct, pressStart: voicePressStart, pressEnd: voicePressEnd } = useVoice();
   const recording = voiceState === 'recording';
   const transcribing = voiceState === 'transcribing';
   const preparing = voiceState === 'preparing';
@@ -164,7 +164,10 @@ function DesktopSpawnPill({
           <Box
             role="button"
             aria-label="Voice dictation"
-            onClick={(e) => { e.stopPropagation(); if (!voiceBusy) toggleVoice(); }}
+            onPointerDown={(e) => { e.stopPropagation(); if (!voiceBusy) voicePressStart(); }}
+            onPointerUp={(e) => { e.stopPropagation(); voicePressEnd(); }}
+            onPointerLeave={() => voicePressEnd()}
+            onClick={(e) => e.stopPropagation()}
             sx={{
               display: 'flex',
               alignItems: 'center',

@@ -1,11 +1,47 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import MicIcon from '@mui/icons-material/Mic';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { useThemeAccent } from '@/shared/styles/ThemeContext';
 import { useVoice } from './VoiceDictationContext';
+
+// WhisperFlow-style presence: while the mic is hot, an accent-tinted aurora breathes up from the
+// bottom edge, its height and glow riding the live mic level. Imperative rAF writes only (opacity +
+// transform on a fixed layer), so 60Hz voice never re-renders React.
+const VoiceAurora: React.FC<{ volumeRef: React.MutableRefObject<number> }> = ({ volumeRef }) => {
+  const { accent } = useThemeAccent();
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    let raf = 0;
+    const tick = (): void => {
+      const el = ref.current;
+      if (el) {
+        const v = volumeRef.current;
+        el.style.opacity = String(0.35 + v * 0.65);
+        el.style.transform = `scaleY(${0.55 + v * 1.1})`;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [volumeRef]);
+  const a = accent || '#6b62f0';
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed', left: 0, right: 0, bottom: 0, height: 130, zIndex: 2147482999,
+        pointerEvents: 'none', transformOrigin: 'bottom',
+        background: `linear-gradient(to top, ${a}55 0%, ${a}2e 35%, transparent 100%)`,
+        filter: 'blur(14px)',
+        transition: 'opacity 120ms linear',
+      }}
+    />
+  );
+};
 
 // The whole point: dictation must never look like "nothing happened." This floats a small status
 // card above the composer for every phase (listening, transcribing, downloading the model) and shows
@@ -20,7 +56,7 @@ function feedbackIcon(icon: string): React.ReactElement {
 }
 
 const VoiceOverlay: React.FC = () => {
-  const { state, pct, feedback } = useVoice();
+  const { state, pct, feedback, volumeRef } = useVoice();
   const [showFeedback, setShowFeedback] = useState(false);
 
   useEffect(() => {
@@ -33,6 +69,7 @@ const VoiceOverlay: React.FC = () => {
   const live = state !== 'idle';
   const visible = live || (showFeedback && !!feedback);
   if (!visible) return null;
+  const aurora = state === 'recording' ? <VoiceAurora volumeRef={volumeRef} /> : null;
 
   let content: React.ReactElement;
   if (state === 'recording') {
@@ -65,6 +102,8 @@ const VoiceOverlay: React.FC = () => {
   }
 
   return (
+    <>
+    {aurora}
     <Box
       sx={{
         position: 'fixed',
@@ -93,6 +132,7 @@ const VoiceOverlay: React.FC = () => {
     >
       {content}
     </Box>
+    </>
   );
 };
 

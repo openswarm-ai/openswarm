@@ -1788,13 +1788,22 @@ app.whenReady().then(async () => {
   // Off-window mouse-release crash dodge (macOS). Safe to call before windows exist.
   installMacMouseClamp();
 
-  // Voice dictation toggle: press anywhere (even in another app) to start/stop dictating. globalShortcut
-  // can't see key-up, so this is a press-to-toggle, not hold-to-talk; the renderer owns the record state.
-  try {
-    globalShortcut.register('CommandOrControl+Shift+D', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:toggle');
-    });
-  } catch (_) { /* a taken shortcut just means no global hotkey; the pill still works */ }
+  // Voice dictation hotkey. globalShortcut can't see key-up, so hold-to-talk is impossible through it;
+  // instead the shortcut is only registered while OUR window is unfocused (background toggle), and when
+  // the app is focused the renderer sees the real keydown/keyup and owns hold-vs-toggle itself.
+  const VOICE_COMBO = 'CommandOrControl+Shift+D';
+  const registerVoiceShortcut = () => {
+    try {
+      if (!globalShortcut.isRegistered(VOICE_COMBO)) {
+        globalShortcut.register(VOICE_COMBO, () => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:toggle');
+        });
+      }
+    } catch (_) { /* a taken shortcut just means no global hotkey; the pill still works */ }
+  };
+  registerVoiceShortcut();
+  app.on('browser-window-focus', () => { try { globalShortcut.unregister(VOICE_COMBO); } catch (_) {} });
+  app.on('browser-window-blur', registerVoiceShortcut);
 
   // PASSKEY SPIKE (macOS only): turn on the Secure-Enclave/Touch ID WebAuthn authenticator that Electron 42 added. Without this, isUserVerifyingPlatformAuthenticatorAvailable() is hardwired false (why the old reject-shim existed). keychainAccessGroup MUST match the keychain-access-groups entitlement (Y26NUZH4NG.<bundle>.webauthn) or this throws. Windows has no equivalent, so the reject-shim still runs there.
   if (process.platform === 'darwin' && typeof app.configureWebAuthn === 'function') {

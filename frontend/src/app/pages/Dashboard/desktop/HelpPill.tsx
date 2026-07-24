@@ -14,7 +14,7 @@ const HELP_URL = 'https://openswarm.com';
 /** Top-right desktop pill: Help opens the docs; the mic dictates (local whisper) into the focused field. */
 function HelpPill(): React.ReactElement {
   const dispatch = useAppDispatch();
-  const { state, pct, toggle } = useVoice();
+  const { state, pct, pressStart, pressEnd } = useVoice();
   const recording = state === 'recording';
   const transcribing = state === 'transcribing';
   const preparing = state === 'preparing';
@@ -46,7 +46,10 @@ function HelpPill(): React.ReactElement {
       <Tooltip title={recording ? 'Stop dictation' : preparing ? 'Downloading voice model' : 'Dictate (Cmd+Shift+D)'} placement="bottom" arrow>
         <Box
           sx={{ display: 'flex', alignItems: 'center', color: recording ? '#fff' : 'rgba(255,255,255,0.55)' }}
-          onClick={(e) => { e.stopPropagation(); if (!busy) toggle(); }}
+          onPointerDown={(e) => { e.stopPropagation(); if (!busy) pressStart(); }}
+          onPointerUp={(e) => { e.stopPropagation(); pressEnd(); }}
+          onPointerLeave={() => pressEnd()}
+          onClick={(e) => e.stopPropagation()}
         >
           {busy
             ? <CircularProgress size={13} thickness={5} sx={{ color: 'rgba(255,255,255,0.7)' }} />

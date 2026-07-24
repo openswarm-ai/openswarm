@@ -84,6 +84,8 @@ export interface AppSettings {
   accent_gradient?: string[] | null;
   /** Global text-size ratio. Scales the root font-size so every rem-based size grows/shrinks together, no layout breakage. 1 = default. */
   ui_font_scale?: number;
+  /** Dictation activation: true = hold the hotkey/mic to record and release to stop (WhisperFlow style); false = tap toggles. */
+  voice_hold_to_talk?: boolean;
   personalized_greeting?: string | null;
   /** The short one-glance identity hook shown in the reveal's focal beat (greeting is the longer read). */
   personalized_headline?: string | null;
@@ -151,6 +153,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   default_thinking_level: 'auto',
   zoom_sensitivity: 50,
   ui_font_scale: 1,
+  voice_hold_to_talk: true,
   theme: 'light',
   new_agent_shortcut: 'Meta+l',
   anthropic_api_key: null,

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { API_BASE } from '@/shared/config';
 import { encodeWav, VOICE_SAMPLE_RATE } from './encodeWav';
+import { injectAtFocus } from './injectAtFocus';
+import { playCancel, playDone, playStart } from './voiceSounds';
 
 export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'preparing';
 
@@ -23,6 +26,33 @@ export interface VoiceFeedback {
   at: number;
 }
 
+// Context hint for the polisher: what the user is dictating into (a field label, a page title), so
+// names and jargon spell right. Never page CONTENT, just the one-line "where".
+function dictationContext(): string {
+  const active = document.activeElement as HTMLElement | null;
+  const hint = active?.getAttribute?.('placeholder') || active?.getAttribute?.('aria-label') || '';
+  return [hint, document.title].filter(Boolean).join(' - ').slice(0, 200);
+}
+
+async function polishText(raw: string): Promise<string> {
+  try {
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), 6500);
+    const res = await fetch(`${API_BASE}/voice/polish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: raw, context: dictationContext() }),
+      signal: ctl.signal,
+    });
+    window.clearTimeout(timer);
+    if (!res.ok) return raw;
+    const data = (await res.json()) as { text?: string };
+    return data.text?.trim() || raw;
+  } catch {
+    return raw;
+  }
+}
+
 export function useVoiceDictation() {
   const [state, setState] = useState<VoiceState>('idle');
   const [lastText, setLastText] = useState<string>('');
@@ -31,6 +61,8 @@ export function useVoiceDictation() {
   const [feedback, setFeedback] = useState<VoiceFeedback | null>(null);
   const recRef = useRef<Recorder | null>(null);
   const stateRef = useRef<VoiceState>('idle');
+  // Live mic level (0..1) for the aurora; a ref, not state, so 60Hz visuals never re-render React.
+  const volumeRef = useRef<number>(0);
   stateRef.current = state;
 
   // First-run: the model is downloading. Poll progress until it lands, then drop back to idle so the
@@ -73,11 +105,20 @@ export function useVoiceDictation() {
       const source = ctx.createMediaStreamSource(stream);
       const node = ctx.createScriptProcessor(4096, 1, 1);
       const chunks: Float32Array[] = [];
-      node.onaudioprocess = (e): void => { chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+      node.onaudioprocess = (e): void => {
+        const data = e.inputBuffer.getChannelData(0);
+        chunks.push(new Float32Array(data));
+        // RMS per chunk drives the aurora; smoothed so it breathes instead of flickering.
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 8) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / (data.length / 8));
+        volumeRef.current = volumeRef.current * 0.7 + Math.min(1, rms * 6) * 0.3;
+      };
       source.connect(node);
       node.connect(ctx.destination);
       recRef.current = { ctx, stream, node, source, chunks };
       setState('recording');
+      playStart();
       // Warm the model the moment recording begins so transcription is instant on stop.
       void window.openswarm?.voiceWarmup?.();
     } catch (err) {
@@ -98,13 +139,26 @@ export function useVoiceDictation() {
       const wav = encodeWav(samples);
       const res = await window.openswarm?.voiceTranscribe?.(wav);
       if (res?.ok && res.text) {
-        setLastText(res.text);
-        const inj = await window.openswarm?.voiceInject?.(res.text);
-        setFeedback(inj?.pasted
-          ? { tone: 'ok', icon: 'check', text: res.text, at: Date.now() }
-          : { tone: 'ok', icon: 'clipboard', text: `${res.text}  (copied, press Cmd+V)`, at: Date.now() });
+        // WhisperFlow-style cleanup: punctuation + filler words via the cheap aux tier, fail-open to
+        // the raw transcript on any error/timeout so dictation never breaks with the aux down.
+        const text = await polishText(res.text);
+        setLastText(text);
+        // Land the text where the user's cursor is: focused field, then focused browser page, then
+        // the OS paste fallback (other apps). The floating bubble is just confirmation, not the output.
+        const target = injectAtFocus(text);
+        if (target) {
+          playDone();
+          setFeedback({ tone: 'ok', icon: 'check', text, at: Date.now() });
+        } else {
+          const inj = await window.openswarm?.voiceInject?.(text);
+          if (inj?.pasted) playDone();
+          setFeedback(inj?.pasted
+            ? { tone: 'ok', icon: 'check', text, at: Date.now() }
+            : { tone: 'ok', icon: 'clipboard', text: `${text}  (copied, press Cmd+V)`, at: Date.now() });
+        }
         setState('idle');
       } else if (res?.ok && !res.text) {
+        playCancel();
         setFeedback({ tone: 'warn', icon: 'info', text: "Didn't catch that. Try again.", at: Date.now() });
         setState('idle');
       } else if (res?.error === 'model-downloading' || res?.error === 'no-model') {
@@ -137,5 +191,5 @@ export function useVoiceDictation() {
   // A dangling recorder (unmount mid-capture) must release the mic.
   useEffect(() => () => { teardown(); }, [teardown]);
 
-  return { state, lastText, error, pct, feedback, toggle, start, stop };
+  return { state, lastText, error, pct, feedback, toggle, start, stop, volumeRef };
 }
