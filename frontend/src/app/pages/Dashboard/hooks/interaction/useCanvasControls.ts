@@ -24,9 +24,11 @@ const WHEEL_ZOOM_DELTA_CAP = 24;
 const WHEEL_STREAM_GAP_MS = 150;
 const MOUSE_NOTCH_MIN_DELTA = 40;
 
-// Maps the 1 to 100 user setting to an internal multiplier (50 default = 0.004).
+// Maps the 1 to 100 user setting to an internal multiplier. Recentered 2026-07-24 (Eric): the old
+// max (100 = 0.008) is the feel people actually wanted, so that is the new DEFAULT 50; the scale
+// still doubles up to 100 for wheel users who want faster.
 function sensitivityToMultiplier(setting: number): number {
-  return 0.00008 * setting;
+  return 0.00016 * setting;
 }
 
 interface CanvasState {
