@@ -355,14 +355,16 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
           />
         )}
 
-        {/* Dot grid background; gestures move it imperatively via gridRef (phase + scale), commits re-render it here (dot radius included) */}
+        {/* Dot grid background; gestures move it imperatively via gridRef (phase + scale), commits re-render it here (dot radius included). The tile is an SVG IMAGE, not a procedural gradient: Chromium caches a decoded image as a GPU texture, while a radial-gradient re-rasterizes the whole layer every backgroundSize change, and under GPU memory pressure (many webviews, external monitors) those rasters get dropped and paint as a giant blank rectangle, the 1.5.9 white-patch bug. Same backgroundSize/Position write contract, so the per-frame camera writer is untouched. */}
         <Box
           ref={canvas.gridRef}
           sx={{
             position: 'absolute',
             inset: 0,
             pointerEvents: 'none',
-            backgroundImage: `radial-gradient(circle, ${c.border.medium} ${dotSize}px, transparent ${dotSize}px)`,
+            backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+              `<svg xmlns='http://www.w3.org/2000/svg' width='${dotSpacing}' height='${dotSpacing}'><circle cx='${dotSpacing / 2}' cy='${dotSpacing / 2}' r='${dotSize}' fill='${c.border.medium}'/></svg>`,
+            )}")`,
             backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
             backgroundPosition: `${canvas.panX % dotSpacing}px ${canvas.panY % dotSpacing}px`,
           }}
