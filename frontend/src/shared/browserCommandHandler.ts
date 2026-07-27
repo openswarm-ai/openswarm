@@ -570,11 +570,19 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     let hit = findBest();
     const acts = [];
     if (!hit && ${reveal}) {
+      // Self-imposed budget. The tiers below sum to ~24s of worst case but the command that
+      // carries them is killed at its own timeout, which threw away ALL the work and returned
+      // nothing (measured: linkedin died mid-scroll 2 of 3 runs, so retop/open-first could never
+      // run). Each tier now only STARTS if the budget can still pay for it, and polls are clipped
+      // to what is left, so the routine always returns its own best answer instead of being shot.
+      const DEADLINE = Date.now() + 21000;
+      const left = () => DEADLINE - Date.now();
+      const budget = (want) => Math.max(0, Math.min(want, left()));
       // 1. A compose opener visible up top (Gmail "Compose", LinkedIn "Start a post"). Patient
       //    poll: LinkedIn code-splits its share modal, and under a heavy session the editor
       //    chunk lands past 2.5s (measured: the 2.5s poll missed ~half the time; poll exits the
       //    moment the editable appears, so the patience costs nothing on the happy path).
-      try { if (clickTrigger(false)) { acts.push('trigger'); hit = await pollFind(6000); } } catch (e) { /* keep going */ }
+      try { if (clickTrigger(false)) { acts.push('trigger'); hit = await pollFind(budget(6000)); } } catch (e) { /* keep going */ }
       // 2. Progressive scroll for a below-fold / lazy composer: YouTube comments hydrate on
       //    scroll and start as a placeholder that only becomes editable once clicked, so scroll
       //    a step, re-scan, and re-click the trigger on whatever just entered the viewport, up to
@@ -582,13 +590,14 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       if (!hit) {
         const sc = document.scrollingElement || document.documentElement;
         let scrolled = false;
-        for (let step = 0; step < 6 && !hit; step++) {
+        // Reserve time for the retop + open-first tiers below, so the ladder can't eat the budget.
+        for (let step = 0; step < 6 && !hit && left() > 7000; step++) {
           const before = sc.scrollTop;
           sc.scrollBy(0, Math.round(window.innerHeight * 0.9));
           scrolled = true;
           await sleep(500);
           hit = findBest();
-          if (!hit) { try { if (clickTrigger(true)) hit = await pollFind(1400); } catch (e) { /* keep going */ } }
+          if (!hit) { try { if (clickTrigger(true)) hit = await pollFind(budget(1400)); } catch (e) { /* keep going */ } }
           if (sc.scrollTop === before) break;
         }
         if (scrolled) acts.push('scroll');
@@ -596,16 +605,16 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       // 3. Back to the top opener: the scroll ladder ends at page bottom with the top compose
       //    entry off-screen; a modal that opened slowly (or needed a second click) is only
       //    winnable by returning and retrying once.
-      if (!hit) {
+      if (!hit && left() > 2500) {
         try {
           (document.scrollingElement || document.documentElement).scrollTo(0, 0);
           await sleep(400);
-          if (clickTrigger(false)) { acts.push('retop'); hit = await pollFind(4000); }
+          if (clickTrigger(false)) { acts.push('retop'); hit = await pollFind(budget(4000)); }
         } catch (e) { /* keep going */ }
       }
       // 4. Last resort: open the first list item (X DMs / chat lists). Navigational, so it runs
       //    only after trigger+scroll fail, which stops it from yanking YouTube to another video.
-      if (!hit) { let did = false; try { did = openFirstItem(); } catch (e) { did = false; } if (did) { acts.push('open-first'); hit = await pollFind(2000); } }
+      if (!hit && left() > 1200) { let did = false; try { did = openFirstItem(); } catch (e) { did = false; } if (did) { acts.push('open-first'); hit = await pollFind(budget(2000)); } }
     }
     if (!hit) return { found: false, reveals: acts };
 
