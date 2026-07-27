@@ -127,6 +127,11 @@ P_BRIDGE_READY_WAIT_MS = 8000
 P_BRIDGE_POLL_INTERVAL_MS = 400
 p_bridge_known_absent: set[str] = set()
 
+# Sites whose sign-in we already borrowed into the partition. Only SUCCESSFUL borrows are recorded,
+# so a site the user signs into later still gets picked up without a restart; the re-probe that
+# costs is a keychain-free row count, so re-asking is cheap.
+p_signin_borrowed: set[str] = set()
+
 
 def parse_bridge_result(result: dict) -> object:
     """Decode the JSON string an app-bridge evaluate returns (it always returns
@@ -250,10 +255,37 @@ def p_summarize_action(tool_name: str, tool_input: dict) -> str:
     return p_summ_step(stype, ti) if stype else ""
 
 
+async def p_borrow_signin_before_nav(url: str, browser_id: str) -> None:
+    """Load the user's own sign-in for a site BEFORE its first page load, so the very first request
+    already carries it.
+
+    Borrowing only at a detected wall was too late in two ways: a task the model answers in one turn
+    calls Done, which breaks the loop before the handoff block ever runs, so short tasks never got it
+    at all; and even a long task had to render a logged-out page, notice, and throw it away. Doing it
+    at the door costs the user nothing and skips both. Silent and best-effort; the wall handoff is
+    still there as the backstop when this finds nothing."""
+    from backend.apps.settings.settings import load_settings
+
+    try:
+        if not browser_session_import.is_enabled(load_settings()):
+            return
+        domain = browser_session_import.site_domain(url)
+        if not domain or domain in p_signin_borrowed:
+            return
+        if not browser_session_import.has_importable_session(domain):
+            return
+        p_signin_borrowed.add(domain)
+        await browser_session_import.import_signin(domain, browser_id)
+    except Exception as exc:
+        logger.info(f"[session-import] pre-nav borrow skipped: {type(exc).__name__}")
+
+
 async def execute_browser_tool(
     tool_name: str, tool_input: dict, browser_id: str, tab_id: str = "",
 ) -> dict:
     """Execute a browser tool via ws_manager directly (no MCP/HTTP round-trip)."""
+    if tool_name == "BrowserNavigate":
+        await p_borrow_signin_before_nav(str((tool_input or {}).get("url") or ""), browser_id)
     # One greppable line naming the actual buttons/keys/selectors this call drives,
     # so a run reads as "key:ArrowRight x5" rather than an opaque tool name. Fires
     # for action tools only (reads stay quiet) and ungated so web runs get it too.
@@ -810,8 +842,13 @@ async def try_borrow_signin(domain: str, browser_id: str, tab_id: str, url: str)
     try:
         if not browser_session_import.is_enabled(load_settings()):
             return False
+        # Already borrowed at the door and STILL standing at a wall, so the session did not take.
+        # Re-importing the same values would change nothing; this one needs a human.
+        if domain in p_signin_borrowed:
+            return False
         if not browser_session_import.has_importable_session(domain):
             return False
+        p_signin_borrowed.add(domain)
         result = await browser_session_import.import_signin(domain, browser_id)
         if not result.ok:
             return False
@@ -3146,6 +3183,11 @@ async def run_browser_agents(
         if not browser_id and dashboard_id:
             # the url param is often empty with the target buried in the task text; a url there still names the host we must not duplicate
             host_src = url or entry_url or next(iter(re.findall(r"https?://[^\s)\"'<>]+", task_text)), "")
+            # Borrow the user's sign-in BEFORE any card exists. A new card loads its entry URL the
+            # instant it mounts, with no BrowserNavigate to hook, so this is the only moment the
+            # very first request can already carry the session. Outside the pick lock: it can touch
+            # the keychain, and holding a lock across that would serialize every card creation.
+            await p_borrow_signin_before_nav(host_src, "")
             async with p_card_pick_lock:
                 browser_id = find_reusable_card(dashboard_id, host_src, parent_session_id)
                 if browser_id:
