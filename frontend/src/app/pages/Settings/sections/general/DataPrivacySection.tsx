@@ -3,7 +3,9 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
+import type { AppSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
 import type { SettingsStyles } from '../settingsStyles';
@@ -11,7 +13,11 @@ import type { SettingsStyles } from '../settingsStyles';
 const ERASE_WORD = 'ERASE';
 
 // The iOS Reset menu, two actions only: "Reset All Settings" (preferences back to defaults, your stuff + sign-in stay) and "Erase All Content and Settings" (factory wipe + relaunch). Flat rows, not a boxed "danger zone": red lives only on the destructive label, and the real friction is the typed-confirm in the dialog.
-const DataPrivacySection: React.FC<{ styles: SettingsStyles }> = ({ styles }) => {
+const DataPrivacySection: React.FC<{
+  form: AppSettings;
+  setForm: React.Dispatch<React.SetStateAction<AppSettings>>;
+  styles: SettingsStyles;
+}> = ({ form, setForm, styles }) => {
   const c = useClaudeTokens();
   const { sectionSx, labelSx, descSx } = styles;
 
@@ -120,6 +126,21 @@ const DataPrivacySection: React.FC<{ styles: SettingsStyles }> = ({ styles }) =>
           <Typography sx={descSx}>Puts your preferences back to defaults. Your apps, chats, skills, and sign-in stay.</Typography>
         </Box>
         <Button variant="outlined" size="small" onClick={() => { setErr(null); setResetOpen(true); }} sx={rowBtnSx}>Reset</Button>
+      </Box>
+
+      <Box sx={{ ...rowSx, borderBottom: `1px solid ${c.border.subtle}` }}>
+        <Box sx={{ mr: 3 }}>
+          <Typography sx={labelSx}>Use my sign-ins from my other browser</Typography>
+          <Typography sx={descSx}>When an agent hits a site you're not signed into here, borrow the sign-in you already have in Chrome, Arc, Brave, or Edge instead of stopping to ask you. Reads only the site it's stuck on, and never asks for a password. Off by default.</Typography>
+        </Box>
+        <Switch
+          checked={form.browser_import_signins}
+          onChange={(e) => setForm({ ...form, browser_import_signins: e.target.checked })}
+          sx={{
+            '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+          }}
+        />
       </Box>
 
       <Box sx={{ ...rowSx, borderBottom: `1px solid ${c.border.subtle}` }}>

@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('openswarm', {
   connectSlack: () => ipcRenderer.invoke('connect-slack'),
   // Hands a vetted social platform's partition cookies to its session-backed MCP shim (allowlisted domains only, gated again in the main process).
   getPartitionCookies: (domain) => ipcRenderer.invoke('get-partition-cookies', domain),
+  // Loads the user's own existing sign-in for a site INTO the browser partition so a blocked agent can continue as them. Writes only, never reads back; main re-checks every cookie belongs to the domain asked for.
+  setPartitionCookies: (domain, cookies) => ipcRenderer.invoke('set-partition-cookies', domain, cookies),
   sendCdpCommand: (wcId, method, params, sessionId) => ipcRenderer.invoke('send-cdp-command', wcId, method, params, sessionId),
   cdpDetachClean: (wcId) => ipcRenderer.invoke('cdp-detach-clean', wcId),
   cdpCacheSet: (wcId, indexMap) => ipcRenderer.invoke('cdp-cache-set', wcId, indexMap),

@@ -65,6 +65,7 @@ from backend.apps.agents.browser import browser_metrics
 from backend.apps.agents.browser import browser_send_script
 from backend.apps.agents.browser import browser_send_parse
 from backend.apps.agents.browser import browser_login_handoff
+from backend.apps.agents.browser import browser_session_import
 from backend.apps.agents.browser import browser_delivery_check
 from backend.apps.agents.browser import browser_submit_click
 from backend.apps.agents.browser import browser_playbook
@@ -792,6 +793,36 @@ async def p_request_browser_approval(
         "status": "running",
     })
     return decision
+
+
+async def try_borrow_signin(domain: str, browser_id: str, tab_id: str, url: str) -> bool:
+    """Sign in by borrowing the session the user's everyday browser already holds, rather than
+    interrupting them to type a password we would rather never see.
+
+    True only when the partition genuinely carries their session now, so a False always falls back
+    to the pause that existed before this did. Off unless the user opted in.
+
+    Swallows everything: this is a convenience bolted onto the critical path, and the worst it may
+    ever cost is the pause we were going to show anyway. Cancellation still propagates (it is a
+    BaseException), so a stopped run still stops."""
+    from backend.apps.settings.settings import load_settings
+
+    try:
+        if not browser_session_import.is_enabled(load_settings()):
+            return False
+        if not browser_session_import.has_importable_session(domain):
+            return False
+        result = await browser_session_import.import_signin(domain, browser_id)
+        if not result.ok:
+            return False
+        # A borrowed session only takes on the next load, so send the page back through the door.
+        if url:
+            await execute_browser_tool("BrowserNavigate", {"url": url}, browser_id, tab_id)
+    except Exception as exc:
+        logger.info(f"[session-import] borrow skipped for {domain}: {type(exc).__name__}")
+        return False
+    logger.info(f"[session-import] continued on {domain} without interrupting the user")
+    return True
 
 
 # Background learning tasks (playbook distill) held by strong ref; asyncio only weak-refs tasks, and a GC'd task dies silently mid-distill.
@@ -1664,13 +1695,18 @@ async def run_browser_agent(
                 last_seen_url, "\n".join(attached_state_seen), allow_soft=(turn >= 2))
             if p_wall_dom and p_wall_dom not in p_login_prompted:
                 p_login_prompted.add(p_wall_dom)
-                p_login_problem, p_login_instruction = browser_login_handoff.prompt_copy(p_wall_dom)
-                p_login_decision = await p_request_browser_approval(
-                    session, "RequestHumanIntervention",
-                    {"problem": p_login_problem, "instruction": p_login_instruction})
-                if cancel_event.is_set():
-                    break
-                if p_login_decision.get("behavior") != "deny":
+                # Borrow the sign-in the user already has in their everyday browser first: when it
+                # lands nobody is interrupted at all. Anything less falls through to the pause.
+                p_signed_in = await try_borrow_signin(p_wall_dom, browser_id, tab_id, last_seen_url)
+                if not p_signed_in:
+                    p_login_problem, p_login_instruction = browser_login_handoff.prompt_copy(p_wall_dom)
+                    p_login_decision = await p_request_browser_approval(
+                        session, "RequestHumanIntervention",
+                        {"problem": p_login_problem, "instruction": p_login_instruction})
+                    if cancel_event.is_set():
+                        break
+                    p_signed_in = p_login_decision.get("behavior") != "deny"
+                if p_signed_in:
                     browser_login_handoff.record_login(p_wall_dom)
                     p_signed_note = (f"You are now signed in to {p_wall_dom}. The page has changed; "
                                      "look at it fresh and continue the task.")

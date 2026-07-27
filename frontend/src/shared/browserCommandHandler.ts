@@ -1867,6 +1867,22 @@ async function handleSessionCookies(params: Record<string, any>): Promise<Record
   }
 }
 
+// Load the user's own existing sign-in for a site into the browser partition, so an agent stuck at
+// a login wall can carry on as them instead of interrupting to ask for a password. Like the cookie
+// bridge above this needs no webview: it writes straight to the main-process cookie store.
+async function handleImportSession(params: Record<string, any>): Promise<Record<string, any>> {
+  const bridge = (window as any).openswarm?.setPartitionCookies as
+    | ((domain: string, cookies: Record<string, any>[]) => Promise<{ ok: boolean; set: number; error?: string }>)
+    | undefined;
+  if (!bridge) return { ok: false, set: 0, error: 'Session import unavailable (desktop app only)' };
+  const cookies = Array.isArray(params.cookies) ? params.cookies : [];
+  try {
+    return await bridge(String(params.domain || ''), cookies);
+  } catch (err: any) {
+    return { ok: false, set: 0, error: `Session import failed: ${err?.message || String(err)}` };
+  }
+}
+
 // Drive a session-borrow site's own already-open card: resolve the webview by its live domain
 // (no browser_id, like the cookie bridge), then run a small navigate/evaluate step sequence.
 // The shims use this for writes on sites that sign every HTTP request (TikTok).
@@ -1902,6 +1918,11 @@ async function runBrowserCommand(
   }
   if (action === 'perform_action') {
     const result = await handlePerformAction(params);
+    dashboardWs.send('browser:result', { request_id, ...result });
+    return;
+  }
+  if (action === 'import_session') {
+    const result = await handleImportSession(params);
     dashboardWs.send('browser:result', { request_id, ...result });
     return;
   }

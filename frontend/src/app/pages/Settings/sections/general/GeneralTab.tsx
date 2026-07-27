@@ -43,7 +43,7 @@ const GeneralTab: React.FC<{
 
       <GeneralAdvanced form={form} setForm={setForm} styles={styles} />
 
-      <DataPrivacySection styles={styles} />
+      <DataPrivacySection form={form} setForm={setForm} styles={styles} />
 
     </Box>
   );

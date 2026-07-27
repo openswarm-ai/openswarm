@@ -2797,6 +2797,47 @@ async function readPartitionCookies(domain) {
 }
 ipcMain.handle('get-partition-cookies', (_e, domain) => readPartitionCookies(domain));
 
+// Populate the browser-card partition with the user's OWN existing sign-in for a site, so an agent
+// stuck at a login wall can carry on as them without anybody typing a password. This is the exact
+// opposite direction from the read above: cookies only go INTO our own partition, never out, so it
+// is not a disclosure surface. The backend gates it behind an explicit opt-in setting and always
+// derives the domain from the page the agent is already stuck on, never from model text.
+async function writePartitionCookies(domain, cookies) {
+  const d = String(domain || '').toLowerCase().trim().replace(/^\./, '');
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return { ok: false, set: 0, error: `bad domain: ${d || '(empty)'}` };
+  const list = Array.isArray(cookies) ? cookies : [];
+  const ses = session.fromPartition(BROWSER_PARTITION);
+  let set = 0;
+  for (const c of list) {
+    if (!c || !c.name) continue;
+    const rawHost = String(c.domain || d);
+    const host = rawHost.replace(/^\./, '');
+    // Every cookie has to belong to the domain we were asked for, so importing one site can never
+    // plant another site's session in the partition.
+    if (host !== d && !host.endsWith(`.${d}`)) continue;
+    const path = String(c.path || '/') || '/';
+    try {
+      await ses.cookies.set({
+        url: `https://${host}${path.startsWith('/') ? path : `/${path}`}`,
+        name: String(c.name),
+        value: String(c.value == null ? '' : c.value),
+        // A leading dot is Chromium's marker for a domain-wide cookie; without it the cookie is
+        // host-only and passing `domain` at all would silently widen it.
+        domain: rawHost.startsWith('.') ? rawHost : undefined,
+        path,
+        secure: !!c.secure,
+        httpOnly: !!c.httponly,
+        expirationDate: Number(c.expires) > 0 ? Number(c.expires) : undefined,
+      });
+      set += 1;
+    } catch (err) {
+      // One malformed cookie must not sink the whole sign-in.
+    }
+  }
+  return { ok: set > 0, set, total: list.length };
+}
+ipcMain.handle('set-partition-cookies', (_e, domain, cookies) => writePartitionCookies(domain, cookies));
+
 // The renderer relays cookie reads for the session-borrow bridge, but macOS throttles it when the
 // window is backgrounded, so those reads intermittently time out. Main never throttles: hold our own
 // socket to the backend and answer get_session_cookies here. Cookie reads only; the renderer still
