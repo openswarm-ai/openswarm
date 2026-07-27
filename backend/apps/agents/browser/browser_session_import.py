@@ -48,6 +48,14 @@ P_GOOGLE_SUFFIXES = ("google.com", "youtube.com")
 # seconds, and an entry with no expiry is session-scoped, so it would evaporate on the next quit.
 P_CHROMIUM_EPOCH_OFFSET_S = 11644473600
 
+# Anti-bot clearance tokens are bound to the exact user agent and IP that earned them. Our webview
+# keeps an "openswarm/" product token in its UA, so a clearance minted by the user's real Chrome can
+# never match ours, and replaying a mismatched one reads as token theft: the edge hands back a fresh
+# challenge instead of letting us through, which is WORSE than arriving with no clearance at all.
+# Everything else in the jar is the actual session, so we carry that and let the edge re-challenge
+# us honestly.
+P_FINGERPRINT_BOUND = {"cf_clearance", "__cf_bm", "_cfuvid", "datadome", "incap_ses", "reese84"}
+
 
 class SessionImportResult(BaseModel):
     """What happened, in a shape the caller can branch on without parsing prose."""
@@ -88,7 +96,8 @@ def read_site_records(domain: str) -> List[Dict[str, Any]]:
         # A browser we cannot read is a fallback, never a crash: the run just asks the user instead.
         logger.info(f"[session-import] read failed for {domain}: {type(exc).__name__}")
         return []
-    return [{**r, "expires": p_unix_expiry(r.get("expires_utc"))} for r in raw]
+    return [{**r, "expires": p_unix_expiry(r.get("expires_utc"))} for r in raw
+            if str(r.get("name") or "").lower() not in P_FINGERPRINT_BOUND]
 
 
 @typechecked

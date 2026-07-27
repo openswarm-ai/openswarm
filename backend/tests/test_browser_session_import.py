@@ -125,6 +125,21 @@ def test_expiry_is_translated_out_of_chromium_time(monkeypatch):
     assert out[1]["expires"] == 0.0, "a session entry must stay session-scoped, not become 1601"
 
 
+def test_fingerprint_bound_clearance_is_left_behind(monkeypatch):
+    """Anti-bot clearance is minted against the UA and IP that earned it, and our webview keeps an
+    'openswarm/' token in its UA, so a borrowed clearance can never match. Replaying a mismatched
+    one reads as token theft and gets us challenged HARDER than arriving with none, while the real
+    session cookies beside it are perfectly portable."""
+    monkeypatch.setattr(si.browser_cookies, "read_provider_cookie_records", lambda d: [
+        {"name": "sid", "value": "opaque", "expires_utc": 0},
+        {"name": "uid", "value": "opaque", "expires_utc": 0},
+        {"name": "cf_clearance", "value": "opaque", "expires_utc": 0},
+        {"name": "__cf_bm", "value": "opaque", "expires_utc": 0},
+        {"name": "datadome", "value": "opaque", "expires_utc": 0},
+    ])
+    assert sorted(r["name"] for r in si.read_site_records("medium.com")) == ["sid", "uid"]
+
+
 def test_google_reads_go_through_the_named_sso_scope(monkeypatch):
     """A Gmail borrow must use the reader's named SSO set, never a general sweep of the user's
     google entries."""
