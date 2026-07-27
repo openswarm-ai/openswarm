@@ -250,23 +250,35 @@ async def classify_and_brief(prompt: str, settings, primary_api: str | None) -> 
         from backend.apps.settings.credentials import get_anthropic_client_for_model
         from backend.apps.agents.providers.registry import resolve_aux_model
 
-        aux_model, _ = await resolve_aux_model(
-            settings, preferred_tier="haiku", primary_api=primary_api,
-        )
-        client = get_anthropic_client_for_model(settings, aux_model)
-        resp = await asyncio.wait_for(
-            client.messages.create(
-                model=aux_model,
-                max_tokens=250,
-                temperature=0,
-                system=P_CLASSIFIER_SYSTEM,
-                messages=[{"role": "user", "content": (
-                    normalize_for_classifier(prompt[:2000]) + seed_hints_for_task(prompt))}],
-            ),
-            timeout=8.0,
-        )
         from backend.apps.agents.core.aux_llm import safe_resp_text
-        verdict, brief = parse_verdict_and_brief(safe_resp_text(resp))
+
+        async def p_ask(api: str | None) -> tuple[str, str, str]:
+            aux_model, _ = await resolve_aux_model(
+                settings, preferred_tier="haiku", primary_api=api,
+            )
+            client = get_anthropic_client_for_model(settings, aux_model)
+            resp = await asyncio.wait_for(
+                client.messages.create(
+                    model=aux_model,
+                    max_tokens=250,
+                    temperature=0,
+                    system=P_CLASSIFIER_SYSTEM,
+                    messages=[{"role": "user", "content": (
+                        normalize_for_classifier(prompt[:2000]) + seed_hints_for_task(prompt))}],
+                ),
+                timeout=8.0,
+            )
+            return safe_resp_text(resp), aux_model, ""
+
+        text, aux_model, _ = await p_ask(primary_api)
+        # An EMPTY body is a broken lane, not a verdict. Measured live: cx/gpt-5.4-mini returns ''
+        # for this call, which parsed to "no" and silently switched the whole browser fast path off
+        # for every GPT user, with no error to show for it. Fall back once to the provider-agnostic
+        # cheap tier (same cure as the distill fix) so a mute aux can't disable a working feature.
+        if not text.strip() and primary_api:
+            logger.info(f"[browser-fast-path] classifier empty on {aux_model}; retrying provider-agnostic")
+            text, aux_model, _ = await p_ask(None)
+        verdict, brief = parse_verdict_and_brief(text)
         logger.info(
             f"[browser-fast-path] classifier: {verdict.upper()} brief={len(brief)}ch "
             f"model={aux_model} in {int((time.monotonic() - t0) * 1000)}ms"
