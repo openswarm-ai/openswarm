@@ -70,9 +70,12 @@ P_SIGNIN_AFFORDANCE_RE = re.compile(
     re.I)
 # Anything only a signed-IN page shows. Its presence vetoes the verdict, so a stray "Log in" on an
 # authenticated page (a second product's promo) can't make us tell the user to sign in again.
+# Deliberately NARROW: an earlier draft also vetoed on "notifications"/"profile"/"inbox", which
+# logged-OUT pages advertise all the time, and that silently suppressed the whole detector on the
+# exact sites it exists for (measured: bsky with 0 cookies read as signed-in). Only a control that
+# is meaningless unless you are already authenticated belongs here.
 P_SIGNED_IN_RE = re.compile(
-    r'(?:sign|log)[_ -]?out|your profile|account menu|my account|notifications|'
-    r'<\s*(?:link|button)\s+"[^"]*(?:profile|avatar|inbox)',
+    r'(?:sign|log)[_ -]?out\b|your profile|account menu|my account',
     re.I)
 
 

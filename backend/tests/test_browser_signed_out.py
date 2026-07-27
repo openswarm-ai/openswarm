@@ -21,6 +21,12 @@ P_HANDLER_TS = os.path.join(P_REPO_ROOT, "frontend", "src", "shared", "browserCo
 
 # Page-shaped perceptions, in the interactives format the agent actually sees.
 BSKY_SIGNED_OUT = '[1]<link "Sign in">\n[2]<button "Create account">\n[3]<heading "Discover">'
+# The live shape that broke the first draft: a LOGGED-OUT page still advertising "Notifications".
+# Vetoing on that word suppressed the detector on exactly the sites it exists for (bsky, 0 cookies,
+# read as signed-in). Only controls meaningless-unless-authenticated may veto.
+BSKY_SIGNED_OUT_WITH_NAV = ('[1]<link "Notifications">\n[2]<button "Sign in">\n'
+                            '[3]<button "Create account">')
+HN_SIGNED_OUT = '[1]<textbox "title">\n[2]<link "login">\n[3]<button "submit">'
 SO_SIGNED_OUT = '[4]<link "Log in">\n[5]<link "Sign up">\n[6]<heading "Questions">'
 X_SIGNED_IN = '[1]<button "Profile">\n[2]<textbox "What is happening?">\n[9]<button "Post">'
 # A signed-IN page that still advertises a sign-up somewhere: the veto must win, or we would tell
@@ -32,6 +38,13 @@ LINKEDIN_FEED = '[1]<button "Start a post">\n[2]<link "Notifications">\n[3]<link
 def test_soft_signed_out_pages_are_detected():
     assert sp.looks_signed_out(BSKY_SIGNED_OUT)
     assert sp.looks_signed_out(SO_SIGNED_OUT)
+    assert sp.looks_signed_out(HN_SIGNED_OUT)
+
+
+def test_logged_out_page_advertising_notifications_still_reads_signed_out():
+    """Regression for the veto that was too broad: a signed-OUT page may still show Notifications,
+    Profile or Inbox links, so those must never veto. Only 'sign out'-class controls may."""
+    assert sp.looks_signed_out(BSKY_SIGNED_OUT_WITH_NAV)
 
 
 def test_signed_in_pages_are_never_called_signed_out():
