@@ -73,12 +73,21 @@ def record_login(url_or_host: str) -> None:
 
 
 @typechecked
-def login_wall_domain(current_url: str, state_text: str) -> Optional[str]:
+def login_wall_domain(current_url: str, state_text: str, allow_soft: bool = False) -> Optional[str]:
     """The registrable domain of a login wall the agent is stuck on, or None. One definition of
-    'login wall', shared with the send-script's decline gate."""
-    if not browser_send_parse.looks_like_login_wall(current_url or "", state_text or ""):
-        return None
-    return registrable_domain(current_url) or None
+    'login wall', shared with the send-script's decline gate.
+
+    `allow_soft` additionally accepts a SOFT signed-out page: browsable, no auth form, composer
+    simply withheld behind a "Sign in" control (bsky/stackoverflow/tiktok). Those never match the
+    hard wall, so the run used to fail as "couldn't find the compose box" instead of offering the
+    one thing that fixes it. Off by default because this pause interrupts the user: the caller
+    turns it on only once the agent is demonstrably stuck, so a stray "Sign up" link on a page
+    we're actually signed into can't raise a spurious prompt."""
+    if browser_send_parse.looks_like_login_wall(current_url or "", state_text or ""):
+        return registrable_domain(current_url) or None
+    if allow_soft and browser_send_parse.looks_signed_out(state_text or ""):
+        return registrable_domain(current_url) or None
+    return None
 
 
 @typechecked

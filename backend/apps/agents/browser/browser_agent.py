@@ -1658,8 +1658,10 @@ async def run_browser_agent(
             # in this card (the persistent partition keeps the session, so future runs won't ask
             # again), then continue. At most one pause per domain per run; the model's own
             # RequestHumanIntervention stays as the fallback for walls this detector misses.
+            # Soft signed-out (composer withheld behind a "Sign in") only counts once the agent has
+            # actually tried and is still stuck, so a first-turn glance can't raise a false prompt.
             p_wall_dom = browser_login_handoff.login_wall_domain(
-                last_seen_url, "\n".join(attached_state_seen))
+                last_seen_url, "\n".join(attached_state_seen), allow_soft=(turn >= 2))
             if p_wall_dom and p_wall_dom not in p_login_prompted:
                 p_login_prompted.add(p_wall_dom)
                 p_login_problem, p_login_instruction = browser_login_handoff.prompt_copy(p_wall_dom)

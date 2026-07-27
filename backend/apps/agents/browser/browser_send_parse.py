@@ -60,6 +60,31 @@ def looks_like_login_wall(current_url: str, state_text: str) -> bool:
     return bool(state_text and P_LOGIN_WALL_STATE_RE.search(state_text))
 
 
+# SOFT signed-out: the site serves a browsable page with no auth form and no login URL, it just
+# withholds the composer and offers a "Sign in" control (bsky, stackoverflow, tiktok, threads all
+# behave this way). The hard-wall gate above sees nothing, so the run used to report "I couldn't
+# find the compose box" when the truth was "you are not signed in", which is a different problem
+# with a different fix. Only ever consulted AFTER a composer miss, so it cannot affect a success.
+P_SIGNIN_AFFORDANCE_RE = re.compile(
+    r'<\s*(?:link|button)\s+"[^"]*(?:sign[_ -]?in|log[_ -]?in|sign[_ -]?up|create account|join now)',
+    re.I)
+# Anything only a signed-IN page shows. Its presence vetoes the verdict, so a stray "Log in" on an
+# authenticated page (a second product's promo) can't make us tell the user to sign in again.
+P_SIGNED_IN_RE = re.compile(
+    r'(?:sign|log)[_ -]?out|your profile|account menu|my account|notifications|'
+    r'<\s*(?:link|button)\s+"[^"]*(?:profile|avatar|inbox)',
+    re.I)
+
+
+def looks_signed_out(state_text: str) -> bool:
+    """True when the page offers a way to sign IN and shows nothing only a signed-in user sees."""
+    if not state_text:
+        return False
+    if P_SIGNED_IN_RE.search(state_text):
+        return False
+    return bool(P_SIGNIN_AFFORDANCE_RE.search(state_text))
+
+
 def is_readonly(text: str) -> bool:
     """A read-only directive ('verify whether', 'do not send') that must decline the scripted
     send even with a quoted payload in hand. Keeps the regex private to this file."""

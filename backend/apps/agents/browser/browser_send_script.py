@@ -244,7 +244,13 @@ async def run_send_script(
             else:
                 logger.info(f"[browser-sendscript] structural finder: no usable composer ({str(fc)[:120]})")
         if not composer:
-            logger.info("[browser-sendscript] decline: no composer, opener, or structural editable")
+            # Name WHY. A site that withholds the composer because nobody is signed in is a
+            # different problem from one whose composer we failed to find, and only the first is
+            # fixable by the user (sign in once). Consulted only here, on the already-failed path.
+            if browser_send_parse.looks_signed_out(state_text):
+                logger.info("[browser-sendscript] decline: signed OUT (composer withheld, sign-in offered)")
+            else:
+                logger.info("[browser-sendscript] decline: no composer, opener, or structural editable")
             return None
     # No Send-button precondition: composer sites (LinkedIn) lazy-render Send only AFTER text commits, so it's resolved post-fill; never appearing = clean pre-click abort.
     logger.info(f"[browser-sendscript] fill target {composer[1]!r} [{composer[0]}]")
