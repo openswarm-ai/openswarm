@@ -26,6 +26,7 @@ import { generateDashboardName } from '@/shared/state/dashboardsSlice';
 import { fetchWorkflows, fetchAllRuns, fetchActiveRuns } from '@/shared/state/workflowsSlice';
 import { fetchMissedRuns } from '@/shared/state/missedRunsSlice';
 import { fetchProviderHealth } from '@/shared/state/subscriptionsSlice';
+import { fetchPatternSuggestions } from '@/shared/state/patternsSlice';
 import { dashboardWs } from '@/shared/ws/WebSocketManager';
 import { initBrowserCommandHandler } from '@/shared/browserCommandHandler';
 import { getKeepAliveBrowserIds } from '@/shared/browserFocus';
@@ -89,7 +90,9 @@ export function useDashboardLifecycle({
         if (res.skipped) setTimeout(() => { dispatch(fetchProviderHealth()); }, 45_000);
       } catch { /* probe is best-effort; silence on failure */ }
     }, 12_000);
-    return () => clearTimeout(t);
+    // Mined-pattern offers ride the same once-per-launch gate, staggered after the health pill so nudges don't stack; the ws patterns:suggestions_updated case covers a miner pass finishing later.
+    const tPatterns = setTimeout(() => { dispatch(fetchPatternSuggestions()); }, 20_000);
+    return () => { clearTimeout(t); clearTimeout(tPatterns); };
   }, [isActive, dispatch]);
 
   // Track dashboard engagement time

@@ -33,6 +33,7 @@ import { upsertOutput } from '../state/outputsSlice';
 import { fetchSettings } from '../state/settingsSlice';
 import { displaySessionName } from '../state/sessionDisplay';
 import { upsertRun, ackRun, runWorkflowNow, openWorkflowCard, upsertWorkflow, removeWorkflow } from '../state/workflowsSlice';
+import { fetchPatternSuggestions } from '../state/patternsSlice';
 import { stepsSignature } from '@/app/pages/Workflows/scheduleUtils';
 import { getAuthToken } from '../config';
 import { notifyAgentCompletion } from '../notifications';
@@ -754,6 +755,11 @@ class WebSocketManager {
         if (data.workflow) {
           store.dispatch(upsertWorkflow(data.workflow));
         }
+        break;
+
+      case 'patterns:suggestions_updated':
+        // The miner just found something; refetch so the offer can appear this launch, not next.
+        store.dispatch(fetchPatternSuggestions());
         break;
 
       case 'workflow:deleted':
