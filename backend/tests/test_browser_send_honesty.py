@@ -53,6 +53,31 @@ def test_the_two_facts_are_not_the_same_variable():
         "the run's success must be a function of evidence, not of the model's Done argument"
 
 
+def test_the_caller_cannot_starve_the_send_script():
+    """INVARIANT, and the third time this exact trap has bitten (find_composer, import_session, now
+    this). The send-script's cost and its caller's timeout drifted apart when find_composer went
+    15s -> 30s: one finder call could eat the caller's whole 30s budget, so the script was killed
+    mid-send and EVERY write silently fell back to the slow model loop. It was invisible because
+    asyncio.TimeoutError stringifies to nothing, so the log read "outer skip ()".
+
+    Measured live on LinkedIn: a 190.9s write that never posted."""
+    from backend.apps.agents.browser import browser_send_script as ss
+    from backend.apps.agents.core.ws_manager import BROWSER_CMD_TIMEOUTS
+
+    assert "timeout=browser_send_script.WORST_CASE_BUDGET_S" in P_SRC, (
+        "the caller hardcodes its own timeout again; it must import the script's stated worst case "
+        "so the two cannot drift")
+    # A single finder call must not be able to consume the whole budget.
+    assert ss.WORST_CASE_BUDGET_S > BROWSER_CMD_TIMEOUTS.get("find_composer", 15.0) * 2, \
+        "the budget must leave room for fill and submit after the finder, not just the finder"
+
+
+def test_a_starved_send_is_logged_by_exception_class():
+    """A bare TimeoutError has an empty message, so a starved send read exactly like a page we
+    deliberately declined to touch. The class name is what makes those two distinguishable."""
+    assert "type(p_se).__name__" in P_SRC
+
+
 def test_an_unverified_send_gets_an_honest_line_that_does_not_claim_delivery():
     note = dc.unverified_send_note("https://x.com/home", "hello from my automation")
     low = note.lower()

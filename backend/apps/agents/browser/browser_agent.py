@@ -1690,9 +1690,11 @@ async def run_browser_agent(
                 task, browser_id, tab_id, preloaded_perception,
                 execute_browser_tool, send_submit_index_in_state, payload_in_textbox,
                 payload_source=user_prompt, current_url=current_url,
-            ), timeout=30.0)
+            ), timeout=browser_send_script.WORST_CASE_BUDGET_S)
         except Exception as p_se:
-            logger.info(f"[browser-sendscript] outer skip ({p_se})")
+            # Name the class: a bare TimeoutError stringifies to nothing, so this used to log
+            # "outer skip ()" and a starved send looked identical to a page we chose not to touch.
+            logger.info(f"[browser-sendscript] outer skip ({type(p_se).__name__}: {p_se})")
             p_script = None
         if isinstance(p_script, dict):
             action_log.extend(p_script["log"])

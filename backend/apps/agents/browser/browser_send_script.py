@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 
 ToolRunner = Callable[[str, dict, str, str], Awaitable[dict]]
 
+# The worst case this routine can legitimately take, so the CALLER cannot starve it. Roughly: the
+# composer poll (3 backoff waits plus three 6s interactive lists), one structural finder call (which
+# carries its own 30s command timeout), then fill-and-commit and submit-and-receipt.
+#
+# This constant exists because the caller's timeout and this routine's real cost silently drifted
+# apart: raising find_composer's command timeout from 15s to 30s made a single finder call able to
+# eat the caller's entire 30s budget, so the whole script was killed mid-send and EVERY write fell
+# back to the slow model loop. It failed invisibly, because asyncio.TimeoutError stringifies to
+# nothing and the log read "outer skip ()". Measured live on LinkedIn: a 190.9s write that never
+# posted. Import this instead of writing a number at the call site.
+WORST_CASE_BUDGET_S = 75.0
+
 
 def script_enabled() -> bool:
     return os.environ.get("OSW_SEND_SCRIPT", "0") != "0"
