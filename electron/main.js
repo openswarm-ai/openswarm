@@ -18,6 +18,33 @@ const p_borrowedSessionDomains = new Set();
 const p_uaSwapLogged = new Set();
 const { warmBorrowedSession } = require('./warmBorrowedSession');
 
+// The borrowed cookies live in a PERSISTENT partition, so they outlive a quit; this list has to as
+// well or the two halves drift apart. They did: the backend memoizes "already borrowed for this
+// domain" and skips re-importing, so after an Electron restart the site kept its session but
+// silently stopped being told we were plain Chrome. That desync produced a false negative in the
+// 2026-07-27 measurements and would have been invisible in normal use. Domain names only, never
+// cookie values.
+function p_borrowedDomainsPath() {
+  return path.join(app.getPath('userData'), 'borrowed-session-domains.json');
+}
+
+function loadBorrowedDomains() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(p_borrowedDomainsPath(), 'utf8'));
+    if (Array.isArray(raw)) raw.filter((d) => typeof d === 'string').forEach((d) => p_borrowedSessionDomains.add(d));
+  } catch {
+    // No file yet, or unreadable: an empty list just means the first navigate re-borrows.
+  }
+}
+
+function saveBorrowedDomains() {
+  try {
+    fs.writeFileSync(p_borrowedDomainsPath(), JSON.stringify([...p_borrowedSessionDomains]));
+  } catch {
+    // Losing this only costs one redundant re-import next launch; never worth failing an import over.
+  }
+}
+
 function bareChromeUserAgent(ua) {
   return String(ua || '').replace(/\s*(?:openswarm|Electron)\/\S+/gi, '').replace(/\s{2,}/g, ' ').trim();
 }
@@ -1824,6 +1851,9 @@ app.whenReady().then(async () => {
   };
   configureBrowsingSession(session.defaultSession, { allowFullscreen: false });
   configureBrowsingSession(session.fromPartition(BROWSER_PARTITION), { allowFullscreen: true });
+  // Restore which sites we borrowed a sign-in for BEFORE any card can load one, so the very first
+  // request of the launch already presents as the browser that earned the session.
+  loadBorrowedDomains();
 
   // PASSKEY SPIKE: when a site offers several discoverable passkeys, Electron fires this so we pick one; without a handler the WebAuthn flow stalls. For the spike just take the first; a real impl would surface a picker. macOS-only event (no-op elsewhere).
   for (const ses of [session.defaultSession, session.fromPartition(BROWSER_PARTITION)]) {
@@ -2833,6 +2863,10 @@ ipcMain.handle('browser:clear-data', async () => {
   const ses = session.fromPartition(BROWSER_PARTITION);
   await ses.clearStorageData();
   await ses.clearCache();
+  // The borrowed sessions just went with it, so stop claiming we are the browser that earned them.
+  p_borrowedSessionDomains.clear();
+  p_uaSwapLogged.clear();
+  saveBorrowedDomains();
   return { ok: true };
 });
 
@@ -2897,7 +2931,10 @@ async function writePartitionCookies(domain, cookies) {
   }
   // Borrowing the session and presenting as the browser that earned it are one decision, not two:
   // apply the cookies without the matching UA and the site refuses them.
-  if (set > 0) p_borrowedSessionDomains.add(d);
+  if (set > 0) {
+    p_borrowedSessionDomains.add(d);
+    saveBorrowedDomains();
+  }
   // Let a plain hidden window take the site's challenge before the card does. It shares this
   // partition, so whatever clearance it earns is already waiting when the card loads.
   let warmed = false;

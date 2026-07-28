@@ -13,6 +13,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const SRC = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
@@ -83,11 +84,79 @@ test('a malformed URL is not a borrowed site', () => {
   assert.strictEqual(hostHasBorrowedSession(''), false);
 });
 
+test('the borrowed-domain list survives a restart', () => {
+  // The cookies live in a PERSISTENT partition, so they outlive a quit. This list has to as well:
+  // the backend memoizes "already borrowed" and skips re-importing, so when Electron came back with
+  // an empty set the site kept its session while silently no longer being told we were plain
+  // Chrome. That desync produced a false negative during the 2026-07-27 measurements.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'borrowed-'));
+  const scope = {
+    p_borrowedSessionDomains: new Set(),
+    app: { getPath: () => dir },
+    path,
+    fs,
+  };
+  const body = `${lift('p_borrowedDomainsPath')}\n${lift('loadBorrowedDomains')}\n${lift('saveBorrowedDomains')}\n`;
+  const run = new Function(
+    'p_borrowedSessionDomains', 'app', 'path', 'fs',
+    `${body}; return { loadBorrowedDomains, saveBorrowedDomains, set: p_borrowedSessionDomains };`,
+  );
+
+  const first = run(scope.p_borrowedSessionDomains, scope.app, path, fs);
+  first.set.add('medium.com');
+  first.set.add('claude.ai');
+  first.saveBorrowedDomains();
+
+  // A fresh process: new empty set, same on-disk file.
+  const second = run(new Set(), scope.app, path, fs);
+  second.loadBorrowedDomains();
+  assert.deepStrictEqual([...second.set].sort(), ['claude.ai', 'medium.com']);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a missing or corrupt list is not a crash', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'borrowed-bad-'));
+  const body = `${lift('p_borrowedDomainsPath')}\n${lift('loadBorrowedDomains')}\n${lift('saveBorrowedDomains')}\n`;
+  const run = new Function(
+    'p_borrowedSessionDomains', 'app', 'path', 'fs',
+    `${body}; return { loadBorrowedDomains, set: p_borrowedSessionDomains };`,
+  );
+  const app = { getPath: () => dir };
+
+  const fresh = run(new Set(), app, path, fs);
+  fresh.loadBorrowedDomains();           // no file at all
+  assert.strictEqual(fresh.set.size, 0);
+
+  fs.writeFileSync(path.join(dir, 'borrowed-session-domains.json'), '{not json');
+  const corrupt = run(new Set(), app, path, fs);
+  corrupt.loadBorrowedDomains();         // garbage on disk
+  assert.strictEqual(corrupt.set.size, 0);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('clearing browsing data drops the borrowed claims with it', () => {
+  // Cookies are gone, so continuing to present as the browser that earned them is a lie about a
+  // session that no longer exists.
+  const handler = SRC.slice(SRC.indexOf("ipcMain.handle('browser:clear-data'"));
+  const body = handler.slice(0, handler.indexOf('});'));
+  assert.match(body, /p_borrowedSessionDomains\.clear\(\)/);
+  assert.match(body, /saveBorrowedDomains\(\)/);
+});
+
+test('the list is restored before any card can load a site', () => {
+  const configureAt = SRC.indexOf('configureBrowsingSession(session.fromPartition(BROWSER_PARTITION)');
+  const loadAt = SRC.indexOf('loadBorrowedDomains();');
+  assert.ok(configureAt > 0 && loadAt > configureAt,
+    'loadBorrowedDomains must run during startup, right after the partition is configured');
+});
+
 test('importing a session is what registers the domain', () => {
   // The two halves must stay wired together: cookies applied without the matching UA get refused,
   // which is exactly the bug this whole path exists to fix.
-  assert.match(SRC, /if \(set > 0\) p_borrowedSessionDomains\.add\(d\);/,
-    'writePartitionCookies must register the domain it just borrowed for');
+  assert.match(SRC, /p_borrowedSessionDomains\.add\(d\);\s*\n\s*saveBorrowedDomains\(\);/,
+    'writePartitionCookies must register the domain it borrowed for AND persist it');
 });
 
 test('the request header is actually rewritten for borrowed sites', () => {
