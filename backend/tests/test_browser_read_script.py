@@ -95,11 +95,11 @@ def test_a_page_that_never_settles_still_answers_from_the_last_read(monkeypatch)
 
 def test_flag_gate(monkeypatch):
     monkeypatch.delenv("OSW_READ_SCRIPT", raising=False)
-    assert rs.read_script_enabled() is False
-    monkeypatch.setenv("OSW_READ_SCRIPT", "1")
     assert rs.read_script_enabled() is True
     monkeypatch.setenv("OSW_READ_SCRIPT", "0")
     assert rs.read_script_enabled() is False
+    monkeypatch.setenv("OSW_READ_SCRIPT", "1")
+    assert rs.read_script_enabled() is True
 
 
 def test_answers_from_the_staged_page():

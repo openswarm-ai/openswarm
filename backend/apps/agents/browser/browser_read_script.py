@@ -54,7 +54,7 @@ P_SYSTEM = (
 
 
 def read_script_enabled() -> bool:
-    return os.environ.get("OSW_READ_SCRIPT", "0") != "0"
+    return os.environ.get("OSW_READ_SCRIPT", "1") != "0"
 
 
 def is_answer(reply: str) -> Optional[str]:
