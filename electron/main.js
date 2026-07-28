@@ -3,6 +3,37 @@ const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashRe
 // Browser cards live in their own persistent partition so cookies/localStorage/IndexedDB survive reload + quit (Discord etc. stay logged in) and site data stays isolated from the app's defaultSession. The "clear browsing data" wipe nukes only this partition. MUST match BROWSER_PARTITION in frontend BrowserCard.tsx.
 const BROWSER_PARTITION = 'persist:openswarm-browser';
 
+// Sites whose sign-in we borrowed out of the user's real Chrome. Populated when a session is
+// imported, and it changes exactly one thing: what user agent we present to that site.
+//
+// Our normal browser-card UA deliberately carries an "openswarm/<ver>" product token, because
+// Google's sign-in rejects a BARE Chrome UA as not-genuine-Chrome (see BrowserCard.tsx). But a
+// borrowed session was minted by real Chrome, and the anti-bot layer in front of these sites checks
+// the session against the UA that earned it, so that same token reads as "this is not the browser
+// that logged in" and the session is refused. On a borrowed site only, we drop the token and
+// present the same Chrome version bare, which is exactly what the onboarding harvest window does
+// (hiddenBrowser.js) and how it gets through Cloudflare with borrowed cookies. Google keeps the
+// token because we never borrow for it: its own sign-in is the thing the token exists to satisfy.
+const p_borrowedSessionDomains = new Set();
+const p_uaSwapLogged = new Set();
+
+function bareChromeUserAgent(ua) {
+  return String(ua || '').replace(/\s*(?:openswarm|Electron)\/\S+/gi, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function hostHasBorrowedSession(url) {
+  if (!p_borrowedSessionDomains.size) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    for (const d of p_borrowedSessionDomains) {
+      if (host === d || host.endsWith(`.${d}`)) return true;
+    }
+  } catch {
+    // A malformed URL simply isn't a borrowed site.
+  }
+  return false;
+}
+
 // E2E flag: when OPENSWARM_E2E=1, append a Chromium command-line switch the
 // renderer reads at startup to set window.__OPENSWARM_E2E__ = true BEFORE any
 // page script parses, so the production-build store-on-window gate fires
@@ -1814,10 +1845,20 @@ app.whenReady().then(async () => {
     { urls: ['http://*/*', 'https://*/*'] },
     (details, callback) => {
       const headers = { ...(details.requestHeaders || {}) };
+      const borrowed = hostHasBorrowedSession(details.url);
       for (const k of Object.keys(headers)) {
         const lk = k.toLowerCase();
         if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-full-version-list') {
           headers[k] = addGoogleChromeBrand(headers[k]);
+        } else if (borrowed && lk === 'user-agent') {
+          const swapped = bareChromeUserAgent(headers[k]);
+          // Once per site: proof the swap actually fired, so "borrowed but still signed out" can be
+          // read as the site refusing us rather than as this code silently never running.
+          if (swapped !== headers[k] && !p_uaSwapLogged.has(details.url.split('/')[2])) {
+            p_uaSwapLogged.add(details.url.split('/')[2]);
+            console.log(`[borrowed-ua] ${details.url.split('/')[2]} -> ${swapped}`);
+          }
+          headers[k] = swapped;
         }
       }
       callback({ requestHeaders: headers });
@@ -2339,6 +2380,25 @@ app.on('web-contents-created', (_event, contents) => {
       `).catch(() => {});
     });
 
+    // On a site whose sign-in we borrowed we send a bare Chrome UA header (see
+    // p_borrowedSessionDomains), so navigator.userAgent has to say the same thing. A page that
+    // reads one UA in JS while the request carried another is a louder automation tell than the
+    // product token we removed, and plenty of anti-bot scripts compare exactly those two.
+    contents.on('dom-ready', () => {
+      let borrowed = false;
+      try { borrowed = hostHasBorrowedSession(contents.getURL()); } catch { borrowed = false; }
+      if (!borrowed) return;
+      const bare = bareChromeUserAgent(contents.getUserAgent());
+      contents.executeJavaScript(`
+        (function(){
+          try {
+            if (navigator.userAgent === ${JSON.stringify(bare)}) return;
+            Object.defineProperty(navigator, 'userAgent', { get: function(){ return ${JSON.stringify(bare)}; }, configurable: true });
+          } catch (e) {}
+        })();
+      `).catch(() => {});
+    });
+
     // Real headed Chrome exposes window.chrome.app/csi/loadTimes; an Electron webview's window.chrome is empty ({}), the single most-checked headless/automation tell (PerimeterX/DataDome et al). Stub the same shape real Chrome reports (app = object, csi + loadTimes = functions, NO runtime, matching a non-extension page). Also restore the base 'en' language Electron drops. Page-world (contextIsolation hides the preload), measured to flip every bot.sannysoft row to its Chrome value.
     contents.on('dom-ready', () => {
       contents.executeJavaScript(`
@@ -2834,6 +2894,9 @@ async function writePartitionCookies(domain, cookies) {
       // One malformed cookie must not sink the whole sign-in.
     }
   }
+  // Borrowing the session and presenting as the browser that earned it are one decision, not two:
+  // apply the cookies without the matching UA and the site refuses them.
+  if (set > 0) p_borrowedSessionDomains.add(d);
   return { ok: set > 0, set, total: list.length };
 }
 ipcMain.handle('set-partition-cookies', (_e, domain, cookies) => writePartitionCookies(domain, cookies));

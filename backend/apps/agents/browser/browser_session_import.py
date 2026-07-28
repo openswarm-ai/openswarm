@@ -54,7 +54,7 @@ P_CHROMIUM_EPOCH_OFFSET_S = 11644473600
 # challenge instead of letting us through, which is WORSE than arriving with no clearance at all.
 # Everything else in the jar is the actual session, so we carry that and let the edge re-challenge
 # us honestly.
-P_FINGERPRINT_BOUND = {"cf_clearance", "__cf_bm", "_cfuvid", "datadome", "incap_ses", "reese84"}
+P_FINGERPRINT_BOUND: set = set()
 
 
 class SessionImportResult(BaseModel):
