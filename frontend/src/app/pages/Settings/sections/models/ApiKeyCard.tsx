@@ -44,7 +44,7 @@ const ApiKeyCard: React.FC<{
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography sx={labelSx}>{config.label}</Typography>
         {value ? (
-          <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
+          <Typography sx={{ fontSize: c.font.size.micro, fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
         ) : null}
       </Box>
       <Typography sx={{ ...descSx, mb: 1 }}>{config.desc}</Typography>
@@ -72,7 +72,7 @@ const ApiKeyCard: React.FC<{
           href={config.href}
           target="_blank"
           rel="noopener"
-          sx={{ color: c.accent.primary, fontSize: '0.72rem', whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
+          sx={{ color: c.accent.primary, fontSize: c.font.size.xs, whiteSpace: 'nowrap', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0.3, '&:hover': { textDecoration: 'underline' } }}
         >
           Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
         </Typography>

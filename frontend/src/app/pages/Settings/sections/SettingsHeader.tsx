@@ -22,7 +22,7 @@ const SettingsHeader: React.FC<{
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1.5, pb: 0.5 }}>
-        <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>
+        <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: c.font.size.md }}>
           Settings
         </Typography>
         <IconButton onClick={onClose} size="small" data-onboarding="settings-close-button" sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
@@ -40,7 +40,7 @@ const SettingsHeader: React.FC<{
           '& .MuiTab-root': {
             minHeight: 30,
             textTransform: 'none',
-            fontSize: '0.85rem',
+            fontSize: c.font.size.base,
             fontWeight: 500,
             color: c.text.muted,
             px: 1.75,

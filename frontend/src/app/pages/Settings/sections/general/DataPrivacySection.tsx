@@ -93,9 +93,9 @@ const DataPrivacySection: React.FC<{
     borderRadius: 2.5,
     maxWidth: 360,
   };
-  const titleSx = { color: c.text.primary, fontSize: '0.95rem', fontWeight: 600, mb: 1 };
-  const bodySx = { color: c.text.secondary, fontSize: '0.8rem', lineHeight: 1.5, mb: 2 };
-  const errSx = { color: c.status.error, fontSize: '0.75rem', mb: 1.5 };
+  const titleSx = { color: c.text.primary, fontSize: c.font.size.md, fontWeight: 600, mb: 1 };
+  const bodySx = { color: c.text.secondary, fontSize: c.font.size.sm, lineHeight: 1.5, mb: 2 };
+  const errSx = { color: c.status.error, fontSize: c.font.size.xs, mb: 1.5 };
   const cancelSx = { color: c.text.secondary, textTransform: 'none', fontWeight: 500 };
   const actionRowSx = { display: 'flex', justifyContent: 'flex-end', gap: 1 };
 
@@ -104,7 +104,7 @@ const DataPrivacySection: React.FC<{
     color: c.text.secondary,
     borderColor: c.border.medium,
     textTransform: 'none' as const,
-    fontSize: '0.8rem',
+    fontSize: c.font.size.sm,
     whiteSpace: 'nowrap' as const,
     '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
   };
@@ -201,7 +201,7 @@ const DataPrivacySection: React.FC<{
             size="small"
             autoFocus
             disabled={busy}
-            sx={{ mb: 2, '& .MuiOutlinedInput-root': { fontSize: '0.8rem' } }}
+            sx={{ mb: 2, '& .MuiOutlinedInput-root': { fontSize: c.font.size.sm } }}
           />
           {err && <Typography sx={errSx}>{err}</Typography>}
           <Box sx={actionRowSx}>

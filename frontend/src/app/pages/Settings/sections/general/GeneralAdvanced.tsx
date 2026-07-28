@@ -123,7 +123,7 @@ const GeneralAdvanced: React.FC<{
             color: c.text.secondary,
             borderColor: c.border.medium,
             textTransform: 'none',
-            fontSize: '0.8rem',
+            fontSize: c.font.size.sm,
             whiteSpace: 'nowrap',
             '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
           }}

@@ -2,12 +2,12 @@
 export function makeSettingsStyles(c: any) {
   const fieldSx = {
     '& .MuiOutlinedInput-root': {
-      fontSize: '0.85rem',
+      fontSize: c.font.size.base,
     },
   };
 
   const sectionSx = {
-    fontSize: '0.7rem',
+    fontSize: c.font.size.xxs,
     fontWeight: 600,
     letterSpacing: '0.06em',
     textTransform: 'uppercase' as const,
@@ -42,13 +42,13 @@ export function makeSettingsStyles(c: any) {
   const labelSx = {
     color: c.text.primary,
     fontWeight: 500,
-    fontSize: '0.875rem',
+    fontSize: c.font.size.base,
     lineHeight: 1.4,
   };
 
   const descSx = {
     color: c.text.tertiary,
-    fontSize: '0.75rem',
+    fontSize: c.font.size.xs,
     lineHeight: 1.4,
   };
 

@@ -46,7 +46,7 @@ const GeneralInterface: React.FC<{
               px: 2,
               py: 0.5,
               gap: 0.5,
-              fontSize: '0.8rem',
+              fontSize: c.font.size.sm,
               '&.Mui-selected': {
                 bgcolor: `${c.accent.primary}15`,
                 color: c.accent.primary,
@@ -85,7 +85,7 @@ const GeneralInterface: React.FC<{
             ]}
             sx={{
               color: c.accent.primary,
-              '& .MuiSlider-markLabel': { color: c.text.tertiary, fontSize: '0.7rem' },
+              '& .MuiSlider-markLabel': { color: c.text.tertiary, fontSize: c.font.size.xxs },
               '& .MuiSlider-valueLabel': { bgcolor: c.accent.primary },
             }}
           />
@@ -130,11 +130,11 @@ const GeneralInterface: React.FC<{
         >
           <KeyboardIcon sx={{ fontSize: 16, color: recordingShortcut ? c.accent.primary : c.text.tertiary }} />
           {recordingShortcut ? (
-            <Typography sx={{ fontSize: '0.8rem', color: c.accent.primary, fontWeight: 500 }}>
+            <Typography sx={{ fontSize: c.font.size.sm, color: c.accent.primary, fontWeight: 500 }}>
               Press shortcut…
             </Typography>
           ) : (
-            <Typography sx={{ fontSize: '0.8rem', color: c.text.primary, fontFamily: c.font.mono, fontWeight: 500 }}>
+            <Typography sx={{ fontSize: c.font.size.sm, color: c.text.primary, fontFamily: c.font.mono, fontWeight: 500 }}>
               {form.new_agent_shortcut
                 .split('+')
                 .map((p) => {
