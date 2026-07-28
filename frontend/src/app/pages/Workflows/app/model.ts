@@ -68,9 +68,14 @@ export function relativeDayLabel(date: Date, now = new Date()): string {
   return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+// A workflow with an enabled event trigger is live even with its schedule off; "Paused" would lie.
+export function hasLiveTriggers(wf: Workflow): boolean {
+  return (wf.event_triggers ?? []).some((t) => t.enabled);
+}
+
 // `next` is the backend-computed next_run_at (authoritative), not a JS reimpl.
 export function nextRunText(wf: Workflow, next: Date | null): string {
-  if (!isScheduleActive(wf.schedule)) return 'Paused';
+  if (!isScheduleActive(wf.schedule)) return hasLiveTriggers(wf) ? 'On event' : 'Paused';
   if (!next) return 'None scheduled';
   return `${relativeDayLabel(next)} at ${clockOf(next)}`;
 }

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { deleteWorkflow } from '@/shared/state/workflowsSlice';
 import { isScheduleActive, describeSchedule } from '@/app/pages/Workflows/scheduleUtils';
+import { hasLiveTriggers } from './model';
 import ShareButton from '@/app/components/share/ShareButton';
 import { colorForWorkflow, useWC } from './uiKit';
 import WorkflowTitle from './WorkflowTitle';
@@ -90,6 +91,7 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px', minHeight: 0 }}>
         {filtered.map((w) => {
           const active = isScheduleActive(w.schedule);
+          const watching = !active && hasLiveTriggers(w);
           const isSel = nav.mode === 'detail' && w.id === nav.selectedId;
           return (
             <div
@@ -99,13 +101,13 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
               onMouseLeave={() => setHovered((h) => (h === w.id ? null : h))}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: isSel ? WC.selBg : 'transparent' }}
             >
-              <div style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: colorForWorkflow(w), opacity: active ? 1 : 0.35 }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: colorForWorkflow(w), opacity: active || watching ? 1 : 0.35 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <WorkflowTitle value={w.title} animate={w.auto_named !== false}>
                   {(t) => <div style={{ fontSize: 13.5, fontWeight: 600, color: active ? WC.ink : WC.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>}
                 </WorkflowTitle>
                 <div style={{ fontSize: 11, color: WC.muted2, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {active ? describeSchedule(w.schedule) : 'Paused'}
+                  {active ? describeSchedule(w.schedule) : watching ? 'Watching for events' : 'Paused'}
                 </div>
               </div>
               {/* Faded rather than unmounted on hover-out: ShareButton owns the modal's open state, so unmounting it would close the modal the moment the pointer left the row for the dialog. Also keeps the row from reflowing on hover. */}

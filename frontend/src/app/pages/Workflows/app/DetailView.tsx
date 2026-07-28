@@ -8,7 +8,7 @@ import AgentChat from '@/app/pages/AgentChat/AgentChat';
 import InlineEditableTitle from '@/app/components/InlineEditableTitle';
 import { Typewriter } from '@/app/components/feedback/Animated';
 import { useWC, colorForWorkflow, statusChip } from './uiKit';
-import { isRunning, runContextChip } from './model';
+import { isRunning, runContextChip, hasLiveTriggers } from './model';
 import { useEditAgentSession } from './useEditAgentSession';
 import { useWorkflowPatch } from './useWorkflowPatch';
 import ScheduleCard from './ScheduleCard';
@@ -44,8 +44,9 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
 
   const running = isRunning(workflow, active);
   const enabled = isScheduleActive(workflow.schedule);
-  const status = running ? 'running' : enabled ? 'success' : 'paused';
-  const statusText = running ? 'Running' : enabled ? 'Active' : 'Paused';
+  const watching = !enabled && hasLiveTriggers(workflow);
+  const status = running ? 'running' : enabled || watching ? 'success' : 'paused';
+  const statusText = running ? 'Running' : enabled ? 'Active' : watching ? 'Watching' : 'Paused';
 
   const runNow = () => {
     if (running) return;

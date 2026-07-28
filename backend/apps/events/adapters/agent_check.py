@@ -25,6 +25,8 @@ def build_check_prompt(check: str, state: str) -> str:
         "You are an unattended event checker. Determine whether this event has occurred "
         f"since the last check: {check.strip()}\n\n"
         f"Previous check state: {state or 'none; this is the baseline check'}.\n\n"
+        "Observe without consuming: prefer listings, counts, and previews; avoid opening or acting on "
+        "items in ways that change their state (marking read/seen, dismissing) when your tools allow it.\n"
         "Use your tools as needed, then END your reply in EXACTLY this format (as the final lines):\n"
         "EVENT: <one factual line describing what happened>\n"
         "STATE: <one line capturing what you observed, to compare against next time>\n"

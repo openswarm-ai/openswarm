@@ -24,7 +24,6 @@ MAX_BUFFERED_EVENTS = 200
 p_buffers: Dict[str, List[Event]] = {}
 p_workflow_of: Dict[str, str] = {}
 p_flush_tasks: Dict[str, "asyncio.Task"] = {}
-p_fire_times: Dict[str, List[float]] = {}
 
 
 @typechecked
@@ -80,10 +79,8 @@ async def ingest(workflow_id: str, trigger: EventTriggerConfig, events: List[Eve
 
 @typechecked
 def p_recent_fires(trigger_id: str) -> int:
-    cutoff = time.monotonic() - 3600.0
-    times = [t for t in p_fire_times.get(trigger_id, []) if t >= cutoff]
-    p_fire_times[trigger_id] = times
-    return len(times)
+    # Persisted, not in-memory: the cap must survive restarts (the one soak anomaly rode exactly this gap).
+    return stores.recent_fire_count(trigger_id, time.time())
 
 
 @typechecked
@@ -133,7 +130,7 @@ async def p_flush(trigger_id: str) -> None:
             p_log(workflow_id, trigger_id, "skipped", f"{len(snapshot)} event(s) did not match: \"{trigger.predicate.strip()[:80]}\"")
             return
     p_consume(trigger_id, len(snapshot))
-    p_fire_times.setdefault(trigger_id, []).append(time.monotonic())
+    stores.record_fire(trigger_id, time.time())
     asyncio.create_task(p_run_and_log(wf, trigger, snapshot))
 
 
@@ -175,4 +172,3 @@ def stop() -> None:
     p_flush_tasks.clear()
     p_buffers.clear()
     p_workflow_of.clear()
-    p_fire_times.clear()

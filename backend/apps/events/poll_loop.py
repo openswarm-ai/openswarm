@@ -6,6 +6,7 @@ or stall its neighbors."""
 
 import asyncio
 import logging
+import random
 import time
 from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
@@ -73,14 +74,21 @@ async def p_poll_one(wf: Workflow, trigger: EventTriggerConfig) -> None:
         else:
             events, new_cursor = await fetch(trigger.source, cursor)
         stores.save_cursor(trigger.id, new_cursor)
+        stores.clear_poll_failures(trigger.id)
         if events:
             await dispatcher.ingest(workflow_id, trigger, events)
     except Exception as e:
         logger.warning("poll failed for trigger %s (%s): %s", trigger.id, trigger.source.kind, e)
         try:
+            # Exponential backoff on repeated failures: a broken site/model can't burn quota at full cadence, and the log says so instead of dying silently.
+            failures = stores.record_poll_failure(trigger.id)
+            base = float(getattr(trigger.source, "poll_seconds", 300))
+            backoff = min(base * (2 ** min(failures, 5)), 21600.0)
+            p_next_poll[trigger.id] = time.monotonic() + backoff
+            note = f" (failure {failures} in a row; next try in ~{int(backoff / 60) or 1}m)" if failures >= 2 else ""
             stores.append_log(workflow_id, EventLogEntry(
                 trigger_id=trigger.id, kind="error",
-                summary=f"Poll failed: {str(e)[:200]}",
+                summary=f"Poll failed: {str(e)[:180]}{note}",
             ))
         except Exception:
             pass
@@ -97,7 +105,8 @@ def tick() -> None:
     now = time.monotonic()
     for wf, trig, poll_seconds in p_live_triggers():
         if p_next_poll.get(trig.id, 0.0) <= now and trig.id not in p_inflight:
-            p_next_poll[trig.id] = now + poll_seconds
+            # Jitter so logged-in polls aren't metronomic (a bot tell) and many triggers spread out.
+            p_next_poll[trig.id] = now + poll_seconds * random.uniform(0.9, 1.1)
             p_inflight.add(trig.id)
             asyncio.create_task(p_poll_one(wf, trig))
 
