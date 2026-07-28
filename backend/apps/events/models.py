@@ -84,8 +84,18 @@ class CustomEventSource(BaseModel):
     kind: Literal["custom"] = "custom"
 
 
+class StreamSource(BaseModel):
+    """Held-open subscription to a Server-Sent Events feed: the source's own
+    event log, read live, so nothing is transient. Not polled; a long-lived
+    task owns the connection and reconnects with backoff."""
+    kind: Literal["stream"] = "stream"
+    url: str = ""
+    # Cheap server-side-of-us noise gate: only messages containing this substring become events. Empty = everything.
+    contains: str = ""
+
+
 EventSourceConfig = Annotated[
-    Union[FileWatchSource, WebWatchSource, AgentCheckSource, CustomEventSource],
+    Union[FileWatchSource, WebWatchSource, AgentCheckSource, CustomEventSource, StreamSource],
     Field(discriminator="kind"),
 ]
 

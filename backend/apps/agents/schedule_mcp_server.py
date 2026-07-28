@@ -294,7 +294,9 @@ TOOLS = [
             "'agent' = ANY other condition; an agent checks it on an interval with its tools "
             "(needs check, a plain sentence like 'a new email from my landlord arrived'; if the "
             "check needs a connected account, list the tool names in mcps); "
-            "'custom' = an outside system will push events to us (returns the endpoint to call). "
+            "'custom' = an outside system will push events to us (returns the endpoint to call); "
+            "'stream' = subscribe to a live Server-Sent Events feed URL (events arrive instantly; "
+            "use contains to keep only matching messages). "
             "Attach to an existing workflow by passing workflow (its id or exact title), or pass "
             "title + steps to create a new one (steps are what the agent DOES when it fires). "
             "Use only_when for a plain-English filter ('only if it mentions Friday'). "
@@ -306,9 +308,10 @@ TOOLS = [
                 "workflow": {"type": "string", "description": "Existing workflow id or exact title to attach the trigger to. Omit when creating a new workflow via title + steps."},
                 "title": {"type": "string", "description": "Name for a NEW workflow (when workflow is omitted)."},
                 "steps": {"type": "array", "items": {"type": "string"}, "description": "What to do when the event fires, as ordered agent instructions. Required when creating a new workflow."},
-                "kind": {"type": "string", "enum": ["file", "web", "agent", "custom"], "description": "What produces the events."},
+                "kind": {"type": "string", "enum": ["file", "web", "agent", "custom", "stream"], "description": "What produces the events."},
                 "path": {"type": "string", "description": "kind=file: the file or folder to watch (~ ok)."},
-                "url": {"type": "string", "description": "kind=web: the page URL to watch."},
+                "url": {"type": "string", "description": "kind=web: the page URL to watch. kind=stream: the SSE feed URL."},
+                "contains": {"type": "string", "description": "kind=stream: only messages containing this substring become events."},
                 "watch_for": {"type": "string", "description": "kind=web: what change matters, in the user's words."},
                 "check": {"type": "string", "description": "kind=agent: the condition to check, one plain sentence."},
                 "mcps": {"type": "array", "items": {"type": "string"}, "description": "kind=agent: connected tool names the check may use (e.g. 'google-workspace'). Only what the user's check actually needs."},
@@ -706,8 +709,8 @@ def p_validate_mcps(mcps: list) -> str:
 def p_build_trigger(args: dict) -> tuple:
     """(trigger dict, error string). Kind-specific validation with actionable errors."""
     kind = args.get("kind") or ""
-    if kind not in ("file", "web", "agent", "custom"):
-        return None, "kind must be one of: file, web, agent, custom."
+    if kind not in ("file", "web", "agent", "custom", "stream"):
+        return None, "kind must be one of: file, web, agent, custom, stream."
     poll_minutes = args.get("poll_minutes")
     poll_seconds = int(float(poll_minutes) * 60) if poll_minutes else TRIGGER_POLL_DEFAULTS.get(kind, 300)
     if kind == "file":
@@ -726,6 +729,10 @@ def p_build_trigger(args: dict) -> tuple:
         if mcp_err:
             return None, mcp_err
         source = {"kind": "agent", "check": args["check"].strip(), "model": "", "mcps": mcps, "poll_seconds": poll_seconds}
+    elif kind == "stream":
+        if not (args.get("url") or "").strip():
+            return None, "kind=stream needs url (the SSE feed to subscribe to)."
+        source = {"kind": "stream", "url": args["url"].strip(), "contains": (args.get("contains") or "").strip()}
     else:
         source = {"kind": "custom"}
     return {
@@ -747,6 +754,8 @@ def p_describe_trigger(t: dict) -> str:
         what = f"page {s.get('url')}" + (f" (watching for: {s.get('watch_for')})" if s.get("watch_for") else "")
     elif kind == "agent":
         what = f"agent check: {s.get('check')}" + (f" [tools: {', '.join(s.get('mcps') or [])}]" if s.get("mcps") else "")
+    elif kind == "stream":
+        what = f"live feed {s.get('url')}" + (f" (containing: {s.get('contains')})" if s.get("contains") else "")
     else:
         what = "custom push events"
     state = "ON" if t.get("enabled") else "off"

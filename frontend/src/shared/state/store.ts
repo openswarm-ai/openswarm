@@ -18,6 +18,7 @@ import subscriptionsReducer from './subscriptionsSlice';
 import workflowsReducer from './workflowsSlice';
 import missedRunsReducer from './missedRunsSlice';
 import patternsReducer from './patternsSlice';
+import triggersHealthReducer from './triggersHealthSlice';
 import onboardingProgressReducer from '@/shared/state/onboardingProgressSlice';
 import onboardingV3Reducer from '@/shared/state/onboardingV3Slice';
 
@@ -42,6 +43,7 @@ export const store = configureStore({
     workflows: workflowsReducer,
     missedRuns: missedRunsReducer,
     patterns: patternsReducer,
+    triggersHealth: triggersHealthReducer,
     onboardingProgress: onboardingProgressReducer,
     onboardingV3: onboardingV3Reducer,
   },

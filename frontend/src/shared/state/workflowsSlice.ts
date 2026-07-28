@@ -56,7 +56,15 @@ export interface CustomEventSource {
   kind: 'custom';
 }
 
-export type EventSourceConfig = FileWatchSource | WebWatchSource | AgentCheckSource | CustomEventSource;
+export interface StreamSource {
+  /** Held-open SSE subscription: the source's own event log, read live. */
+  kind: 'stream';
+  url: string;
+  /** Only messages containing this substring become events; empty = everything. */
+  contains: string;
+}
+
+export type EventSourceConfig = FileWatchSource | WebWatchSource | AgentCheckSource | CustomEventSource | StreamSource;
 
 export interface EventTriggerConfig {
   id: string;
@@ -177,7 +185,7 @@ export interface WorkflowRun {
   session_id: string | null;
   error: string | null;
   cost_usd: number;
-  triggered_by: 'schedule' | 'manual' | 'retry';
+  triggered_by: 'schedule' | 'manual' | 'retry' | 'event';
   /** Live "what's the agent doing" subtitle while status is 'running'. */
   last_tool_label?: string | null;
   /** Currently-executing 0-based step index while status is 'running';

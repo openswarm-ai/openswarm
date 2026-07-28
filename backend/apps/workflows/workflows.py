@@ -771,6 +771,29 @@ async def get_workflow_audit(workflow_id: str, limit: int = 50):
     return {"entries": audit.read_tail(workflow_id, limit=limit)}
 
 
+@workflows.router.get("/triggers/attention")
+async def triggers_attention():
+    """Event triggers failing repeatedly (their watcher needs something from the user)."""
+    from backend.apps.events.stores import read_poll_health
+    items = []
+    for wf in storage.list_workflows():
+        for t in wf.event_triggers:
+            if not t.enabled:
+                continue
+            health = read_poll_health(t.id)
+            failures = int(health.get("consecutive_failures") or 0)
+            if failures >= 3:
+                items.append({
+                    "workflow_id": wf.id,
+                    "workflow_title": wf.title,
+                    "trigger_id": t.id,
+                    "kind": t.source.kind,
+                    "consecutive_failures": failures,
+                    "last_error": str(health.get("last_error") or ""),
+                })
+    return {"attention": items}
+
+
 @workflows.router.get("/{workflow_id}/events")
 async def get_workflow_events(workflow_id: str):
     """Event-trigger activity log, newest first ("saw X, skipped because Y, fired run Z")."""

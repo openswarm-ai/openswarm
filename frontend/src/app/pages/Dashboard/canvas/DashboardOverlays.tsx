@@ -8,6 +8,7 @@ import WorkflowRunningToast from '@/app/pages/Workflows/WorkflowRunningToast';
 import MissedRunsToast from '@/app/pages/Workflows/MissedRunsToast';
 import ProviderHealthToast from '@/app/components/overlays/ProviderHealthToast';
 import PatternOfferToast from '@/app/components/overlays/PatternOfferToast';
+import TriggerHealthToast from '@/app/components/overlays/TriggerHealthToast';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
   CardPosition,
@@ -160,6 +161,9 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
 
       {/* Mined-pattern offer: "you do this a lot, want a workflow?" */}
       <PatternOfferToast />
+
+      {/* A watcher that keeps failing probably needs something from the user */}
+      <TriggerHealthToast />
     </>
   );
 };

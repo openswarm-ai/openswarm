@@ -5,6 +5,7 @@
 """
 
 import os
+import time
 from typing import Dict, List
 
 from typeguard import typechecked
@@ -78,13 +79,18 @@ def recent_fire_count(trigger_id: str, now_epoch: float, window_seconds: float =
 
 
 @typechecked
-def record_poll_failure(trigger_id: str) -> int:
+def record_poll_failure(trigger_id: str, error: str = "") -> int:
     """Returns the new consecutive-failure count."""
     path = os.path.join(HEALTH_DIR, f"{trigger_id}.json")
     raw = read_json_or_none(path) or {}
     count = int(raw.get("consecutive_failures") or 0) + 1
-    atomic_write_json(path, {"consecutive_failures": count})
+    atomic_write_json(path, {"consecutive_failures": count, "last_error": error[:300], "last_failure_epoch": time.time()})
     return count
+
+
+@typechecked
+def read_poll_health(trigger_id: str) -> Dict:
+    return read_json_or_none(os.path.join(HEALTH_DIR, f"{trigger_id}.json")) or {}
 
 
 @typechecked

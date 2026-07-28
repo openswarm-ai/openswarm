@@ -16,6 +16,7 @@ const KIND_LABELS: Record<string, string> = {
   web: 'Web page watch',
   agent: 'Agent check',
   custom: 'Custom (push)',
+  stream: 'Live feed (SSE)',
 };
 
 interface RowProps {
@@ -133,6 +134,35 @@ const EventTriggerRow: React.FC<RowProps> = ({ workflow, trigger, onMutate, onRe
           </div>
           <div style={{ width: 130, flex: 'none', alignSelf: 'flex-end' }}>
             {pollSelect(src.poll_seconds, AGENT_POLL_CHOICES, (v) => onMutate((x) => ({ ...x, source: { ...src, poll_seconds: v } })))}
+          </div>
+        </div>
+      )}
+
+      {src.kind === 'stream' && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1 }}>
+            <span style={labelStyle}>Feed URL (Server-Sent Events)</span>
+            <input
+              style={fieldStyle}
+              defaultValue={src.url}
+              placeholder="https://stream.example.com/events"
+              onBlur={(e) => {
+                const url = e.target.value.trim();
+                if (url !== src.url) onMutate((x) => ({ ...x, source: { ...src, url } }));
+              }}
+            />
+          </div>
+          <div style={{ width: 150, flex: 'none' }}>
+            <span style={labelStyle}>Only lines containing</span>
+            <input
+              style={fieldStyle}
+              defaultValue={src.contains}
+              placeholder="(everything)"
+              onBlur={(e) => {
+                const contains = e.target.value.trim();
+                if (contains !== src.contains) onMutate((x) => ({ ...x, source: { ...src, contains } }));
+              }}
+            />
           </div>
         </div>
       )}
