@@ -69,6 +69,8 @@ class AppSettings(BaseModel):
     personalized_starters: list["PersonalizedStarter"] = Field(default_factory=list)
     # Suppresses preflight suggestion modal entries the user dismissed; keyed by ToolDefinition.name, value ISO timestamp.
     dismissed_mcp_suggestions: dict[str, str] = Field(default_factory=dict)
+    # Kill switch for the pattern miner (proactive "want me to automate this?" offers). Gates the miner itself, not just the toast.
+    pattern_suggestions_enabled: bool = True
     analytics_opt_in: bool = True
     installation_id: Optional[str] = None
     # Minted once by the analytics SDK's register() and reused forever; server-owned.
