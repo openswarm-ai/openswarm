@@ -282,6 +282,60 @@ TOOLS = [
             "required": ["reason"],
         },
     },
+    {
+        "name": "WatchForEvent",
+        "description": (
+            "Make a workflow run automatically WHEN SOMETHING HAPPENS (event trigger), as "
+            "opposed to ScheduleWorkflow which is for times. Use this whenever the user says "
+            "'when/whenever/if X happens, do Y', 'watch/monitor X', or 'alert me when X'. "
+            "Pick the kind: 'file' = a local file or folder changes (needs path); "
+            "'web' = a specific page's content changes (needs url; watch_for describes the "
+            "change that matters, e.g. 'a reservation slot opens'); "
+            "'agent' = ANY other condition; an agent checks it on an interval with its tools "
+            "(needs check, a plain sentence like 'a new email from my landlord arrived'; if the "
+            "check needs a connected account, list the tool names in mcps); "
+            "'custom' = an outside system will push events to us (returns the endpoint to call). "
+            "Attach to an existing workflow by passing workflow (its id or exact title), or pass "
+            "title + steps to create a new one (steps are what the agent DOES when it fires). "
+            "Use only_when for a plain-English filter ('only if it mentions Friday'). "
+            "After creating, briefly confirm what is being watched and what will happen."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workflow": {"type": "string", "description": "Existing workflow id or exact title to attach the trigger to. Omit when creating a new workflow via title + steps."},
+                "title": {"type": "string", "description": "Name for a NEW workflow (when workflow is omitted)."},
+                "steps": {"type": "array", "items": {"type": "string"}, "description": "What to do when the event fires, as ordered agent instructions. Required when creating a new workflow."},
+                "kind": {"type": "string", "enum": ["file", "web", "agent", "custom"], "description": "What produces the events."},
+                "path": {"type": "string", "description": "kind=file: the file or folder to watch (~ ok)."},
+                "url": {"type": "string", "description": "kind=web: the page URL to watch."},
+                "watch_for": {"type": "string", "description": "kind=web: what change matters, in the user's words."},
+                "check": {"type": "string", "description": "kind=agent: the condition to check, one plain sentence."},
+                "mcps": {"type": "array", "items": {"type": "string"}, "description": "kind=agent: connected tool names the check may use (e.g. 'google-workspace'). Only what the user's check actually needs."},
+                "poll_minutes": {"type": "number", "description": "How often to check. Defaults: file continuous (~15s), web 5, agent 15. Agent checks cost a model call each, so don't go below 5 without the user asking."},
+                "only_when": {"type": "string", "description": "Optional plain-English filter; events not matching it are skipped (logged)."},
+                "max_fires_per_hour": {"type": "integer", "description": "Safety cap on runs per hour (default 6)."},
+            },
+            "required": ["kind"],
+        },
+    },
+    {
+        "name": "ListEventTriggers",
+        "description": "List every event trigger across the user's workflows (what is being watched, how often, enabled state, ids). Use before removing or editing a trigger, or when the user asks what's being watched.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "RemoveEventTrigger",
+        "description": "Remove one event trigger from a workflow (the workflow itself stays). Confirm with the user first. Use ListEventTriggers to find the trigger_id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workflow": {"type": "string", "description": "Workflow id or exact title."},
+                "trigger_id": {"type": "string"},
+            },
+            "required": ["workflow", "trigger_id"],
+        },
+    },
 ]
 
 
@@ -296,7 +350,8 @@ def send_response(id_, result=None, error=None):
 
 
 def _call(method: str, path: str, body=None, timeout: int = 30) -> dict:
-    url = BACKEND_BASE + path
+    # Absolute paths escape the /api/workflows root (the event tools need /api/tools).
+    url = path if path.startswith("http") else BACKEND_BASE + path
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
     if BACKEND_AUTH:
@@ -610,6 +665,163 @@ def handle_invoke_workflow(args: dict) -> dict:
     return _ok(f"Workflow '{match.get('title')}' run {status}.{err_line}\n\n=== RUN TRANSCRIPT ===\n{transcript}\n=== END TRANSCRIPT ===")
 
 
+TRIGGER_POLL_DEFAULTS = {"file": 15, "web": 300, "agent": 900}
+
+
+def p_find_workflow_any(ident: str):
+    r = _call("GET", "/list")
+    if "_error" in r:
+        return None, r["_error"]
+    ws = r.get("workflows", [])
+    match = next((w for w in ws if w.get("id") == ident), None) or next(
+        (w for w in ws if (w.get("title") or "").strip().lower() == ident.strip().lower()), None)
+    if match is None:
+        names = ", ".join(f"{w.get('title')} (id: {w.get('id')})" for w in ws) or "(none)"
+        return None, f"No workflow matches '{ident}'. Workflows: {names}"
+    return match, None
+
+
+def p_validate_mcps(mcps: list) -> str:
+    """Empty string = fine; otherwise an actionable error naming the valid tools. Fail-open when the list can't be fetched."""
+    if not mcps:
+        return ""
+    r = _call("GET", f"http://127.0.0.1:{BACKEND_PORT}/api/tools/list")
+    if "_error" in r:
+        return ""
+    tools = r.get("tools", r) if isinstance(r, dict) else r
+    known = set()
+    for t in (tools if isinstance(tools, list) else []):
+        for key in ("id", "name"):
+            v = str((t or {}).get(key) or "").strip().lower()
+            if v:
+                known.add(v)
+    if not known:
+        return ""
+    unknown = [m for m in mcps if str(m).strip().lower() not in known]
+    if unknown:
+        return f"Unknown connected tool(s): {', '.join(unknown)}. Connected tools: {', '.join(sorted(known))}. Fix the mcps list or ask the user to connect the tool first."
+    return ""
+
+
+def p_build_trigger(args: dict) -> tuple:
+    """(trigger dict, error string). Kind-specific validation with actionable errors."""
+    kind = args.get("kind") or ""
+    if kind not in ("file", "web", "agent", "custom"):
+        return None, "kind must be one of: file, web, agent, custom."
+    poll_minutes = args.get("poll_minutes")
+    poll_seconds = int(float(poll_minutes) * 60) if poll_minutes else TRIGGER_POLL_DEFAULTS.get(kind, 300)
+    if kind == "file":
+        if not (args.get("path") or "").strip():
+            return None, "kind=file needs path (the file or folder to watch)."
+        source = {"kind": "file", "path": args["path"].strip(), "poll_seconds": poll_seconds}
+    elif kind == "web":
+        if not (args.get("url") or "").strip():
+            return None, "kind=web needs url (the page to watch)."
+        source = {"kind": "web", "url": args["url"].strip(), "watch_for": (args.get("watch_for") or "").strip(), "poll_seconds": poll_seconds}
+    elif kind == "agent":
+        if not (args.get("check") or "").strip():
+            return None, "kind=agent needs check (one sentence describing the condition)."
+        mcps = [str(m) for m in (args.get("mcps") or [])]
+        mcp_err = p_validate_mcps(mcps)
+        if mcp_err:
+            return None, mcp_err
+        source = {"kind": "agent", "check": args["check"].strip(), "model": "", "mcps": mcps, "poll_seconds": poll_seconds}
+    else:
+        source = {"kind": "custom"}
+    return {
+        "id": uuid.uuid4().hex,
+        "enabled": True,
+        "source": source,
+        "predicate": (args.get("only_when") or "").strip(),
+        "coalesce_seconds": 30 if kind == "file" else 0,
+        "max_fires_per_hour": int(args.get("max_fires_per_hour") or 6),
+    }, None
+
+
+def p_describe_trigger(t: dict) -> str:
+    s = t.get("source") or {}
+    kind = s.get("kind")
+    if kind == "file":
+        what = f"folder/file {s.get('path')}"
+    elif kind == "web":
+        what = f"page {s.get('url')}" + (f" (watching for: {s.get('watch_for')})" if s.get("watch_for") else "")
+    elif kind == "agent":
+        what = f"agent check: {s.get('check')}" + (f" [tools: {', '.join(s.get('mcps') or [])}]" if s.get("mcps") else "")
+    else:
+        what = "custom push events"
+    state = "ON" if t.get("enabled") else "off"
+    cond = f"; only when: {t.get('predicate')}" if t.get("predicate") else ""
+    return f"[{state}] {what}{cond} (trigger id: {t.get('id')})"
+
+
+def handle_watch_for_event(args: dict) -> dict:
+    trigger, err = p_build_trigger(args)
+    if err:
+        return _err(err)
+    ident = (args.get("workflow") or "").strip()
+    if ident:
+        wf, find_err = p_find_workflow_any(ident)
+        if find_err:
+            return _err(find_err)
+        triggers = list(wf.get("event_triggers") or []) + [trigger]
+        r = _call("PATCH", f"/{wf['id']}", {"event_triggers": triggers})
+        if "_error" in r:
+            return _err(r["_error"])
+        wid, title = wf["id"], wf.get("title")
+    else:
+        steps_in = [s for s in (args.get("steps") or []) if str(s).strip()]
+        if not steps_in:
+            return _err("To create a new workflow, pass title and steps (what to do when the event fires), or pass workflow to attach to an existing one.")
+        body = {
+            "title": args.get("title") or "Event workflow",
+            "steps": [{"id": f"s{i+1}", "text": str(s)} for i, s in enumerate(steps_in)],
+            "schedule": {"enabled": False},
+            "event_triggers": [trigger],
+            "source_session_id": PARENT_SESSION_ID or None,
+            "dashboard_id": DASHBOARD_ID or None,
+        }
+        r = _call("POST", "/create", body)
+        if "_error" in r:
+            return _err(r["_error"])
+        wid, title = r.get("id", ""), r.get("title")
+    extra = ""
+    if trigger["source"]["kind"] == "custom":
+        extra = (
+            f"\nOutside systems push events with: POST http://127.0.0.1:{BACKEND_PORT}/api/events/ingest "
+            f"(JSON: workflow_id={wid}, trigger_id={trigger['id']}, summary, optional dedup_key; per-install auth token required)."
+        )
+    return _ok(f"Watching. Workflow \"{title}\" (id: {wid}) now runs on {p_describe_trigger(trigger)}.{extra} The user can edit or disable it in the workflow's Event triggers panel.")
+
+
+def handle_list_event_triggers(_args: dict) -> dict:
+    r = _call("GET", "/list")
+    if "_error" in r:
+        return _err(r["_error"])
+    lines = []
+    for w in r.get("workflows", []):
+        for t in (w.get("event_triggers") or []):
+            lines.append(f"  - {w.get('title')} (workflow id: {w.get('id')}): {p_describe_trigger(t)}")
+    if not lines:
+        return _ok("No event triggers set up yet.")
+    return _ok("Event triggers:\n" + "\n".join(lines))
+
+
+def handle_remove_event_trigger(args: dict) -> dict:
+    wf, find_err = p_find_workflow_any((args.get("workflow") or "").strip())
+    if find_err:
+        return _err(find_err)
+    trigger_id = (args.get("trigger_id") or "").strip()
+    triggers = list(wf.get("event_triggers") or [])
+    kept = [t for t in triggers if t.get("id") != trigger_id]
+    if len(kept) == len(triggers):
+        ids = ", ".join(t.get("id", "?") for t in triggers) or "(none)"
+        return _err(f"No trigger {trigger_id} on '{wf.get('title')}'. Its triggers: {ids}")
+    r = _call("PATCH", f"/{wf['id']}", {"event_triggers": kept})
+    if "_error" in r:
+        return _err(r["_error"])
+    return _ok(f"Removed the trigger from \"{wf.get('title')}\". {len(kept)} trigger(s) remain on it.")
+
+
 HANDLERS = {
     "InvokeWorkflow": handle_invoke_workflow,
     "ScheduleWorkflow": handle_schedule_workflow,
@@ -625,6 +837,9 @@ HANDLERS = {
     "TestWorkflow": handle_test_workflow,
     "ReadTestTranscript": handle_read_test_transcript,
     "SuggestConvertToWorkflow": handle_suggest_convert_to_workflow,
+    "WatchForEvent": handle_watch_for_event,
+    "ListEventTriggers": handle_list_event_triggers,
+    "RemoveEventTrigger": handle_remove_event_trigger,
 }
 
 

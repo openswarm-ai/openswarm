@@ -155,6 +155,8 @@ p_SCHEDULE_GATED = {
     "mcp__openswarm-schedule__UpdateScheduledWorkflow",
     "mcp__openswarm-schedule__DeleteScheduledWorkflow",
     "mcp__openswarm-schedule__PauseAllWorkflows",
+    "mcp__openswarm-schedule__WatchForEvent",
+    "mcp__openswarm-schedule__RemoveEventTrigger",
 }
 CLAUDE_INTERNAL_SCHEDULER_TOOLS = ("CronCreate", "CronList", "CronDelete")
 
