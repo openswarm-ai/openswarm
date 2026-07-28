@@ -624,6 +624,106 @@ async def compose_send_confirmation(aux_client, aux_model, task: str, payload: s
     return text
 
 
+async def compose_partial_result(aux_client, aux_model, task: str, action_log: list) -> str:
+    """What the run actually reached, in the model's OWN voice, when the loop is cut off before it
+    can answer. The stock "that's as far as I could get" tells the user nothing about what WAS
+    found, which is often most of what they asked for. Fail-open like the others; must not invent
+    an outcome, so it is fed only the pages and actions that really happened."""
+    if not aux_client or not aux_model:
+        return ""
+    steps = [f"{e.get('tool', '?')} {str(e.get('input', ''))[:70]}" for e in (action_log or [])[-12:]]
+    if not steps:
+        return ""
+    prompt = (
+        "You were controlling the user's web browser and ran out of turns before you could give a "
+        "final answer. Here is what you actually did, most recent last:\n"
+        + "\n".join(steps)
+        + f"\n\nThe user asked: {task[:280]}\n"
+        "Reply with ONE or TWO short first-person sentences saying how far you got and what you "
+        "did or did not manage to find. Do NOT invent any result you cannot see above. If you got "
+        "nowhere useful, say that plainly. No technical words, no tool names, no preamble."
+    )
+    try:
+        resp = await aux_client.messages.create(
+            model=aux_model, max_tokens=120,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(getattr(b, "text", "") for b in (resp.content or [])).strip().strip('"').strip()
+    except Exception:
+        return ""
+    low = text.lower()
+    if not text or len(text) > 320 or any(t in low for t in P_NOT_A_REPLY):
+        return ""
+    return text
+
+
+async def compose_removal_confirmation(aux_client, aux_model, task: str, target: str) -> str:
+    """The 'I deleted it' line in the model's OWN voice. The removal is already verified gone in
+    code before this runs, so this only chooses words. Same fail-open contract as the others."""
+    if not aux_client or not aux_model or not target:
+        return ""
+    prompt = (
+        "You just finished a task for the user by controlling their web browser: you DELETED an "
+        "item for them, and you confirmed it is gone from the page.\n"
+        f"The user asked: {task[:280]}\n"
+        f"The item you removed contained: \"{target[:200]}\"\n"
+        "Reply with ONE short, plain first-person sentence confirming it's deleted, the way a "
+        "helpful friend would. No technical words, no preamble, just the sentence."
+    )
+    try:
+        resp = await aux_client.messages.create(
+            model=aux_model, max_tokens=80,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(getattr(b, "text", "") for b in (resp.content or [])).strip().strip('"').strip()
+    except Exception:
+        return ""
+    low = text.lower()
+    if not text or len(text) > 220 or any(t in low for t in P_NOT_A_REPLY):
+        return ""
+    return text
+
+
+async def compose_unverified_send(aux_client, aux_model, task: str, payload: str, url: str) -> str:
+    """The 'I clicked send but never saw it confirm' line in the model's OWN voice.
+
+    Weaker than compose_delivery_warning by design: there the composer cleared, so we know the thing
+    was submitted and only its survival is in doubt. Here we never got the clear at all, so the only
+    thing we know is that a click ran. Same fail-open contract, and it must never claim success."""
+    if not aux_client or not aux_model or not payload:
+        return ""
+    from urllib.parse import urlparse
+    host = urlparse(url or "").hostname or "the site"
+    if host.startswith("www."):
+        host = host[4:]
+    prompt = (
+        "You tried to post or send something for the user by controlling their web browser. You "
+        "typed it and clicked send, but you never saw the confirmation you rely on: the compose box "
+        f"did not clear, so you do NOT know whether {host} accepted it. This is NOT a success.\n"
+        f"The user asked: {task[:280]}\n"
+        f"What you typed: \"{payload[:280]}\"\n"
+        "Reply with ONE or TWO short first-person sentences that say plainly you could not confirm "
+        "it posted, tell them to check, and mention you did not try again so they don't end up with "
+        "a duplicate. Never say it went through, was sent, or is showing. No technical words, no "
+        "preamble, just the sentences."
+    )
+    try:
+        resp = await aux_client.messages.create(
+            model=aux_model, max_tokens=120,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(getattr(b, "text", "") for b in (resp.content or [])).strip().strip('"').strip()
+    except Exception:
+        return ""
+    low = text.lower()
+    if not text or len(text) > 320 or any(t in low for t in P_NOT_A_REPLY):
+        return ""
+    # A composed line that still claims delivery is worse than the template, so refuse it.
+    if any(p in low for p in ("went through", "was sent", "i sent", "it's showing", "is showing", "posted it")):
+        return ""
+    return text
+
+
 async def compose_delivery_warning(aux_client, aux_model, task: str, payload: str, url: str) -> str:
     """The 'I sent it but couldn't confirm it stayed live' line in the model's OWN voice, via one
     cheap aux call, for a ghost-drop host where the composer cleared but the post did NOT persist.
@@ -1549,6 +1649,12 @@ async def run_browser_agent(
     done_message = ""
     done_success = True
     done_keep_open = False
+    # `send_confirmed` means "the click ran, so never fire another one" and NOTHING more. It was
+    # doing double duty as permission to claim success, which is how a run that clicked send with no
+    # receipt still reported "your message went through and it's showing in the conversation now"
+    # (measured live on X 2026-07-28; nothing had been posted). Not repeating an action and being
+    # allowed to claim it worked are different facts about the world, so they get different flags.
+    delivery_verified = False
     # Completion detection uses task_is_send (computed above, before the candidate scan): once an irreversible SEND has confirmed, the goal is met. The model otherwise stalls re-verifying what the confirm already proved (measured: send done at turn ~11, then ~12 wasted perception turns). We drive it to the OUTCOME and, if it keeps re-perceiving, end the run. A genuine multi-send task issues its NEXT send (an action) which resets the stall, so only true spinning ends here. Meaningless for a gather/read task, and arming it there let a cookie 'Accept all' click masquerade as the task's send, so we gate it on intent.
     send_confirmed = False
     # Two-sided receipt evidence: the fill must have VISIBLY committed its text to a textbox before a send-class click may end the run in code. r228 clicked a send-labeled control after an uncommitted fill and the old click-name-only receipt claimed a send that never happened.
@@ -1603,6 +1709,7 @@ async def run_browser_agent(
                 else:
                     # receipt verified (composer cleared): the send is DONE, end the run
                     done_success = True
+                    delivery_verified = True
                     await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, p_script["payload"])
                     done_message = (await compose_send_confirmation(p_aux_c, p_aux_m, task, p_script["payload"])
                                     or f'Done, I sent "{p_script["payload"]}" for you.')
@@ -1632,7 +1739,11 @@ async def run_browser_agent(
             if p_del["removed"]:
                 done_called = True
                 done_success = True
-                done_message = f'Done, I deleted the item containing "{p_del_target[:60]}" (verified gone).'
+                # The deletion is already verified gone in code; this only writes the words, and it
+                # writes them in the model's voice rather than a template.
+                p_aux_c, p_aux_m = await p_get_aux_client()
+                done_message = (await compose_removal_confirmation(p_aux_c, p_aux_m, task, p_del_target)
+                                or f'Done, I deleted the item containing "{p_del_target[:60]}" (verified gone).')
             # not removed: fall through to the model loop, which navigates to where the item lives.
 
     # Dry-run is a measurement mode, so the run ENDS here either way: letting the model loop run would both risk the REAL send the flag exists to avoid and rescue declines the flag exists to attribute. Inert when the flag is off.
@@ -1921,10 +2032,23 @@ async def run_browser_agent(
                                     else (P_PERCEPTION_STALL_LIMIT if p_acted else 10 ** 9))
                     if perception_stall >= p_stall_limit:
                         if send_confirmed:
-                            # the send registered: hand the parent a real done. The raw action-log proof (indices/coords) is machine-speak, kept out.
+                            # The send CLICK ran; whether it landed is a separate question and the
+                            # message has to answer the one we actually have evidence for. The raw
+                            # action-log proof (indices/coords) is machine-speak, kept out.
                             done_called = True
-                            done_message = "All set, your message went through and it's showing in the conversation now."
-                            logger.info(f"[browser-agent {session_id}] ending: {perception_stall} post-send perception turns")
+                            done_success = delivery_verified
+                            p_aux_c, p_aux_m = await p_get_aux_client()
+                            p_pay = composer_committed_payload or ""
+                            if delivery_verified:
+                                p_nice = await compose_send_confirmation(p_aux_c, p_aux_m, task, p_pay)
+                                done_message = p_nice or (
+                                    f'Done, I sent "{p_pay}" for you.' if p_pay else "Done, that's sent.")
+                            else:
+                                done_message = (await compose_unverified_send(
+                                    p_aux_c, p_aux_m, task, p_pay, current_url)
+                                    or browser_delivery_check.unverified_send_note(current_url, p_pay))
+                            logger.info(f"[browser-agent {session_id}] ending: {perception_stall} post-send "
+                                        f"perception turns, delivery_verified={delivery_verified}")
                             break
                         if not wrapup_nudged:
                             # don't cut it off mid-thought: ride a wrap-up nudge out on this turn's tool_results so next turn it answers via Done.
@@ -1937,7 +2061,13 @@ async def run_browser_agent(
                             logger.info(f"[browser-agent {session_id}] ending: wrap-up nudge ignored, stopping")
                             if not done_called:
                                 done_called = True
-                                done_message = "That's as far as I could get gathering this one."
+                                # The run is being cut off mid-thought, so say what was actually
+                                # reached in the model's own words instead of a stock apology that
+                                # tells the user nothing about what it did or did not get.
+                                p_aux_c, p_aux_m = await p_get_aux_client()
+                                done_message = (await compose_partial_result(
+                                    p_aux_c, p_aux_m, task, action_log)
+                                    or "That's as far as I could get gathering this one.")
                             break
             else:
                 perception_stall = 0
@@ -2347,6 +2477,7 @@ async def run_browser_agent(
                 # An API-first write that returned ok carries its own typed receipt, so it IS the confirmation: mark the send done so the loop drives to Done without a redundant UI re-verify (and never re-fires it).
                 if tu.name == "BrowserApiWrite" and isinstance(result, dict) and result.get("ok"):
                     send_confirmed = True
+                    delivery_verified = True  # a typed API receipt IS the evidence, not a proxy for it
 
                 # Act-and-confirm: if the agent declared the change it expects, VERIFY it actually happened, success is observed, never assumed. A hit returns fast (act + confirm in one turn); a miss is a clear "may not have worked" (and a wedge surfaces as a clean not-confirmed, not a blind 20s timeout), so the agent never claims a success it didn't see or re-fires blindly.
                 p_expect = (str(tu.input.get("expect") or "").strip()
@@ -2411,6 +2542,7 @@ async def run_browser_agent(
                             if p_receipt_ok:
                                 done_called = True
                                 done_success = True
+                                delivery_verified = True  # two-sided receipt: fill committed AND box now empty
                                 p_payload = browser_batch_replay.send_payload_from_log(action_log, task)
                                 await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, p_payload)
                                 p_aux_c, p_aux_m = await p_get_aux_client()
@@ -2502,6 +2634,10 @@ async def run_browser_agent(
                             execute_browser_tool, send_submit_index_in_state,
                             composer_index=fill_index_of(tu.name, tool_input), current_url=current_url)
                         if p_cs.get("clicked"):
+                            # True the moment the click RUNS, because its job here is to stop a
+                            # second one: autosend rides the model's fill turns, so unlike the
+                            # send-script path (which runs once and can safely leave this False) a
+                            # re-fill would fire another send. It is a resend guard, not evidence.
                             send_confirmed = True
                             action_log.extend(p_cs.get("log") or [])
                             if p_cs.get("sent"):
@@ -2516,6 +2652,7 @@ async def run_browser_agent(
                                     logger.info(f"[browser-autosend {session_id}] post-fill code-send NOT confirmed (ghost-drop host; composer cleared, post did not persist)")
                                 else:
                                     done_success = True
+                                    delivery_verified = True
                                     await p_learn_write_recipe(execute_browser_tool, browser_id, tab_id, current_url, composer_committed_payload)
                                     done_message = (await compose_send_confirmation(
                                         p_aux_c, p_aux_m, task, composer_committed_payload)

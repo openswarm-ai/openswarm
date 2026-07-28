@@ -68,6 +68,26 @@ async def ghost_delivery_confirmed(
 
 
 @typechecked
+def unverified_send_note(url: str, payload: str) -> str:
+    """Honest line for a send whose click RAN but whose two-sided receipt never arrived.
+
+    Deliberately weaker than unconfirmed_delivery_note: there the composer cleared and the post
+    later vanished, so we know it was submitted. Here we never got the clear at all, so we know
+    strictly less and must claim strictly less. Measured 2026-07-28 on X: the agent reported "your
+    message went through and it's showing in the conversation now" on exactly this evidence and
+    nothing had been posted. Overclaiming here is the worst failure this agent has, because the
+    user stops checking.
+    """
+    host = urlparse(url or "").hostname or "the site"
+    if host.startswith("www."):
+        host = host[4:]
+    clip = payload if len(payload) <= 80 else payload[:77] + "..."
+    return (f'I typed "{clip}" and clicked send on {host}, but I could NOT confirm it actually '
+            f'posted: the composer never cleared, which is the signal I rely on. It may or may not '
+            f'have gone through, so please check before relying on it. I did not try again, because '
+            f'a blind retry is how you end up posting twice.')
+
+
 def unconfirmed_delivery_note(url: str, payload: str) -> str:
     """Plain honest fallback line when a ghost-drop send can't be confirmed (the aux-composed
     version in browser_agent is preferred; this is the never-fails template behind it)."""

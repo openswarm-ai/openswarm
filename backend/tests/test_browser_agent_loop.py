@@ -249,10 +249,15 @@ def test_confirmed_send_ends_the_run_instead_of_stalling(monkeypatch):
     # the send ran and the run ended FAST (the stall guard stopped it), well before consuming all 8 scripted stall turns
     assert any(c["action"] == "click_index" and c["params"].get("index") == 99 for c in sent)
     assert primary.turn <= 4, f"run stalled {primary.turn} turns after a confirmed send"
-    # structured success + a clean human summary, never the internal tag
-    assert result.get("done") is True
+    # A clean human summary, never the internal tag. NOT `done is True`: this run only ever saw the
+    # click register, and no composer receipt ever arrived, so it has no evidence the message
+    # landed. Reporting success here is the exact live failure measured on X 2026-07-28 ("your
+    # message went through and it's showing" while nothing had posted). The stall guard's job is to
+    # stop the spinning, not to bless the outcome, so what is asserted here is that it ENDED, and
+    # ended honestly. See test_browser_send_honesty.py.
     assert "OUTCOME" not in result["summary"]
     assert result["summary"].strip()
+    assert result.get("done") is False, "an unverified send must not report success"
 
 
 def test_done_tool_delivers_a_clean_human_summary(monkeypatch):
