@@ -211,6 +211,12 @@ async def run_send_script(
     log: list[dict] = []
 
     composer = browser_send_parse.composer_index_in_state(state_text)
+    if composer and browser_send_parse.surface_mismatch(task_sans_brief, composer[1]):
+        # Asked to POST, found a COMMENT box: that is someone else's content, not a slower route to
+        # ours. Drop it and let the tiers below (opener, then the structural finder, which does find
+        # LinkedIn's real composer) look properly.
+        logger.info(f"[browser-sendscript] ignoring {composer[1]!r}: a comment box is not where a post goes")
+        composer = None
     if not composer:
         # The staged snapshot is prestage's, frozen the instant it clicked Message; the overlay composer lazy-renders a beat later (r263/r269 declined on exactly this, prestage's LAST step was the Message click). Poll a short window so the overlay has time to appear before we fall back to the opener.
         for wait_s in (0.6, 1.2, 1.4):

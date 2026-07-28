@@ -96,6 +96,29 @@ def looks_signed_out(state_text: str) -> bool:
     return bool(P_SIGNIN_AFFORDANCE_RE.search(state_text))
 
 
+# Creating a POST and commenting on someone else's are different actions on different content.
+# LinkedIn's feed carries a comment box on EVERY post, and the capped interactives listing routinely
+# starves the real post modal of its own composer, so the only compose-shaped textbox left in the
+# list is a stranger's comment box. Filling that is not a slower path to the same place, it is the
+# wrong action on the wrong person's content. Measured in a dry-run sweep: linkedin reached its
+# composer 1/4, and two of the three misses targeted 'Text editor for creating comment'.
+P_POST_INTENT_RE = re.compile(r"\b(post|tweet|publish|share)\b", re.I)
+P_COMMENT_INTENT_RE = re.compile(r"\b(comment|reply|respond)\b", re.I)
+P_COMMENT_SURFACE_RE = re.compile(r"\b(comment|reply)\b", re.I)
+
+
+def surface_mismatch(task: str, composer_name: str) -> bool:
+    """True when the task asks to create a POST but the composer found is a comment/reply box.
+
+    Deliberately one-directional: a task that mentions commenting is left alone, so this can only
+    ever reject a comment box for a post task, never the reverse. A rejection is cheap (the
+    structural finder, which does find LinkedIn's real composer, gets its turn instead)."""
+    t, name = task or "", composer_name or ""
+    if not P_POST_INTENT_RE.search(t) or P_COMMENT_INTENT_RE.search(t):
+        return False
+    return bool(P_COMMENT_SURFACE_RE.search(name))
+
+
 def is_readonly(text: str) -> bool:
     """A read-only directive ('verify whether', 'do not send') that must decline the scripted
     send even with a quoted payload in hand. Keeps the regex private to this file."""

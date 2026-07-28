@@ -67,3 +67,33 @@ def test_empty_and_junk_are_not_readonly():
     on a malformed input rather than letting the normal gates decide."""
     assert not sp.is_readonly("")
     assert not sp.is_readonly("   ")
+
+
+# --- surface targeting: a post is not a comment ---------------------------------------------
+
+def test_a_post_task_rejects_a_comment_box():
+    """Measured: on LinkedIn's feed the capped listing starved the post modal of its own composer,
+    so the only compose-shaped textbox left was a stranger's comment box. Filling it is the wrong
+    action on the wrong content, not a slower route to the right one."""
+    assert sp.surface_mismatch('post this, exactly: "hi"', "Text editor for creating comment")
+    assert sp.surface_mismatch("start a post saying hi", "Add a comment")
+    assert sp.surface_mismatch("tweet hello", "Post your reply")
+
+
+def test_a_comment_task_keeps_its_comment_box():
+    """One-directional by design: asking to comment must still land in a comment box."""
+    assert not sp.surface_mismatch("comment on the first post saying hi", "Text editor for creating comment")
+    assert not sp.surface_mismatch("reply to that thread with hi", "Add a comment")
+    assert not sp.surface_mismatch("respond to his post", "Post your reply")
+
+
+def test_a_post_task_keeps_a_real_post_composer():
+    assert not sp.surface_mismatch('post this, exactly: "hi"', "Post text")
+    assert not sp.surface_mismatch("start a post", "Share your thoughts")
+    assert not sp.surface_mismatch("tweet hello", "What is happening?")
+
+
+def test_a_task_with_no_post_intent_is_left_alone():
+    """Messaging a person is neither posting nor commenting; the guard must not touch it."""
+    assert not sp.surface_mismatch("text tyler hello", "Write a message")
+    assert not sp.surface_mismatch("", "Add a comment")
