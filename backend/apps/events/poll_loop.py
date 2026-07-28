@@ -10,16 +10,19 @@ import time
 from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
 from backend.apps.events import dispatcher, stores
-from backend.apps.events.file_watch import file_watch
-from backend.apps.events.models import Event, EventLogEntry, EventTriggerConfig
-from backend.apps.events.web_watch import web_watch
+from backend.apps.events.adapters.agent_check import agent_check
+from backend.apps.events.adapters.file_watch import file_watch
+from backend.apps.events.adapters.web_watch import web_watch
+from backend.apps.events.models import CustomEventSource, Event, EventLogEntry, EventTriggerConfig
 from backend.apps.workflows.models import Workflow
 
 logger = logging.getLogger(__name__)
 
+# "custom" is deliberately absent: those triggers are push-only via /api/events/ingest.
 ADAPTERS: Dict[str, Callable[..., Awaitable[Tuple[List[Event], Dict]]]] = {
     "file": file_watch,
     "web": web_watch,
+    "agent": agent_check,
 }
 
 p_loop_task: Optional["asyncio.Task"] = None
@@ -45,14 +48,17 @@ def reset_state() -> None:
     p_inflight.clear()
 
 
-def p_live_triggers() -> List[Tuple[Workflow, EventTriggerConfig]]:
+def p_live_triggers() -> List[Tuple[Workflow, EventTriggerConfig, float]]:
+    """(workflow, trigger, poll_seconds) for every pollable trigger; push-only sources are excluded here."""
     from backend.apps.workflows import storage
 
-    out: List[Tuple[Workflow, EventTriggerConfig]] = []
+    out: List[Tuple[Workflow, EventTriggerConfig, float]] = []
     for wf in storage.list_workflows():
         for trig in wf.event_triggers:
-            if trig.enabled and trig.source.kind in ADAPTERS:
-                out.append((wf, trig))
+            source = trig.source
+            if not trig.enabled or isinstance(source, CustomEventSource) or source.kind not in ADAPTERS:
+                continue
+            out.append((wf, trig, float(source.poll_seconds)))
     return out
 
 
@@ -84,9 +90,9 @@ def tick() -> None:
     if storage.get_paused():
         return
     now = time.monotonic()
-    for wf, trig in p_live_triggers():
+    for wf, trig, poll_seconds in p_live_triggers():
         if p_next_poll.get(trig.id, 0.0) <= now and trig.id not in p_inflight:
-            p_next_poll[trig.id] = now + float(trig.source.poll_seconds)
+            p_next_poll[trig.id] = now + poll_seconds
             p_inflight.add(trig.id)
             asyncio.create_task(p_poll_one(wf.id, trig))
 
@@ -94,7 +100,7 @@ def tick() -> None:
 def p_seconds_until_next() -> float:
     now = time.monotonic()
     soonest: Optional[float] = None
-    for _, trig in p_live_triggers():
+    for _, trig, _ in p_live_triggers():
         nxt = p_next_poll.get(trig.id, now)
         if soonest is None or nxt < soonest:
             soonest = nxt

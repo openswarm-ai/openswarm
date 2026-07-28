@@ -1,0 +1,136 @@
+"""The universal poll adapter: a real agent session verifies ANY
+natural-language condition on an interval, with the same tools, MCP gate, and
+admission bounds as a normal chat turn. Contract: the agent ends its reply
+with EVENT:/NO_EVENT + STATE: lines; state round-trips through the cursor so
+"since the last check" means something. Check sessions are plumbing, not chat
+history: they're deleted after each check so they can't pollute history or
+the pattern miner."""
+
+import asyncio
+import hashlib
+import time
+from typing import Dict, List, Optional, Tuple
+
+from typeguard import typechecked
+
+from backend.apps.events.models import AgentCheckSource, Event
+
+CHECK_TIMEOUT_S = 240.0
+
+
+@typechecked
+def build_check_prompt(check: str, state: str) -> str:
+    return (
+        "You are an unattended event checker. Determine whether this event has occurred "
+        f"since the last check: {check.strip()}\n\n"
+        f"Previous check state: {state or 'none; this is the baseline check'}.\n\n"
+        "Use your tools as needed, then END your reply in EXACTLY this format (as the final lines):\n"
+        "EVENT: <one factual line describing what happened>\n"
+        "STATE: <one line capturing what you observed, to compare against next time>\n"
+        "If nothing new happened, instead end with:\n"
+        "NO_EVENT\n"
+        "STATE: <one line>\n"
+        "On the baseline check (no previous state) always reply NO_EVENT and just record STATE."
+    )
+
+
+@typechecked
+def parse_check_reply(text: str) -> Tuple[Optional[str], str]:
+    """(event line or None, state). Last occurrence wins so earlier prose echoing
+    the format can't fake a verdict. Raises when the contract is missing entirely."""
+    event_line: Optional[str] = None
+    state = ""
+    saw_verdict = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.upper().startswith("EVENT:"):
+            event_line = s[len("EVENT:"):].strip()
+            saw_verdict = True
+        elif s.upper() == "NO_EVENT":
+            event_line = None
+            saw_verdict = True
+        elif s.upper().startswith("STATE:"):
+            state = s[len("STATE:"):].strip()
+    if not saw_verdict:
+        raise ValueError("check agent returned no EVENT/NO_EVENT verdict")
+    return event_line, state
+
+
+async def p_await_reply(session_id: str) -> str:
+    from backend.apps.agents.agent_manager import agent_manager
+
+    deadline = time.monotonic() + CHECK_TIMEOUT_S
+    while time.monotonic() < deadline:
+        sess = agent_manager.sessions.get(session_id)
+        if sess is None or getattr(sess, "status", None) in ("completed", "error", "stopped"):
+            break
+        await asyncio.sleep(0.5)
+    sess = agent_manager.sessions.get(session_id)
+    if sess is None:
+        raise RuntimeError("check session vanished")
+    status = getattr(sess, "status", None)
+    if status == "running":
+        try:
+            await agent_manager.stop_agent(session_id)
+        except Exception:
+            pass
+        raise RuntimeError(f"check agent timed out after {int(CHECK_TIMEOUT_S)}s")
+    if status != "completed":
+        raise RuntimeError(f"check agent ended with status {status}")
+    for m in reversed(getattr(sess, "messages", []) or []):
+        if getattr(m, "role", None) == "assistant" and isinstance(getattr(m, "content", None), str) and m.content.strip():
+            return m.content
+    raise RuntimeError("check agent produced no reply")
+
+
+async def run_check_turn(model: str, prompt: str) -> str:
+    """One ephemeral agent turn; the session file is deleted afterward."""
+    from backend.apps.agents.agent_manager import agent_manager
+    from backend.apps.agents.core.models import AgentConfig
+    from backend.apps.agents.manager.session.session_store import delete_session_file
+
+    session = await agent_manager.launch_agent(AgentConfig(name="Event check", model=model, mode="agent"))
+    try:
+        await agent_manager.send_message(session.id, prompt)
+        return await p_await_reply(session.id)
+    finally:
+        try:
+            await agent_manager.close_session(session.id)
+        except Exception:
+            pass
+        try:
+            delete_session_file(session.id)
+        except Exception:
+            pass
+
+
+@typechecked
+async def agent_check(source: AgentCheckSource, cursor: Dict) -> Tuple[List[Event], Dict]:
+    check = source.check.strip()
+    if not check:
+        return [], cursor
+    from backend.apps.settings.settings import load_settings
+
+    baselined = bool(cursor.get("baselined")) and cursor.get("check") == check
+    prev_state = str(cursor.get("state") or "") if baselined else ""
+    model = source.model.strip() or (getattr(load_settings(), "default_model", None) or "sonnet")
+    reply = await run_check_turn(model, build_check_prompt(check, prev_state))
+    event_line, state = parse_check_reply(reply)
+    new_cursor: Dict = {"baselined": True, "check": check, "state": state or prev_state}
+    if cursor.get("last_event_digest"):
+        new_cursor["last_event_digest"] = cursor["last_event_digest"]
+    # Baseline never fires, even if the model ignores the instruction.
+    if event_line is None or not event_line.strip() or not baselined:
+        return [], new_cursor
+    digest = hashlib.sha256(event_line.strip().encode()).hexdigest()[:16]
+    if cursor.get("last_event_digest") == digest:
+        # The agent re-reported the identical event (state parroting); once is enough.
+        return [], new_cursor
+    new_cursor["last_event_digest"] = digest
+    return [Event(
+        source="agent",
+        event_type="check_event",
+        summary=event_line.strip()[:300],
+        dedup_key=digest,
+        payload={"check": check, "state": state},
+    )], new_cursor

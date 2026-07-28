@@ -52,8 +52,33 @@ class WebWatchSource(BaseModel):
         return max(60, min(v, 86400))
 
 
+class AgentCheckSource(BaseModel):
+    """The universal poll source: a real agent verifies any natural-language
+    condition on an interval, so anything an agent can observe (with tools,
+    MCPs, the web, the filesystem) becomes a trigger."""
+    kind: Literal["agent"] = "agent"
+    # What event to look for, in the user's words ("a new episode of X dropped").
+    check: str = ""
+    # Empty = the app's default model; each poll is a real (short) agent turn.
+    model: str = ""
+    poll_seconds: int = 900
+
+    @field_validator("poll_seconds")
+    @classmethod
+    def p_clamp_poll(cls, v: int) -> int:
+        # Each poll costs a real agent turn; 60s floor keeps a typo from burning money.
+        return max(60, min(v, 86400))
+
+
+class CustomEventSource(BaseModel):
+    """The universal push source: never polled; events arrive only via
+    POST /api/events/ingest, so any script, webhook forwarder, Shortcut, or
+    MCP can feed this trigger."""
+    kind: Literal["custom"] = "custom"
+
+
 EventSourceConfig = Annotated[
-    Union[FileWatchSource, WebWatchSource],
+    Union[FileWatchSource, WebWatchSource, AgentCheckSource, CustomEventSource],
     Field(discriminator="kind"),
 ]
 

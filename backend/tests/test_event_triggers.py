@@ -50,7 +50,7 @@ def test_trigger_config_clamps_and_round_trips(make_wf):
 
 
 def test_file_watch_baselines_then_diffs(tmp_path):
-    from backend.apps.events.file_watch import file_watch
+    from backend.apps.events.adapters.file_watch import file_watch
 
     watch_dir = tmp_path / "watched"
     watch_dir.mkdir()
@@ -73,7 +73,7 @@ def test_file_watch_baselines_then_diffs(tmp_path):
 
 
 def test_file_watch_caps_burst(tmp_path):
-    from backend.apps.events import file_watch as fw
+    from backend.apps.events.adapters import file_watch as fw
 
     watch_dir = tmp_path / "burst"
     watch_dir.mkdir()
@@ -99,7 +99,7 @@ def p_fake_pages(monkeypatch, pages: list[str]):
 
 
 def test_web_watch_baseline_dedup_change_error(monkeypatch):
-    from backend.apps.events.web_watch import web_watch
+    from backend.apps.events.adapters.web_watch import web_watch
 
     source = WebWatchSource(url="https://example.com/reserve", watch_for="a reservation opening")
     p_fake_pages(monkeypatch, [

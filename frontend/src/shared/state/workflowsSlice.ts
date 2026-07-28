@@ -42,7 +42,21 @@ export interface WebWatchSource {
   poll_seconds: number;
 }
 
-export type EventSourceConfig = FileWatchSource | WebWatchSource;
+export interface AgentCheckSource {
+  kind: 'agent';
+  /** Any natural-language condition; a real agent verifies it each poll with its full tool surface. */
+  check: string;
+  /** Empty = the app's default model. */
+  model: string;
+  poll_seconds: number;
+}
+
+export interface CustomEventSource {
+  /** Push-only: events arrive via POST /api/events/ingest from any script/webhook/Shortcut. */
+  kind: 'custom';
+}
+
+export type EventSourceConfig = FileWatchSource | WebWatchSource | AgentCheckSource | CustomEventSource;
 
 export interface EventTriggerConfig {
   id: string;
