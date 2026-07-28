@@ -16,6 +16,7 @@ const BROWSER_PARTITION = 'persist:openswarm-browser';
 // token because we never borrow for it: its own sign-in is the thing the token exists to satisfy.
 const p_borrowedSessionDomains = new Set();
 const p_uaSwapLogged = new Set();
+const { warmBorrowedSession } = require('./warmBorrowedSession');
 
 function bareChromeUserAgent(ua) {
   return String(ua || '').replace(/\s*(?:openswarm|Electron)\/\S+/gi, '').replace(/\s{2,}/g, ' ').trim();
@@ -2897,7 +2898,15 @@ async function writePartitionCookies(domain, cookies) {
   // Borrowing the session and presenting as the browser that earned it are one decision, not two:
   // apply the cookies without the matching UA and the site refuses them.
   if (set > 0) p_borrowedSessionDomains.add(d);
-  return { ok: set > 0, set, total: list.length };
+  // Let a plain hidden window take the site's challenge before the card does. It shares this
+  // partition, so whatever clearance it earns is already waiting when the card loads.
+  let warmed = false;
+  if (set > 0) {
+    const ua = bareChromeUserAgent(session.fromPartition(BROWSER_PARTITION).getUserAgent());
+    warmed = await warmBorrowedSession(BROWSER_PARTITION, `https://${d}/`, ua);
+    console.log(`[borrowed-warm] ${d} warmed=${warmed}`);
+  }
+  return { ok: set > 0, set, total: list.length, warmed };
 }
 ipcMain.handle('set-partition-cookies', (_e, domain, cookies) => writePartitionCookies(domain, cookies));
 

@@ -236,6 +236,23 @@ async def test_wall_handoff_asks_a_human_once_the_door_borrow_did_not_take(monke
         browser_agent.p_signin_borrowed.discard("acme.example")
 
 
+def test_import_timeout_outlasts_the_hidden_window_warm():
+    """INVARIANT, and the second time this exact trap has bitten (see find_composer): the warm sits
+    through the site's bot challenge inside the import command, so the command's timeout has to
+    outlast the warm's own budget. Set them past each other and the window is killed mid-challenge,
+    which throws away the entire reason the warm exists while still looking like a clean import."""
+    from backend.apps.agents.core.ws_manager import BROWSER_CMD_TIMEOUTS, BROWSER_CMD_TIMEOUT_DEFAULT
+
+    with open(os.path.join(P_REPO_ROOT, "electron", "warmBorrowedSession.js"), encoding="utf-8") as fh:
+        src = fh.read()
+    budget_ms = sum(int(m) for m in re.findall(
+        r"^const (?:LOAD_TIMEOUT_MS|SETTLE_MS|DESTROY_GRACE_MS) = (\d+);", src, re.M))
+    assert budget_ms > 0, "warm budget constants not found; did warmBorrowedSession change shape?"
+    timeout_s = BROWSER_CMD_TIMEOUTS.get("import_session", BROWSER_CMD_TIMEOUT_DEFAULT)
+    assert timeout_s * 1000 > budget_ms, (
+        f"import_session timeout {timeout_s}s must outlast the warm budget {budget_ms}ms")
+
+
 def test_agent_checks_the_opt_in_before_reading_anything():
     """INVARIANT: the borrow helper must consult the setting FIRST. Pinned by source because the
     ordering is the whole consent story, and an innocent-looking reorder would start reading the
