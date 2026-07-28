@@ -62,11 +62,16 @@ def p_live_triggers() -> List[Tuple[Workflow, EventTriggerConfig, float]]:
     return out
 
 
-async def p_poll_one(workflow_id: str, trigger: EventTriggerConfig) -> None:
+async def p_poll_one(wf: Workflow, trigger: EventTriggerConfig) -> None:
+    workflow_id = wf.id
     try:
         fetch = ADAPTERS[trigger.source.kind]
         cursor = stores.load_cursor(trigger.id)
-        events, new_cursor = await fetch(trigger.source, cursor)
+        # The agent adapter needs its parent workflow (model, approvals, dashboard); the structural adapters stay pure.
+        if trigger.source.kind == "agent":
+            events, new_cursor = await fetch(trigger.source, cursor, wf)
+        else:
+            events, new_cursor = await fetch(trigger.source, cursor)
         stores.save_cursor(trigger.id, new_cursor)
         if events:
             await dispatcher.ingest(workflow_id, trigger, events)
@@ -94,7 +99,7 @@ def tick() -> None:
         if p_next_poll.get(trig.id, 0.0) <= now and trig.id not in p_inflight:
             p_next_poll[trig.id] = now + poll_seconds
             p_inflight.add(trig.id)
-            asyncio.create_task(p_poll_one(wf.id, trig))
+            asyncio.create_task(p_poll_one(wf, trig))
 
 
 def p_seconds_until_next() -> float:

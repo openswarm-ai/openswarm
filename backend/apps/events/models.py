@@ -61,7 +61,14 @@ class AgentCheckSource(BaseModel):
     check: str = ""
     # Empty = the app's default model; each poll is a real (short) agent turn.
     model: str = ""
+    # MCPs the USER pre-authorized for this check at trigger creation (consent moved from the in-session MCPActivate click to the trigger config; the dispatch gate itself is unchanged).
+    mcps: list[str] = Field(default_factory=list)
     poll_seconds: int = 900
+
+    @field_validator("mcps")
+    @classmethod
+    def p_cap_mcps(cls, v: list[str]) -> list[str]:
+        return [str(m).strip() for m in v if str(m).strip()][:8]
 
     @field_validator("poll_seconds")
     @classmethod

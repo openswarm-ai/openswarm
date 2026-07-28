@@ -65,7 +65,7 @@ def test_agent_check_baseline_then_event_then_dedup(monkeypatch):
     ])
     prompts: list[str] = []
 
-    async def p_fake_turn(model, prompt):
+    async def p_fake_turn(model, prompt, dashboard_id=None, active_mcps=None, approvals=None):
         prompts.append(prompt)
         return next(replies)
 
@@ -82,6 +82,32 @@ def test_agent_check_baseline_then_event_then_dedup(monkeypatch):
 
     events, cursor = p_run(ac.agent_check(source, cursor))
     assert events == []  # identical event line reported again fires once, not forever
+
+
+def test_agent_check_carries_workflow_context(make_wf, monkeypatch):
+    """Pre-authorized MCPs, the workflow's remembered approvals, and the model
+    all flow into the check turn; consent lives on the trigger config, never
+    widened inside the session."""
+    from backend.apps.events.adapters import agent_check as ac
+    from backend.apps.workflows import executor
+
+    seen: dict = {}
+
+    async def p_fake_turn(model, prompt, dashboard_id=None, active_mcps=None, approvals=None):
+        seen.update(model=model, dashboard_id=dashboard_id, active_mcps=active_mcps, approvals=approvals)
+        return "NO_EVENT\nSTATE: s"
+
+    monkeypatch.setattr(ac, "run_check_turn", p_fake_turn)
+    monkeypatch.setattr(executor, "resolve_workflow_dashboard_id", lambda wf: "dash-42")
+
+    source = AgentCheckSource(check="new invoice email arrived", mcps=["google-workspace"], poll_seconds=300)
+    wf = make_wf(model="opus", remembered_approvals={"SendEmail": "deny"})
+    p_run(ac.agent_check(source, {}, wf))
+
+    assert seen["model"] == "opus"  # workflow's model, since the source didn't pin one
+    assert seen["dashboard_id"] == "dash-42"
+    assert seen["active_mcps"] == ["google-workspace"]
+    assert seen["approvals"] == {"SendEmail": "deny"}
 
 
 def p_custom_wf(make_wf):

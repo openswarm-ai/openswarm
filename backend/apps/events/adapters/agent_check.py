@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from typeguard import typechecked
 
 from backend.apps.events.models import AgentCheckSource, Event
+from backend.apps.workflows.models import Workflow
 
 CHECK_TIMEOUT_S = 240.0
 
@@ -83,17 +84,50 @@ async def p_await_reply(session_id: str) -> str:
     raise RuntimeError("check agent produced no reply")
 
 
-async def run_check_turn(model: str, prompt: str) -> str:
-    """One ephemeral agent turn; the session file is deleted afterward."""
+async def run_check_turn(
+    model: str,
+    prompt: str,
+    dashboard_id: Optional[str] = None,
+    active_mcps: Optional[List[str]] = None,
+    approvals: Optional[Dict[str, str]] = None,
+) -> str:
+    """One ephemeral agent turn; the session file is deleted afterward.
+
+    dashboard_id makes browser delegation available (browser cards render on a
+    dashboard, so a logged-in-site check works whenever the app is open).
+    active_mcps presets session.active_mcps with what the USER pre-authorized
+    on the trigger; the dispatch gate itself still only spawns what that list
+    names. approvals replays the workflow's remembered tool answers so an
+    unattended check doesn't park on a prompt nobody will answer."""
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.core.models import AgentConfig
+    from backend.apps.agents.manager.permissions.workflow_approval import (
+        clear_workflow_approval_memory,
+        set_workflow_approval_memory,
+    )
     from backend.apps.agents.manager.session.session_store import delete_session_file
 
-    session = await agent_manager.launch_agent(AgentConfig(name="Event check", model=model, mode="agent"))
+    session = await agent_manager.launch_agent(AgentConfig(
+        name="Event check", model=model, mode="agent", dashboard_id=dashboard_id,
+    ))
+    if active_mcps:
+        session.active_mcps = list(active_mcps)
+    if approvals:
+        set_workflow_approval_memory(
+            session.id,
+            decisions=dict(approvals),
+            step_usage={},
+            remember=lambda tool_name, behavior: None,
+            ask_timeout=30.0,
+        )
     try:
         await agent_manager.send_message(session.id, prompt)
         return await p_await_reply(session.id)
     finally:
+        try:
+            clear_workflow_approval_memory(session.id)
+        except Exception:
+            pass
         try:
             await agent_manager.close_session(session.id)
         except Exception:
@@ -105,16 +139,23 @@ async def run_check_turn(model: str, prompt: str) -> str:
 
 
 @typechecked
-async def agent_check(source: AgentCheckSource, cursor: Dict) -> Tuple[List[Event], Dict]:
+async def agent_check(source: AgentCheckSource, cursor: Dict, workflow: Optional[Workflow] = None) -> Tuple[List[Event], Dict]:
     check = source.check.strip()
     if not check:
         return [], cursor
     from backend.apps.settings.settings import load_settings
+    from backend.apps.workflows.executor import resolve_workflow_dashboard_id
 
     baselined = bool(cursor.get("baselined")) and cursor.get("check") == check
     prev_state = str(cursor.get("state") or "") if baselined else ""
-    model = source.model.strip() or (getattr(load_settings(), "default_model", None) or "sonnet")
-    reply = await run_check_turn(model, build_check_prompt(check, prev_state))
+    model = source.model.strip() or (workflow.model if workflow else "") or (getattr(load_settings(), "default_model", None) or "sonnet")
+    reply = await run_check_turn(
+        model,
+        build_check_prompt(check, prev_state),
+        dashboard_id=resolve_workflow_dashboard_id(workflow) if workflow else None,
+        active_mcps=list(source.mcps),
+        approvals=dict(workflow.remembered_approvals) if workflow else None,
+    )
     event_line, state = parse_check_reply(reply)
     new_cursor: Dict = {"baselined": True, "check": check, "state": state or prev_state}
     if cursor.get("last_event_digest"):
