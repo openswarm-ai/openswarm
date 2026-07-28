@@ -45,8 +45,16 @@ P_OPENER_ROW_RE = re.compile(
 
 # A verification probe quotes the very payload it's checking for, which is exactly the trap this gate exists for: quoted payload + composer = fire. Caught live (r243): the read-only send-probe delivered a REAL message. Read-only directives decline in code, fail-safe (a false match just means the model path).
 P_READONLY_RE = re.compile(
-    r"read.?only|do\s+not\s+(?:send|type|click|post|submit)|don'?t\s+(?:send|post|submit)|"
-    r"verify\s+whether|check\s+whether|verification",
+    r"read.?only|do\s+not\s+(?:send|type|click|post|submit|change|edit|delete)|"
+    r"don'?t\s+(?:send|post|submit|change|edit|delete)|"
+    # "verify/check/tell me/say/confirm WHETHER x is there" is the whole family, not two phrasings
+    # of it. Measured: "say whether anything containing <quoted text> is still there. Change
+    # nothing." slipped through and POSTED the quoted text to a real LinkedIn feed, because only
+    # "verify whether" and "check whether" were listed. Anchor on the question shape.
+    r"(?:verify|check|confirm|tell\s+me|say|see|find\s+out|look)\s+(?:me\s+)?(?:if|whether)|"
+    r"is\s+(?:it|there|this|that)\s+(?:still\s+)?(?:there|published|posted|live|present)|"
+    r"still\s+(?:there|published|posted|live|up)|"
+    r"change\s+nothing|without\s+(?:sending|posting|changing)|verification",
     re.I,
 )
 

@@ -42,7 +42,7 @@ def delivery_probe_expression(payload: str) -> str:
 
 
 @typechecked
-async def p_payload_visible(payload: str, browser_id: str, tab_id: str, execute_tool: ToolRunner) -> bool:
+async def payload_visible(payload: str, browser_id: str, tab_id: str, execute_tool: ToolRunner) -> bool:
     try:
         r = await asyncio.wait_for(execute_tool(
             "BrowserEvaluate", {"expression": delivery_probe_expression(payload)},
@@ -61,10 +61,10 @@ async def ghost_delivery_confirmed(
     only if the payload is visible now and STILL visible a few seconds later. A post that never
     rendered, or rendered then vanished, returns False, so we never claim a delivery the site ate.
     Pure page reads (no navigation), invisible to the site."""
-    if not await p_payload_visible(payload, browser_id, tab_id, execute_tool):
+    if not await payload_visible(payload, browser_id, tab_id, execute_tool):
         return False
     await asyncio.sleep(3.5)
-    return await p_payload_visible(payload, browser_id, tab_id, execute_tool)
+    return await payload_visible(payload, browser_id, tab_id, execute_tool)
 
 
 @typechecked

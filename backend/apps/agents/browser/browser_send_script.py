@@ -105,12 +105,24 @@ async def complete_send(
     if not clicked:
         return {"clicked": False, "sent": False, "log": log, "note": "send click errored; fill committed, NOT sent"}
     sent = False
+    # Name WHY a receipt fails. A withheld receipt costs the whole fast path (measured on LinkedIn:
+    # the script finished in 9.7s, the receipt missed, and the model then spent 28.6s re-verifying a
+    # post that HAD landed, 60s total against ~24s when the receipt passes), and "sent_receipt=False"
+    # alone cannot tell you whether the composer still holds the text or we simply could not read the
+    # page. Those are different bugs with different fixes.
+    p_why = "no-poll"
     for wait_s in (0.4, 1.0, 1.6):
         await asyncio.sleep(wait_s)
         state3 = await fresh_list()
-        if state3 and browser_verified_action.expectation_met(f"cleared:{payload}", state_committed, state3):
+        if not state3:
+            p_why = "unreadable-list"
+            continue
+        if browser_verified_action.expectation_met(f"cleared:{payload}", state_committed, state3):
             sent = True
             break
+        p_why = f"payload-still-in-a-textbox (textbox rows={sum(1 for x in state3.splitlines() if '<textbox' in x)})"
+    if not sent:
+        logger.info(f"[browser-sendscript] receipt withheld after {sum((0.4, 1.0, 1.6)):.1f}s of polling: {p_why}")
     # A cleared composer is proof of delivery everywhere EXCEPT the ghost-drop hosts, which clear
     # then silently eat the post; there we verify it persisted. delivered stays None (unchecked,
     # composer-clear trusted) for every other site, so proven sends keep their exact speed.
@@ -118,6 +130,20 @@ async def complete_send(
     if sent and browser_delivery_check.is_ghost_drop_host(current_url):
         delivered = await browser_delivery_check.ghost_delivery_confirmed(
             payload, browser_id, tab_id, execute_tool)
+    elif sent and via == "by-name":
+        # The by-name click is the ONE path where we never actually located the submit: both
+        # structured resolvers failed, so the literal "Send" is a guess, and it can land on some
+        # OTHER widget's Send while this composer closes anyway. Measured live on LinkedIn's feed
+        # composer (whose submit is "Post", not "Send"): sent_receipt=True and nothing posted, on
+        # either the posts or the comments tab. A cleared composer cannot tell submitted from
+        # dismissed, so a guessed click does not get to be proof by itself; it has to show the
+        # payload actually rendered on the page. The two resolved paths are untouched and keep
+        # their measured speed.
+        delivered = await browser_delivery_check.payload_visible(
+            payload, browser_id, tab_id, execute_tool)
+        if not delivered:
+            logger.info("[browser-sendscript] by-name click cleared the composer but the payload "
+                        "never rendered; treating as NOT delivered")
     note = ("" if sent else
             "A Send-class click already RAN for this payload but the composer state is unverified: "
             "verify on the page whether it delivered; do NOT send again unless verifiably absent.")

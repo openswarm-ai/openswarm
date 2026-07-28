@@ -233,6 +233,11 @@ async def run_prestage(
         staged_complete = False
 
         async def settle(pre_url: str, pre_text: str, pre_li: str) -> bool:
+            """Wait for the page to actually change after an action, capped.
+
+            Timed by the caller's log line: this polls with a full perceive each round, so it is a
+            real share of prestage's cost, and separating it from the aux plan is what says whether
+            the fix is a cheaper decision or a faster wait."""
             # A click returns before the page swaps; perceiving too early reads the OLD page and the aux re-issues the same click (observed 4x loop). Wait for the page to actually change, capped. False = the action verifiably did NOT take. An overlay (message composer) changes the INTERACTIVES but not the URL and often not the first 400 chars of text, so the element list counts as change too.
             t_s = time.monotonic()
             while time.monotonic() - t_s < 3.0:
@@ -247,8 +252,15 @@ async def run_prestage(
         p_system = P_SYSTEM_OPENER if opener_mode() else P_SYSTEM
         p_results_overruled = False
         while steps < p_max_steps and (time.monotonic() - t0) < p_total_timeout:
+            # Per-step cost, broken out. Prestage is the largest single phase of a LinkedIn write
+            # (measured 18.6s of a 50.6s run, more than the send itself), and "steps=2 in 18587ms"
+            # cannot tell you whether that is the aux deciding, the page settling, or the click.
+            # Those have completely different fixes, so the log has to separate them.
+            p_t_step = time.monotonic()
             li_text, gt_text, seen_url = await perceive()
+            p_t_perceive = time.monotonic() - p_t_step
             current_url = seen_url or current_url
+            p_t_aux = time.monotonic()
             reply = safe_resp_text(await asyncio.wait_for(
                 client.messages.create(
                     model=aux_model, max_tokens=60, temperature=0, system=p_system,
@@ -260,6 +272,9 @@ async def run_prestage(
                 ),
                 timeout=STEP_TIMEOUT_S,
             )).strip()
+            p_aux_ms = int((time.monotonic() - p_t_aux) * 1000)
+            logger.info(f"[browser-prestage] step {steps + 1} plan: perceive={int(p_t_perceive * 1000)}ms "
+                        f"aux={p_aux_ms}ms reply={reply[:40]!r}")
             verb, arg = parse_step(reply)
             if verb == "ready" or not arg:
                 # A results LIST is never the staged page for a task about one specific person/thing; the aux accepts it about half the time (measured, 2/4 cold LinkedIn runs) and every downstream tier then declines. Overrule ONCE with a nudge re-ask; a second READY is accepted, some tasks really do target the list.
@@ -289,7 +304,10 @@ async def run_prestage(
                 logger.info(f"[browser-prestage] step {steps + 1}: nav {arg} ok={ok}")
                 if not ok:
                     break
-                if not await settle(current_url, gt_text, li_text):
+                p_t_settle = time.monotonic()
+                p_settled = await settle(current_url, gt_text, li_text)
+                logger.info(f"[browser-prestage] step {steps + 1} nav settle={int((time.monotonic() - p_t_settle) * 1000)}ms ok={p_settled}")
+                if not p_settled:
                     logger.info(f"[browser-prestage] nav {arg} did not settle; stopping unstaged")
                     break
                 done_desc.append(f"navigated to {arg}")
@@ -309,7 +327,10 @@ async def run_prestage(
                 logger.info(f"[browser-prestage] step {steps + 1}: click [{idx}] {entry[:60]!r} ok={ok}")
                 if not ok:
                     break
-                if not await settle(current_url, gt_text, li_text):
+                p_t_settle = time.monotonic()
+                p_settled = await settle(current_url, gt_text, li_text)
+                logger.info(f"[browser-prestage] step {steps + 1} click settle={int((time.monotonic() - p_t_settle) * 1000)}ms ok={p_settled}")
+                if not p_settled:
                     # The click ran but the page never changed (occluded element, overlay, stale index). Recording it would make the handoff note LIE ("navigation done") and send the main loop on a walkabout; observed live as 27-turn/112s regressions.
                     logger.info(f"[browser-prestage] click [{idx}] did not settle; stopping unstaged")
                     break
