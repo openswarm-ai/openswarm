@@ -189,7 +189,7 @@ async def test_borrow_happens_at_the_door_not_only_at_the_wall(monkeypatch):
     from backend.apps.agents.browser import browser_agent
 
     seen = []
-    browser_agent.p_signin_borrowed.discard("x.com")
+    browser_agent.signin_borrowed.discard("x.com")
     monkeypatch.setattr(browser_agent.browser_session_import, "is_enabled", lambda s: True)
     monkeypatch.setattr(browser_agent.browser_session_import, "has_importable_session", lambda d: True)
 
@@ -198,13 +198,13 @@ async def test_borrow_happens_at_the_door_not_only_at_the_wall(monkeypatch):
         return si.SessionImportResult(outcome="imported", domain=domain, entries_applied=3)
 
     monkeypatch.setattr(browser_agent.browser_session_import, "import_signin", fake_import)
-    await browser_agent.p_borrow_signin_before_nav("https://x.com/compose/post", "b1")
+    await browser_agent.borrow_signin_before_nav("https://x.com/compose/post", "b1")
     assert seen == ["x.com"], "navigating to a site must borrow its sign-in first"
 
     # Second navigate to the same site must not re-read the user's browser.
-    await browser_agent.p_borrow_signin_before_nav("https://x.com/home", "b1")
+    await browser_agent.borrow_signin_before_nav("https://x.com/home", "b1")
     assert seen == ["x.com"], "a borrowed site must not be re-imported on every navigate"
-    browser_agent.p_signin_borrowed.discard("x.com")
+    browser_agent.signin_borrowed.discard("x.com")
 
 
 @pytest.mark.asyncio
@@ -212,11 +212,11 @@ async def test_pre_nav_borrow_respects_the_opt_in(monkeypatch):
     """The door is the busiest path in the whole agent, so the gate has to hold there too."""
     from backend.apps.agents.browser import browser_agent
 
-    browser_agent.p_signin_borrowed.discard("x.com")
+    browser_agent.signin_borrowed.discard("x.com")
     monkeypatch.setattr(browser_agent.browser_session_import, "is_enabled", lambda s: False)
     monkeypatch.setattr(browser_agent.browser_session_import, "has_importable_session",
                         lambda d: pytest.fail("must not probe the user's browser while opted out"))
-    await browser_agent.p_borrow_signin_before_nav("https://x.com/home", "b1")
+    await browser_agent.borrow_signin_before_nav("https://x.com/home", "b1")
 
 
 @pytest.mark.asyncio
@@ -226,14 +226,14 @@ async def test_wall_handoff_asks_a_human_once_the_door_borrow_did_not_take(monke
     silently returning True here would skip the prompt and strand the run."""
     from backend.apps.agents.browser import browser_agent
 
-    browser_agent.p_signin_borrowed.add("acme.example")
+    browser_agent.signin_borrowed.add("acme.example")
     monkeypatch.setattr(browser_agent.browser_session_import, "is_enabled", lambda s: True)
     monkeypatch.setattr(browser_agent.browser_session_import, "import_signin",
                         lambda d, b: pytest.fail("must not re-import the same values"))
     try:
         assert await browser_agent.try_borrow_signin("acme.example", "b1", "", "") is False
     finally:
-        browser_agent.p_signin_borrowed.discard("acme.example")
+        browser_agent.signin_borrowed.discard("acme.example")
 
 
 def test_import_timeout_outlasts_the_hidden_window_warm():

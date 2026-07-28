@@ -23,8 +23,16 @@ P_TEXT_TIMEOUT_S = 8.0
 P_AUX_TIMEOUT_S = 12.0
 # Prestage's click often lands here while the SPA is still hydrating (measured: a
 # LinkedIn profile read 184 chars right after the click); wait out the render, bounded.
-P_THIN_RETRIES = 3
 P_THIN_SETTLE_S = 1.2
+# Crossing the char floor is NOT the same as being finished rendering: a hydrating SPA clears 500
+# chars on nav and footer chrome long before the content lands. Taking that first passing read hands
+# the aux a half-drawn page, and it answers confidently from what IS there, so nothing declines and
+# the INSUFFICIENT retry below never fires. A confident wrong answer is the one outcome worse than
+# just running the loop, so the page has to prove it stopped growing: two reads in a row within this
+# much of each other. Costs one extra read plus one short settle on a path that already takes ~7-10s.
+P_STABLE_GROWTH = 0.05
+P_STABLE_SETTLE_S = 0.4
+MAX_READS = 4
 # A long-enough-but-still-rendering page reads as INSUFFICIENT (measured: profile
 # passed 500 chars with the headline section missing); one settle + re-read + re-ask.
 P_INSUFFICIENT_RETRIES = 1
@@ -71,15 +79,22 @@ async def run_read_script(
         from backend.apps.agents.core.aux_llm import safe_resp_text
 
         async def p_page_text() -> tuple:
-            for attempt in range(P_THIN_RETRIES):
+            """Page text, but only once two consecutive reads agree it has stopped growing."""
+            prev = -1
+            text, url = "", ""
+            for attempt in range(MAX_READS):
                 r = await asyncio.wait_for(
                     execute_tool("BrowserGetText", {}, browser_id, tab_id), timeout=P_TEXT_TIMEOUT_S)
                 text = str(r.get("text") or "") if isinstance(r, dict) and "error" not in r else ""
                 url = str(r.get("url") or "") if isinstance(r, dict) else ""
-                if len(text) >= P_MIN_PAGE_CHARS:
+                if len(text) >= P_MIN_PAGE_CHARS and 0 <= prev <= len(text) <= prev * (1 + P_STABLE_GROWTH):
                     return text, url
-                await asyncio.sleep(P_THIN_SETTLE_S)
-            return "", ""
+                # Still thin waits longer than merely still-growing: one is a page that has not
+                # started, the other is one about to finish.
+                thin = len(text) < P_MIN_PAGE_CHARS
+                prev = len(text)
+                await asyncio.sleep(P_THIN_SETTLE_S if thin else P_STABLE_SETTLE_S)
+            return (text, url) if len(text) >= P_MIN_PAGE_CHARS else ("", "")
 
         for ask in range(1 + P_INSUFFICIENT_RETRIES):
             page, p_live_url = await p_page_text()
