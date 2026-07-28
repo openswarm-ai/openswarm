@@ -12,6 +12,7 @@ import { isRunning, runContextChip } from './model';
 import { useEditAgentSession } from './useEditAgentSession';
 import { useWorkflowPatch } from './useWorkflowPatch';
 import ScheduleCard from './ScheduleCard';
+import EventTriggersCard from './EventTriggersCard';
 import StepsCard from './StepsCard';
 import HistoryCard from './HistoryCard';
 import ColorSwatch from './ColorSwatch';
@@ -107,6 +108,7 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
        <div style={{ width: 344, height: '100%', borderLeft: `1px solid ${WC.line}`, display: 'flex', flexDirection: 'column', minHeight: 0, opacity: paneOpen ? 1 : 0, transition: 'opacity .4s ease' }}>
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '18px 18px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ScheduleCard workflow={workflow} />
+          <EventTriggersCard workflow={workflow} />
           <StepsCard workflow={workflow} />
           <HistoryCard workflowId={workflow.id} title={workflow.title} />
         </div>

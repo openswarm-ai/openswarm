@@ -28,6 +28,40 @@ export interface ScheduleConfig {
   runs_count: number;
 }
 
+export interface FileWatchSource {
+  kind: 'file';
+  path: string;
+  poll_seconds: number;
+}
+
+export interface WebWatchSource {
+  kind: 'web';
+  url: string;
+  /** What change actually matters, in the user's words ("a reservation slot opens"). */
+  watch_for: string;
+  poll_seconds: number;
+}
+
+export type EventSourceConfig = FileWatchSource | WebWatchSource;
+
+export interface EventTriggerConfig {
+  id: string;
+  enabled: boolean;
+  source: EventSourceConfig;
+  /** Natural-language filter judged per event batch; empty = every batch fires. */
+  predicate: string;
+  coalesce_seconds: number;
+  max_fires_per_hour: number;
+}
+
+export interface WorkflowEventLogEntry {
+  ts: string;
+  trigger_id: string;
+  kind: 'emitted' | 'fired' | 'skipped' | 'error';
+  summary: string;
+  run_id?: string | null;
+}
+
 export interface CostEstimate {
   monthly_usd: number;
   last_run_usd: number;
@@ -74,6 +108,8 @@ export interface Workflow {
   steps: WorkflowStep[];
   actions: ActionsConfig;
   schedule: ScheduleConfig;
+  /** Event triggers live beside the schedule; "every Monday AND when this file changes" is legitimate. */
+  event_triggers?: EventTriggerConfig[];
   permissions: PermissionTier[];
   source_session_id?: string | null;
   dashboard_id?: string | null;

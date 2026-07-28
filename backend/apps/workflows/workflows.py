@@ -771,6 +771,16 @@ async def get_workflow_audit(workflow_id: str, limit: int = 50):
     return {"entries": audit.read_tail(workflow_id, limit=limit)}
 
 
+@workflows.router.get("/{workflow_id}/events")
+async def get_workflow_events(workflow_id: str):
+    """Event-trigger activity log, newest first ("saw X, skipped because Y, fired run Z")."""
+    wf = storage.get_workflow(workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    from backend.apps.events.stores import read_log
+    return {"events": [e.model_dump(mode="json") for e in reversed(read_log(workflow_id))]}
+
+
 @workflows.router.patch("/{workflow_id}")
 async def update_workflow(
     workflow_id: str,
