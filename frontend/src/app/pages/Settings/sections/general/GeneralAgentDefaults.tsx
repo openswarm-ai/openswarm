@@ -30,6 +30,12 @@ const GeneralAgentDefaults: React.FC<{
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const { fieldSx, sectionSx, rowSx, inlineRowSx, inlineRowLastSx, labelSx, descSx } = styles;
+  // The default prompt is a few hundred words of mono text. Left expanded it ate the top quarter of
+  // the tab and pushed Model and Working directory, the settings people actually come here to
+  // change, below the fold. It opens on demand instead, and starts open if you have edited it,
+  // because a customized prompt is worth seeing without hunting for it.
+  const promptIsCustom = !!form.default_system_prompt && form.default_system_prompt !== DEFAULT_SYSTEM_PROMPT;
+  const [promptOpen, setPromptOpen] = React.useState(promptIsCustom);
 
   return (
     <>
@@ -38,6 +44,8 @@ const GeneralAgentDefaults: React.FC<{
       <Box sx={rowSx} {...settingSelectAttrs('default_system_prompt', 'System prompt', 'Agent Defaults', 'Prepended to every agent session before mode-specific instructions.')}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
           <Typography sx={labelSx}>System prompt</Typography>
+          {/* Both actions group on the right, so Reset appearing or vanishing never moves Edit. */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           {form.default_system_prompt !== DEFAULT_SYSTEM_PROMPT && (
             <Button
               size="small"
@@ -57,27 +65,45 @@ const GeneralAgentDefaults: React.FC<{
               Reset to default
             </Button>
           )}
-        </Box>
-        <Typography sx={{ ...descSx, mb: 1.5 }}>
-          Prepended to every agent session before mode-specific instructions. Modes can override with their own.
-        </Typography>
-        <TextField
-          value={form.default_system_prompt ?? DEFAULT_SYSTEM_PROMPT}
-          onChange={(e) => setForm({ ...form, default_system_prompt: e.target.value || null })}
-          multiline
-          minRows={3}
-          maxRows={8}
-          fullWidth
-          size="small"
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              fontFamily: c.font.mono,
-              fontSize: c.font.size.sm,
-              lineHeight: 1.6,
+          <Button
+            size="small"
+            onClick={() => setPromptOpen((v) => !v)}
+            sx={{
               color: c.text.secondary,
-            },
-          }}
-        />
+              textTransform: 'none',
+              fontSize: c.font.size.xs,
+              py: 0.25,
+              minWidth: 0,
+              '&:hover': { color: c.accent.primary, bgcolor: 'transparent' },
+            }}
+          >
+            {promptOpen ? 'Hide' : 'Edit'}
+          </Button>
+          </Box>
+        </Box>
+        <Typography sx={{ ...descSx, mb: promptOpen ? 1.5 : 0 }}>
+          Prepended to every agent session before mode-specific instructions. Modes can override with their own.
+          {!promptOpen && (promptIsCustom ? ' Edited.' : ' Using the default.')}
+        </Typography>
+        {promptOpen && (
+          <TextField
+            value={form.default_system_prompt ?? DEFAULT_SYSTEM_PROMPT}
+            onChange={(e) => setForm({ ...form, default_system_prompt: e.target.value || null })}
+            multiline
+            minRows={3}
+            maxRows={8}
+            fullWidth
+            size="small"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                fontFamily: c.font.mono,
+                fontSize: c.font.size.sm,
+                lineHeight: 1.6,
+                color: c.text.secondary,
+              },
+            }}
+          />
+        )}
       </Box>
 
       <Box sx={rowSx} {...settingSelectAttrs('default_folder', 'Working directory', 'Agent Defaults', 'Default folder agents start in.')}>

@@ -10,6 +10,13 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import SignInDialog from '@/app/components/overlays/SignInDialog';
 
 /** Account card at top of General tab; three states: signed in, paid-but-unlinked, or not signed in. */
+// Mirrors rowSx from settingsStyles. Duplicated rather than imported because AccountCard renders
+// without the styles prop its neighbours receive; if that ever changes, take the shared one.
+const accountRowSx = (c: ReturnType<typeof useClaudeTokens>) => ({
+  py: 2,
+  borderBottom: `1px solid ${c.border.subtle}`,
+});
+
 const AccountCard: React.FC = () => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -57,9 +64,13 @@ const AccountCard: React.FC = () => {
   };
 
   // Not signed in at all (no bearer, no user_id); optional, sign-in just adds sync + backup.
+  // Account used to be a bordered white card sitting directly above flat divider rows, so one page
+  // carried two different ideas of what a settings row is. It reads as a flat row like everything
+  // around it now; the sx mirrors rowSx from settingsStyles, which this file cannot import because
+  // it is rendered without the styles prop.
   if (!userId && !hasBearer) {
     return (
-      <Box sx={{ p: 2, mb: 2, borderRadius: `${c.radius.lg}px`, border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface }}>
+      <Box sx={accountRowSx(c)}>
         <Typography sx={{ fontSize: c.font.size.base, color: c.text.primary, mb: 0.5 }}>Not signed in</Typography>
         <Typography sx={{ fontSize: c.font.size.xs, color: c.text.muted, mb: 1.25 }}>
           Sign in to sync settings across devices and back up your data.
@@ -85,7 +96,7 @@ const AccountCard: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 2, mb: 2, borderRadius: `${c.radius.lg}px`, border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface }}>
+    <Box sx={accountRowSx(c)}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography sx={{ fontSize: c.font.size.base, fontWeight: 600, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
