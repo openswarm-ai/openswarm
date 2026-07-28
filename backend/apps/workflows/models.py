@@ -3,6 +3,8 @@ from typing import Optional, Literal, Any
 from datetime import datetime
 from uuid import uuid4
 
+from backend.apps.events.models import EventTriggerConfig
+
 
 # Each "tier" in the permission chain: notify in app, fall through to text after N minutes if no response, then to call after a further N minutes/hours. Matches images 17 to 19 (Schedule edit). Order in the list = escalation order.
 class PermissionTier(BaseModel):
@@ -90,6 +92,8 @@ class Workflow(BaseModel):
     steps: list[WorkflowStep] = Field(default_factory=list)
     actions: ActionsConfig = Field(default_factory=ActionsConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
+    # Event triggers live BESIDE the schedule, not instead of it: "every Monday AND when this file changes" is legitimate.
+    event_triggers: list[EventTriggerConfig] = Field(default_factory=list)
     permissions: list[PermissionTier] = Field(
         default_factory=lambda: [PermissionTier(kind="notify")]
     )
@@ -137,7 +141,7 @@ class WorkflowRun(BaseModel):
     session_id: Optional[str] = None
     error: Optional[str] = None
     cost_usd: float = 0.0
-    triggered_by: Literal["schedule", "manual", "retry"] = "schedule"
+    triggered_by: Literal["schedule", "manual", "retry", "event"] = "schedule"
     # Last tool-call label observed on the underlying agent session while the workflow is running. Surfaced under the active step in RunningView (Image #40) so the user can tell the run is still making progress.
     last_tool_label: Optional[str] = None
     # Currently-executing step index (0-based). Executor bumps this each time it dispatches a step prompt and broadcasts the run. RunningView uses this for the disc statuses; estimate fallback only when null.
@@ -169,6 +173,7 @@ class WorkflowCreate(BaseModel):
     steps: list[WorkflowStep] = Field(default_factory=list)
     actions: ActionsConfig = Field(default_factory=ActionsConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
+    event_triggers: list[EventTriggerConfig] = Field(default_factory=list)
     permissions: Optional[list[PermissionTier]] = None
     source_session_id: Optional[str] = None
     dashboard_id: Optional[str] = None
@@ -206,6 +211,7 @@ class WorkflowUpdate(BaseModel):
     steps: Optional[list[WorkflowStep]] = None
     actions: Optional[ActionsConfig] = None
     schedule: Optional[ScheduleConfig] = None
+    event_triggers: Optional[list[EventTriggerConfig]] = None
     permissions: Optional[list[PermissionTier]] = None
     model: Optional[str] = None
     mode: Optional[str] = None

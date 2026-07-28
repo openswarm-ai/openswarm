@@ -78,16 +78,28 @@ def _scan_cron_for_openswarm() -> list[str]:
 _cron_findings: list[str] = []
 
 
+def p_events_kick() -> None:
+    # Wake the event engine so a just-added/edited trigger polls promptly instead of waiting out the loop's sleep.
+    try:
+        from backend.apps.events.poll_loop import kick
+        kick()
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def workflows_lifespan():
     storage.init()
     await scheduler.start()
+    from backend.apps.events.poll_loop import start_event_engine, stop_event_engine
+    await start_event_engine()
     # Cheap one-shot scan for prior cron entries that reference us. We don't migrate automatically; the FE shows a banner with a "Convert to OpenSwarm scheduled tasks" button so the user is in control.
     global _cron_findings
     _cron_findings = _scan_cron_for_openswarm()
     try:
         yield
     finally:
+        await stop_event_engine()
         await scheduler.stop()
 
 
@@ -262,6 +274,7 @@ async def create_workflow(body: WorkflowCreate):
         steps=body.steps,
         actions=actions,
         schedule=body.schedule,
+        event_triggers=body.event_triggers,
         permissions=body.permissions or [],
         source_session_id=body.source_session_id,
         dashboard_id=body.dashboard_id,
@@ -298,6 +311,7 @@ async def create_workflow(body: WorkflowCreate):
             pass
     storage.save_workflow(wf)
     scheduler.kick()
+    p_events_kick()
     enriched = _enriched(wf)
     try:
         from backend.apps.agents.core.ws_manager import ws_manager
@@ -819,6 +833,7 @@ async def update_workflow(
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))
     scheduler.kick()
+    p_events_kick()
     # Push the change to every open dashboard so an agent-driven edit (the Edit Agent's add/delete/edit-step tools all PATCH here) refreshes the card live instead of looking stale until the next full refetch.
     enriched = _enriched(wf)
     try:
@@ -864,6 +879,7 @@ async def delete_workflow(workflow_id: str):
     if stale:
         storage.remove_missed(stale)
     scheduler.kick()
+    p_events_kick()
     try:
         from backend.apps.agents.core.ws_manager import ws_manager
         await ws_manager.broadcast_global("workflow:deleted", {"workflow_id": workflow_id})

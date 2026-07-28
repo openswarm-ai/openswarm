@@ -43,6 +43,11 @@ def request_stop(run_id: str) -> None:
     _run_control[run_id] = "stop"
 
 
+def is_workflow_running(workflow_id: str) -> bool:
+    """Public peek for the event dispatcher, which holds a batch instead of firing into a busy workflow (the fire would just record a skipped run and lose the events)."""
+    return workflow_id in _running
+
+
 def stop_active_run(workflow_id: str) -> Optional[str]:
     """Signal the in-flight run for this workflow to stop and return its session id
     (None if nothing is running). Lets delete/pause halt a live run NOW instead of only
@@ -197,6 +202,8 @@ async def execute(
     triggered_by: str = "schedule",
     scheduled_for: Optional[datetime] = None,
     tested_signature: Optional[str] = None,
+    event_context: Optional[str] = None,
+    trigger_id: Optional[str] = None,
 ) -> WorkflowRun:
     from backend.apps.agents.agent_manager import agent_manager
     from backend.apps.agents.manager.permissions.workflow_approval import (
@@ -365,6 +372,11 @@ async def execute(
             if triggered_by == "schedule" and not fresh_wf.schedule.enabled:
                 step_error = "Workflow paused"
                 break
+            if triggered_by == "event" and trigger_id is not None:
+                live_trigger = next((t for t in fresh_wf.event_triggers if t.id == trigger_id), None)
+                if live_trigger is None or not live_trigger.enabled:
+                    step_error = "Event trigger removed or disabled"
+                    break
             # Broadcast the step bump before sending so RunningView flips the disc immediately, not after the agent finishes the step. Advancing means we're not paused; keep the broadcast authoritative so it never races a stale paused=True from the watcher.
             run.active_step_idx = idx
             run.last_tool_label = None
@@ -378,7 +390,11 @@ async def execute(
                 })
             except Exception:
                 pass
-            await agent_manager.send_message(session.id, step.text)
+            # Event-triggered runs get their triggering events prepended to the FIRST step only, fenced as data.
+            step_text = step.text
+            if idx == 0 and event_context:
+                step_text = f"{event_context}\n\n{step.text}"
+            await agent_manager.send_message(session.id, step_text)
             disp = await _await_session_idle(session.id, run.id)
             if disp == "stopped":
                 step_error = "Stopped by user"
