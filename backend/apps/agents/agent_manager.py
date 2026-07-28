@@ -37,6 +37,7 @@ os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
 # Cap concurrent ROOT agent turns so firing 30 agents at once doesn't spawn 30 CLIs in the same instant; the overflow queues (agents are model/IO-bound, so they're waiting anyway). Env-tunable, 0/blank disables the gate.
 MAX_CONCURRENT_TURNS = int(os.environ.get("OSW_MAX_CONCURRENT_TURNS", "8") or "0")
+MAX_BACKGROUND_TURNS = int(os.environ.get("OSW_MAX_BACKGROUND_TURNS", "2") or "0")
 
 
 class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnRunner, RunOptions, RunSupport):
@@ -56,6 +57,9 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         # Admission gate: one shared semaphore caps concurrent ROOT turns (children bypass). (Re)created per running loop by get_turn_admission so it never binds to a dead loop across a uvicorn reload or a test's asyncio.run.
         self.p_turn_admission_sema: Optional[asyncio.Semaphore] = None
         self.p_turn_admission_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Background lane: event-trigger checks admit here so they can never queue the user's own turns.
+        self.p_bg_admission_sema: Optional[asyncio.Semaphore] = None
+        self.p_bg_admission_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
     @typechecked
@@ -68,6 +72,14 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             self.p_turn_admission_loop = loop
         return self.p_turn_admission_sema
 
+    @typechecked
+    def get_background_admission(self) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if self.p_bg_admission_sema is None or self.p_bg_admission_loop is not loop:
+            self.p_bg_admission_sema = asyncio.Semaphore(max(1, MAX_BACKGROUND_TURNS))
+            self.p_bg_admission_loop = loop
+        return self.p_bg_admission_sema
+
     @asynccontextmanager
     async def turn_admission_slot(self, session: AgentSession, session_id: str) -> AsyncIterator[None]:
         """Hold one concurrency slot for the duration of a ROOT turn. Overflow turns queue on the
@@ -78,6 +90,11 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         is cancellation-safe: a stop while queued never acquired, so it can't over-release."""
         if MAX_CONCURRENT_TURNS <= 0 or session.parent_session_id is not None:
             yield
+            return
+        if session.background:
+            # Checks queue among themselves in the small background lane, never against the user's turns; no queued/admitted frames since these sessions are invisible.
+            async with self.get_background_admission():
+                yield
             return
         sema = self.get_turn_admission()
         was_queued = sema.locked()

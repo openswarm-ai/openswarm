@@ -17,6 +17,8 @@ class AgentConfig(BaseModel):
     workflow_edit_id: Optional[str] = None
     # App cards the user picked to edit. When exactly one resolves, launch binds the chat's cwd to that app instead of seeding a new "Untitled App".
     selected_app_output_ids: Optional[list[str]] = None
+    # Background plumbing (event-trigger checks): never surfaces cards or WS frames, and admits through the small background lane instead of competing with the user's turns.
+    background: bool = False
 
 class ApprovalRequest(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
@@ -82,6 +84,8 @@ class AgentSession(BaseModel):
     model: str = "sonnet"
     mode: str = "agent"
     sdk_session_id: Optional[str] = None
+    # Background plumbing session (see AgentConfig.background): invisible and background-lane admitted.
+    background: bool = False
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=list)
     max_turns: Optional[int] = None

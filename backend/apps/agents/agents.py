@@ -65,7 +65,8 @@ def p_session_list_item(session: AgentSession) -> Dict[str, Any]:
 @agents.router.get("/sessions")
 async def list_sessions(dashboard_id: str = ""):
     sessions = agent_manager.get_all_sessions(dashboard_id=dashboard_id or None)
-    return {"sessions": [p_session_list_item(s) for s in sessions]}
+    # Background plumbing sessions (event-trigger checks) never surface as cards.
+    return {"sessions": [p_session_list_item(s) for s in sessions if not s.background]}
 
 @agents.router.get("/activity")
 async def agent_activity():

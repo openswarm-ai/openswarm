@@ -108,7 +108,7 @@ async def run_check_turn(
     from backend.apps.agents.manager.session.session_store import delete_session_file
 
     session = await agent_manager.launch_agent(AgentConfig(
-        name="Event check", model=model, mode="agent", dashboard_id=dashboard_id,
+        name="Event check", model=model, mode="agent", dashboard_id=dashboard_id, background=True,
     ))
     if active_mcps:
         session.active_mcps = list(active_mcps)
@@ -124,6 +124,11 @@ async def run_check_turn(
         await agent_manager.send_message(session.id, prompt)
         return await p_await_reply(session.id)
     finally:
+        try:
+            from backend.apps.agents.core.ws_manager import ws_manager
+            ws_manager.unmark_background(session.id)
+        except Exception:
+            pass
         try:
             clear_workflow_approval_memory(session.id)
         except Exception:

@@ -143,3 +143,56 @@ def test_semaphore_rebuilds_per_loop():
     s1 = asyncio.run(get_sema())
     s2 = asyncio.run(get_sema())
     assert s1 is not s2
+
+
+def make_background_session() -> AgentSession:
+    s = AgentSession(name="Event check", model="haiku", mode="agent")
+    s.background = True
+    return s
+
+
+def test_background_lane_never_queues_user_turns():
+    """The lane split: checks saturating their own small pool must not block a root turn, and
+    background turns never occupy main slots."""
+    async def run():
+        with Harness(cap=1) as h:
+            old_bg = am.MAX_BACKGROUND_TURNS
+            am.MAX_BACKGROUND_TURNS = 1
+            try:
+                bg_entered = asyncio.Event()
+                bg_release = asyncio.Event()
+
+                async def one_background() -> None:
+                    async with h.mgr.turn_admission_slot(make_background_session(), "bg1"):
+                        bg_entered.set()
+                        await bg_release.wait()
+
+                bg_task = asyncio.create_task(one_background())
+                await bg_entered.wait()
+
+                # Background pool is saturated (cap 1); a user root still admits instantly.
+                user_ran = False
+                async with h.mgr.turn_admission_slot(make_session(), "user1"):
+                    user_ran = True
+                assert user_ran
+                assert not any(e == ("user1", "agent:queued") for e in h.events)
+
+                # A second background turn queues behind the first, bounded by ITS lane.
+                second_done = asyncio.Event()
+
+                async def second_background() -> None:
+                    async with h.mgr.turn_admission_slot(make_background_session(), "bg2"):
+                        second_done.set()
+
+                second_task = asyncio.create_task(second_background())
+                await asyncio.sleep(0.05)
+                assert not second_done.is_set()  # held by the background lane, not running
+                bg_release.set()
+                await asyncio.wait_for(second_task, timeout=2)
+                await asyncio.wait_for(bg_task, timeout=2)
+                # Invisible plumbing: background turns emit no queue frames at all.
+                assert not any(e[0].startswith("bg") for e in h.events)
+            finally:
+                am.MAX_BACKGROUND_TURNS = old_bg
+
+    asyncio.run(run())

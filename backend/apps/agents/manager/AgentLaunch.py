@@ -117,11 +117,15 @@ class AgentLaunch(AgentManagerProtocol):
             dashboard_id=config.dashboard_id,
             workflow_run_id=config.workflow_run_id,
             workflow_edit_id=config.workflow_edit_id,
+            background=config.background,
             thinking_level=getattr(global_settings, "default_thinking_level", "auto"),
         )
         apply_context_window(session, global_settings)
         self.sessions[session_id] = session
 
+        # Background sessions are invisible plumbing: mark BEFORE any frame so no card ever flashes.
+        if session.background:
+            ws_manager.mark_background(session_id)
 
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,
@@ -129,11 +133,12 @@ class AgentLaunch(AgentManagerProtocol):
             "session": session.model_dump(mode="json"),
         })
 
-        try:
-            from backend.apps.service.analytics.client import track_agent_created
-            track_agent_created(id=session.id, dashboard_id=session.dashboard_id)
-        except Exception:
-            pass
+        if not session.background:
+            try:
+                from backend.apps.service.analytics.client import track_agent_created
+                track_agent_created(id=session.id, dashboard_id=session.dashboard_id)
+            except Exception:
+                pass
 
         return session
 

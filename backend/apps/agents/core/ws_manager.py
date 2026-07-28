@@ -73,6 +73,14 @@ class ConnectionManager:
         self.browser_futures: dict[str, asyncio.Future] = {}
         # The Electron MAIN process (not the renderer) holds a single WS here. Cookie reads route to it so they don't ride the renderer, which macOS throttles when the window is backgrounded (the source of the session-borrow bridge's intermittent timeouts).
         self.main_connection: Optional[WebSocket] = None
+        # Background plumbing sessions (event-trigger checks): no frames ever leave for these, so no card can flash on the canvas.
+        self.background_session_ids: set[str] = set()
+
+    def mark_background(self, session_id: str) -> None:
+        self.background_session_ids.add(session_id)
+
+    def unmark_background(self, session_id: str) -> None:
+        self.background_session_ids.discard(session_id)
 
     async def connect_session(self, session_id: str, websocket: WebSocket):
         await websocket.accept()
@@ -117,6 +125,8 @@ class ConnectionManager:
 
     async def send_to_session(self, session_id: str, event: str, data: dict):
         """Broadcast a session event with monotonic sequencing; terminal statuses also persist to disk."""
+        if session_id in self.background_session_ids:
+            return
         data = slim_status_data(event, data)
         async with seq_log.stamp(session_id, event, data) as (seq, payload_str):
             for ws in list(self.connections.get(session_id, [])):
