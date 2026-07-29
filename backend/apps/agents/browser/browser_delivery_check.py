@@ -11,7 +11,7 @@ Gmail) and this module is never consulted, so proven sends keep their exact spee
 import asyncio
 import json
 import re
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
 from urllib.parse import urlparse
 
 from typeguard import typechecked
@@ -52,15 +52,28 @@ def delivery_probe_expression(payload: str) -> str:
 
 
 @typechecked
-async def payload_visible(payload: str, browser_id: str, tab_id: str, execute_tool: ToolRunner) -> bool:
+async def payload_visible(
+    payload: str, browser_id: str, tab_id: str, execute_tool: ToolRunner
+) -> Optional[bool]:
+    """True = seen on the page, False = looked and it is NOT there, None = could not look.
+
+    The third case is not pedantry. Returning False for a probe that timed out or came back
+    unreadable is asserting absence from a failed observation, and that is the same mistake as a
+    receipt claiming delivery it never saw, pointed the other way: it tells the user a post did not
+    land when nobody actually checked. Measured tonight, the identical shape in the test harness
+    scored every unreadable verification as a successful delete and left six posts on a real
+    account while reporting them cleaned.
+    """
     try:
         r = await asyncio.wait_for(execute_tool(
             "BrowserEvaluate", {"expression": delivery_probe_expression(payload)},
             browser_id, tab_id), timeout=6.0)
     except Exception:
-        return False
+        return None
     v = browser_submit_click.parse_eval_value(r)
-    return bool(isinstance(v, dict) and v.get("visible"))
+    if not isinstance(v, dict) or "visible" not in v:
+        return None
+    return bool(v.get("visible"))
 
 
 @typechecked
@@ -125,10 +138,13 @@ async def ghost_delivery_confirmed(
     only if the payload is visible now and STILL visible a few seconds later. A post that never
     rendered, or rendered then vanished, returns False, so we never claim a delivery the site ate.
     Pure page reads (no navigation), invisible to the site."""
-    if not await payload_visible(payload, browser_id, tab_id, execute_tool):
+    # `is not True` deliberately: an unknown must NOT confirm. This is the one place where
+    # collapsing unknown into "no" is right, because the caller is deciding whether to CLAIM a
+    # delivery, and withholding an uncertain claim is the safe direction.
+    if await payload_visible(payload, browser_id, tab_id, execute_tool) is not True:
         return False
     await asyncio.sleep(3.5)
-    return await payload_visible(payload, browser_id, tab_id, execute_tool)
+    return await payload_visible(payload, browser_id, tab_id, execute_tool) is True
 
 
 @typechecked

@@ -148,9 +148,14 @@ async def complete_send(
         # their measured speed.
         delivered = await browser_delivery_check.payload_visible(
             payload, browser_id, tab_id, execute_tool)
-        if not delivered:
+        if delivered is False:
             logger.info("[browser-sendscript] by-name click cleared the composer but the payload "
                         "never rendered; treating as NOT delivered")
+        elif delivered is None:
+            # We could not look. That is not the same as looking and finding nothing, and saying
+            # "it did not render" here would be inventing a failure out of a broken probe.
+            logger.info("[browser-sendscript] by-name click cleared the composer but the delivery "
+                        "probe was unreadable; leaving delivery UNKNOWN")
     if rejected:
         # We are not guessing here: the page said no. Saying "unverified" would send the user off to
         # check something we already know the answer to.
