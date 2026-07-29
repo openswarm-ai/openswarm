@@ -64,7 +64,7 @@ p_key_cache: Dict[str, Optional[bytes]] = {}
 
 
 @typechecked
-def p_win_dpapi_unprotect(data: bytes) -> Optional[bytes]:
+def win_dpapi_unprotect(data: bytes) -> Optional[bytes]:
     """CryptUnprotectData via crypt32.dll (no pywin32 dependency). None on any failure."""
     try:
         import ctypes
@@ -92,7 +92,7 @@ def p_win_dpapi_unprotect(data: bytes) -> Optional[bytes]:
 
 
 @typechecked
-def p_win_storage_key(browser: str) -> Optional[bytes]:
+def win_storage_key(browser: str) -> Optional[bytes]:
     """The AES key from a Chromium install's Local State: base64 -> strip 'DPAPI' -> CryptUnprotectData."""
     base = CHROMIUM_ROOTS.get(browser)
     if not base:
@@ -104,7 +104,7 @@ def p_win_storage_key(browser: str) -> Optional[bytes]:
         raw = base64.b64decode(enc_b64)
         if raw[:5] != b"DPAPI":
             return None
-        return p_win_dpapi_unprotect(raw[5:])
+        return win_dpapi_unprotect(raw[5:])
     except Exception:
         return None
 
@@ -128,7 +128,7 @@ def p_mac_storage_key(browser: str) -> Optional[bytes]:
 def p_safe_storage_key(browser: str) -> Optional[bytes]:
     if browser in p_key_cache:
         return p_key_cache[browser]
-    key = p_win_storage_key(browser) if IS_WIN else p_mac_storage_key(browser)
+    key = win_storage_key(browser) if IS_WIN else p_mac_storage_key(browser)
     p_key_cache[browser] = key
     return key
 
@@ -175,7 +175,7 @@ def p_best_store(domain: str) -> Optional[Tuple[str, str]]:
 
 
 @typechecked
-def p_decrypt(enc: bytes, key: bytes) -> Optional[str]:
+def decrypt_value(enc: bytes, key: bytes) -> Optional[str]:
     if enc[:3] not in (b"v10", b"v11"):
         return None  # v20 = app-bound encryption, out of reach without the browser
     try:
@@ -228,7 +228,7 @@ def read_provider_cookies(domain: str) -> Dict[str, str]:
         for name, enc in cur.fetchall():
             if not enc:
                 continue
-            val = p_decrypt(bytes(enc), key)
+            val = decrypt_value(bytes(enc), key)
             if val:
                 jar[str(name)] = val
         con.close()
@@ -266,7 +266,7 @@ def read_provider_cookie_records(domain: str) -> List[Dict[str, Any]]:
         for name, enc, host_key, path, is_secure, is_httponly, expires_utc in cur.fetchall():
             if not enc:
                 continue
-            val = p_decrypt(bytes(enc), key)
+            val = decrypt_value(bytes(enc), key)
             if val is None:
                 continue
             records.append({
