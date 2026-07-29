@@ -93,6 +93,8 @@ async def attempt_heal(workflow_id: str, trigger: EventTriggerConfig) -> bool:
             summary=f"Self-healed: watcher URL updated to {fix}",
         ))
         return True
+    # The reason rides into the attention toast so the user gets an instruction, not a diagnosis job.
+    stores.set_poll_needs(trigger.id, reason or "needs a look; no working replacement found")
     stores.append_log(workflow_id, EventLogEntry(
         trigger_id=trigger.id, kind="error",
         summary=f"Self-heal couldn't fix it: {reason[:160] or 'no working replacement found'}",

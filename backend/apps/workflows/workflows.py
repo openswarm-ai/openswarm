@@ -791,6 +791,7 @@ async def triggers_attention():
                     "kind": t.source.kind,
                     "consecutive_failures": failures,
                     "last_error": str(health.get("last_error") or ""),
+                    "needs": str(health.get("needs") or ""),
                 })
     return {"attention": items}
 

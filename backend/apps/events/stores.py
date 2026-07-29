@@ -89,6 +89,14 @@ def record_poll_failure(trigger_id: str, error: str = "") -> int:
 
 
 @typechecked
+def set_poll_needs(trigger_id: str, needs: str) -> None:
+    path = os.path.join(HEALTH_DIR, f"{trigger_id}.json")
+    raw = read_json_or_none(path) or {}
+    raw["needs"] = needs[:200]
+    atomic_write_json(path, raw)
+
+
+@typechecked
 def read_poll_health(trigger_id: str) -> Dict:
     return read_json_or_none(os.path.join(HEALTH_DIR, f"{trigger_id}.json")) or {}
 

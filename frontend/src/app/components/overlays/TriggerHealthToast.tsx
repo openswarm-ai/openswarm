@@ -61,7 +61,9 @@ export default function TriggerHealthToast() {
           </>
         }
       >
-        {first ? `A watcher on "${first.workflow_title}" keeps failing (${first.consecutive_failures} in a row)${extra}; it may need something from you.` : ''}
+        {first ? (first.needs
+          ? `Your "${first.workflow_title}" watcher needs you: ${first.needs}${extra}`
+          : `A watcher on "${first.workflow_title}" keeps failing (${first.consecutive_failures} in a row)${extra}; it may need something from you.`) : ''}
       </Alert>
     </Snackbar>
   );

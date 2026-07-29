@@ -8,6 +8,8 @@ export interface TriggerAttentionItem {
   kind: string;
   consecutive_failures: number;
   last_error: string;
+  /** The healer's one-line "what a human needs to do", when it knows. */
+  needs?: string;
 }
 
 interface TriggersHealthState {
