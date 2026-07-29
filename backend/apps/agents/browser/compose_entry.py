@@ -155,8 +155,8 @@ def compose_entry_for(task: str, start_url: str) -> Optional[str]:
     begins on a blank tab still says "go to x.com and post ..."."""
     if not enabled() or not wants_top_level_compose(task):
         return None
-    # Which site to open is a claim, so it comes from the user's words; a brief naming some other
-    # site must not redirect the post. Whether to refuse still reads the whole task, below.
+    # Which site to open comes from the user's words; a brief naming some other site must not
+    # redirect the post.
     asked = human_words(task)
     named = [m.group(0) for m in P_URL_RE.finditer(asked)]
     named += [m.group(1) for m in P_BARE_HOST_RE.finditer(asked)]
