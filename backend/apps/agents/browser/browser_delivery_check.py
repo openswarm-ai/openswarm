@@ -10,6 +10,7 @@ Gmail) and this module is never consulted, so proven sends keep their exact spee
 
 import asyncio
 import json
+import re
 from typing import Awaitable, Callable
 from urllib.parse import urlparse
 
@@ -21,6 +22,15 @@ ToolRunner = Callable[[str, dict, str, str], Awaitable[dict]]
 
 # Hosts known to accept-then-silently-drop an automated post. A newly-found one is a one-line add.
 GHOST_DROP_HOSTS = ("youtube.com",)
+
+# What a site says when it REFUSED the write. Only ever consulted inside a live announcement
+# region, never against the whole page, so an unrelated "failed" in an article body can't match.
+P_REJECTION_RE = re.compile(
+    r"something went wrong|went wrong|couldn'?t\s|could not\s|unable to|failed to|"
+    r"\bfailed\b|try again|too many|rate.?limit|limit exceeded|not allowed|"
+    r"blocked|error occurred|wasn'?t (?:sent|posted)|was not (?:sent|posted)",
+    re.I,
+)
 
 
 @typechecked
@@ -51,6 +61,60 @@ async def payload_visible(payload: str, browser_id: str, tab_id: str, execute_to
         return False
     v = browser_submit_click.parse_eval_value(r)
     return bool(isinstance(v, dict) and v.get("visible"))
+
+
+@typechecked
+def rejection_probe_expression() -> str:
+    """JS returning the text of the page's live ANNOUNCEMENT regions only.
+
+    role="alert" and aria-live are how sites are required to announce a transient result to
+    assistive tech, so error toasts land here on every major site without us naming any of them.
+    Scoped deliberately: reading whole-page text for the word "failed" would match articles,
+    changelogs and half the internet."""
+    return ("(()=>{try{var out=[];"
+            "var sel='[role=alert],[role=alertdialog],[aria-live=assertive],[aria-live=polite]';"
+            "document.querySelectorAll(sel).forEach(function(e){"
+            "var s=(e.innerText||'').trim(); if(s) out.push(s);});"
+            "return {text: out.join(' | ').slice(0,600)};}"
+            "catch(e){return {text:''};}})()")
+
+
+@typechecked
+async def send_rejected(browser_id: str, tab_id: str, execute_tool: ToolRunner) -> bool:
+    """Did the site announce that the write FAILED, right after the composer cleared?
+
+    A cleared composer is the receipt this whole fast path rests on, and the code has long admitted
+    it "cannot tell submitted from dismissed". The realistic way that bites is not a mis-click: it
+    is the site accepting the click, clearing the box, and popping "Something went wrong" or a rate
+    limit. The receipt then reads as success and the agent tells the user it posted.
+
+    This only ever DEMOTES a claim, and only on an explicit failure announcement, so a normal send
+    (no alert region, or a success toast) is untouched and keeps its measured speed. Any read
+    failure returns False, because refusing to claim delivery on the basis of a broken probe would
+    invent failures that did not happen."""
+    try:
+        r = await asyncio.wait_for(execute_tool(
+            "BrowserEvaluate", {"expression": rejection_probe_expression()},
+            browser_id, tab_id), timeout=4.0)
+    except Exception:
+        return False
+    v = browser_submit_click.parse_eval_value(r)
+    if not isinstance(v, dict):
+        return False
+    return bool(P_REJECTION_RE.search(str(v.get("text") or "")))
+
+
+@typechecked
+def rejected_send_note(url: str, payload: str) -> str:
+    """Honest line for a send the SITE said no to. Distinct from the unverified case: here we are
+    not guessing, the page told us, so the user should be told plainly rather than asked to check."""
+    host = urlparse(url or "").hostname or "the site"
+    if host.startswith("www."):
+        host = host[4:]
+    clip = payload if len(payload) <= 80 else payload[:77] + "..."
+    return (f'I typed "{clip}" and clicked send, but {host} rejected it: the composer cleared and '
+            f'the page showed an error instead of posting. It did NOT go through. I did not retry, '
+            f'since whatever the site refused is likely to be refused again.')
 
 
 @typechecked

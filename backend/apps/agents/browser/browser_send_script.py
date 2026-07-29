@@ -127,7 +127,14 @@ async def complete_send(
     # then silently eat the post; there we verify it persisted. delivered stays None (unchecked,
     # composer-clear trusted) for every other site, so proven sends keep their exact speed.
     delivered = None
-    if sent and browser_delivery_check.is_ghost_drop_host(current_url):
+    rejected = False
+    # The site gets the first word. A cleared composer plus "Something went wrong" is a REFUSAL, and
+    # trusting the clear there is how the agent ends up announcing a post that never existed.
+    if sent and await browser_delivery_check.send_rejected(browser_id, tab_id, execute_tool):
+        rejected, delivered, sent = True, False, False
+        logger.info("[browser-sendscript] composer cleared but the page announced a failure; "
+                    "treating as REJECTED, not delivered")
+    elif sent and browser_delivery_check.is_ghost_drop_host(current_url):
         delivered = await browser_delivery_check.ghost_delivery_confirmed(
             payload, browser_id, tab_id, execute_tool)
     elif sent and via == "by-name":
@@ -144,9 +151,16 @@ async def complete_send(
         if not delivered:
             logger.info("[browser-sendscript] by-name click cleared the composer but the payload "
                         "never rendered; treating as NOT delivered")
-    note = ("" if sent else
-            "A Send-class click already RAN for this payload but the composer state is unverified: "
-            "verify on the page whether it delivered; do NOT send again unless verifiably absent.")
+    if rejected:
+        # We are not guessing here: the page said no. Saying "unverified" would send the user off to
+        # check something we already know the answer to.
+        note = browser_delivery_check.rejected_send_note(current_url, payload)
+    elif sent:
+        note = ""
+    else:
+        note = ("A Send-class click already RAN for this payload but the composer state is "
+                "unverified: verify on the page whether it delivered; do NOT send again unless "
+                "verifiably absent.")
     return {"clicked": True, "sent": sent, "delivered": delivered, "log": log, "note": note}
 
 
