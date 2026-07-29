@@ -190,6 +190,8 @@ P_AUTH_EXEMPT_PREFIX = (
     "/api/health",
     # 9Router proxies OpenAI requests with the user's sk-... bearer, not our local token; localhost-only is the gate.
     "/api/openai-passthrough",
+    # Per-trigger push URLs: the path secret IS the credential (route 404s on any non-matching secret).
+    "/api/events/ingest/",
     "/docs",
     "/openapi",
     "/redoc",

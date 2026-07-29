@@ -38,16 +38,14 @@ class IngestBody(BaseModel):
     payload: Dict = Field(default_factory=dict)
 
 
-@events.router.post("/ingest")
-async def ingest_event(body: IngestBody):
-    from backend.apps.workflows import storage
+class IngestPushBody(BaseModel):
+    summary: str
+    event_type: str = "custom"
+    dedup_key: str = ""
+    payload: Dict = Field(default_factory=dict)
 
-    wf = storage.get_workflow(body.workflow_id)
-    if wf is None or wf.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    trigger = next((t for t in wf.event_triggers if t.id == body.trigger_id), None)
-    if trigger is None:
-        raise HTTPException(status_code=404, detail="Trigger not found")
+
+async def p_do_ingest(workflow_id: str, trigger, body: IngestPushBody) -> Dict:
     if trigger.source.kind != "custom":
         raise HTTPException(status_code=409, detail="Trigger is not a custom (ingest) source")
     if not trigger.enabled:
@@ -62,7 +60,7 @@ async def ingest_event(body: IngestBody):
         return {"ok": True, "queued": 0, "deduped": True}
     seen.append(dedup_key)
     stores.save_cursor(trigger.id, {"seen": seen[-MAX_SEEN_KEYS:]})
-    await dispatcher.ingest(wf.id, trigger, [Event(
+    await dispatcher.ingest(workflow_id, trigger, [Event(
         source="custom",
         event_type=(body.event_type.strip() or "custom")[:60],
         summary=summary,
@@ -70,3 +68,37 @@ async def ingest_event(body: IngestBody):
         payload=body.payload,
     )])
     return {"ok": True, "queued": 1, "deduped": False}
+
+
+@events.router.post("/ingest")
+async def ingest_event(body: IngestBody):
+    from backend.apps.workflows import storage
+
+    wf = storage.get_workflow(body.workflow_id)
+    if wf is None or wf.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    trigger = next((t for t in wf.event_triggers if t.id == body.trigger_id), None)
+    if trigger is None:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    return await p_do_ingest(wf.id, trigger, IngestPushBody(
+        summary=body.summary, event_type=body.event_type, dedup_key=body.dedup_key, payload=body.payload,
+    ))
+
+
+@events.router.post("/ingest/{secret}")
+async def ingest_event_by_secret(secret: str, body: IngestPushBody):
+    """Paste-one-URL push: the per-trigger secret in the path IS the credential
+    (auth-middleware exempt; same entropy class as the install token, localhost-bound,
+    revoked by deleting the trigger)."""
+    import hmac
+
+    from backend.apps.workflows import storage
+
+    if len(secret.strip()) < 16:
+        raise HTTPException(status_code=404, detail="Unknown ingest URL")
+    for wf in storage.list_workflows():
+        for trigger in wf.event_triggers:
+            trigger_secret = str(getattr(trigger.source, "secret", "") or "")
+            if trigger_secret and hmac.compare_digest(trigger_secret, secret):
+                return await p_do_ingest(wf.id, trigger, body)
+    raise HTTPException(status_code=404, detail="Unknown ingest URL")

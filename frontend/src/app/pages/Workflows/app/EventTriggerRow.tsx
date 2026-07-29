@@ -8,9 +8,6 @@ import { API_BASE } from '@/shared/config';
 import type { EventTriggerConfig, Workflow } from '@/shared/state/workflowsSlice';
 import { useWC, track, knob } from './uiKit';
 
-const WEB_POLL_CHOICES: Array<[number, string]> = [[60, 'every minute'], [300, 'every 5 min'], [900, 'every 15 min'], [3600, 'hourly']];
-const AGENT_POLL_CHOICES: Array<[number, string]> = [[300, 'every 5 min'], [900, 'every 15 min'], [3600, 'hourly'], [21600, 'every 6 hours'], [86400, 'daily']];
-
 const KIND_LABELS: Record<string, string> = {
   file: 'Folder / file watch',
   web: 'Web page watch',
@@ -41,16 +38,6 @@ const EventTriggerRow: React.FC<RowProps> = ({ workflow, trigger, onMutate, onRe
     height: 26, padding: '0 8px', borderRadius: 7, border: `1px solid rgba(${WC.inkRGB},0.12)`,
     cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: WC.raised, color: WC.ink3,
   };
-
-  const pollSelect = (value: number, choices: Array<[number, string]>, onChange: (v: number) => void) => (
-    <select
-      value={value}
-      onChange={(e) => onChange(parseInt(e.target.value, 10))}
-      style={{ ...fieldStyle, cursor: 'pointer', padding: '0 6px' }}
-    >
-      {choices.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-    </select>
-  );
 
   return (
     <div style={{ border: `1px solid ${WC.line}`, borderRadius: 10, padding: '10px 11px', marginBottom: 10 }}>
@@ -97,44 +84,33 @@ const EventTriggerRow: React.FC<RowProps> = ({ workflow, trigger, onMutate, onRe
               }}
             />
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <div style={{ flex: 1 }}>
-              <span style={labelStyle}>Watching for</span>
-              <input
-                style={fieldStyle}
-                defaultValue={src.watch_for}
-                placeholder="a reservation slot opening"
-                onBlur={(e) => {
-                  const watchFor = e.target.value.trim();
-                  if (watchFor !== src.watch_for) onMutate((x) => ({ ...x, source: { ...src, watch_for: watchFor } }));
-                }}
-              />
-            </div>
-            <div style={{ width: 118, flex: 'none' }}>
-              <span style={labelStyle}>Check</span>
-              {pollSelect(src.poll_seconds, WEB_POLL_CHOICES, (v) => onMutate((x) => ({ ...x, source: { ...src, poll_seconds: v } })))}
-            </div>
+          <div style={{ marginBottom: 8 }}>
+            <span style={labelStyle}>Watching for (checked automatically; speeds up when things happen)</span>
+            <input
+              style={fieldStyle}
+              defaultValue={src.watch_for}
+              placeholder="a reservation slot opening"
+              onBlur={(e) => {
+                const watchFor = e.target.value.trim();
+                if (watchFor !== src.watch_for) onMutate((x) => ({ ...x, source: { ...src, watch_for: watchFor } }));
+              }}
+            />
           </div>
         </>
       )}
 
       {src.kind === 'agent' && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <div style={{ flex: 1 }}>
-            <span style={labelStyle}>What counts as the event? An agent checks with its tools.</span>
-            <input
-              style={fieldStyle}
-              defaultValue={src.check}
-              placeholder="a new episode of my favorite podcast is out"
-              onBlur={(e) => {
-                const check = e.target.value.trim();
-                if (check !== src.check) onMutate((x) => ({ ...x, source: { ...src, check } }));
-              }}
-            />
-          </div>
-          <div style={{ width: 130, flex: 'none', alignSelf: 'flex-end' }}>
-            {pollSelect(src.poll_seconds, AGENT_POLL_CHOICES, (v) => onMutate((x) => ({ ...x, source: { ...src, poll_seconds: v } })))}
-          </div>
+        <div style={{ marginBottom: 8 }}>
+          <span style={labelStyle}>What counts as the event? An agent checks automatically with its tools.</span>
+          <input
+            style={fieldStyle}
+            defaultValue={src.check}
+            placeholder="a new episode of my favorite podcast is out"
+            onBlur={(e) => {
+              const check = e.target.value.trim();
+              if (check !== src.check) onMutate((x) => ({ ...x, source: { ...src, check } }));
+            }}
+          />
         </div>
       )}
 
@@ -175,7 +151,9 @@ const EventTriggerRow: React.FC<RowProps> = ({ workflow, trigger, onMutate, onRe
             borderRadius: 8, fontSize: 10.5, color: WC.ink3, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
             fontFamily: "'JetBrains Mono',monospace", userSelect: 'text',
           }}>
-            {`POST ${API_BASE}/events/ingest\n{"workflow_id": "${workflow.id}", "trigger_id": "${t.id}", "summary": "what happened", "dedup_key": "optional-id"}`}
+            {src.secret
+              ? `POST ${API_BASE}/events/ingest/${src.secret}\n{"summary": "what happened"}`
+              : `POST ${API_BASE}/events/ingest\n{"workflow_id": "${workflow.id}", "trigger_id": "${t.id}", "summary": "what happened"}`}
           </pre>
         </div>
       )}

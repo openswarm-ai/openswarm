@@ -782,7 +782,8 @@ async def triggers_attention():
                 continue
             health = read_poll_health(t.id)
             failures = int(health.get("consecutive_failures") or 0)
-            if failures >= 3:
+            # Threshold 5, not 3: the self-heal attempt fires at 3, so the user is only asked once healing has demonstrably failed.
+            if failures >= 5:
                 items.append({
                     "workflow_id": wf.id,
                     "workflow_title": wf.title,

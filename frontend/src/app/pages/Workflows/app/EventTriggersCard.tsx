@@ -23,11 +23,11 @@ const ADD_CHOICES: Array<[TriggerKind, string]> = [
 ];
 
 function newSource(kind: TriggerKind): EventSourceConfig {
-  if (kind === 'file') return { kind: 'file', path: '', poll_seconds: 15 };
-  if (kind === 'web') return { kind: 'web', url: '', watch_for: '', poll_seconds: 300 };
-  if (kind === 'agent') return { kind: 'agent', check: '', model: '', poll_seconds: 900 };
+  if (kind === 'file') return { kind: 'file', path: '', poll_seconds: 0 };
+  if (kind === 'web') return { kind: 'web', url: '', watch_for: '', poll_seconds: 0 };
+  if (kind === 'agent') return { kind: 'agent', check: '', model: '', poll_seconds: 0 };
   if (kind === 'stream') return { kind: 'stream', url: '', contains: '' };
-  return { kind: 'custom' };
+  return { kind: 'custom', secret: crypto.randomUUID().replace(/-/g, '') };
 }
 
 function newTrigger(kind: TriggerKind): EventTriggerConfig {

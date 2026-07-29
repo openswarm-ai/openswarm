@@ -184,3 +184,39 @@ def test_custom_triggers_are_never_polled(make_wf):
     # No poll ran: no cursor written (beyond none), no log entries, no errors.
     assert stores.read_log(wf.id) == []
     assert stores.load_cursor(trig.id) == {}
+
+
+def test_secret_url_ingest(make_wf, monkeypatch):
+    """Paste-one-URL push: the path secret is the credential; wrong or short secrets 404."""
+    from backend.apps.events import dispatcher
+    from backend.apps.events.events import IngestPushBody, ingest_event_by_secret
+
+    wf, trig = p_custom_wf(make_wf)
+    delivered: list[Event] = []
+
+    async def p_fake_ingest(workflow_id, trigger, events, persist=True):
+        delivered.extend(events)
+
+    monkeypatch.setattr(dispatcher, "ingest", p_fake_ingest)
+    secret = trig.source.secret
+    res = p_run(ingest_event_by_secret(secret, IngestPushBody(summary="Order landed", dedup_key="o1")))
+    assert res == {"ok": True, "queued": 1, "deduped": False}
+    assert len(delivered) == 1
+
+    with pytest.raises(HTTPException) as e:
+        p_run(ingest_event_by_secret("f" * 32, IngestPushBody(summary="x")))
+    assert e.value.status_code == 404
+    with pytest.raises(HTTPException) as e:
+        p_run(ingest_event_by_secret("short", IngestPushBody(summary="x")))
+    assert e.value.status_code == 404
+
+
+def test_mcp_auto_suggest_and_signature_vector(monkeypatch):
+    import backend.apps.agents.schedule_mcp_server as srv
+
+    known = {"google-workspace", "notion"}
+    assert srv.p_suggest_mcps("a new email from my landlord arrived", known) == ["google-workspace"]
+    assert srv.p_suggest_mcps("my notion database gained a row", known) == ["notion"]
+    assert srv.p_suggest_mcps("the moon is full", known) == []
+    # Byte-match the FE stepsSignature: JSON.stringify([["s1","a\"b"]]).
+    assert srv.p_steps_signature([{"id": "s1", "text": 'a"b'}]) == '[["s1","a\\"b"]]'

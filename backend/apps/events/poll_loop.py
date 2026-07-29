@@ -32,6 +32,39 @@ p_loop_task: Optional["asyncio.Task"] = None
 p_wake = asyncio.Event()
 p_next_poll: Dict[str, float] = {}
 p_inflight: Set[str] = set()
+# Adaptive cadence (poll_seconds=0 triggers): (default, floor, ceiling) per kind. Events halve the interval toward the floor; 5 straight quiet polls stretch it 1.5x toward the ceiling.
+PACE_BOUNDS: Dict[str, Tuple[float, float, float]] = {
+    "file": (15.0, 5.0, 60.0),
+    "web": (300.0, 60.0, 1800.0),
+    "agent": (900.0, 300.0, 21600.0),
+}
+PACE_QUIET_POLLS = 5
+p_pace_interval: Dict[str, float] = {}
+p_pace_quiet: Dict[str, int] = {}
+
+
+def effective_poll_seconds(trigger: EventTriggerConfig) -> float:
+    fixed = float(getattr(trigger.source, "poll_seconds", 0) or 0)
+    if fixed > 0:
+        return fixed
+    default, lo, hi = PACE_BOUNDS.get(trigger.source.kind, (300.0, 60.0, 3600.0))
+    return min(max(p_pace_interval.get(trigger.id, default), lo), hi)
+
+
+def pace_update(trigger: EventTriggerConfig, event_count: int) -> None:
+    if float(getattr(trigger.source, "poll_seconds", 0) or 0) > 0:
+        return
+    default, lo, hi = PACE_BOUNDS.get(trigger.source.kind, (300.0, 60.0, 3600.0))
+    current = p_pace_interval.get(trigger.id, default)
+    if event_count > 0:
+        p_pace_interval[trigger.id] = max(lo, current / 2)
+        p_pace_quiet[trigger.id] = 0
+    else:
+        quiet = p_pace_quiet.get(trigger.id, 0) + 1
+        if quiet >= PACE_QUIET_POLLS:
+            p_pace_interval[trigger.id] = min(hi, current * 1.5)
+            quiet = 0
+        p_pace_quiet[trigger.id] = quiet
 # Held-open live sources (kqueue file signals, SSE streams): trigger_id -> (config signature, stopper).
 p_live_handles: Dict[str, Tuple[str, Callable[[], None]]] = {}
 
@@ -56,6 +89,8 @@ def reset_state() -> None:
     p_loop_task = None
     p_next_poll.clear()
     p_inflight.clear()
+    p_pace_interval.clear()
+    p_pace_quiet.clear()
     for _, stop in p_live_handles.values():
         try:
             stop()
@@ -74,7 +109,7 @@ def p_live_triggers() -> List[Tuple[Workflow, EventTriggerConfig, float]]:
             source = trig.source
             if not trig.enabled or isinstance(source, (CustomEventSource, StreamSource)) or source.kind not in ADAPTERS:
                 continue
-            out.append((wf, trig, float(source.poll_seconds)))
+            out.append((wf, trig, effective_poll_seconds(trig)))
     return out
 
 
@@ -90,6 +125,7 @@ async def p_poll_one(wf: Workflow, trigger: EventTriggerConfig) -> None:
             events, new_cursor = await fetch(trigger.source, cursor)
         stores.save_cursor(trigger.id, new_cursor)
         stores.clear_poll_failures(trigger.id)
+        pace_update(trigger, len(events))
         if events:
             await dispatcher.ingest(workflow_id, trigger, events)
     except Exception as e:
@@ -97,7 +133,10 @@ async def p_poll_one(wf: Workflow, trigger: EventTriggerConfig) -> None:
         try:
             # Exponential backoff on repeated failures: a broken site/model can't burn quota at full cadence, and the log says so instead of dying silently.
             failures = stores.record_poll_failure(trigger.id, str(e))
-            base = float(getattr(trigger.source, "poll_seconds", 300))
+            # Third straight failure: try to fix it ourselves before the attention surface asks the user.
+            if failures == 3 and trigger.source.kind in ("web", "stream"):
+                asyncio.create_task(p_heal_and_wake(wf, trigger))
+            base = effective_poll_seconds(trigger)
             backoff = min(base * (2 ** min(failures, 5)), 21600.0)
             p_next_poll[trigger.id] = time.monotonic() + backoff
             note = f" (failure {failures} in a row; next try in ~{int(backoff / 60) or 1}m)" if failures >= 2 else ""
@@ -109,6 +148,16 @@ async def p_poll_one(wf: Workflow, trigger: EventTriggerConfig) -> None:
             pass
     finally:
         p_inflight.discard(trigger.id)
+
+
+async def p_heal_and_wake(wf: Workflow, trigger: EventTriggerConfig) -> None:
+    try:
+        from backend.apps.events.adapters.heal_trigger import attempt_heal
+        if await attempt_heal(wf.id, trigger):
+            mark_due(trigger.id)
+            kick()
+    except Exception:
+        logger.debug("self-heal attempt errored", exc_info=True)
 
 
 def reconcile_live_sources() -> None:

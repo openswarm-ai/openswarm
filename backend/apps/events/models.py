@@ -34,8 +34,8 @@ class FileWatchSource(BaseModel):
     @field_validator("poll_seconds")
     @classmethod
     def p_clamp_poll(cls, v: int) -> int:
-        # Clamp, don't reject: a stray value from an agent tool or old record shouldn't crash the poll loop.
-        return max(5, min(v, 3600))
+        # 0 = adaptive (the engine tunes cadence from observed event rate). Clamp, don't reject.
+        return 0 if v == 0 else max(5, min(v, 3600))
 
 
 class WebWatchSource(BaseModel):
@@ -48,8 +48,8 @@ class WebWatchSource(BaseModel):
     @field_validator("poll_seconds")
     @classmethod
     def p_clamp_poll(cls, v: int) -> int:
-        # 60s floor: polling someone's site faster than that is rude and burns nothing useful.
-        return max(60, min(v, 86400))
+        # 0 = adaptive. 60s floor otherwise: polling someone's site faster is rude and buys nothing.
+        return 0 if v == 0 else max(60, min(v, 86400))
 
 
 class AgentCheckSource(BaseModel):
@@ -73,8 +73,8 @@ class AgentCheckSource(BaseModel):
     @field_validator("poll_seconds")
     @classmethod
     def p_clamp_poll(cls, v: int) -> int:
-        # Each poll costs a real agent turn; 60s floor keeps a typo from burning money.
-        return max(60, min(v, 86400))
+        # 0 = adaptive. Each poll costs a real agent turn; 60s floor keeps a typo from burning money.
+        return 0 if v == 0 else max(60, min(v, 86400))
 
 
 class CustomEventSource(BaseModel):
@@ -82,6 +82,8 @@ class CustomEventSource(BaseModel):
     POST /api/events/ingest, so any script, webhook forwarder, Shortcut, or
     MCP can feed this trigger."""
     kind: Literal["custom"] = "custom"
+    # Per-trigger credential baked into the push URL (POST /api/events/ingest/<secret>), so wiring a sender is paste-one-URL instead of token juggling. Same entropy class as the install token; revoked by deleting the trigger.
+    secret: str = Field(default_factory=lambda: uuid4().hex)
 
 
 class StreamSource(BaseModel):

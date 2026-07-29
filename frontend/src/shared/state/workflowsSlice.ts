@@ -54,6 +54,8 @@ export interface AgentCheckSource {
 export interface CustomEventSource {
   /** Push-only: events arrive via POST /api/events/ingest from any script/webhook/Shortcut. */
   kind: 'custom';
+  /** Per-trigger push credential; the paste-one-URL form is /api/events/ingest/<secret>. */
+  secret?: string;
 }
 
 export interface StreamSource {

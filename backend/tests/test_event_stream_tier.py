@@ -122,17 +122,71 @@ def test_attention_endpoint_surfaces_repeat_failures(make_wf):
     wf = make_wf(event_triggers=[trig, healthy])
     storage.save_workflow(wf)
 
-    for _ in range(2):
+    for _ in range(4):
         stores.record_poll_failure(trig.id, "connect refused")
-    assert p_run(triggers_attention()) == {"attention": []}  # 2 failures = not yet
+    assert p_run(triggers_attention()) == {"attention": []}  # 4 failures = self-heal territory, not the user's yet
 
     stores.record_poll_failure(trig.id, "connect refused")
     res = p_run(triggers_attention())
     assert len(res["attention"]) == 1
     item = res["attention"][0]
     assert item["trigger_id"] == trig.id
-    assert item["consecutive_failures"] == 3
+    assert item["consecutive_failures"] == 5
     assert "connect refused" in item["last_error"]
 
     stores.clear_poll_failures(trig.id)
     assert p_run(triggers_attention()) == {"attention": []}
+
+
+def test_adaptive_pace_tunes_itself():
+    from backend.apps.events import poll_loop
+
+    auto = EventTriggerConfig(source=StreamSource(url="x"))  # placeholder; pace keys off trigger id + kind
+    web_auto = EventTriggerConfig(source={"kind": "web", "url": "https://a.b", "watch_for": "", "poll_seconds": 0})
+    assert poll_loop.effective_poll_seconds(web_auto) == 300.0  # default until observed
+
+    poll_loop.pace_update(web_auto, event_count=3)
+    assert poll_loop.effective_poll_seconds(web_auto) == 150.0  # events halve toward the floor
+    for _ in range(5):
+        poll_loop.pace_update(web_auto, event_count=0)
+    assert poll_loop.effective_poll_seconds(web_auto) == 225.0  # 5 quiet polls stretch 1.5x
+
+    for _ in range(20):
+        poll_loop.pace_update(web_auto, event_count=9)
+    assert poll_loop.effective_poll_seconds(web_auto) == 60.0  # floor holds
+
+    fixed = EventTriggerConfig(source={"kind": "web", "url": "https://a.b", "watch_for": "", "poll_seconds": 600})
+    poll_loop.pace_update(fixed, event_count=9)
+    assert poll_loop.effective_poll_seconds(fixed) == 600.0  # explicit cadence is never second-guessed
+    assert auto.source.kind == "stream"
+
+
+def test_self_heal_fixes_url_or_escalates(make_wf, monkeypatch):
+    from backend.apps.events.adapters import agent_check as ac
+    from backend.apps.events.adapters import heal_trigger as ht
+    from backend.apps.events import stores
+    from backend.apps.workflows import storage
+
+    trig = EventTriggerConfig(source=StreamSource(url="https://old.example/feed"))
+    wf = make_wf(event_triggers=[trig])
+    storage.save_workflow(wf)
+    stores.record_poll_failure(trig.id, "410 Gone")
+
+    async def p_fix_turn(model, prompt, **kwargs):
+        assert "https://old.example/feed" in prompt and "410 Gone" in prompt
+        return "Investigated.\nFIX_URL: https://new.example/feed"
+
+    monkeypatch.setattr(ac, "run_check_turn", p_fix_turn)
+    assert p_run(ht.attempt_heal(wf.id, trig)) is True
+    healed = storage.get_workflow(wf.id).event_triggers[0]
+    assert healed.source.url == "https://new.example/feed"
+    assert stores.read_poll_health(trig.id) == {}  # failure streak cleared
+    assert any("Self-healed" in e.summary for e in stores.read_log(wf.id))
+
+    async def p_cannot(model, prompt, **kwargs):
+        return "CANNOT_FIX: the site now requires a sign-in"
+
+    monkeypatch.setattr(ac, "run_check_turn", p_cannot)
+    assert p_run(ht.attempt_heal(wf.id, healed)) is False
+    assert storage.get_workflow(wf.id).event_triggers[0].source.url == "https://new.example/feed"  # untouched
+    assert any("requires a sign-in" in e.summary for e in stores.read_log(wf.id))

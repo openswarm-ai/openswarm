@@ -4,6 +4,7 @@ the same create path the Workflows UI uses, so the user reviews and owns it
 like any other."""
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -81,12 +82,15 @@ async def accept_suggestion(suggestion_id: str):
     else:
         # No clear rhythm in the evidence: create it ready to run, let the user schedule or add a trigger.
         schedule = ScheduleConfig(enabled=False)
+    steps = [WorkflowStep(text=t) for t in suggestion.workflow_steps]
     body = WorkflowCreate(
         title=suggestion.workflow_title or "Suggested workflow",
         description=suggestion.description,
-        steps=[WorkflowStep(text=t) for t in suggestion.workflow_steps],
+        steps=steps,
         schedule=schedule,
         auto_named=False,
+        # The explicit accept IS the validation moment; byte-matches the FE stepsSignature so the test-first nag never fires.
+        tested_signature=json.dumps([[s.id, s.text] for s in steps], separators=(",", ":"), ensure_ascii=False),
     )
     workflow = await create_workflow(body)
     suggestion.status = "accepted"

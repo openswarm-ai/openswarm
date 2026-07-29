@@ -314,8 +314,8 @@ TOOLS = [
                 "contains": {"type": "string", "description": "kind=stream: only messages containing this substring become events."},
                 "watch_for": {"type": "string", "description": "kind=web: what change matters, in the user's words."},
                 "check": {"type": "string", "description": "kind=agent: the condition to check, one plain sentence."},
-                "mcps": {"type": "array", "items": {"type": "string"}, "description": "kind=agent: connected tool names the check may use (e.g. 'google-workspace'). Only what the user's check actually needs."},
-                "poll_minutes": {"type": "number", "description": "How often to check. Defaults: file continuous (~15s), web 5, agent 15. Agent checks cost a model call each, so don't go below 5 without the user asking."},
+                "mcps": {"type": "array", "items": {"type": "string"}, "description": "kind=agent: usually OMIT; the system infers connected tools from the check sentence. Pass only to override the inference."},
+                "poll_minutes": {"type": "number", "description": "Usually OMIT: cadence is automatic (tunes itself from observed event rate). Set only when the user asked for a specific frequency; agent checks cost a model call each."},
                 "only_when": {"type": "string", "description": "Optional plain-English filter; events not matching it are skipped (logged)."},
                 "max_fires_per_hour": {"type": "integer", "description": "Safety cap on runs per hour (default 6)."},
             },
@@ -668,7 +668,46 @@ def handle_invoke_workflow(args: dict) -> dict:
     return _ok(f"Workflow '{match.get('title')}' run {status}.{err_line}\n\n=== RUN TRANSCRIPT ===\n{transcript}\n=== END TRANSCRIPT ===")
 
 
-TRIGGER_POLL_DEFAULTS = {"file": 15, "web": 300, "agent": 900}
+MCP_HINTS = {
+    "google-workspace": ("email", "inbox", "gmail", "mail", "calendar", "meeting", "drive", "doc", "sheet"),
+    "notion": ("notion", "page", "database"),
+    "slack": ("slack", "channel"),
+    "discord": ("discord",),
+    "reddit": ("reddit", "subreddit"),
+    "github": ("github", "pull request", "issue", "repo"),
+}
+
+
+def p_suggest_mcps(check: str, known: set) -> list:
+    """Infer connected tools from the check sentence so the user never names them; only suggests tools that actually exist."""
+    text = check.lower()
+    out = []
+    for tool, words in MCP_HINTS.items():
+        if tool in known and any(w in text for w in words):
+            out.append(tool)
+    for tool in known:
+        if tool not in out and tool in text:
+            out.append(tool)
+    return out[:4]
+
+
+def p_known_tools() -> set:
+    r = _call("GET", f"http://127.0.0.1:{BACKEND_PORT}/api/tools/list")
+    if "_error" in r:
+        return set()
+    tools = r.get("tools", r) if isinstance(r, dict) else r
+    known = set()
+    for t in (tools if isinstance(tools, list) else []):
+        for key in ("id", "name"):
+            v = str((t or {}).get(key) or "").strip().lower()
+            if v:
+                known.add(v)
+    return known
+
+
+def p_steps_signature(steps: list) -> str:
+    # MUST byte-match the FE stepsSignature (JSON.stringify of [id, text] pairs); pinned by test_watch_for_event_tool.
+    return json.dumps([[s["id"], s["text"]] for s in steps], separators=(",", ":"), ensure_ascii=False)
 
 
 def p_find_workflow_any(ident: str):
@@ -712,7 +751,8 @@ def p_build_trigger(args: dict) -> tuple:
     if kind not in ("file", "web", "agent", "custom", "stream"):
         return None, "kind must be one of: file, web, agent, custom, stream."
     poll_minutes = args.get("poll_minutes")
-    poll_seconds = int(float(poll_minutes) * 60) if poll_minutes else TRIGGER_POLL_DEFAULTS.get(kind, 300)
+    # 0 = adaptive: the engine tunes cadence from observed event rate; only an explicit poll_minutes pins it.
+    poll_seconds = int(float(poll_minutes) * 60) if poll_minutes else 0
     if kind == "file":
         if not (args.get("path") or "").strip():
             return None, "kind=file needs path (the file or folder to watch)."
@@ -725,6 +765,8 @@ def p_build_trigger(args: dict) -> tuple:
         if not (args.get("check") or "").strip():
             return None, "kind=agent needs check (one sentence describing the condition)."
         mcps = [str(m) for m in (args.get("mcps") or [])]
+        if not mcps:
+            mcps = p_suggest_mcps(args["check"], p_known_tools())
         mcp_err = p_validate_mcps(mcps)
         if mcp_err:
             return None, mcp_err
@@ -734,7 +776,7 @@ def p_build_trigger(args: dict) -> tuple:
             return None, "kind=stream needs url (the SSE feed to subscribe to)."
         source = {"kind": "stream", "url": args["url"].strip(), "contains": (args.get("contains") or "").strip()}
     else:
-        source = {"kind": "custom"}
+        source = {"kind": "custom", "secret": uuid.uuid4().hex}
     return {
         "id": uuid.uuid4().hex,
         "enabled": True,
@@ -781,13 +823,15 @@ def handle_watch_for_event(args: dict) -> dict:
         steps_in = [s for s in (args.get("steps") or []) if str(s).strip()]
         if not steps_in:
             return _err("To create a new workflow, pass title and steps (what to do when the event fires), or pass workflow to attach to an existing one.")
+        steps_payload = [{"id": f"s{i+1}", "text": str(s)} for i, s in enumerate(steps_in)]
         body = {
             "title": args.get("title") or "Event workflow",
-            "steps": [{"id": f"s{i+1}", "text": str(s)} for i, s in enumerate(steps_in)],
+            "steps": steps_payload,
             "schedule": {"enabled": False},
             "event_triggers": [trigger],
             "source_session_id": PARENT_SESSION_ID or None,
             "dashboard_id": DASHBOARD_ID or None,
+            "tested_signature": p_steps_signature(steps_payload),
         }
         r = _call("POST", "/create", body)
         if "_error" in r:
@@ -796,8 +840,9 @@ def handle_watch_for_event(args: dict) -> dict:
     extra = ""
     if trigger["source"]["kind"] == "custom":
         extra = (
-            f"\nOutside systems push events with: POST http://127.0.0.1:{BACKEND_PORT}/api/events/ingest "
-            f"(JSON: workflow_id={wid}, trigger_id={trigger['id']}, summary, optional dedup_key; per-install auth token required)."
+            f"\nOutside systems push events with ONE URL, no token needed: "
+            f"POST http://127.0.0.1:{BACKEND_PORT}/api/events/ingest/{trigger['source']['secret']} "
+            f"(JSON body: summary, optional event_type/dedup_key/payload)."
         )
     return _ok(f"Watching. Workflow \"{title}\" (id: {wid}) now runs on {p_describe_trigger(trigger)}.{extra} The user can edit or disable it in the workflow's Event triggers panel.")
 
