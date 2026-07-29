@@ -82,7 +82,6 @@ from backend.apps.agents.browser.browser_schema import (
     APP_VISIBLE_TOOLS,
     BROWSER_TOOLS_SCHEMA,
     MAX_TURNS,
-    MODEL_MAP,
     SYSTEM_PROMPT,
 )
 from backend.apps.agents.core.models import AgentSession, ApprovalRequest, Message

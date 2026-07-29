@@ -23,12 +23,6 @@ P_MERGE_VERIFY = (
     "back 'NOT confirmed' or you forgot to pass one.\n"
 )
 
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-
 # The change an action should cause, declared by the agent and CONFIRMED after the action runs (success is observed, never assumed). A hit returns fast; a miss tells the agent it may not have worked instead of letting it claim a false success.
 P_EXPECT_DESC = {
     "type": "string",
