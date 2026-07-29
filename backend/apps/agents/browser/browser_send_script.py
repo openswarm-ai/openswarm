@@ -323,8 +323,34 @@ async def run_send_script(
         fill_ok = isinstance(r_fill, dict) and "error" not in r_fill
         log.append({"tool": "BrowserClickIndex", "input": {"index": composer[0], "text": payload},
                     "ok": fill_ok, "result_summary": f"script fill into {composer[1]!r}"[:200], "elapsed_ms": 0})
+        if not fill_ok and browser_submit_click.is_stale_index_error(r_fill):
+            # The opener click opens a modal that keeps re-rendering after we listed it, so the
+            # composer node we resolved is already detached by the time the fill lands. Measured
+            # live on x.com: 'Index 53 is not in the cached element map', on the exact run where
+            # the script had correctly found opener 'Post' and target 'Post text'. Re-listing is
+            # what the error itself prescribes, so take it once rather than surrendering a send
+            # the script had already located. One retry only: a second failure is a different
+            # problem and the model path is the right answer for it.
+            state_retry = await fresh_list()
+            composer_retry = browser_send_parse.composer_index_in_state(state_retry)
+            if composer_retry:
+                logger.info(f"[browser-sendscript] stale composer index {composer[0]}; refreshed to "
+                            f"{composer_retry[0]} and retrying the fill once")
+                composer = composer_retry
+                r_fill = await execute_tool(
+                    "BrowserClickIndex", {"index": composer[0], "text": payload}, browser_id, tab_id)
+                fill_ok = isinstance(r_fill, dict) and "error" not in r_fill
+                log.append({"tool": "BrowserClickIndex",
+                            "input": {"index": composer[0], "text": payload}, "ok": fill_ok,
+                            "result_summary": f"script fill retry into {composer[1]!r}"[:200],
+                            "elapsed_ms": 0})
         if not fill_ok:
-            logger.info("[browser-sendscript] fill errored; handing to model untouched")
+            # Name the cause. "fill errored" alone cannot tell a stale index from a detached node
+            # from a site that refuses synthetic input, and those are three different fixes. Same
+            # lesson as the bare TimeoutError that used to log "outer skip ()".
+            p_err = r_fill.get("error") if isinstance(r_fill, dict) else type(r_fill).__name__
+            logger.info(f"[browser-sendscript] fill errored ({str(p_err)[:160]}); "
+                        f"handing to model untouched")
             return None
         # 2. verify the fill committed. Send is resolved AFTER, two ways: LinkedIn enables Send only once its JS digests the input (beats later than the text is visible), so the scan waits a little.
         state2 = ""

@@ -97,3 +97,21 @@ def parse_eval_value(res: object) -> Optional[Dict[str, Any]]:
             except (json.JSONDecodeError, ValueError):
                 val = None
     return val if isinstance(val, dict) else None
+
+
+# The browser tool's own words when an index no longer resolves. Anchored on the stable half of the
+# sentence ("not in the cached element map"), not the whole string, so a reworded tail doesn't
+# silently turn the retry off and take the fast write path down with it.
+P_STALE_INDEX_RE = re.compile(r"not in the cached element map|refresh the index", re.I)
+
+
+def is_stale_index_error(res: object) -> bool:
+    """Did this tool result fail because the element index went stale?
+
+    Distinct from every other failure: a stale index means the element was THERE and the page
+    re-rendered underneath us, so re-listing and retrying is correct. A genuine miss (no such
+    control, refused input) must not retry, because retrying a real failure is how you double-post.
+    """
+    if not isinstance(res, dict):
+        return False
+    return bool(P_STALE_INDEX_RE.search(str(res.get("error") or "")))
