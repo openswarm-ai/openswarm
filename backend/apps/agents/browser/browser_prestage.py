@@ -198,6 +198,7 @@ async def run_prestage(
     primary_api: str | None,
     execute_tool: ToolRunner,
     perceive_only: bool = False,
+    task_is_send: bool = False,
 ) -> tuple[str, str, list[dict]]:
     """(perception_block, current_url, action_records); ('', start_url, [])
     means nothing staged and the caller proceeds exactly as before.
@@ -285,7 +286,8 @@ async def run_prestage(
         # left on, so a run can inherit a composer some earlier run opened and look like a win it
         # never earned; without this line there is no way to tell those apart after the fact.
         logger.info(f"[browser-prestage] start url={(start_url or '(none)')[:120]}")
-        p_compose_url = "" if perceive_only else (compose_entry.compose_entry_for(task, start_url) or "")
+        p_compose_url = "" if perceive_only else (
+            compose_entry.compose_entry_for(task, start_url, task_is_send) or "")
         if p_compose_url:
             if await open_composer_directly(p_compose_url):
                 staged_complete = True

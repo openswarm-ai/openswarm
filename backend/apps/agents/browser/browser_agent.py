@@ -1173,6 +1173,7 @@ async def run_browser_agent(
                     task, browser_id, tab_id, current_url, browser_settings,
                     get_api_type(model), execute_browser_tool,
                     perceive_only=(not task_is_send and browser_plan_dispatch.plan_dispatch_enabled()),
+                    task_is_send=task_is_send,
                 ),
                 timeout=browser_prestage.TOTAL_TIMEOUT_S + 10,
             )

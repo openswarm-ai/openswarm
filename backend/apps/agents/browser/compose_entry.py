@@ -148,12 +148,19 @@ def enabled() -> bool:
 
 
 @typechecked
-def compose_entry_for(task: str, start_url: str) -> Optional[str]:
+def compose_entry_for(task: str, start_url: str, task_is_send: bool) -> Optional[str]:
     """The URL to open to reach this site's composer, or None to leave navigation alone.
 
     `start_url` is where the card already is; a host named in the task counts too, since a run that
-    begins on a blank tab still says "go to x.com and post ..."."""
-    if not enabled() or not wants_top_level_compose(task):
+    begins on a blank tab still says "go to x.com and post ...".
+
+    `task_is_send` is the caller's already-computed write verdict and is REQUIRED, not defaulted,
+    because forgetting it is silently destructive: a quote is not proof of a write, and
+    `find the reddit post that says "..."` reads as a create to any regex short enough to be
+    readable (`post` is a noun there). Four such phrasings each resolved to reddit's SUBMIT page in
+    a probe, which would derail a plain read. The verdict the send script itself gates on is the
+    right authority, so this asks for it rather than growing a second opinion that can drift."""
+    if not enabled() or not task_is_send or not wants_top_level_compose(task):
         return None
     # Which site to open comes from the user's words; a brief naming some other site must not
     # redirect the post.
