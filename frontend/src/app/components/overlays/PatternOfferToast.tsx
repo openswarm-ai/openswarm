@@ -18,6 +18,7 @@ import {
   hidePatternToast,
 } from '@/shared/state/patternsSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
+import { useNudgeTurn } from '@/app/components/overlays/nudgeQueue';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -44,6 +45,7 @@ export default function PatternOfferToast() {
   const open = useAppSelector((s) => s.patterns.toastOpen);
   const accepting = useAppSelector((s) => s.patterns.accepting);
   const suggestion = useAppSelector((s) => s.patterns.suggestions[0]);
+  const myTurn = useNudgeTurn('patterns');
 
   const onCreate = React.useCallback(async () => {
     if (!suggestion) return;
@@ -61,7 +63,7 @@ export default function PatternOfferToast() {
 
   return (
     <Snackbar
-      open={open && !!suggestion}
+      open={open && !!suggestion && myTurn}
       autoHideDuration={null}
       // Clickaway would kill the offer on the user's first canvas click, before they read it.
       onClose={(event, reason) => { if (reason !== 'clickaway') dispatch(hidePatternToast()); }}

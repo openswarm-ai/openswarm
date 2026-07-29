@@ -10,12 +10,14 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { hideMissedRunsToast } from '@/shared/state/missedRunsSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
+import { useNudgeTurn } from '@/app/components/overlays/nudgeQueue';
 
 export default function MissedRunsToast() {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const open = useAppSelector((s) => s.missedRuns.toastOpen);
   const count = useAppSelector((s) => s.missedRuns.items.length);
+  const myTurn = useNudgeTurn('missedRuns');
 
   const onReview = React.useCallback(() => {
     dispatch(openWorkflowsApp());
@@ -24,7 +26,7 @@ export default function MissedRunsToast() {
 
   return (
     <Snackbar
-      open={open && count > 0}
+      open={open && count > 0 && myTurn}
       autoHideDuration={null}
       onClose={() => dispatch(hideMissedRunsToast())}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}

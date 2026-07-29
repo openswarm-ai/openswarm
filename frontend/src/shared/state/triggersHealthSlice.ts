@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { API_BASE } from '@/shared/config';
+import { notifyNeedsAttention } from '@/shared/notifications';
 
 export interface TriggerAttentionItem {
   workflow_id: string;
@@ -23,7 +24,17 @@ export const fetchTriggersAttention = createAsyncThunk(
   'triggersHealth/fetch',
   async (): Promise<{ attention: TriggerAttentionItem[] }> => {
     const r = await fetch(`${API_BASE}/workflows/triggers/attention`);
-    return (await r.json()) as { attention: TriggerAttentionItem[] };
+    const data = (await r.json()) as { attention: TriggerAttentionItem[] };
+    const first = data.attention?.[0];
+    if (first) {
+      // App hidden = the in-app pill can't reach them; the OS notification can (no-op when visible).
+      notifyNeedsAttention(
+        `A watcher on "${first.workflow_title}" needs you`,
+        first.needs || first.last_error || `${first.consecutive_failures} failures in a row`,
+        `trigger-health:${first.trigger_id}`,
+      );
+    }
+    return data;
   },
 );
 

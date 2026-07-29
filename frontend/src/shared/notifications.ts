@@ -59,3 +59,21 @@ export function notifyAgentCompletion(p: AgentCompletionPayload): void {
     // Notification API can throw if sandboxed or headless; fail silently.
   }
 }
+
+/** A watcher (or similar background surface) needs the user: same hidden-only + permission + debounce gates as completions, so it can never double-tap a visible app. */
+export function notifyNeedsAttention(title: string, body: string, tag: string): void {
+  if (typeof document === 'undefined' || !document.hidden) return;
+  if (typeof Notification === 'undefined') return;
+  if (ensurePermission() !== 'granted') return;
+  const key = `attention:${tag}`;
+  if (FIRED_RECENTLY.has(key)) return;
+  FIRED_RECENTLY.add(key);
+  setTimeout(() => FIRED_RECENTLY.delete(key), COOLDOWN_MS);
+  try {
+    const n = new Notification(title, { body: body.slice(0, 140), tag, silent: false });
+    n.onclick = () => {
+      try { window.focus(); } catch { /* focus can throw headless */ }
+      n.close();
+    };
+  } catch { /* sandboxed/headless */ }
+}

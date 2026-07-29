@@ -13,6 +13,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { hideTriggersHealthToast } from '@/shared/state/triggersHealthSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
+import { useNudgeTurn } from '@/app/components/overlays/nudgeQueue';
 
 export default function TriggerHealthToast() {
   const c = useClaudeTokens();
@@ -20,6 +21,7 @@ export default function TriggerHealthToast() {
   const open = useAppSelector((s) => s.triggersHealth.toastOpen);
   const items = useAppSelector((s) => s.triggersHealth.items);
   const first = items[0];
+  const myTurn = useNudgeTurn('triggersHealth');
 
   const onReview = React.useCallback(() => {
     if (first) dispatch(openWorkflowsApp({ workflowId: first.workflow_id }));
@@ -30,7 +32,7 @@ export default function TriggerHealthToast() {
 
   return (
     <Snackbar
-      open={open && !!first}
+      open={open && !!first && myTurn}
       autoHideDuration={null}
       onClose={(event, reason) => { if (reason !== 'clickaway') dispatch(hideTriggersHealthToast()); }}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}

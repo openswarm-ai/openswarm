@@ -10,12 +10,14 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { hideProviderHealthToast } from '@/shared/state/subscriptionsSlice';
 import { openSettingsModal } from '@/shared/state/settingsSlice';
+import { useNudgeTurn } from '@/app/components/overlays/nudgeQueue';
 
 export default function ProviderHealthToast() {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const open = useAppSelector((s) => s.subscriptions.healthToastOpen);
   const dead = useAppSelector((s) => s.subscriptions.healthDead);
+  const myTurn = useNudgeTurn('providerHealth');
 
   const onReconnect = React.useCallback(() => {
     dispatch(openSettingsModal('models'));
@@ -26,7 +28,7 @@ export default function ProviderHealthToast() {
 
   return (
     <Snackbar
-      open={open && dead.length > 0}
+      open={open && dead.length > 0 && myTurn}
       autoHideDuration={null}
       // Clickaway would kill the pill on the user's first canvas click, before they read it; only the X or Reconnect dismisses.
       onClose={(event, reason) => { if (reason !== 'clickaway') dispatch(hideProviderHealthToast()); }}
