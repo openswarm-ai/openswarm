@@ -18,6 +18,8 @@ import re
 import time
 from typing import Awaitable, Callable
 
+from backend.apps.agents.browser import browser_send_parse, compose_entry
+
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = 4
@@ -232,6 +234,60 @@ async def run_prestage(
         seen_steps: set[tuple[str, str]] = set()
         staged_complete = False
 
+        async def open_composer_directly(url: str) -> bool:
+            """Navigate to the site's own compose URL and confirm a composer actually appeared.
+
+            The confirmation is the whole point. Without it this would be a per-site nav hardcode
+            that strands the run wherever the URL happens to lead once a site changes it; with it,
+            a miss costs one navigation and the aux loop below runs exactly as it does today."""
+            nonlocal li_text, gt_text, current_url, staged_complete
+            r = await execute_tool("BrowserNavigate", {"url": url}, browser_id, tab_id)
+            ok = isinstance(r, dict) and "error" not in r
+            recs.append({"tool": "BrowserNavigate", "input": {"url": url}, "ok": ok,
+                         "result_summary": f"compose entry for {compose_entry.registrable_host(url)}"[:200],
+                         "elapsed_ms": 0})
+            if not ok:
+                return False
+            # This is a cold NAVIGATION into a single-page app, not a modal opening on a page that
+            # is already up, so it gets a longer budget than the opener hop: the app has to boot
+            # before the composer can exist. Bounded well inside the prestage timeout so a miss
+            # still leaves room for the aux loop.
+            p_boxes = 0
+            for wait_s in (0.8, 1.2, 1.5, 2.0, 2.5):
+                await asyncio.sleep(wait_s)
+                li2, gt2, u2 = await perceive()
+                if li2:
+                    li_text, gt_text = li2, gt2
+                    current_url = u2 or url
+                if browser_send_parse.composer_index_in_state(li2):
+                    return True
+                p_boxes = browser_send_parse.textbox_count(li2)
+            # Name the miss. "No composer" covers three different problems with three different
+            # fixes: the page never mounted one (0 boxes), we were too early (few boxes, still
+            # hydrating), or several matched and the picker refused as ambiguous. Guessing between
+            # them is how the last two rounds of timeout tuning made things worse.
+            logger.info(f"[browser-prestage] compose entry saw {p_boxes} textbox(es) but no single "
+                        f"composer at {current_url[:80]}")
+            return False
+
+        # Composer reachability: when the task creates something top-level on a site that
+        # publishes its own compose URL, ask for that URL instead of aux-hunting the button. This
+        # is the 0/20 gap; the fill and receipt behind it were already proven. A hit also skips
+        # the aux loop, so the cheap path and the reliable path are the same path.
+        # Where the run BEGAN, before anything moved the card. A card keeps the last URL it was
+        # left on, so a run can inherit a composer some earlier run opened and look like a win it
+        # never earned; without this line there is no way to tell those apart after the fact.
+        logger.info(f"[browser-prestage] start url={(start_url or '(none)')[:120]}")
+        p_compose_url = "" if perceive_only else (compose_entry.compose_entry_for(task, start_url) or "")
+        if p_compose_url:
+            if await open_composer_directly(p_compose_url):
+                staged_complete = True
+                done_desc.append(f"opened the composer at {p_compose_url}")
+                logger.info(f"[browser-prestage] compose entry {p_compose_url} reached a composer")
+            else:
+                logger.info(f"[browser-prestage] compose entry {p_compose_url} showed no composer; "
+                            f"falling through to the aux loop")
+
         async def settle(pre_url: str, pre_text: str, pre_li: str) -> bool:
             """Wait for the page to actually change after an action, capped.
 
@@ -251,7 +307,8 @@ async def run_prestage(
         p_total_timeout = OPENER_TOTAL_TIMEOUT_S if opener_mode() else TOTAL_TIMEOUT_S
         p_system = P_SYSTEM_OPENER if opener_mode() else P_SYSTEM
         p_results_overruled = False
-        while steps < p_max_steps and (time.monotonic() - t0) < p_total_timeout:
+        while (not staged_complete and steps < p_max_steps
+               and (time.monotonic() - t0) < p_total_timeout):
             # Per-step cost, broken out. Prestage is the largest single phase of a LinkedIn write
             # (measured 18.6s of a 50.6s run, more than the send itself), and "steps=2 in 18587ms"
             # cannot tell you whether that is the aux deciding, the page settling, or the click.

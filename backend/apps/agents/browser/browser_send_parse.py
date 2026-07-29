@@ -152,6 +152,14 @@ def composer_index_in_state(state_text: str):
     return hits[0] if len(hits) == 1 else None
 
 
+def textbox_count(state_text: str) -> int:
+    """How many textboxes the perception listed, compose-shaped or not.
+
+    Diagnostic only, and only meaningful next to a failed composer pick: zero means the page never
+    mounted one, several means the picker refused an ambiguous choice. Those are different bugs."""
+    return len(P_COMPOSER_ROW_RE.findall(state_text or ""))
+
+
 def surface_supports_script(current_url: str, state_text: str = "") -> bool:
     """STRUCTURAL, not per-site: fire wherever the live perception actually carries a
     person-composer (a compose-shaped textbox) OR a single messaging opener to reach
