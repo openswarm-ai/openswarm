@@ -254,12 +254,19 @@ async def run_prestage(
             # before the composer can exist. Bounded well inside the prestage timeout so a miss
             # still leaves room for the aux loop.
             p_boxes = 0
-            for wait_s in (0.8, 1.2, 1.5, 2.0, 2.5):
+            p_prev = ""
+            for wait_s in (0.8, 1.2, 1.5, 2.0, 2.5, 2.5, 2.5):
                 await asyncio.sleep(wait_s)
                 li2, gt2, u2 = await perceive()
                 if li2:
                     li_text, gt_text = li2, gt2
                     current_url = u2 or url
+                # Same stop condition as the opener hop: wait while the page is still arriving,
+                # give up the moment it stops changing. Measured on a loaded machine, x.com's
+                # compose route reported ZERO textboxes after 8s (nothing had rendered at all, not
+                # an ambiguous pick), while an idle machine had it in under two.
+                p_stable = bool(li2) and li2 == p_prev
+                p_prev = li2
                 # A signed-out visit to a compose URL redirects to sign-in, and a login form is
                 # made of textboxes. Claiming "composer reached" there would tell the rest of the
                 # run the navigation is done while it sits on an auth wall.
@@ -270,6 +277,8 @@ async def run_prestage(
                 if browser_send_parse.composer_index_in_state(li2):
                     return True
                 p_boxes = browser_send_parse.textbox_count(li2)
+                if p_stable:
+                    break
             # Name the miss. "No composer" covers three different problems with three different
             # fixes: the page never mounted one (0 boxes), we were too early (few boxes, still
             # hydrating), or several matched and the picker refused as ambiguous. Guessing between
