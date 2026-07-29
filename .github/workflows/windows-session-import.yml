@@ -1,0 +1,42 @@
+name: windows-session-import
+
+# The Windows half of the browser session-import path can only be proven on Windows: it talks to
+# DPAPI through crypt32, and every mock of that agrees with whatever we already believed. This job
+# runs the round-trip tests on a real windows runner, so a layout mistake fails here instead of in
+# a user's onboarding.
+
+on:
+  push:
+    paths:
+      - 'backend/apps/onboarding/usage/browser_cookies.py'
+      - 'backend/tests/test_browser_cookies_windows_live.py'
+      - '.github/workflows/windows-session-import.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install the two things the module actually needs
+        run: pip install cryptography typeguard pytest
+
+      - name: Prove the DPAPI + AES-GCM round trip on real Windows
+        run: python -m pytest backend/tests/test_browser_cookies_windows_live.py -v
+
+      - name: Fail if the suite skipped itself
+        shell: pwsh
+        run: |
+          # A skip reads as green. On a windows runner these tests MUST run, so an all-skipped
+          # result means the platform gate is wrong and the job is proving nothing.
+          $out = python -m pytest backend/tests/test_browser_cookies_windows_live.py -q 2>&1 | Out-String
+          if ($out -match 'skipped') {
+            Write-Error "Windows tests skipped on a Windows runner; the platform gate is broken:`n$out"
+            exit 1
+          }
+          Write-Host "Ran on real Windows, no skips."
