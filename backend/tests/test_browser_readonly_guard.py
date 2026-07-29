@@ -97,3 +97,25 @@ def test_a_task_with_no_post_intent_is_left_alone():
     """Messaging a person is neither posting nor commenting; the guard must not touch it."""
     assert not sp.surface_mismatch("text tyler hello", "Write a message")
     assert not sp.surface_mismatch("", "Add a comment")
+
+
+# --- the opener is a surface too --------------------------------------------------------------
+
+def test_a_post_task_rejects_a_comment_OPENER():
+    """Measured in the dry-run coverage sweep: on linkedin.com with "start a post", the only opener
+    listed was 'Comment'. The script opened a stranger's comment box, found no post composer inside
+    it, and declined. The composer already had this guard; the opener did not, so the wrong surface
+    got opened one step earlier and burned the single reversible-opener hop."""
+    assert sp.surface_mismatch("start a post saying hi", "Comment")
+    assert sp.surface_mismatch('post this, exactly: "hi"', "Reply")
+
+
+def test_a_comment_task_keeps_its_comment_opener():
+    """One-directional, same as the composer rule: asking to comment must still open a comment box."""
+    assert not sp.surface_mismatch("comment on the first post saying hi", "Comment")
+    assert not sp.surface_mismatch("reply to that thread with hi", "Reply")
+
+
+def test_a_post_task_keeps_a_real_post_opener():
+    for opener in ("Post", "Compose", "New message", "Message"):
+        assert not sp.surface_mismatch('post this, exactly: "hi"', opener), opener

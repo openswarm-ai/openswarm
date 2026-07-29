@@ -249,6 +249,15 @@ async def run_send_script(
     if not composer:
         # Reversible-opener hop: prestage often stops on the profile with the "Message" opener visible (its settle raced the overlay). Opening a composer is the allowed opener class; the irreversible bar is unchanged.
         opener = browser_send_parse.opener_index_in_state(state_text)
+        if opener and browser_send_parse.surface_mismatch(task_sans_brief, opener[1]):
+            # The same post-is-not-a-comment rule the composer already enforces, applied one step
+            # earlier. Measured on linkedin.com with the task "start a post": the only opener listed
+            # was 'Comment', so the script opened a stranger's comment box, found no post composer
+            # inside it, and declined. Opening the wrong surface is not a slower route to the right
+            # one, and here it also burns the reversible-opener hop we only get once.
+            logger.info(f"[browser-sendscript] ignoring opener {opener[1]!r}: a comment box is not "
+                        f"where a post goes")
+            opener = None
         if opener:
             logger.info(f"[browser-sendscript] firing via opener {opener[1]!r} [{opener[0]}]")
             r_open = await execute_tool("BrowserClickIndex", {"index": opener[0]}, browser_id, tab_id)
@@ -256,7 +265,11 @@ async def run_send_script(
                 return None
             log.append({"tool": "BrowserClickIndex", "input": {"index": opener[0]}, "ok": True,
                         "result_summary": f"script opened composer via {opener[1]!r}"[:200], "elapsed_ms": 0})
-            for wait_s in (0.6, 1.2):
+            # 1.8s was too short for a compose surface that has to mount. Measured in dry-run:
+            # gmail's compose window and linkedin's post modal both missed it and fell back to the
+            # model loop, which costs 100s+. Waiting up to ~5s to avoid that is a trade worth making
+            # every time; the extra polls only ever run on a run that would otherwise have failed.
+            for wait_s in (0.6, 1.2, 1.5, 2.0):
                 await asyncio.sleep(wait_s)
                 state_text = await fresh_list()
                 composer = browser_send_parse.composer_index_in_state(state_text)
