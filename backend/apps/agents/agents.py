@@ -4,7 +4,7 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.core.models import AgentConfig, ApprovalResponse
 from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
 from contextlib import asynccontextmanager
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import JSONResponse
 import asyncio
 import json
@@ -385,7 +385,7 @@ async def subscriptions_status():
 
 
 @agents.router.post("/subscriptions/connect")
-async def subscriptions_connect(body: dict):
+async def subscriptions_connect(body: dict, request: Request):
     """Start OAuth flow for a subscription provider."""
     from backend.apps.nine_router import is_running, ensure_running, start_oauth
     provider = body.get("provider", "")
@@ -406,7 +406,9 @@ async def subscriptions_connect(body: dict):
             pass
 
     try:
-        result = await start_oauth(provider)
+        # The port the user's app actually reached us on beats guessing the default; only consulted
+        # when OPENSWARM_PORT is unset (dev uvicorn launches), never in packaged builds.
+        result = await start_oauth(provider, request.url.port)
 
         if result.get("flow") == "authorization_code" and result.get("state"):
             from backend.apps.oauth_state import pending_oauth

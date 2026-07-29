@@ -7,6 +7,7 @@ Talks to the already-running 9Router over HTTP; never spawns the subprocess
 import asyncio
 import logging
 import os
+from typing import Optional
 
 import httpx
 
@@ -211,7 +212,7 @@ async def p_start_codex_callback_listener(timeout: float = 300.0) -> int | None:
     return bound_port
 
 
-# Providers whose OAuth flow MUST run in the user's real browser via shell.openExternal, not the in-Electron window.open popup: - gemini-cli, antigravity: Google's Embedded WebView Restrictions policy uses JS-fingerprint detection that no UA spoof defeats. RFC 8252 and Google's own Desktop-app OAuth guidance both prescribe the system browser. - codex: auth.openai.com renders blank in our popup on some machines (newer embed detection + regional checks); system browser surfaces the real error. - claude: email magic-link opens in the user's default browser, which is a different cookie jar from the embedded popup, so the popup can never receive the auth. Forcing the OAuth flow into the system browser keeps everything in one cookie jar. The callback for gemini-cli/antigravity lands on /api/subscriptions/callback and runs the exchange server-side; codex uses its fixed 1455 listener; claude is special-cased in p_callback_uri_for_provider below.
+# Providers whose OAuth flow MUST run in the user's real browser via shell.openExternal, not the in-Electron window.open popup: - gemini-cli, antigravity: Google's Embedded WebView Restrictions policy uses JS-fingerprint detection that no UA spoof defeats. RFC 8252 and Google's own Desktop-app OAuth guidance both prescribe the system browser. - codex: auth.openai.com renders blank in our popup on some machines (newer embed detection + regional checks); system browser surfaces the real error. - claude: email magic-link opens in the user's default browser, which is a different cookie jar from the embedded popup, so the popup can never receive the auth. Forcing the OAuth flow into the system browser keeps everything in one cookie jar. The callback for gemini-cli/antigravity lands on /api/subscriptions/callback and runs the exchange server-side; codex uses its fixed 1455 listener; claude is special-cased in callback_uri_for_provider below.
 P_EXTERNAL_BROWSER_PROVIDERS: set[str] = {"gemini-cli", "antigravity", "codex", "claude"}
 
 
@@ -219,21 +220,32 @@ def p_should_use_external_browser(provider: str) -> bool:
     return provider in P_EXTERNAL_BROWSER_PROVIDERS
 
 
-def p_backend_port() -> int:
-    """Best-effort lookup of the OpenSwarm backend HTTP port.
+def resolve_backend_port(observed: Optional[int] = None) -> int:
+    """The port this backend is actually reachable on, for building OAuth redirect URIs.
 
-    Falls back to 8324 (the default in backend/main.py) if OPENSWARM_PORT
-    hasn't been set yet. backend/main.py:239 sets this env var at startup
-    before any request handler runs, so `start_oauth` will always see the
-    correct value.
+    OPENSWARM_PORT is authoritative and Electron always passes it (main.js), so packaged builds
+    take the first branch and behave exactly as before.
+
+    It is NOT always set in dev. main.py only exports it inside its `if __name__ == "__main__"`
+    block, which never runs under `python -m uvicorn backend.main:app --port N`. The old code then
+    assumed 8324 and stamped that into the redirect URI while uvicorn served a different port, so
+    Google bounced the user to a dead port and Claude's callback missed the router rewrite. Codex
+    kept working throughout, because OpenAI pins its own localhost:1455 listener, which is what
+    made the failure look like "two providers are broken" instead of "the port is wrong".
+
+    `observed` is the port the caller was actually reached on (from the live request), which is
+    ground truth on every launch path. Only consulted when the env var is absent.
     """
-    try:
-        return int(os.environ.get("OPENSWARM_PORT", "8324"))
-    except (TypeError, ValueError):
-        return 8324
+    raw = os.environ.get("OPENSWARM_PORT")
+    if raw:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    return observed or 8324
 
 
-def p_callback_uri_for_provider(provider: str) -> str:
+def callback_uri_for_provider(provider: str, backend_port: Optional[int] = None) -> str:
     """Return the redirect URI to pass to 9Router's authorize endpoint.
 
     Most providers accept 9Router's built-in callback page at port 20128.
@@ -252,15 +264,18 @@ def p_callback_uri_for_provider(provider: str) -> str:
     if provider == "claude":
         return f"http://localhost:{NINE_ROUTER_PORT}/callback"
     if provider in P_EXTERNAL_BROWSER_PROVIDERS:
-        return f"http://localhost:{p_backend_port()}/api/subscriptions/callback"
+        return f"http://localhost:{resolve_backend_port(backend_port)}/api/subscriptions/callback"
     return f"http://localhost:{NINE_ROUTER_PORT}/callback"
 
 
-async def start_oauth(provider: str) -> dict:
+async def start_oauth(provider: str, backend_port: Optional[int] = None) -> dict:
     """Start OAuth flow for a provider.
 
     For device_code providers (github, qwen, kiro): returns {user_code, verification_uri, device_code}
     For authorization_code providers (claude, codex, gemini-cli): returns {authUrl, codeVerifier, state}
+
+    `backend_port` is the port the connect request arrived on; it only matters when OPENSWARM_PORT
+    is unset, which is the dev-launch case that used to send Google to a dead port.
     """
     async with httpx.AsyncClient(timeout=15.0, headers=cli_auth_headers()) as client:
         try:
@@ -278,7 +293,7 @@ async def start_oauth(provider: str) -> dict:
         except Exception:
             pass
 
-        callback_url = p_callback_uri_for_provider(provider)
+        callback_url = callback_uri_for_provider(provider, backend_port)
         if provider == "codex":
             # Codex's redirect must be an OpenAI allow-listed loopback port; bind the first free one (1455 else 1457) and use ITS redirect_uri so authorize + token exchange agree.
             bound_port = await p_start_codex_callback_listener()
