@@ -259,6 +259,13 @@ async def run_prestage(
                 if li2:
                     li_text, gt_text = li2, gt2
                     current_url = u2 or url
+                # A signed-out visit to a compose URL redirects to sign-in, and a login form is
+                # made of textboxes. Claiming "composer reached" there would tell the rest of the
+                # run the navigation is done while it sits on an auth wall.
+                if browser_send_parse.looks_like_login_wall(current_url, li2):
+                    logger.info("[browser-prestage] compose entry landed on a sign-in wall; "
+                                "not staged")
+                    return False
                 if browser_send_parse.composer_index_in_state(li2):
                     return True
                 p_boxes = browser_send_parse.textbox_count(li2)
