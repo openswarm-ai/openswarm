@@ -678,7 +678,7 @@ MCP_HINTS = {
 }
 
 
-def p_suggest_mcps(check: str, known: set) -> list:
+def suggest_mcps(check: str, known: set) -> list:
     """Infer connected tools from the check sentence so the user never names them; only suggests tools that actually exist."""
     text = check.lower()
     out = []
@@ -705,7 +705,7 @@ def p_known_tools() -> set:
     return known
 
 
-def p_steps_signature(steps: list) -> str:
+def steps_signature(steps: list) -> str:
     # MUST byte-match the FE stepsSignature (JSON.stringify of [id, text] pairs); pinned by test_watch_for_event_tool.
     return json.dumps([[s["id"], s["text"]] for s in steps], separators=(",", ":"), ensure_ascii=False)
 
@@ -766,7 +766,7 @@ def p_build_trigger(args: dict) -> tuple:
             return None, "kind=agent needs check (one sentence describing the condition)."
         mcps = [str(m) for m in (args.get("mcps") or [])]
         if not mcps:
-            mcps = p_suggest_mcps(args["check"], p_known_tools())
+            mcps = suggest_mcps(args["check"], p_known_tools())
         mcp_err = p_validate_mcps(mcps)
         if mcp_err:
             return None, mcp_err
@@ -831,7 +831,7 @@ def handle_watch_for_event(args: dict) -> dict:
             "event_triggers": [trigger],
             "source_session_id": PARENT_SESSION_ID or None,
             "dashboard_id": DASHBOARD_ID or None,
-            "tested_signature": p_steps_signature(steps_payload),
+            "tested_signature": steps_signature(steps_payload),
         }
         r = _call("POST", "/create", body)
         if "_error" in r:

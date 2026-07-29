@@ -215,8 +215,8 @@ def test_mcp_auto_suggest_and_signature_vector(monkeypatch):
     import backend.apps.agents.schedule_mcp_server as srv
 
     known = {"google-workspace", "notion"}
-    assert srv.p_suggest_mcps("a new email from my landlord arrived", known) == ["google-workspace"]
-    assert srv.p_suggest_mcps("my notion database gained a row", known) == ["notion"]
-    assert srv.p_suggest_mcps("the moon is full", known) == []
+    assert srv.suggest_mcps("a new email from my landlord arrived", known) == ["google-workspace"]
+    assert srv.suggest_mcps("my notion database gained a row", known) == ["notion"]
+    assert srv.suggest_mcps("the moon is full", known) == []
     # Byte-match the FE stepsSignature: JSON.stringify([["s1","a\"b"]]).
-    assert srv.p_steps_signature([{"id": "s1", "text": 'a"b'}]) == '[["s1","a\\"b"]]'
+    assert srv.steps_signature([{"id": "s1", "text": 'a"b'}]) == '[["s1","a\\"b"]]'
