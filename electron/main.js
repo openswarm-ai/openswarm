@@ -3262,14 +3262,23 @@ async function ensureDebuggerAttached(wc) {
 // Bounded + fail-open: a wedged pipe must never block the card from closing.
 async function detachCdpCleanly(wc) {
   if (!wc || wc.isDestroyed()) return;
-  cdpTearingDown.add(wc.id);
   let attached = false;
   try { attached = wc.debugger.isAttached(); } catch (_) { return; }
+  // Mark tearing-down only once we know there IS a session to tear down. The flag is a one-way
+  // latch that permanently bars re-attach, so setting it before this check meant a card that had
+  // never used CDP got latched by any teardown call and could never be perceived again: a live,
+  // healthy card with permanently dead perception, which reads exactly like a wedged webview.
   if (!attached) return;
+  cdpTearingDown.add(wc.id);
   const drain = (method, params) =>
     raceCdp(wc.debugger.sendCommand(method, params || {}), 1200, method).catch(() => {});
+  // Recheck between every await. Each drain can take 1.2s, and this runs while the guest is being
+  // torn down, so the webContents these commands target can die mid-sequence; both crashes we
+  // have logs for end in a CDP detach racing a guest teardown.
   await drain('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true });
+  if (wc.isDestroyed() || wc.isCrashed()) return;
   await drain('Network.disable', {});
+  if (wc.isDestroyed() || wc.isCrashed()) return;
   try { wc.debugger.detach(); } catch (_) { /* already detached / gone */ }
 }
 
