@@ -119,3 +119,30 @@ def test_a_comment_task_keeps_its_comment_opener():
 def test_a_post_task_keeps_a_real_post_opener():
     for opener in ("Post", "Compose", "New message", "Message"):
         assert not sp.surface_mismatch('post this, exactly: "hi"', opener), opener
+
+
+# --- LinkedIn names its editors, and the names are the only thing telling them apart -----------
+
+def p_row(name: str) -> str:
+    return f'[12]*<textbox "{name}" value="">'
+
+
+def test_linkedins_post_editor_is_recognised_as_a_composer():
+    """Measured: landing on LinkedIn's own compose surface listed exactly ONE textbox, named
+    "Text editor for creating content", and the composer picker scored zero because no pattern
+    matched it. The whole site failed 3/3 on a page that was showing the right box."""
+    from backend.apps.agents.browser import browser_send_parse as sp
+    assert sp.composer_index_in_state(p_row("Text editor for creating content")) is not None
+
+
+def test_linkedins_comment_editor_is_still_refused_for_a_post_task():
+    """The names differ by one word, so widening the picker must not swallow the comment box.
+    It matches now, and surface_mismatch is what rejects it: recognising a box and choosing it are
+    different jobs, and only the second one is allowed to be wrong here."""
+    from backend.apps.agents.browser import browser_send_parse as sp
+    row = p_row("Text editor for creating comment")
+    assert sp.composer_index_in_state(row) is not None
+    assert sp.surface_mismatch('start a post saying "hello there"',
+                               "Text editor for creating comment") is True
+    assert sp.surface_mismatch('start a post saying "hello there"',
+                               "Text editor for creating content") is False

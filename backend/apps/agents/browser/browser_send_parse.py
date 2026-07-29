@@ -17,10 +17,15 @@ P_COMPOSER_ROW_RE = re.compile(r"\[(\d+)\]\*?<\s*textbox\s+\"([^\"]*)\"", re.I)
 # A compose-shaped textbox name, generalized across messaging sites: LinkedIn "Write a
 # message", X/Slack "Message", Discord "Message @user", Gmail "Message Body", "Post your
 # reply", "What's happening", "Add a comment". Not per-site: one structural shape.
+# "text editor" earns its place from a measurement, not a guess: LinkedIn's post box is named
+# "Text editor for creating content" and its comment box "Text editor for creating comment", so
+# without it the real composer was invisible while the comment box next to it matched on "comment".
+# Landing on LinkedIn's own compose surface listed exactly one textbox and we still scored zero.
+# Both shapes match now, and telling them apart is surface_mismatch's job, which already does it.
 P_COMPOSER_NAME_RE = re.compile(
     r"write|messag|compose|reply|comment|post your|post text|what.?s happening|"
     r"tweet|caption|say something|start a|new message|body|your (message|note)|"
-    r"add a comment|write something",
+    r"add a comment|write something|text editor|creating content",
     re.I,
 )
 
