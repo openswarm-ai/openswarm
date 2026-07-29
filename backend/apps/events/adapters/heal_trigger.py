@@ -44,6 +44,16 @@ def parse_heal_reply(text: str) -> Tuple[Optional[str], str]:
     return fix, reason
 
 
+async def probe_url(url: str) -> bool:
+    """A heal is only real if the fix demonstrably answers: SSRF-guarded GET, 2xx/3xx required. Model claims never applied unverified."""
+    try:
+        from backend.apps.agents.tools.web import USER_AGENT, safe_fetch
+        resp = await safe_fetch(url, method="GET", headers={"User-Agent": USER_AGENT}, timeout=12.0)
+        return resp.status_code < 400
+    except Exception:
+        return False
+
+
 async def attempt_heal(workflow_id: str, trigger: EventTriggerConfig) -> bool:
     """True when the trigger config was repaired (caller should re-poll now)."""
     from backend.apps.events import stores
@@ -63,6 +73,12 @@ async def attempt_heal(workflow_id: str, trigger: EventTriggerConfig) -> bool:
         logger.warning("heal turn failed for trigger %s: %s", trigger.id, e)
         return False
     if fix and fix.startswith("http") and fix != url:
+        if not await probe_url(fix):
+            stores.append_log(workflow_id, EventLogEntry(
+                trigger_id=trigger.id, kind="error",
+                summary=f"Self-heal proposed {fix} but it didn't answer; not applied",
+            ))
+            return False
         wf = storage.get_workflow(workflow_id)
         if wf is None:
             return False

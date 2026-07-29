@@ -176,6 +176,10 @@ def test_self_heal_fixes_url_or_escalates(make_wf, monkeypatch):
         assert "https://old.example/feed" in prompt and "410 Gone" in prompt
         return "Investigated.\nFIX_URL: https://new.example/feed"
 
+    async def p_probe_ok(url):
+        return url == "https://new.example/feed"
+
+    monkeypatch.setattr(ht, "probe_url", p_probe_ok)
     monkeypatch.setattr(ac, "run_check_turn", p_fix_turn)
     assert p_run(ht.attempt_heal(wf.id, trig)) is True
     healed = storage.get_workflow(wf.id).event_triggers[0]
@@ -190,3 +194,27 @@ def test_self_heal_fixes_url_or_escalates(make_wf, monkeypatch):
     assert p_run(ht.attempt_heal(wf.id, healed)) is False
     assert storage.get_workflow(wf.id).event_triggers[0].source.url == "https://new.example/feed"  # untouched
     assert any("requires a sign-in" in e.summary for e in stores.read_log(wf.id))
+
+
+def test_heal_never_applies_an_unverified_fix(make_wf, monkeypatch):
+    """The model can claim any URL; only one that actually answers gets applied."""
+    from backend.apps.events.adapters import agent_check as ac
+    from backend.apps.events.adapters import heal_trigger as ht
+    from backend.apps.events import stores
+    from backend.apps.workflows import storage
+
+    trig = EventTriggerConfig(source=StreamSource(url="https://old.example/feed"))
+    wf = make_wf(event_triggers=[trig])
+    storage.save_workflow(wf)
+
+    async def p_fix_turn(model, prompt, **kwargs):
+        return "FIX_URL: https://hallucinated.example/feed"
+
+    async def p_probe_dead(url):
+        return False
+
+    monkeypatch.setattr(ac, "run_check_turn", p_fix_turn)
+    monkeypatch.setattr(ht, "probe_url", p_probe_dead)
+    assert p_run(ht.attempt_heal(wf.id, trig)) is False
+    assert storage.get_workflow(wf.id).event_triggers[0].source.url == "https://old.example/feed"
+    assert any("didn't answer; not applied" in e.summary for e in stores.read_log(wf.id))
