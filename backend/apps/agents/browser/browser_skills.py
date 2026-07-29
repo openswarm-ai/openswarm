@@ -798,6 +798,23 @@ def hint_step_adopted(step_key: tuple, action_log: list[dict]) -> bool:
     return False
 
 
+def replay_owns_nav(host: str, has_skill: bool, task_is_removal: bool, task_is_send: bool) -> bool:
+    """Should a learned skill's replay take over navigation, letting the caller skip prestage?
+
+    Yes for a READ: the replayed prefix does the same navigation prestage would aux-drive, faster.
+
+    No for a SEND, and this is the part that was wrong. Prestage is also what hands the send-script
+    its composer perception; skip it and the entire fill/click/receipt tail is unreachable, so the
+    model falls back to burning 4-5 turns. Measured live on x.com with a learned skill present:
+    5/5 writes went the slow way at 41-146s (median ~57s) with the receipt never speaking, against
+    19.4s with the script armed. Prestage on an already-loaded page costs ~2-5s.
+
+    No for a removal either: a delete is a destructive one-shot, not a replayable nav prefix, so a
+    stale delete-"skill" made of scrolls must never hijack it.
+    """
+    return bool(host and has_skill and not task_is_removal and not task_is_send)
+
+
 def mark_replay_succeeded(host: str, task: str) -> None:
     """A replay ran end to end. Count it and, if the skill was still on
     probation, PROMOTE it to trusted (the verify gate just passed)."""

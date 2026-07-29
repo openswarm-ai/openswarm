@@ -1148,21 +1148,23 @@ async def run_browser_agent(
     # Removal tasks never replay a skill (see the record gate): a delete is a destructive one-shot,
     # not a replayable nav prefix, so a stale delete-"skill" of scrolls must not hijack it.
     p_task_is_removal = is_removal_task(skill_key_task)
+    # Computed here (pure, task-only) so the skill gate, prestage, and every dispatch tier below
+    # share one verdict. `task` here is prompt + an aux-written routing brief (compose_task), and
+    # the brief's prose can read informational and wrongly disarm a real send (facebook: the brief
+    # tripped the info-ask gate while the user's own "start a post" is plainly an action). The
+    # user's words are authoritative, so a send stands if EITHER the composed task OR the raw
+    # prompt says action.
+    task_is_send = not (deliverable_is_informational("", task)
+                        and deliverable_is_informational("", user_prompt or task))
     p_early_host = browser_skills.host_of(initial_url or current_url or next(iter(re.findall(r"https?://\S+", task)), ""))
-    p_skip_prestage_for_skill = bool(p_early_host and not p_task_is_removal
-                                     and browser_skills.find_skill(p_early_host, skill_key_task))
+    p_skip_prestage_for_skill = browser_skills.replay_owns_nav(
+        p_early_host, bool(browser_skills.find_skill(p_early_host, skill_key_task)),
+        p_task_is_removal, task_is_send)
     if p_skip_prestage_for_skill:
         logger.info(f"[browser-skills] skill exists for {p_early_host}; skipping prestage (replay owns the nav)")
 
     from backend.apps.agents.browser import browser_prestage
     from backend.apps.agents.browser import browser_plan_dispatch
-    # Computed here (pure, task-only) so prestage + every dispatch tier below shares one verdict.
-    # `task` here is prompt + an aux-written routing brief (compose_task), and the brief's prose
-    # can read informational and wrongly disarm a real send (facebook: the brief tripped the
-    # info-ask gate while the user's own "start a post" is plainly an action). The user's words
-    # are authoritative, so a send stands if EITHER the composed task OR the raw prompt says action.
-    task_is_send = not (deliverable_is_informational("", task)
-                        and deliverable_is_informational("", user_prompt or task))
     if (browser_prestage.prestage_enabled() and not app_mode and not cancel_event.is_set()
             and not p_skip_prestage_for_skill):
         try:
