@@ -265,15 +265,25 @@ async def run_send_script(
                 return None
             log.append({"tool": "BrowserClickIndex", "input": {"index": opener[0]}, "ok": True,
                         "result_summary": f"script opened composer via {opener[1]!r}"[:200], "elapsed_ms": 0})
-            # 1.8s was too short for a compose surface that has to mount. Measured in dry-run:
-            # gmail's compose window and linkedin's post modal both missed it and fell back to the
-            # model loop, which costs 100s+. Waiting up to ~5s to avoid that is a trade worth making
-            # every time; the extra polls only ever run on a run that would otherwise have failed.
-            for wait_s in (0.6, 1.2, 1.5, 2.0):
+            # Wait for the surface to STOP MOVING, not for a number of seconds. Fixed budgets kept
+            # being wrong in both directions: 1.8s missed gmail and linkedin entirely, 5.3s still
+            # missed a cold gmail compose window that existed a beat later, and simply making the
+            # number bigger taxes every run that was never going to succeed. A mounting surface
+            # keeps changing the element list; once two consecutive reads are identical, nothing
+            # more is coming and more waiting is pure cost.
+            p_prev = ""
+            p_settled = 0
+            for wait_s in (0.6, 1.2, 1.5, 2.0, 2.0, 2.0):
                 await asyncio.sleep(wait_s)
                 state_text = await fresh_list()
                 composer = browser_send_parse.composer_index_in_state(state_text)
                 if composer:
+                    break
+                p_settled = p_settled + 1 if state_text and state_text == p_prev else 0
+                p_prev = state_text
+                if p_settled >= 1:
+                    logger.info("[browser-sendscript] opener surface settled with no composer; "
+                                "not waiting out the rest of the budget")
                     break
         # Structural fallback: the AX-name detector missed it (an unnamed contenteditable, a
         # non-standard rich editor, or two textboxes it couldn't disambiguate). Ask the page to
