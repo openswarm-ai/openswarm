@@ -336,8 +336,22 @@ async def run_send_script(
             # what the error itself prescribes, so take it once rather than surrendering a send
             # the script had already located. One retry only: a second failure is a different
             # problem and the model path is the right answer for it.
-            state_retry = await fresh_list()
-            composer_retry = browser_send_parse.composer_index_in_state(state_retry)
+            # Poll, don't snapshot. A single re-list catches the composer only if the modal happens
+            # to be settled at that instant; mid-churn it shows zero or two compose-shaped boxes,
+            # composer_index_in_state returns None (ambiguous), and the retry used to give up
+            # without a word. Measured: 5 successful retries in one arm, 0 in the next, same code,
+            # purely on timing. Same poll shape the opener path already uses.
+            composer_retry = None
+            for wait_s in (0.0, 0.5, 1.0):
+                if wait_s:
+                    await asyncio.sleep(wait_s)
+                state_retry = await fresh_list()
+                composer_retry = browser_send_parse.composer_index_in_state(state_retry)
+                if composer_retry:
+                    break
+            if not composer_retry:
+                logger.info("[browser-sendscript] composer index went stale and did not re-resolve "
+                            "within 1.5s of polling; handing to model")
             if composer_retry:
                 logger.info(f"[browser-sendscript] stale composer index {composer[0]}; refreshed to "
                             f"{composer_retry[0]} and retrying the fill once")
