@@ -77,8 +77,10 @@ outputs = SubApp("outputs", outputs_lifespan)
 async def serve_workspace_file(workspace_id: str, filepath: str, p_d: str = ""):
     """Serve a file from a workspace folder. For index.html, inject OUTPUT data."""
     folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    folder_norm = os.path.normpath(folder)
     full_path = os.path.normpath(os.path.join(folder, filepath))
-    if not full_path.startswith(os.path.normpath(folder)):
+    # `+ os.sep` (matching write/delete) so workspace `abc` can't serve out of a sibling `abc-evil` by prefix-string collision rather than path-component containment.
+    if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -363,9 +365,11 @@ async def seed_workspace(body: WorkspaceSeedRequest):
 
     # Legacy flat path. Seed only fills in MISSING files; it never overwrites what's already on disk. A reopen re-sends the inline output.files snapshot, which lags behind whatever the agent just wrote to the workspace; writing it back reverted every edited file (new files survived, edited ones snapped to the snapshot). Disk wins once an app exists.
     if body.files:
+        folder_norm = os.path.normpath(folder)
         for rel_path, content in body.files.items():
             full_path = os.path.normpath(os.path.join(folder, rel_path))
-            if not full_path.startswith(os.path.normpath(folder)):
+            # `+ os.sep` (matching write/delete) so a sibling `abc-evil` can't be seeded via workspace `abc` by prefix-string collision.
+            if full_path != folder_norm and not full_path.startswith(folder_norm + os.sep):
                 continue
             if os.path.exists(full_path):
                 continue
