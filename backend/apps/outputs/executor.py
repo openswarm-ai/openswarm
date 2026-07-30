@@ -21,10 +21,20 @@ P_ALLOWED_MODULES = frozenset({
 })
 
 # Builtin functions that punch holes through the allowlist or do I/O. Direct calls (e.g. `eval(...)`) are caught here. Attribute-style calls (`__builtins__.eval(...)`) are blocked by the preamble's `delattr` loop in the subprocess.
+# getattr/setattr/delattr/vars/globals/locals are dynamic-attribute escapes: they let `getattr(obj, "__class__")` reconstruct the dunder-walk the static check below forbids, so they're blocked too.
 P_BLOCKED_BUILTINS = frozenset({
     "exec", "eval", "compile", "__import__", "open", "input",
     "breakpoint", "exit", "quit",
+    "getattr", "setattr", "delattr", "vars", "globals", "locals",
 })
+
+# Bare names that hand back a live module the import allowlist meant to withhold. `sys` is the headline: `sys.modules["os"]` retrieves the already-loaded os with no import statement and no blocked-builtin call, so the AST never saw it (issue #134). `__import__`/`__builtins__` are the attribute-free spellings of the same escape.
+P_BLOCKED_NAMES = frozenset({"sys", "__import__", "__builtins__", "__loader__", "__spec__"})
+
+
+def p_is_dunder(name: str) -> bool:
+    """True for `__x__` names. Blocking dunder ATTRIBUTE access (`().__class__`, `f.__globals__`, `.__subclasses__`) severs the object-graph walk that reaches os/subprocess without ever importing them; data-shaping code never needs a dunder."""
+    return len(name) > 4 and name.startswith("__") and name.endswith("__")
 
 
 class UnsafeCodeError(Exception):
@@ -70,6 +80,18 @@ def get_code_warnings(code: str) -> list[str]:
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in P_BLOCKED_BUILTINS:
                 msg = f"Calls builtin '{node.func.id}()' which can escape the sandbox"
+                if msg not in seen:
+                    seen.add(msg)
+                    warnings.append(msg)
+        elif isinstance(node, ast.Attribute):
+            if p_is_dunder(node.attr):
+                msg = f"Accesses dunder attribute '.{node.attr}' which can walk the object graph to a blocked module"
+                if msg not in seen:
+                    seen.add(msg)
+                    warnings.append(msg)
+        elif isinstance(node, ast.Name):
+            if node.id in P_BLOCKED_NAMES or p_is_dunder(node.id):
+                msg = f"References '{node.id}' which exposes a live module the import allowlist withholds"
                 if msg not in seen:
                     seen.add(msg)
                     warnings.append(msg)
@@ -154,7 +176,7 @@ class BackendExecResult:
 
 
 async def execute_backend_code(
-    code: str, input_data: dict, *, skip_validation: bool = False
+    code: str, input_data: dict, *, skip_validation: bool = False, force_env: bool = False
 ) -> BackendExecResult:
     """Execute user-provided Python code in a subprocess.
 
@@ -173,6 +195,13 @@ async def execute_backend_code(
     `skip_validation=True` bypasses #1; intended ONLY for callers that
     have already surfaced the warnings to a user and gotten explicit
     consent (the `/api/outputs/execute` HITL flow). #2, #5 always run.
+
+    `force_env` selects the privileged inherit-real-env mode (#3 relaxed):
+    ONLY pass it when the user has consented to unsafe imports. It is a
+    SEPARATE decision from `skip_validation`: code that merely passed the
+    allowlist (empty warnings) must still run in the minimal env, else
+    every vetted Output silently runs with PATH/COMSPEC and `os.system`
+    becomes reachable with no consent (issue #134).
     """
 
     if not skip_validation:
@@ -204,7 +233,7 @@ async def execute_backend_code(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=workdir,
-            env=p_minimal_env(force=skip_validation),
+            env=p_minimal_env(force=force_env),
         )
 
         try:
