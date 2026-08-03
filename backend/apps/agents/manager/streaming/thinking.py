@@ -18,7 +18,15 @@ logger = logging.getLogger(__name__)
 
 
 @typechecked
-async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, session: AgentSession, session_id: str, sessions: Dict[str, AgentSession], force_provider_unavailable: bool = False) -> None:
+async def emit_consolidated_thinking(
+    thinking: ThinkingState,
+    turn: TurnState,
+    session: AgentSession,
+    session_id: str,
+    sessions: Dict[str, AgentSession],
+    force_provider_unavailable: bool = False,
+    analytics_final: bool = False,
+) -> None:
     """Build the running aggregate Message and broadcast it.
     Safe to call multiple times, uses a stable per-turn id
     so the frontend dedupes by id and updates the bubble in
@@ -156,6 +164,7 @@ async def emit_consolidated_thinking(thinking: ThinkingState, turn: TurnState, s
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": consolidated.model_dump(mode="json"),
+            "analytics_final": analytics_final,
         })
     except Exception:
         logger.exception("Failed to emit consolidated thinking message")
@@ -174,4 +183,3 @@ async def ticker_loop(thinking: ThinkingState, turn: TurnState, session: AgentSe
             await emit_consolidated_thinking(thinking, turn, session, session_id, sessions)
     except asyncio.CancelledError:
         pass
-
