@@ -60,8 +60,8 @@ def test_distill_refuses_click_without_resolved_name():
     assert sk.distill_steps(log) == []
 
 
-def test_one_unnamed_click_throws_away_every_other_step_in_the_run():
-    """Why the skill layer has recorded exactly zero skills in production.
+def test_an_unnameable_click_truncates_the_run_into_a_navigation_prefix():
+    """Why the skill layer recorded exactly zero skills in production, and what it does instead now.
 
     The rule above is right on its own, but its blast radius is the whole run, and the clicks that
     browser_send_script appends to the action log carry no `clicked_name`: it puts the element's
@@ -71,21 +71,29 @@ def test_one_unnamed_click_throws_away_every_other_step_in_the_run():
 
     Measured across 104 sweep logs / 7MB of real runs: 55 record attempts, 43 of them holding a
     productive action, 0 skills recorded, 0 replays, 244 lookups that found nothing.
+
+    So recording now STOPS at the un-nameable click and keeps what came before, which is a pure
+    navigation macro. That split is the point: getting to the page is reusable, the write is not.
     """
     log = [
         {"tool": "BrowserNavigate", "input": {"url": "https://x.com/home"}, "ok": True},
+        {"tool": "BrowserClickIndex", "input": {"index": 3}, "ok": True,
+         "clicked_name": "Post", "clicked_role": "button"},
         {"tool": "BrowserType", "input": {"selector": "#c", "text": "hi"}, "ok": True},
         {"tool": "BrowserClickIndex", "input": {"index": 7, "text": "hi"}, "ok": True,
          "result_summary": "script fill into 'Post text'"},
     ]
-    assert sk.distill_steps(log) == [], "if this ever records, read the payload warning below"
-    # The trap for whoever fixes it: a click carrying TEXT distills into BrowserClickByName, which
-    # has no text parameter, so a replayed send would click the composer, type nothing, and submit.
-    named = dict(log[-1], clicked_name="Post text", clicked_role="textbox")
-    steps = sk.distill_steps(log[:2] + [named])
-    assert "hi" not in str(steps[-1]["params"]), (
-        "the payload is dropped on the way into a replayable step; naming the click without fixing "
-        "this is how a skill replays an empty post")
+    steps = sk.distill_steps(log)
+    assert [s["tool"] for s in steps] == ["BrowserNavigate", "BrowserClickByName"], steps
+
+    # THE SAFETY PROPERTY, and the reason a prefix is safe to record where a whole run was not: the
+    # typed payload must never survive into a skill. It is one run's text; replaying it re-posts
+    # last week's message, and a BrowserClickByName carrying it would type nothing and still submit.
+    assert "hi" not in str(steps), "a recorded skill must never carry the payload of the run"
+
+    # And a run whose ONLY productive step is the un-nameable click still records nothing, because
+    # a bare navigate is not a skill worth replaying.
+    assert sk.distill_steps(log[:1] + log[2:]) == []
 
 
 def test_distill_skips_navigate_only():
@@ -117,7 +125,10 @@ def test_distill_flattens_browser_batch():
 
 
 def test_distill_bails_on_batched_click_index():
-    # a batched click_index can't be made robust (resolved name not recoverable)
+    # A batched click_index can't be made robust (resolved name not recoverable), so recording stops
+    # there. Nothing usable precedes it here (only the fill, which a prefix must never carry), so the
+    # result is still empty; what changed is the REASON, from "discard the run" to "keep the prefix,
+    # and this run has no prefix".
     log = [
         {"tool": "BrowserBatch", "ok": True, "input": {"actions": [
             {"type": "type", "params": {"selector": "#m", "text": "x"}},

@@ -226,6 +226,7 @@ def distill_steps(action_log: list[dict]) -> list[dict]:
     or [] if it can't be made safely replayable."""
     steps: list[dict] = []
     productive_count = 0
+    p_truncated = False
 
     def p_emit_simple(tool, inp):
         nonlocal productive_count
@@ -269,12 +270,19 @@ def distill_steps(action_log: list[dict]) -> list[dict]:
                 if st == "click_index":
                     name = (r or {}).get("clicked_name")
                     if not name:
-                        return []  # index clicks need a re-resolvable identity
+                        # Same truncation as the un-batched path below, but two loops deep, so it
+                        # needs a flag: a bare break here would only leave the sub-action loop and
+                        # the outer scan would carry on past the step we could not name.
+                        p_truncated = True
+                        break
                     steps.append({"tool": "BrowserClickByName", "params": {"role": (r or {}).get("clicked_role", ""), "name": name}})
                     productive_count += 1
                     continue
                 if not p_emit_simple(st, sp):
-                    return []
+                    p_truncated = True
+                    break
+            if p_truncated:
+                break
             continue
         if tool == "BrowserNavigate" and inp.get("url"):
             steps.append({"tool": "BrowserNavigate", "params": {"url": inp["url"]}})
@@ -284,7 +292,16 @@ def distill_steps(action_log: list[dict]) -> list[dict]:
         elif tool == "BrowserClickIndex":
             name = a.get("clicked_name")
             if not name:
-                return []
+                # STOP here and keep what came before, rather than throwing the run away. Discarding
+                # everything is why this layer recorded 0 skills in 55 attempts across 7MB of real
+                # logs: browser_send_script appends its clicks without `clicked_name` (it puts the
+                # element name in result_summary as prose), and it runs on every fast-path write, so
+                # one un-nameable click deleted the navigate and the type that reached the page.
+                # What survives is a navigation PREFIX, which is the half worth replaying anyway:
+                # the write itself is the send script's job and its payload must never be baked into
+                # a skill, or replay re-posts last week's text.
+                p_truncated = True
+                break
             steps.append({"tool": "BrowserClickByName", "params": {"role": a.get("clicked_role", ""), "name": name}})
             productive_count += 1
         elif tool == "BrowserClick" and inp.get("selector"):
@@ -296,6 +313,13 @@ def distill_steps(action_log: list[dict]) -> list[dict]:
         elif tool == "BrowserScroll":
             steps.append({"tool": "BrowserScroll", "params": {k: inp[k] for k in ("direction", "amount") if k in inp}})
             productive_count += 1
+    if p_truncated:
+        # A truncated run is a NAVIGATION macro and nothing else. Whatever text was typed before the
+        # un-nameable click is the payload of that one run, and replaying it would re-post last
+        # week's message; getting to the page is the reusable part, the write belongs to the send
+        # script every time. Dropping the fill is what makes recording a prefix safe at all.
+        steps = [s for s in steps if s["tool"] not in ("BrowserType", "BrowserPressKey")]
+        productive_count = sum(s["tool"] != "BrowserNavigate" for s in steps)
     if productive_count == 0:
         return []
     return p_prune_detours(steps)
