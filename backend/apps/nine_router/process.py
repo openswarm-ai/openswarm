@@ -497,7 +497,19 @@ async def p_ensure_running_impl():
     p_is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
 
     if is_running():
-        # In dev mode, kill stale standalone servers (from previous builds) so we can start `next dev` which always uses latest source code
+        # ADOPT a healthy router instead of evicting it. is_running() has just confirmed HTTP 200 on
+        # /v1/models, so whatever is on the port is serving; the only thing killing it establishes is
+        # who owns the process. That eviction is a thrash engine on a shared machine: every dev
+        # backend that boots kills the router the others are using, their watchdogs revive it, and
+        # the next boot kills it again. Measured with 8 backends on one box: a coverage sweep scored
+        # 1/9 with zero code change, wall times went 30s -> 202s, and one run logged 0 kills of its
+        # own against 4 revives. The original reason to kill ("stale build") does not apply to a
+        # component we pin by npm version rather than build from source. OPENSWARM_ROUTER_TAKEOVER=1
+        # restores the old behaviour for the rare case someone must force a fresh spawn.
+        if not p_is_packaged and os.environ.get("OPENSWARM_ROUTER_TAKEOVER") != "1":
+            logger.info("9Router already healthy on port %d; adopting it (set "
+                        "OPENSWARM_ROUTER_TAKEOVER=1 to force a fresh spawn)", NINE_ROUTER_PORT)
+            return
         if not p_is_packaged:
             # But never kill the instance WE already started: a second ensure call (another sub-app's lifespan races settings') would pkill our fresh next-server, leaving a dead window the boot key-sync fails into, so the cp-openai node never registers and gpt-5.* own-key dies.
             if p_process is not None and p_process.poll() is None:

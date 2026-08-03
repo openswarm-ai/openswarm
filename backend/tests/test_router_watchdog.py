@@ -204,3 +204,34 @@ def test_detection_revival_gated_on_evidence():
                 assert ensures, "sub-only users must get a revival attempt"
 
     asyncio.run(run())
+
+
+def test_a_healthy_router_is_adopted_not_evicted():
+    """The dev-machine thrash engine, removed.
+
+    Every dev backend used to kill any 9Router it had not personally spawned, on a "stale build"
+    rationale that does not apply to a component we pin by npm version instead of building from
+    source. On a shared box that is a loop: each boot evicts the router the others are using, their
+    watchdogs revive it, the next boot evicts it again. Measured with 8 backends on one machine, a
+    coverage sweep scored 1/9 with zero code change, wall times went 30s -> 202s, and one backend
+    logged 0 kills of its own against 4 revives.
+
+    is_running() has already confirmed HTTP 200 on /v1/models before this point, so the router is
+    serving by definition; killing it settles ownership and nothing else.
+    """
+    killed = []
+    with patch.object(proc, "is_running", return_value=True), \
+         patch.object(proc, "p_process", None), \
+         patch("subprocess.run", side_effect=lambda *a, **k: killed.append(a)), \
+         patch.dict("os.environ", {"OPENSWARM_PACKAGED": "0"}, clear=False):
+        asyncio.run(proc.p_ensure_running_impl())
+    assert killed == [], "a healthy router another process owns must be adopted, never pkill'd"
+
+
+def test_takeover_escape_hatch_still_exists():
+    """Adoption must not become a trap: someone genuinely needing a fresh spawn keeps a way to get
+    one, and it is explicit rather than the silent default."""
+    import inspect
+    src = inspect.getsource(proc.p_ensure_running_impl)
+    assert "OPENSWARM_ROUTER_TAKEOVER" in src
+    assert 'os.environ.get("OPENSWARM_ROUTER_TAKEOVER") != "1"' in src
