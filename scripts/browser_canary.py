@@ -122,6 +122,40 @@ def run_task(prompt: str, name: str, budget: int = 180) -> Dict[str, object]:
     return {"said": said, "status": status, "wall": round(time.time() - t0, 1), "log": slice_}
 
 
+def marker_in_page(cfg: Dict[str, str], marker: str, handle: str, site: str) -> Optional[bool]:
+    """Is the marker ACTUALLY on the destination page? None when the read could not be made.
+
+    The two checks around this one both take somebody's word for it. `sent_receipt=True` is OUR
+    mechanism reporting on itself, so a receipt bug reads as a delivered post; and the GONE/PRESENT
+    reply is a model summarising a page, which is the same model whose claim we are trying to audit.
+    Neither is destination-specific evidence.
+
+    This reads the raw perception instead: navigate fresh, then grep the tool output in the log for
+    the marker string. No model judgement is consulted, only whether those characters came back from
+    the page. That is what makes a "posted" claim falsifiable, which is the whole point of counting
+    false successes.
+    """
+    if not cfg.get("verify"):
+        return None
+    v = run_task(cfg["verify"].format(m=marker, handle=handle), f"canary-audit-{site}")
+    log = str(v["log"])
+    if not log.strip():
+        return None
+    # "the marker is not on the page" and "we never got a good look at the page" are DIFFERENT
+    # answers, and collapsing them is how this audit falsely accused LinkedIn of a false success:
+    # the post was really there (the cleanup that followed deleted it), the read just never
+    # surfaced its text. Absence only counts as evidence once the read itself is known good, so
+    # require proof we saw the destination at all before believing what we did not see on it.
+    saw_page = any(k in log for k in ("[browser-action] BrowserGetText",
+                                      "[browser-action] BrowserListInteractives"))
+    hit = any(marker in line for line in log.splitlines()
+              if "browser-action" not in line and "prompt" not in line.lower()
+              and "canary-audit" not in line)
+    if hit:
+        return True
+    return False if saw_page else None
+
+
 def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
     marker = "canary" + secrets.token_hex(4)          # no removal words, unique per run
     res: Dict[str, object] = {"site": site, "marker": marker, "live": live}
@@ -149,9 +183,24 @@ def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
     log = str(r["log"])
     delivered = "done sent_receipt=True" in log or "DELIVERY CONFIRMED" in log
     res["post_wall"] = r["wall"]
+    # What the run TOLD the user, kept apart from what the page shows, because the gap between the
+    # two is the number that matters. A claim with no evidence under it is a false success, and it
+    # cannot be counted at all unless the two are recorded separately.
+    said = str(r["said"])
+    res["claimed"] = delivered or bool(
+        re.search(r"\b(posted|published|tweeted|submitted|sent it|has been posted)\b", said, re.I))
+    proven = marker_in_page(cfg, marker, handle, site)
+    res["proven"] = proven
+    res["false_success"] = bool(res["claimed"]) and proven is False
     if not delivered:
         res.update(stage="post", ok=False,
-                   detail=f"no receipt (status={r['status']}): {str(r['said'])[:120]}")
+                   detail=f"no receipt (status={r['status']}): {said[:120]}")
+        return res
+    if proven is False:
+        # The receipt fired and the destination does not have it. This is exactly the failure the
+        # canary was built for, and it must never be reported as a pass.
+        res.update(stage="post", ok=False,
+                   detail=f"FALSE SUCCESS: receipt says sent, {marker} is not on the destination")
         return res
 
     # 2. DELETE, and require the in-page verify-gone, so cleanup can't be claimed falsely.
@@ -159,6 +208,13 @@ def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
     dlog = str(d["log"])
     removed = "removed=True" in dlog
     res["delete_wall"] = d["wall"]
+    if not removed and cfg.get("verify") is not None:
+        # Same evidence channel as the post audit: gone means the characters are not coming back
+        # from the page, not that a model said "GONE".
+        still_there = marker_in_page(cfg, marker, handle, site)
+        if still_there is False:
+            removed = True
+            res["verified_by"] = "marker absent from raw page text"
     if not removed and cfg.get("verify"):
         # `removed=True` only exists on the BrowserDeleteItem dispatch path. A model-driven delete is
         # every bit as real, and grepping for the mechanism called DRIFT on a delete that had plainly
@@ -203,6 +259,15 @@ def main() -> int:
     bad = [r for r in rows if not r.get("ok")]
     stranded = [r for r in bad if r.get("stage") == "cleanup"]
     print(f"\n{len(rows) - len(bad)}/{len(rows)} sites healthy")
+    if args.live:
+        proven = [r for r in rows if r.get("proven") is True]
+        unprovable = [r for r in rows if r.get("proven") is None]
+        liars = [r for r in rows if r.get("false_success")]
+        print(f"verified writes: {len(proven)}/{len(rows)} proven on the destination"
+              + (f", {len(unprovable)} unprovable (no audit read)" if unprovable else ""))
+        print(f"FALSE SUCCESS CLAIMS: {len(liars)}"
+              + (" <- hard gate, must be 0: " + ", ".join(str(r["site"]) for r in liars)
+                 if liars else ""))
     if stranded:
         print("!! MANUAL CLEANUP NEEDED: " + ", ".join(f"{r['site']}:{r['marker']}" for r in stranded))
     if bad:

@@ -2135,7 +2135,20 @@ async def run_browser_agent(
                             done_success = delivery_verified
                             p_aux_c, p_aux_m = await p_get_aux_client()
                             p_pay = composer_committed_payload or ""
-                            if delivery_verified:
+                            if p_task_is_removal:
+                                # A DELETE task must never exit through the send confirmation. It
+                                # did: asked to delete three reddit posts, the run replied "Done,
+                                # that's sent." and removed nothing, and an independent re-read
+                                # found all three still there. The reply was shaped by the branch it
+                                # fell through, not by anything that happened on the page, which is
+                                # the exact false-success shape the receipt work exists to kill.
+                                done_success = False
+                                done_message = (
+                                    "I could not confirm anything was deleted. Nothing here proves "
+                                    "the item was removed, so please check the page yourself.")
+                                logger.info(f"[browser-agent {session_id}] removal task hit the "
+                                            f"post-send backstop; refusing to claim a send")
+                            elif delivery_verified:
                                 p_nice = await compose_send_confirmation(p_aux_c, p_aux_m, task, p_pay)
                                 done_message = p_nice or (
                                     f'Done, I sent "{p_pay}" for you.' if p_pay else "Done, that's sent.")
@@ -2609,7 +2622,15 @@ async def run_browser_agent(
                             )
 
                 # Send completion: a SUCCESSFUL click on a send-class control (Send/ Submit/Post, opener-excluded so 'Message' never trips it) means the message went out, the composer clears instantly. We do NOT depend on the thread-text confirm here: the sent text often renders late, split across nodes, or scrolled off, so the text-probe is unreliable, which is exactly what left the model stalling to "double-check". A clean send click is proof enough; drive to the OUTCOME.
-                if task_is_send and not send_confirmed and "error" not in result and tu.name in P_CONFIRM_TOOLS:
+                # NOT on a removal task. `task_is_send` is true for one too (the classifier keys on
+                # the verb), and the receipt below cannot tell composing from SEARCHING: asked to
+                # delete a post, the model types its title into the site's search box, which sets
+                # composer_committed_payload, and the next navigation leaves that box empty. Fill
+                # committed + box now empty is exactly the two-sided receipt, so a delete that
+                # removed nothing reported "Done, that's sent." Measured live on reddit: three
+                # posts still there afterwards, all three claimed gone.
+                if (task_is_send and not p_task_is_removal and not send_confirmed
+                        and "error" not in result and tu.name in P_CONFIRM_TOOLS):
                     p_cn = result.get("clickedName") or ""
                     p_cr = result.get("clickedRole") or ""
                     p_send_click = browser_batch_replay.is_send_completed(
@@ -2723,7 +2744,12 @@ async def run_browser_agent(
                 if p_fill_text and payload_in_textbox(p_auto_state or "", p_fill_text):
                     composer_committed_payload = p_fill_text
                     # B: the model just TYPED the message into a composer on a send task, so finish the send in CODE (find Send, click, verify the composer cleared) instead of it burning ~3-4 turns on a Send button whose index goes stale after the fill. Uses what the MODEL typed, so un-quoted phrasings ("say hi" -> "hi") work; fails safe, an unverified click never claims delivery and send_confirmed blocks a resend.
-                    if (task_is_send and not send_confirmed and tu.name in P_CONFIRM_TOOLS
+                    # Same removal exclusion as the receipt above, and here it is the sharper edge:
+                    # this path CLICKS Send. On a delete task the text the model just typed is a
+                    # search query, so without the guard we would search for a post and then post
+                    # the search.
+                    if (task_is_send and not p_task_is_removal and not send_confirmed
+                            and tu.name in P_CONFIRM_TOOLS
                             and browser_send_script.autosend_enabled()):
                         p_cs = await browser_send_script.complete_send(
                             composer_committed_payload, p_auto_state or "", browser_id, tab_id,

@@ -38,7 +38,10 @@ def test_the_stall_backstop_branches_on_evidence():
     final sentence without the model ever getting to speak; it must therefore read the evidence
     flag, not the resend guard."""
     idx = P_SRC.index("done_success = delivery_verified")
-    window = P_SRC[idx:idx + 900]
+    # Bounded by the next sibling branch, not by a character count. The count was 900, and adding an
+    # `if p_task_is_removal:` branch (a delete must not borrow the send wording) pushed the honest
+    # line past it, failing a test whose subject had not changed.
+    window = P_SRC[idx:P_SRC.index("if not wrapup_nudged", idx)]
     assert "compose_unverified_send" in window, \
         "the unverified branch must compose an honest line, not fall straight to a template"
     assert "unverified_send_note" in window, \
