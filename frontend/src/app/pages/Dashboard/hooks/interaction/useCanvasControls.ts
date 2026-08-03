@@ -60,7 +60,12 @@ export interface ContentBounds {
   maxY: number;
 }
 
-export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: ContentBounds, enabled: boolean = true) {
+export function useCanvasControls(
+  zoomSensitivity: number = 50,
+  contentBounds?: ContentBounds,
+  enabled: boolean = true,
+  wheelAction: 'zoom' | 'scroll' = 'zoom',
+) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -77,6 +82,11 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
   const spaceRef = useRef(false);
   const sensitivityRef = useRef(zoomSensitivity);
   sensitivityRef.current = zoomSensitivity;
+  // Read through a ref, like sensitivity: the wheel listener is bound once per mount, so a plain
+  // closure over the prop would keep the value the canvas had when it mounted and the setting
+  // would appear to do nothing until you switched dashboards.
+  const wheelActionRef = useRef(wheelAction);
+  wheelActionRef.current = wheelAction;
   const contentBoundsRef = useRef(contentBounds);
   contentBoundsRef.current = contentBounds;
   const animFrameRef = useRef<number | null>(null);
@@ -321,6 +331,12 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
       if (selectFullscreenCardId(store.getState())) return;
       // ctrl/cmd wheel is the zoom gesture on every surface: a physically held key or a trackpad pinch (which also sets ctrlKey). It bypasses scrollable children so zoom is always reachable, even over a chat you're typing in.
       const isModifierWheel = e.ctrlKey || e.metaKey;
+      // The setting swaps which of the two a bare mouse notch does. A PINCH must keep zooming
+      // whatever the setting says: it sets ctrlKey but there is no key held, and nobody pinches to
+      // scroll. So only a real held key counts as the swap trigger, and `e.ctrlKey && !isPinch`
+      // cannot be used here because Chromium reports a pinch identically to ctrl+wheel; the
+      // trackpad classifier is what tells them apart.
+      const wheelZooms = wheelActionRef.current !== 'scroll';
 
       // Let scrollable children handle the event when appropriate, but fall through to canvas pan if the child is at its scroll boundary.
       const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
@@ -402,11 +418,17 @@ export function useCanvasControls(zoomSensitivity: number = 50, contentBounds?: 
         // Horizontal-dominant mouse scroll (tilt wheel) → pan X. Dominant-axis, so the vertical jitter in a sideways swipe doesn't also zoom.
         pendingPanDx += dx;
         scheduleWheelFlush();
-      } else {
+      } else if (wheelZooms) {
         // Mouse-wheel vertical notch → zoom at the cursor (same anchor as pinch) so the point under the pointer grows toward you, not away. Clamp the per-event delta so a discrete notch is a small step, not a lurch.
         const rect = el.getBoundingClientRect();
         pendingZoomDy += clamp(dy, -WHEEL_ZOOM_DELTA_CAP, WHEEL_ZOOM_DELTA_CAP);
         pendingZoomCenter = { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
+        scheduleWheelFlush();
+      } else {
+        // Setting says a wheel scrolls: pan vertically instead. Zoom is still reachable on
+        // cmd/ctrl+wheel, which the isModifierWheel branch above already handles, so the two
+        // gestures simply trade places rather than one of them going missing.
+        pendingPanDy += dy;
         scheduleWheelFlush();
       }
     };

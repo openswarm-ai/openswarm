@@ -43,6 +43,11 @@ class AppSettings(BaseModel):
     default_max_turns: Optional[int] = None
     default_thinking_level: Literal["off", "low", "medium", "high", "auto"] = "auto"
     zoom_sensitivity: float = 50.0
+    # What a plain MOUSE wheel does on the canvas. "zoom" is the Google-Maps model we ship; "scroll"
+    # suits people who expect a wheel to move the page, and swaps the pair so cmd/ctrl+wheel zooms
+    # instead. A trackpad two-finger scroll pans either way, since that gesture is already a pan
+    # everywhere else on the machine.
+    mouse_wheel_action: Literal["zoom", "scroll"] = "zoom"
     # Root font-size multiplier (0.9/1/1.1/1.2 from Settings > Interface); the whole rem type scale rides it.
     ui_font_scale: float = 1.0
     theme: str = "light"

@@ -24,7 +24,7 @@ type Stage = 'choose' | 'email_form' | 'code_form';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export default function SignInDialog({ onClose, initialStage = 'choose' }: { onClose: () => void; initialStage?: Stage }): JSX.Element {
+export default function SignInDialog({ onClose, initialStage = 'choose', mandatory = false }: { onClose: () => void; initialStage?: Stage; mandatory?: boolean }): JSX.Element {
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const proxyUrl = useAppSelector(
@@ -156,7 +156,9 @@ export default function SignInDialog({ onClose, initialStage = 'choose' }: { onC
   return (
     <Modal
       open
-      onClose={onClose}
+      // A mandatory sign-in has no way out on purpose, so Esc and a backdrop click must not be one.
+      onClose={mandatory ? undefined : onClose}
+      disableEscapeKeyDown={mandatory}
       hideBackdrop={false}
       // Must clear the onboarding curtain (z ~2147483000): at MUI's default 1300 this dialog opened
       // INVISIBLY behind it, so "Continue with email" looked dead during onboarding.
@@ -178,14 +180,16 @@ export default function SignInDialog({ onClose, initialStage = 'choose' }: { onC
           outline: 'none',
         }}
       >
-        <IconButton
-          size="small"
-          onClick={onClose}
-          aria-label="Close"
-          sx={{ position: 'absolute', top: 10, right: 10, color: tokens.text.tertiary }}
-        >
-          <CloseIcon sx={{ fontSize: 18 }} />
-        </IconButton>
+        {!mandatory && (
+          <IconButton
+            size="small"
+            onClick={onClose}
+            aria-label="Close"
+            sx={{ position: 'absolute', top: 10, right: 10, color: tokens.text.tertiary }}
+          >
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        )}
         {stage === 'code_form' ? (
           <>
             <Typography

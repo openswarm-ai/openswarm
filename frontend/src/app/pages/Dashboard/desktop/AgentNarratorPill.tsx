@@ -6,8 +6,9 @@ import DashboardGlyph from '../canvas/DashboardGlyph';
 import { GLASS_SURFACE, GLASS_SURFACE_BLUR } from '@/shared/styles/glassSurface';
 import ShowUiWidgetView from '@/app/pages/AgentChat/tool-ui/ShowUiWidgetView';
 import AskUiBubble from '@/app/pages/AgentChat/tool-ui/AskUiBubble';
+import PillArtifactFrame from './PillArtifactFrame';
 import type { ToolPair } from '@/app/pages/AgentChat/tool-bubbles/ToolCallBubble';
-import type { ShowUiPayload } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
+import { artifactName, type ShowUiPayload } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
 import type { AgentTodoItem } from './agentTodos';
 
 interface AgentNarratorPillProps {
@@ -80,13 +81,13 @@ function AgentNarratorPill({ label, running, todos, artifact, askPair, sessionId
       </Box>
 
       {liveAsk ? (
-        <Box key={artifactKey} className="osw-artifact" sx={{ width: 340, maxWidth: '80vw' }}>
+        <PillArtifactFrame key={artifactKey} name="question">
           <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
-        </Box>
+        </PillArtifactFrame>
       ) : artifact ? (
-        <Box key={artifactKey} className="osw-artifact">
+        <PillArtifactFrame key={artifactKey} name={artifactName(artifact)}>
           <ShowUiWidgetView payload={artifact} ambient />
-        </Box>
+        </PillArtifactFrame>
       ) : browserShot ? (
         <Box
           key={artifactKey}

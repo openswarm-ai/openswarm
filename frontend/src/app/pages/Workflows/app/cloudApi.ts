@@ -35,6 +35,13 @@ interface CloudStatusShared {
   schedule_reason: string | null;
 }
 
+/** Whether an AI account exists that the cloud could sign runs with. An API key alone cannot. */
+export interface CloudCredential {
+  state: 'ready' | 'none_eligible';
+  connection_ids: string[];
+  reason: string | null;
+}
+
 export interface CloudStatusReady extends CloudStatusShared {
   state: 'ready';
   plan: string | null;
@@ -43,6 +50,7 @@ export interface CloudStatusReady extends CloudStatusShared {
   /** Null when the control plane could not tell us; create re-checks either way. */
   capability: CloudCapability | null;
   hosted: HostedState | null;
+  credential: CloudCredential;
 }
 
 export interface CloudStatusSignedOut extends CloudStatusShared {

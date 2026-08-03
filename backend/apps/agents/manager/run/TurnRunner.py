@@ -53,6 +53,14 @@ class TurnRunner(AgentManagerProtocol):
             # Per-turn thinking aggregation trackers (added for the "Thought for Ns · M tokens" persisted label). Without nonlocal, the int reassignments at AssistantMessage emission below shadow them as locals and the dict access at content_block_start crashes with UnboundLocalError.
             # p_stream lets the persistent-client path feed receive_response() through this same consumption loop (one body, two transports).
             async for message in (p_stream if p_stream is not None else query(prompt=prompt_stream(), options=options)):
+                # MCPActivate tells the model its new tools are not callable yet and to stop. Asking
+                # was not enough: it kept going and guessed names like `send email`, which is what
+                # made every MCP task look broken. The activated tools genuinely do not exist until
+                # the transport is rebuilt, so end the turn here and let the auto-continuation fire
+                # with the real names. Checked before the message is handled, so the model's next
+                # move after activating never runs.
+                if getattr(session, "pending_continuation", False):
+                    break
                 if isinstance(message, ResultMessage):
                     turn.current_turn_emitted = False
                 else:

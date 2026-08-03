@@ -15,6 +15,7 @@ from typeguard import typechecked
 
 from backend.apps.workflows import storage
 from backend.apps.workflows.cloud import client as cloud
+from backend.apps.workflows.cloud.credential_readiness import CredentialReadiness, cloud_credential_readiness
 from backend.apps.workflows.cloud.definition import cloud_definition, definition_signature
 from backend.apps.workflows.cloud.portable_context import portable_context
 from backend.apps.workflows.cloud.schedule import ScheduleSupported, to_cloud_schedule, wire
@@ -56,6 +57,9 @@ class CloudStatusReady(CloudStatusBase):
     # None when this control plane cannot tell us whether the runner could do the job.
     capability: Optional[cloud.CloudCapability] = None
     hosted: Optional[HostedState] = None
+    # Whether this account owns an AI connection the cloud could sign runs with. Read locally,
+    # because it is our 9router db that knows, not the control plane.
+    credential: CredentialReadiness
 
 
 CloudStatus = Union[CloudStatusReady, CloudStatusSignedOut, CloudStatusUnknown]
@@ -138,5 +142,6 @@ async def compute_status(wf: Workflow) -> CloudStatus:
         usage=pre.usage,
         capability=pre.capability,
         hosted=hosted,
+        credential=cloud_credential_readiness(),
         **shared,
     )

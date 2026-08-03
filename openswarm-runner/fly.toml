@@ -30,17 +30,15 @@ kill_timeout = '30s'
 [build]
   dockerfile = 'Dockerfile'
 
-[env]
-  # Hard wall-clock cap, enforced twice inside the container: the poll loop stops the
-  # run at this mark, and an independent thread kills the process 90s later. A run
-  # spec asking for more is clamped down to this, never up.
-  RUNNER_MAX_RUN_SECONDS = '1800'
-  OPENSWARM_HEADLESS = '1'
-  OPENSWARM_PACKAGED = '1'
-  OPENSWARM_DATA_ROOT = '/data/openswarm'
-  OPENSWARM_HOST = '127.0.0.1'
-  OPENSWARM_PORT = '8324'
-  DATA_DIR = '/data/9router'
+# No [env] block on purpose. Per-run machines are created through the Machines API,
+# which does not read this file, so anything set here would apply to the deploy's
+# template machine and to nothing that actually runs a workflow. Every runtime value,
+# including the RUNNER_MAX_RUN_SECONDS wall-clock cap, is baked into the image instead.
+
+# The template machine this deploy creates has no run spec, so it exits 2 immediately.
+# Without this it would crash-loop on Fly's default on-failure policy and bill forever.
+[[restart]]
+  policy = 'never'
 
 # No [[mounts]]: a run's state is garbage the moment it ends, and an ephemeral rootfs
 # means one run cannot leave a credential lying around for the next tenant to find.

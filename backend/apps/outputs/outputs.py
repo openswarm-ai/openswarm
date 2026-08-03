@@ -17,6 +17,7 @@ from backend.apps.outputs.models import (
 )
 from backend.apps.outputs.code_safety import get_code_warnings
 from backend.apps.outputs.executor import execute_backend_code
+from backend.apps.outputs.publish_capability import check_publish_capability
 from backend.apps.outputs.publish_common import slugify, PublishError
 from backend.apps.outputs.publish_scan import scan_for_publish, quick_ast_gate
 from backend.apps.outputs.publish_build import build_static, collect_bundle
@@ -772,12 +773,16 @@ async def publish_output(body: PublishRequest):
     output = load(body.output_id)
     settings = load_settings()
     if not body.force:
+        capability = check_publish_capability(output).findings
         ast = quick_ast_gate(output)
-        if ast:
+        if capability or ast:
             return PublishResult(
                 ok=False,
                 blocked=True,
-                review=PublishReview(verdict="warn", findings=ast),
+                review=PublishReview(
+                    verdict="block" if capability else "warn",
+                    findings=capability + ast,
+                ),
             ).model_dump()
 
     output.publish_status = "publishing"

@@ -36,6 +36,7 @@ export function useDashboardSelectors(dashboardId: string) {
   const layoutInitialized = useAppSelector((state) => state.dashboardLayout.initialized);
   const persistedExpandedSessionIds = useAppSelector((state) => state.dashboardLayout.persistedExpandedSessionIds);
   const zoomSensitivity = useAppSelector((state) => state.settings.data.zoom_sensitivity);
+  const mouseWheelAction = useAppSelector((state) => state.settings.data.mouse_wheel_action);
   const newAgentShortcut = useAppSelector((state) => state.settings.data.new_agent_shortcut);
   const browserHomepage = useAppSelector((state) => state.settings.data.browser_homepage);
   const expandNewChats = useAppSelector((state) => state.settings.data.expand_new_chats_in_dashboard);
@@ -62,6 +63,7 @@ export function useDashboardSelectors(dashboardId: string) {
     layoutInitialized,
     persistedExpandedSessionIds,
     zoomSensitivity,
+    mouseWheelAction,
     newAgentShortcut,
     browserHomepage,
     expandNewChats,

@@ -35,7 +35,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     workflowCards, workflowItems, workflowOpenCards, workflowsHub,
     pendingFocusWorkflowId, pendingFocusWorkflowsHub,
     layoutInitialized, persistedExpandedSessionIds,
-    zoomSensitivity, newAgentShortcut, browserHomepage, expandNewChats,
+    zoomSensitivity, mouseWheelAction, newAgentShortcut, browserHomepage, expandNewChats,
     autoRevealSubAgents, outputs, outputsLoaded, glowingAgentCards, glowingBrowserCards,
   } = useDashboardSelectors(dashboardId);
   // sessions is the top-level dict; useMemo on its identity so sessionList is stable when sessions hasn't actually changed (RTK only swaps the dict ref when one of its values changes, so this is the right granularity).
@@ -68,7 +68,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     [cards, viewCards, browserCards, workflowCards, workflowsHub],
   );
 
-  const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive);
+  const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive, mouseWheelAction);
   const selection = useDashboardSelection(
     { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
     cards,

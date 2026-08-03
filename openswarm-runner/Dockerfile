@@ -159,10 +159,14 @@ RUN set -eux; \
 
 USER runner
 WORKDIR /app
+# RUNNER_MAX_RUN_SECONDS lives in the IMAGE, not in fly.toml: machines are created one
+# per run through the Machines API, which ignores fly.toml's [env], so a cap defined
+# there would silently not apply to the only machines that ever run a workflow.
 ENV HOME=/home/runner \
     PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    RUNNER_MAX_RUN_SECONDS=1800 \
     OPENSWARM_HEADLESS=1 \
     OPENSWARM_PACKAGED=1 \
     OPENSWARM_DATA_ROOT=/data/openswarm \

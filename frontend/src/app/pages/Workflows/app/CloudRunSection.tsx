@@ -108,6 +108,9 @@ const CloudRunSection: React.FC<{ workflow: Workflow; cloud: CloudStatusHandle }
             {availability.kind === 'blocked' && availability.action === 'plans' && (
               <button onClick={() => dispatch(openSettingsCard())} style={link}>See plans</button>
             )}
+            {availability.kind === 'blocked' && availability.action === 'connect' && (
+              <button onClick={() => dispatch(openSettingsCard())} style={link}>Connect an account</button>
+            )}
             <button onClick={cloud.retry} style={link}>Try again</button>
           </span>
         </Note>
@@ -138,6 +141,9 @@ const CloudRunSection: React.FC<{ workflow: Workflow; cloud: CloudStatusHandle }
             )}
             {availability.action === 'plans' && (
               <button onClick={() => dispatch(openSettingsCard())} style={link}>See plans</button>
+            )}
+            {availability.action === 'connect' && (
+              <button onClick={() => dispatch(openSettingsCard())} style={link}>Connect an account</button>
             )}
           </span>
         </Note>

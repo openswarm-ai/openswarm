@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
 from backend.apps.workflows import storage
+from backend.apps.nine_router.lent_credential_refresh import lent_credential_loop
 from backend.apps.workflows.cloud import client as cloud
 from backend.apps.workflows.cloud.handover import TargetOutcome, hand_to_cloud, take_back
 from backend.apps.workflows.cloud.run_files import LocalRunFile, described, downloads_root, fetch_missing
@@ -27,7 +28,14 @@ from backend.config.Apps import SubApp
 
 @asynccontextmanager
 async def cloud_workflows_lifespan():
-    yield
+    # Lending a credential upward strips this device's ability to renew it, so something has to
+    # ask the cloud for a fresh one before the old one dies. Without this, turning on a cloud
+    # workflow quietly stops local agents a few hours later.
+    task = asyncio.create_task(lent_credential_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
 
 
 cloud_workflows = SubApp("cloud_workflows", cloud_workflows_lifespan)

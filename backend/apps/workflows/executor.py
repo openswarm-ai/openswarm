@@ -385,7 +385,9 @@ async def execute(
                 # Pin active step so FailedView renders the X on the right row.
                 break
             if disp == "error":
-                step_error = "Agent session entered error state"
+                # This string is the whole explanation in the run-failed email, so it has to read
+                # like a sentence to someone who was asleep when it fired, not like a status enum.
+                step_error = "The agent hit an error on this step and stopped before finishing."
                 break
 
         run.finished_at = datetime.now()

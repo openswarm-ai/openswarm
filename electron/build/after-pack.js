@@ -10,6 +10,7 @@
 // is handled by the package.json extraResources filter; only node_modules needs
 // this rescue.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -21,6 +22,22 @@ const { execFileSync } = require('child_process');
 // app, just with limited DRM); VMP_REQUIRE_SIGN=1 (set by the signed release paths)
 // turns a missing/failed signature into a hard build failure so prod never ships
 // an unsigned-for-DRM client silently.
+// The EVS client is a pip package, and a system python3 on a modern Mac refuses to install into
+// itself (PEP 668). scripts/setup-evs.sh therefore puts it in its own venv, so look there before
+// falling back to whatever `python3` means today. Without this the creds can be perfectly correct
+// and the sign still dies on ModuleNotFoundError, ten minutes into a release build.
+function resolveEvsPython() {
+  if (process.platform === 'win32') return 'python';
+  const venv = path.join(os.homedir(), '.openswarm-evs-venv', 'bin', 'python');
+  if (fs.existsSync(venv)) {
+    try {
+      execFileSync(venv, ['-c', 'import castlabs_evs'], { stdio: 'ignore' });
+      return venv;
+    } catch { /* venv exists but lacks the package; fall through */ }
+  }
+  return 'python3';
+}
+
 function signVmp(context) {
   const { appOutDir, electronPlatformName, packager } = context;
   const required = process.env.VMP_REQUIRE_SIGN === '1';
@@ -35,11 +52,11 @@ function signVmp(context) {
     return;
   }
 
-  // mac: sign the .app bundle; win: sign the unpacked dir holding the exe + framework.
-  const target = electronPlatformName === 'darwin'
-    ? path.join(appOutDir, `${packager.appInfo.productFilename}.app`)
-    : appOutDir;
-  const py = process.platform === 'win32' ? 'python' : 'python3';
+  // Both platforms: hand it the CONTAINING directory, never the .app itself. sign-pkg globs
+  // `<dir>/*.app`, so pointing at the bundle makes it search inside for a nested one and die with
+  // "No matching executable found" while the app sits right there.
+  const target = appOutDir;
+  const py = resolveEvsPython();
 
   try {
     console.log(`[afterPack] VMP-signing ${target}`);

@@ -29,6 +29,7 @@ import { setPanelMode, disableOnboardingAfterCrash } from '@/shared/state/onboar
 
 const Analytics = React.lazy(() => import('./pages/Analytics/Analytics'));
 const OnboardingV3Root = React.lazy(() => import('./components/OnboardingV3/OnboardingV3Root'));
+const SignInRequiredGate = React.lazy(() => import('./components/overlays/SignInRequiredGate'));
 const OnboardingRoot = React.lazy(() =>
   import('./components/Onboarding').then((m) => ({ default: m.OnboardingRoot })),
 );
@@ -547,6 +548,9 @@ const ThemedApp: React.FC = () => {
                     <OnboardingV3Root />
                   </Suspense>
                 </OnboardingErrorGuard>
+                <Suspense fallback={null}>
+                  <SignInRequiredGate />
+                </Suspense>
               </DeepLinkListener>
             </UpdateListener>
             </DefaultModelGuard>

@@ -50,7 +50,10 @@ def test_agent_error_marks_failure(make_wf, fake_agent_manager):
     storage.save_workflow(wf)
     run = _run(executor.execute(wf, triggered_by="schedule"))
     assert run.status == "failure"
-    assert run.error == "Agent session entered error state"
+    # This string IS the run-failed email's whole explanation, so it must read as a sentence to
+    # someone who was asleep when it fired, not as an internal status.
+    assert run.error == "The agent hit an error on this step and stopped before finishing."
+    assert "session" not in run.error.lower() and "state" not in run.error.lower()
 
 
 def test_scheduled_run_late_start_marks_ran_late(make_wf, fake_agent_manager):

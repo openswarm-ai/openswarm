@@ -3,8 +3,6 @@
 receipt parse, and the fail-open contract (every failure is a typed ok=False, never a crash,
 never a false success). Network is stubbed; the live cross-site round-trip is owed on a healthy
 rig (this bench's renderer command path is wedged, same as all browser live-tests)."""
-import pytest
-
 from backend.apps.agents.browser import route_write as rw
 
 

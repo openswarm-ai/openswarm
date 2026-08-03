@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException
 
 from backend.apps.tools_lib.mcp_config import augmented_path, resolve_command
+from backend.apps.tools_lib.mcp_failure_reason import readable_mcp_failure
 
 logger = logging.getLogger(__name__)
 
@@ -182,10 +183,9 @@ async def discover_mcp_tools_stdio(command: str, args: list[str] | None = None, 
                 except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
                     pass
                 tail = "".join(stderr_tail[-10:]).strip()
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"MCP stdio process exited unexpectedly{': ' + tail if tail else ''}",
-                )
+                # A Go server's dying breath is a JSON line with a goroutine dump. Handing that to
+                # the UI hides the one fact the user can act on, which is usually "sign in again".
+                raise HTTPException(status_code=502, detail=readable_mcp_failure(tail))
             stripped = line.decode(errors="replace").strip()
             if not stripped:
                 continue

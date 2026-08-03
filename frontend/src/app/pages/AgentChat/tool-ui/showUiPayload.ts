@@ -57,6 +57,12 @@ export type ShowUiPayload =
   | { component: 'links'; props: LinksProps }
   | { component: 'vendored'; name: string; props: Record<string, unknown> };
 
+/** What this widget IS, for callers that size or key off the family (a table wants more room than a
+ *  weather card). The vendored variant carries the real name; for the rest the component is it. */
+export function artifactName(payload: ShowUiPayload): string {
+  return payload.component === 'vendored' ? payload.name : payload.component;
+}
+
 function num(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }

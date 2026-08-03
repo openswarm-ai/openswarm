@@ -130,6 +130,26 @@ const GeneralInterface: React.FC<{
         />
       </Box>
 
+      <Box sx={inlineRowSx} {...settingSelectAttrs('mouse_wheel_action', 'Mouse wheel', 'Interface', 'What a mouse wheel does on the dashboard canvas.')}>
+        <Box sx={{ mr: 3 }}>
+          <Typography sx={labelSx}>Mouse wheel</Typography>
+          <Typography sx={descSx}>
+            What a plain mouse wheel does on the canvas. The other one moves to cmd/ctrl + wheel.
+            A trackpad two-finger scroll always pans, and pinch always zooms.
+          </Typography>
+        </Box>
+        <ToggleButtonGroup
+          value={form.mouse_wheel_action ?? 'zoom'}
+          exclusive
+          onChange={(_, v) => { if (v !== null) setForm({ ...form, mouse_wheel_action: v }); }}
+          size="small"
+          sx={toggleGroupSx}
+        >
+          <ToggleButton value="zoom">Zoom</ToggleButton>
+          <ToggleButton value="scroll">Scroll</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
       <Box sx={rowSx} {...settingSelectAttrs('zoom_sensitivity', 'Zoom sensitivity', 'Interface', 'Scroll-to-zoom responsiveness.')}>
         <Typography sx={labelSx}>Zoom sensitivity</Typography>
         <Typography sx={{ ...descSx, mb: 1 }}>
@@ -173,11 +193,16 @@ const GeneralInterface: React.FC<{
           <Typography sx={labelSx}>Auto-enable element selection</Typography>
           <Typography sx={descSx}>Automatically enter element selection mode when creating a new agent.</Typography>
         </Box>
-        <Switch
-          checked={form.auto_select_mode_on_new_agent}
-          onChange={(e) => setForm({ ...form, auto_select_mode_on_new_agent: e.target.checked })}
-          sx={switchSx}
-        />
+        <ToggleButtonGroup
+          value={form.auto_select_mode_on_new_agent ?? false}
+          exclusive
+          onChange={(_, v) => { if (v !== null) setForm({ ...form, auto_select_mode_on_new_agent: v }); }}
+          size="small"
+          sx={toggleGroupSx}
+        >
+          <ToggleButton value={true}>On</ToggleButton>
+          <ToggleButton value={false}>Off</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
       <Box sx={inlineRowSx} {...settingSelectAttrs('expand_new_chats_in_dashboard', 'Default agent spawn state in dashboard', 'Interface', 'New agents spawn expanded instead of collapsed.')}>
@@ -185,11 +210,17 @@ const GeneralInterface: React.FC<{
           <Typography sx={labelSx}>Default agent spawn state in dashboard</Typography>
           <Typography sx={descSx}>When enabled, new agents spawn expanded instead of collapsed.</Typography>
         </Box>
-        <Switch
-          checked={form.expand_new_chats_in_dashboard}
-          onChange={(e) => setForm({ ...form, expand_new_chats_in_dashboard: e.target.checked })}
-          sx={switchSx}
-        />
+        {/* Named for the state you get, not on/off: "spawn state" has no obvious on. */}
+        <ToggleButtonGroup
+          value={form.expand_new_chats_in_dashboard ?? false}
+          exclusive
+          onChange={(_, v) => { if (v !== null) setForm({ ...form, expand_new_chats_in_dashboard: v }); }}
+          size="small"
+          sx={toggleGroupSx}
+        >
+          <ToggleButton value={true}>Expanded</ToggleButton>
+          <ToggleButton value={false}>Collapsed</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
       <Box sx={inlineRowLastSx} {...settingSelectAttrs('auto_reveal_sub_agents', 'Auto-reveal sub-agents on dashboard', 'Interface', 'Show sub-agent cards tethered to their parent on the dashboard.')}>
@@ -197,11 +228,16 @@ const GeneralInterface: React.FC<{
           <Typography sx={labelSx}>Auto-reveal sub-agents on dashboard</Typography>
           <Typography sx={descSx}>Automatically show sub-agent cards (from CreateAgent / InvokeAgent) tethered to their parent on the dashboard.</Typography>
         </Box>
-        <Switch
-          checked={form.auto_reveal_sub_agents}
-          onChange={(e) => setForm({ ...form, auto_reveal_sub_agents: e.target.checked })}
-          sx={switchSx}
-        />
+        <ToggleButtonGroup
+          value={form.auto_reveal_sub_agents ?? false}
+          exclusive
+          onChange={(_, v) => { if (v !== null) setForm({ ...form, auto_reveal_sub_agents: v }); }}
+          size="small"
+          sx={toggleGroupSx}
+        >
+          <ToggleButton value={true}>Show</ToggleButton>
+          <ToggleButton value={false}>Hide</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
       <Typography sx={{ ...sectionSx, mt: 3 }}>Browser</Typography>

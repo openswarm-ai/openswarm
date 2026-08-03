@@ -17,6 +17,24 @@ from backend.apps.workflows.models import ScheduleConfig, Workflow, WorkflowStep
 pytestmark = pytest.mark.usefixtures("isolated_workflows_data")
 
 
+@pytest.fixture(autouse=True)
+def p_credential_already_lent(monkeypatch):
+    """These tests are about the timer, not credential custody. Without this they would reach the
+    real lease, which reads settings this harness never signs in, and every handover would refuse
+    with a sign-in message instead of the answer under test. Custody has its own file:
+    test_cloud_credential_wiring.py."""
+    from backend.apps.workflows.cloud import handover
+
+    async def lent():
+        return handover.TargetOutcome(ok=True)
+
+    async def reclaimed(leaving_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(handover, "lend_credential_for_cloud", lent)
+    monkeypatch.setattr(handover, "p_reclaim_credential_if_last", reclaimed)
+
+
 def p_sched(**overrides) -> ScheduleConfig:
     base = dict(enabled=True, repeat_unit="day", repeat_every=1, hour=9, minute=0, timezone="UTC")
     base.update(overrides)

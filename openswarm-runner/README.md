@@ -121,6 +121,43 @@ If Electron starts but no window ever registers, the run **fails** (exit 7) rath
 proceeding without a browser. A browser workflow that silently ran blind produces a
 confident wrong answer, which is worse than no answer.
 
+## Parity with a local run, and the one gap we accept
+
+A cloud run boots the same Electron shell, the same backend and the same browser code path as a
+laptop does, so browser steps behave the same in both places.
+
+**How well, exactly, is not yet measured on Linux.** The 19-row matrix scores **19/19 on macOS** and
+the result file is kept. Nobody has scored the Linux-under-Xvfb side row by row; a code comment in
+`openswarm-cloud/src/workflows/runnerCapabilities.ts` used to claim 18/19 with no artifact behind it.
+Run `parity/stage.py` on a real runner machine before quoting any cloud number. It needs a native
+amd64 host: under qemu on an arm64 Mac, Electron never registers and the harness exits 7 without
+scoring anything.
+
+One row is expected to fail there and is not going to be fixed: `obstacle.bot_wall`, because the run
+comes from a datacenter IP.
+
+**Eric accepted this gap explicitly for 1.7.0 (2026-08-03)**, on the record so nobody has to re-open
+the question: a cloud run may hit a bot wall a laptop would have walked through, and that is the
+cost of running from a datacenter. Workflows that need your logins are a separate matter and are
+refused up front, below.
+
+Separately, one whole capability is refused at create time rather than failed at 3am:
+
+**A workflow that needs an account you are already signed into.** Every run gets a fresh browser
+profile in a throwaway container. There is no keychain, no cookie jar, and nobody there to type a
+password or clear a 2FA prompt. Copying a logged-in session up would mean shipping the user's live
+cookies to a machine we destroy minutes later, which is a worse trade than refusing.
+
+This is declared, not implied: `signed_in_browser` is deliberately absent from
+`RUNNER_CAPABILITIES` in `openswarm-cloud/src/workflows/runnerCapabilities.ts`, and
+`checkRunnerCapabilities` turns it into a refusal that names the workaround ("run it on your own
+machine"). `tests/runner-capabilities.test.ts` asserts the flag stays off, so nobody can quietly
+flip it without reading this.
+
+Everything else in that matrix is a capability flag that can flip when the container learns the
+trick. `browser` already did: it was refused until Electron under Xvfb landed, and flipping the one
+flag unblocked every browser workflow with no other edit.
+
 ## The credential rule
 
 **A `providerConnections[]` entry this runner writes never contains a `refreshToken`.**
@@ -154,5 +191,48 @@ and comparing; see the parity matrix in the cloud-browser work notes.
 
 ## Deploy
 
-Not deployed. `fly.toml` is written but never applied; read its header first, the app
-has to be created onto its own isolated private network by hand before any deploy.
+The app exists and is created onto its own isolated private network. Read `fly.toml`'s
+header before touching it; the network is fixed at create time and cannot be changed
+by a redeploy.
+
+```bash
+# from the REPO ROOT, the image needs backend/ in its build context
+fly deploy . --app openswarm-runner --config openswarm-runner/fly.toml \
+  --dockerfile openswarm-runner/Dockerfile --image-label latest --ha=false
+```
+
+`--image-label latest` is load-bearing: the control plane creates machines from the
+fixed tag `registry.fly.io/openswarm-runner:latest`, so a redeploy without it ships an
+image nothing will ever boot. Re-verify the isolation after any deploy, do not assume
+it survived:
+
+```bash
+fly machine run registry.fly.io/openswarm-runner:latest -a openswarm-runner \
+  --entrypoint /bin/sleep --restart no --vm-memory 512 --vm-cpus 1 600
+fly ssh console -a openswarm-runner --machine <id> -C "getent hosts openswarm-cloud.internal"
+# must print nothing and exit 2. Then destroy the probe machine.
+```
+
+The deploy leaves one stopped template machine with no run spec. That is expected; it
+exits 2 immediately and `[[restart]] policy = 'never'` stops it looping.
+
+## How a run gets here
+
+`openswarm-cloud` creates one machine per due workflow through the Fly Machines API
+(`workflows/dispatch.ts`). It never uses `fly deploy` for a run, so this app's env is
+whatever the IMAGE carries plus `OPENSWARM_RUN_SPEC_FILE`; `fly.toml`'s settings do not
+reach a per-run machine. Control-plane side that means:
+
+| env on openswarm-cloud | why |
+| --- | --- |
+| `FLY_API_TOKEN` | app-scoped deploy token for `openswarm-runner`, nothing wider |
+| `RUN_CALLBACK_BASE_URL` | where the runner reports; **no default**, so a staging control plane can never point its machines at prod |
+| `RUNNER_APP` / `RUNNER_IMAGE` / `RUNNER_REGION` | optional overrides of `openswarm-runner` / the `:latest` tag / `iad` |
+| `CLOUD_RUNS_GLOBAL_CAP` | machines this whole service will run at once, all accounts together (default 50) |
+| `CLOUD_RUNS_TICK_BUDGET` | machines one 60s tick will start (default 20); the rest keep their slot for the next tick |
+
+A run gets three walls on its wall clock, and only the third survives a wedged VM:
+the runner stops its own poll loop at `max_run_seconds`, an independent thread inside
+it kills the process 90s later, and the control plane destroys the machine outright
+5 minutes past that. Verified live: a machine with a sleeping entrypoint that never
+reported was destroyed by the control plane and its run row closed as failed.

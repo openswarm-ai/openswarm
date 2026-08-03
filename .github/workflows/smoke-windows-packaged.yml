@@ -1,0 +1,148 @@
+name: Windows packaged smoke
+
+# Install the SHIPPED installer on a clean Windows runner and prove it runs.
+#
+# Everything else about a Windows release can be checked from a Mac: the signature, the update
+# feed's hash, even whether the bundle contains the code it claims (a nupkg is a zip). The one
+# thing that needs Windows is whether the thing actually starts. This is that check, and it
+# exists because "signed and uploaded" has never meant "boots".
+#
+# Deliberately reads the RELEASE ASSET, not a fresh build. A build made here would prove a
+# different binary works than the one users download.
+#
+#   gh workflow run smoke-windows-packaged.yml -f tag=v1.7.0
+
+# A push trigger needs no default-branch registration, unlike workflow_dispatch, which 404s until
+# the file is on main. Pushing the throwaway `win-smoke` branch is how you run this before then.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to smoke (e.g. v1.7.0)
+        required: true
+  push:
+    branches:
+      - win-smoke
+
+# write, not read: a DRAFT release is invisible to a read-scoped token, so the asset lookup finds
+# nothing and the smoke reports "no release tagged ..." for a release that is plainly there.
+# Nothing here writes; the scope is only what makes drafts listable.
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the shipped installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A DRAFT release has no tag reference, so `gh release download <tag>` answers
+          # "release not found" even though the assets are right there. Resolve it out of the full
+          # list and pull the asset by id, which works for drafts and published releases alike.
+          $tag = "${{ inputs.tag || 'v1.7.0' }}"
+          $rel = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=50" | ConvertFrom-Json |
+                 Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+          if (-not $rel) { throw "no release (draft or published) tagged $tag" }
+          "release: $($rel.tag_name) draft=$($rel.draft)"
+          $asset = $rel.assets | Where-Object { $_.name -eq 'OpenSwarm-Setup-x64.exe' } | Select-Object -First 1
+          if (-not $asset) { throw "OpenSwarm-Setup-x64.exe is not attached to $tag" }
+          $exe = Join-Path $env:RUNNER_TEMP "OpenSwarm-Setup-x64.exe"
+          gh api -H "Accept: application/octet-stream" "repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)" > $exe
+          $size = (Get-Item $exe).Length
+          "installer: $size bytes (release says $($asset.size))"
+          if ($size -ne $asset.size) { throw "FAIL: download is truncated" }
+
+      - name: It is signed, and Windows agrees
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP "OpenSwarm-Setup-x64.exe"
+          $sig = Get-AuthenticodeSignature $exe
+          "status : $($sig.Status)"
+          "signer : $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "FAIL: signature is $($sig.Status)" }
+          "PASS  authenticode valid"
+
+      - name: Install it the way a user does
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP "OpenSwarm-Setup-x64.exe"
+          # This is a Squirrel installer, not NSIS. `/S` means nothing to Squirrel, so it opens a
+          # UI and waits for a click that never comes on a runner; the switch it honours is
+          # `--silent`. The bounded wait is here because that failure looks like a hang, and a
+          # 25-minute timeout tells you nothing about why.
+          $p = Start-Process -FilePath $exe -ArgumentList "--silent" -PassThru
+          if (-not $p.WaitForExit(600000)) {
+            $log = "$env:LOCALAPPDATA\SquirrelTemp\SquirrelSetup.log"
+            if (Test-Path $log) { "--- SquirrelSetup.log ---"; Get-Content $log -Tail 60 }
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "FAIL: installer still running after 10 minutes"
+          }
+          "installer exit: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "FAIL: installer exited $($p.ExitCode)" }
+          "PASS  installed"
+
+      - name: The app landed where it should
+        id: locate
+        run: |
+          # Squirrel installs per-user into %LOCALAPPDATA%\OpenSwarm as a stub launcher beside a
+          # versioned app-<ver> folder. The stub is what a shortcut points at; the versioned exe is
+          # the one that holds resources\ and is the only one worth inspecting or launching.
+          $root = "$env:LOCALAPPDATA\OpenSwarm"
+          if (-not (Test-Path $root)) { throw "FAIL: $root does not exist after install" }
+          Get-ChildItem $root | Select-Object -ExpandProperty Name
+          $app = Get-ChildItem -Path $root -Filter "app-*" -Directory |
+                 Sort-Object Name -Descending |
+                 ForEach-Object { Join-Path $_.FullName "OpenSwarm.exe" } |
+                 Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $app) { throw "FAIL: no app-*\OpenSwarm.exe under $root" }
+          "app: $app"
+          "PASS  binary present"
+          "app=$app" >> $env:GITHUB_OUTPUT
+
+      - name: The bundle carries the code it claims
+        run: |
+          # Same check the macOS smoke does. A stale build passes every signature test and still
+          # ships none of the fixes, which is exactly how a release gets shipped twice.
+          $res = Split-Path "${{ steps.locate.outputs.app }}" -Parent
+          $checks = @(
+            @{ f = "resources\backend\apps\agents\manager\run\TurnRunner.py"; needle = "pending_continuation";      name = "MCP activation hard-stop" },
+            @{ f = "resources\backend\apps\workflows\cloud\handover.py";      needle = "lend_credential_for_cloud"; name = "cloud credential lease" },
+            @{ f = "resources\backend\apps\tools_lib\mcp_failure_reason.py";  needle = "sign-in has expired";       name = "readable MCP failures" }
+          )
+          $bad = 0
+          foreach ($c in $checks) {
+            $path = Join-Path $res $c.f
+            if ((Test-Path $path) -and (Select-String -Path $path -Pattern $c.needle -Quiet)) {
+              "PASS  $($c.name)"
+            } else { "FAIL  $($c.name) missing"; $bad++ }
+          }
+          if ($bad -gt 0) { throw "$bad expected fix(es) absent from the shipped bundle" }
+
+      - name: It launches, and its backend answers
+        run: |
+          $app = "${{ steps.locate.outputs.app }}"
+          $proc = Start-Process -FilePath $app -PassThru
+          $ok = $false
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 3
+            try {
+              # Unauthenticated, so a 401 is a healthy backend: it answered and refused.
+              Invoke-WebRequest -Uri "http://127.0.0.1:8324/api/settings" -TimeoutSec 4 -UseBasicParsing | Out-Null
+              $ok = $true; break
+            } catch {
+              if ($_.Exception.Response.StatusCode.value__ -eq 401) { $ok = $true; break }
+            }
+            # Launched the versioned exe, not the stub, precisely so an exit here means the app
+            # died rather than a launcher handing off and returning.
+            if ($proc.HasExited) { throw "FAIL: app exited early with $($proc.ExitCode)" }
+          }
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "FAIL: backend never answered on :8324" }
+          "PASS  app launched and its backend answered"
+
+      - name: Verdict
+        run: |
+          "Windows packaged smoke passed for ${{ inputs.tag || 'v1.7.0' }}"

@@ -11,7 +11,7 @@ export type CloudProbe =
 export type CloudAvailability =
   | { kind: 'checking' }
   | { kind: 'unknown'; detail: string | null }
-  | { kind: 'blocked'; reason: string; action: 'sign_in' | 'plans' | null }
+  | { kind: 'blocked'; reason: string; action: 'sign_in' | 'plans' | 'connect' | null }
   | { kind: 'available' };
 
 const PLAN_REQUIRED = 'Cloud runs come with Pro and up. On this plan, workflows run on this device.';
@@ -52,6 +52,12 @@ export function cloudAvailability(probe: CloudProbe): CloudAvailability {
   }
   if (status.capability && !status.capability.ok && status.capability.reason) {
     return { kind: 'blocked', reason: status.capability.reason, action: null };
+  }
+  // Before the plan, deliberately. Someone whose only provider is an API key cannot run in the
+  // cloud at any price, so leading them to the pricing page would sell them a thing that still
+  // would not work.
+  if (status.credential && status.credential.state !== 'ready' && status.credential.reason) {
+    return { kind: 'blocked', reason: status.credential.reason, action: 'connect' };
   }
   return blockedForAccount(status) ?? { kind: 'available' };
 }

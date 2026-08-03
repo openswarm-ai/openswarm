@@ -17,6 +17,7 @@ from typing import Literal
 
 from backend.apps.outputs.code_safety import get_code_warnings
 from backend.apps.outputs.models import Output, PublishReview
+from backend.apps.outputs.publish_capability import merge_capability
 from backend.apps.outputs.publish_common import is_webapp, workspace_dir
 from backend.apps.outputs.workspace_io import WALK_SKIP_DIRS
 
@@ -151,7 +152,7 @@ async def scan_for_publish(output: Output, settings) -> PublishReview:
     cached = memo.get(key)
     if cached is not None:
         memo.move_to_end(key)
-        return cached
+        return merge_capability(output, cached)
     ast_findings, scanned = p_ast_findings(src)
     llm_list, llm_sev = await llm_findings(src, settings)
     findings = ast_findings + llm_list
@@ -169,7 +170,7 @@ async def scan_for_publish(output: Output, settings) -> PublishReview:
     memo.move_to_end(key)
     while len(memo) > P_MEMO_MAX:
         memo.popitem(last=False)
-    return review
+    return merge_capability(output, review)
 
 
 def quick_ast_gate(output: Output) -> list[str]:

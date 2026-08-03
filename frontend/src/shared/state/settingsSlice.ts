@@ -43,6 +43,8 @@ export interface AppSettings {
   default_max_turns: number | null;
   default_thinking_level: 'off' | 'low' | 'medium' | 'high' | 'auto';
   zoom_sensitivity: number;
+  /** What a plain mouse wheel does on the canvas; trackpad two-finger always pans. */
+  mouse_wheel_action: 'zoom' | 'scroll';
   theme: 'light' | 'dark';
   new_agent_shortcut: string;
   dictation_shortcut?: string | null;
@@ -169,6 +171,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   default_max_turns: null,
   default_thinking_level: 'auto',
   zoom_sensitivity: 50,
+  mouse_wheel_action: 'zoom',
   ui_font_scale: 1,
   voice_hold_to_talk: true,
   theme: 'light',
