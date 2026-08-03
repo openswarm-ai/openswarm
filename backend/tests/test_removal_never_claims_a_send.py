@@ -72,3 +72,23 @@ def test_the_post_send_backstop_refuses_to_claim_a_send_on_a_removal():
     removal_code = [ln for ln in branch.split("elif")[0].splitlines()
                     if "done_message" in ln and not ln.strip().startswith("#")]
     assert removal_code and all("sent" not in ln for ln in removal_code), removal_code
+
+
+def test_the_completion_gate_describes_the_task_the_user_actually_gave():
+    """The fourth site of the same root cause, found while cleaning up after the third.
+
+    `is_publish_task` matches the NOUN in "delete my post", so a delete run reaches the publish
+    branch of the completion gate. Flagging it is right (the run proved nothing either way), but
+    the sentence was "the send was never confirmed, so it may not have gone out", which points the
+    user at the wrong page to check: they deleted something, and nothing was ever meant to go out.
+    """
+    from backend.apps.agents.browser.browser_loop import completion_is_honest
+
+    honest, why = completion_is_honest([], publish_task=True, send_confirmed=False,
+                                       removal_task=True)
+    assert not honest
+    assert "deletion" in why and "may still be there" in why
+    assert "gone out" not in why, "a delete must not be described as a send"
+
+    honest, why = completion_is_honest([], publish_task=True, send_confirmed=False)
+    assert not honest and "gone out" in why, "a real send keeps its own wording"

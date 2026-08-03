@@ -3105,7 +3105,7 @@ async def run_browser_agent(
         else:
             honest, dishonest_reason = completion_is_honest(
                 action_log, publish_task=is_publish_task(skill_key_task),
-                send_confirmed=send_confirmed)
+                send_confirmed=send_confirmed, removal_task=p_task_is_removal)
         final_status = "completed" if honest else "error"
         if not honest:
             summary = f"I was not able to complete this task ({dishonest_reason})."

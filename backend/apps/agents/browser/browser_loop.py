@@ -364,6 +364,7 @@ def deliverable_is_informational(summary: str, task: str = "") -> bool:
 
 def completion_is_honest(
     action_log: list[dict], publish_task: bool = False, send_confirmed: bool = False,
+    removal_task: bool = False,
 ) -> tuple[bool, str]:
     """Reality-check a run the model declared done. Returns (honest, reason).
 
@@ -383,6 +384,13 @@ def completion_is_honest(
     # click runs (a resend guard, not proof), so this can still let a bad send through, but it can
     # never newly flag a run that had any send signal at all.
     if publish_task and not send_confirmed:
+        # "delete my post" carries the noun `post`, so is_publish_task calls a DELETE a publish and
+        # this gate then judged it against a send it was never meant to make. Flagging is right (the
+        # run proved nothing either way), but the sentence has to describe the task the user gave.
+        # Telling someone their deletion "may not have gone out" sends them to check the wrong thing.
+        if removal_task:
+            return False, ("the deletion was never confirmed, so the item may still be there; "
+                           "check the page before trusting this")
         return False, ("the send was never confirmed, so it may not have gone out; "
                        "check the page before trusting this")
     if not action_log:
