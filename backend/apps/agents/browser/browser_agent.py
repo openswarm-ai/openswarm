@@ -81,6 +81,7 @@ from backend.apps.agents.browser import browser_metrics
 from backend.apps.agents.browser import browser_send_script
 from backend.apps.agents.browser import browser_send_parse
 from backend.apps.agents.browser import browser_login_handoff
+from backend.apps.agents.browser import detect_captcha
 from backend.apps.agents.browser import browser_session_import
 from backend.apps.agents.browser import browser_delivery_check
 from backend.apps.agents.browser import browser_submit_click
@@ -1350,6 +1351,7 @@ async def run_browser_agent(
     card_gone_streak = 0  # consecutive "card is gone" results -> fail fast, don't spin
     route_hinted_hosts: set[str] = set()  # surface the fast network tier once per host
     p_login_prompted: set[str] = set()  # login-once handoff: at most one sign-in pause per domain per run
+    p_captcha_prompted = False  # bot-detection handoff: asked at most once per run, never re-nagged
 
     # Stagnation state: busy-but-stuck detection (no URL change + failures across a run of actions), distinct from the exact-repeat loop above.
     stagnation_streak = 0
@@ -1907,6 +1909,30 @@ async def run_browser_agent(
             # RequestHumanIntervention stays as the fallback for walls this detector misses.
             # Soft signed-out (composer withheld behind a "Sign in") only counts once the agent has
             # actually tried and is still stuck, so a first-turn glance can't raise a false prompt.
+            # A bot-detection challenge outranks the login wall: a page can show both (tiktok serves
+            # its audio captcha over a logged-out feed), and signing in is not what unblocks it.
+            # Never attempted, only handed over. Once per run, because a user who declines should
+            # not be asked again every turn.
+            if not p_captcha_prompted:
+                p_cap_kind = detect_captcha.captcha_kind("\n".join(attached_state_seen))
+                if p_cap_kind:
+                    p_captcha_prompted = True
+                    p_cap_host = browser_login_handoff.registrable_domain(last_seen_url) or ""
+                    p_cap_problem, p_cap_instruction = detect_captcha.prompt_copy(p_cap_kind, p_cap_host)
+                    logger.info(f"[browser-agent {session_id}] {p_cap_kind} detected on "
+                                f"{p_cap_host or last_seen_url[:60]}; handing to the user, not solving it")
+                    p_cap_decision = await p_request_browser_approval(
+                        session, "RequestHumanIntervention",
+                        {"problem": p_cap_problem, "instruction": p_cap_instruction})
+                    if cancel_event.is_set():
+                        break
+                    if p_cap_decision.get("behavior") == "deny":
+                        done_called = True
+                        done_success = False
+                        done_message = (f"{p_cap_problem} I can't solve these, so I stopped rather "
+                                        f"than guess at it.")
+                        break
+
             p_wall_dom = browser_login_handoff.login_wall_domain(
                 last_seen_url, "\n".join(attached_state_seen), allow_soft=(turn >= 2))
             if p_wall_dom and p_wall_dom not in p_login_prompted:
