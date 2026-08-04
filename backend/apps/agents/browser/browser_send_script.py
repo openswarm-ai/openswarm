@@ -131,7 +131,7 @@ async def complete_send(
     # alone cannot tell you whether the composer still holds the text or we simply could not read the
     # page. Those are different bugs with different fixes.
     p_why = "no-poll"
-    for wait_s in (0.4, 1.0, 1.6):
+    for wait_s in (0.0, 1.0, 1.6):
         await asyncio.sleep(wait_s)
         state3 = await fresh_list()
         if not state3:
@@ -237,7 +237,7 @@ async def run_send_script(
         # The composer lazy-renders a beat after prestage snapshotted (X home does this ~half the
         # time), so poll a fresh perception before declining, else a late box is a false "no
         # composer" and the whole write flakes to the slow model path.
-        for wait_s in (0.6, 1.0, 1.4):
+        for wait_s in (0.0, 1.0, 1.4):
             await asyncio.sleep(wait_s)
             fresh = await fresh_list()
             if browser_send_parse.surface_supports_script(current_url, fresh):
@@ -283,7 +283,7 @@ async def run_send_script(
         composer = None
     if not composer:
         # The staged snapshot is prestage's, frozen the instant it clicked Message; the overlay composer lazy-renders a beat later (r263/r269 declined on exactly this, prestage's LAST step was the Message click). Poll a short window so the overlay has time to appear before we fall back to the opener.
-        for wait_s in (0.6, 1.2, 1.4):
+        for wait_s in (0.0, 1.2, 1.4):
             await asyncio.sleep(wait_s)
             fresh = await fresh_list()
             composer = browser_send_parse.composer_index_in_state(fresh)
@@ -319,7 +319,7 @@ async def run_send_script(
             # more is coming and more waiting is pure cost.
             p_prev = ""
             p_settled = 0
-            for wait_s in (0.6, 1.2, 1.5, 2.0, 2.0, 2.0):
+            for wait_s in (0.0, 1.2, 1.5, 2.0, 2.0, 2.0):
                 await asyncio.sleep(wait_s)
                 state_text = await fresh_list()
                 composer = browser_send_parse.composer_index_in_state(state_text)
@@ -447,7 +447,13 @@ async def run_send_script(
         # 2. verify the fill committed. Send is resolved AFTER, two ways: LinkedIn enables Send only once its JS digests the input (beats later than the text is visible), so the scan waits a little.
         state2 = ""
         committed = False
-        for wait_s in (0.4, 0.8, 1.2, 1.6):
+        # Probe FIRST, then back off. Every poll in this file used to sleep before its first look,
+        # which charges a page that was ready instantly the same as the slowest one it was tuned for.
+        # other_ms (wall minus model minus browser, the part we own) was 58% of the median run at
+        # 2450ms, and these fixed pre-sleeps are the bulk of it. The tail is unchanged, so nothing
+        # that needed the time loses it, and no work moves into another bucket: same check, better
+        # schedule.
+        for wait_s in (0.0, 0.8, 1.2, 1.6):
             await asyncio.sleep(wait_s)
             state2 = await fresh_list()
             committed = bool(state2 and payload_in_textbox(state2, payload))
