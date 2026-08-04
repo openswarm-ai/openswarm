@@ -191,6 +191,46 @@ def surface_mismatch(task: str, composer_name: str) -> bool:
     return bool(P_COMMENT_SURFACE_RE.search(name))
 
 
+# What a URL path declares the page to BE. Sites disagree about almost everything, but these path
+# segments are near-universal, and each one is the site telling us the content type in its own words.
+P_URL_CONTENT_TYPES = (
+    ("story", re.compile(r"/stories?/", re.I)),
+    ("message", re.compile(r"/(direct|messages?|dm)/", re.I)),
+    ("video", re.compile(r"/(watch|shorts)\b|/video/", re.I)),
+    ("post", re.compile(r"/(p|posts?|status|submit)/|/submit\b", re.I)),
+)
+# The same types as the TASK names them. Deliberately narrow: a word has to be unambiguous here or
+# the guard starts refusing pages that were right all along.
+P_TASK_CONTENT_TYPES = (
+    ("story", re.compile(r"\bstor(?:y|ies)\b", re.I)),
+    ("message", re.compile(r"\b(dm|direct message)\b", re.I)),
+    ("video", re.compile(r"\bvideos?\b", re.I)),
+    ("post", re.compile(r"\bposts?\b", re.I)),
+)
+
+
+def content_type_mismatch(task: str, url: str) -> str:
+    """"asked for a <x>, landed on a <y>", or "" when they agree or either is unclear.
+
+    surface_mismatch below asks whether the COMPOSER contradicts the task. This asks the same thing
+    one level up, about the page, because a page can hand you a perfectly good composer that belongs
+    to the wrong thing entirely. Measured on instagram 2026-08-04: "write a comment on the first
+    post" opened a STORY (`/stories/<user>/`), whose reply box is a real composer, so every gate
+    downstream was satisfied and the comment would have gone to a story nobody asked about.
+
+    Both sides must be unambiguous. A task that names no type, or a URL that declares none, returns
+    "" and changes nothing, so the cost of being wrong here is a page we decline to fill fast and
+    hand to the model instead.
+    """
+    if not task or not url:
+        return ""
+    want = [name for name, rx in P_TASK_CONTENT_TYPES if rx.search(task)]
+    got = [name for name, rx in P_URL_CONTENT_TYPES if rx.search(url)]
+    if len(want) != 1 or len(got) != 1 or want[0] == got[0]:
+        return ""
+    return f"asked for a {want[0]}, landed on a {got[0]}"
+
+
 def is_readonly(text: str) -> bool:
     """A read-only directive ('verify whether', 'do not send') that must decline the scripted
     send even with a quoted payload in hand. Keeps the regex private to this file."""

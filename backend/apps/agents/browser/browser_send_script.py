@@ -263,6 +263,15 @@ async def run_send_script(
     if not payload:
         logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
         return None
+    # The page itself says what it is, and a composer on the wrong thing is still the wrong thing.
+    # Live on instagram: a "comment on the first post" task opened a STORY, whose reply box is a
+    # perfectly real composer, so every gate below passed and the comment would have gone somewhere
+    # nobody asked for. Declining costs the fast path and hands the page to the model, which can
+    # navigate; filling would have been silent and wrong.
+    p_ctype = browser_send_parse.content_type_mismatch(task_sans_brief, current_url or "")
+    if p_ctype:
+        logger.info(f"[browser-sendscript] decline: {p_ctype} ({(current_url or '')[:60]})")
+        return None
     log: list[dict] = []
 
     composer = browser_send_parse.composer_index_in_state(state_text)
