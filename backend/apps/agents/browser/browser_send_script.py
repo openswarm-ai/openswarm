@@ -293,7 +293,7 @@ async def run_send_script(
     p_struct_selector: str = ""
     if not composer:
         # Reversible-opener hop: prestage often stops on the profile with the "Message" opener visible (its settle raced the overlay). Opening a composer is the allowed opener class; the irreversible bar is unchanged.
-        opener = browser_send_parse.opener_index_in_state(state_text)
+        opener = browser_send_parse.opener_index_in_state(state_text, task_sans_brief)
         if opener and browser_send_parse.surface_mismatch(task_sans_brief, opener[1]):
             # The same wrong-surface rule the composer already enforces, applied one step earlier.
             # Measured on linkedin.com with "start a post": the only opener listed was 'Comment', so

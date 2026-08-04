@@ -9,6 +9,7 @@ imports from here, never the reverse.
 """
 
 import re
+from typing import Optional
 
 # Double quotes are unambiguous. Single quotes only delimit when the opener is at a word boundary (start/space/colon), so an in-word apostrophe like "chen's" is never mistaken for a payload quote, that mispairing was silently corrupting the canonical "text him '...'" errand.
 P_QUOTED_DQ_RE = re.compile(r'"([^"]{4,300})"')
@@ -249,19 +250,46 @@ def quoted_payload(task: str) -> str:
     return sq.pop() if len(sq) == 1 else ""
 
 
-def opener_index_in_state(state_text: str):
+def opener_index_in_state(state_text: str, task: Optional[str] = None):
     """(index, name) of the single composer OPENER, or None.
 
     An exact name, or a verb+noun compose phrase anywhere in a longer label. The second half is
     what reaches the openers whose label is a whole sentence, and it keeps the exactness the first
     half was buying: an upsell ('Send InMail') has the wrong noun and a count ('526 comments') has
-    no verb. Still a SINGLETON, so two candidates stay the model's problem, not a coin flip."""
+    no verb. Still a SINGLETON, so two candidates stay the model's problem, not a coin flip.
+
+    Pass `task` to drop openers that contradict it, which is what keeps a comment task off the
+    'New post' upload button. Optional so existing read-only callers are unaffected."""
     hits = [(int(m.group(1)), m.group(2)) for m in P_OPENER_ROW_RE.finditer(state_text or "")]
     if not hits:
         hits = [(int(m.group(1)), m.group(2))
                 for m in P_CONTROL_ROW_RE.finditer(state_text or "")
                 if P_OPENER_PHRASE_RE.search(m.group(2) or "")]
+    if task is not None:
+        hits = [h for h in hits if not opener_contradicts_task(task, h[1])]
     return hits[0] if len(hits) == 1 else None
+
+
+# "New post", "Create", "Compose" open a BLANK thing. Fine when the task is to write something new;
+# wrong when the task is to respond to something that already exists.
+P_CREATE_OPENER_RE = re.compile(r"\b(new|create|compose|start a)\b", re.I)
+
+
+def opener_contradicts_task(task: str, opener_name: str) -> bool:
+    """True when this opener would take us somewhere the task did not ask to go.
+
+    Measured on instagram 2026-08-04: a "write a comment on the first post" task matched the opener
+    `New post Create`, which is the UPLOAD flow, so the run left the feed for a file picker and
+    never saw a post. Nothing downstream could catch it, because by then the only evidence left was
+    a page with no composer on it.
+
+    Only the create-vs-respond direction, because that is the one with a wrong destination. A
+    respond-shaped opener on a create task is left alone: some sites really do route a new post
+    through a control labelled "Write".
+    """
+    t, name = task or "", opener_name or ""
+    responding = bool(P_COMMENT_INTENT_RE.search(t))
+    return responding and bool(P_CREATE_OPENER_RE.search(name))
 
 
 def composer_index_in_state(state_text: str):
