@@ -205,34 +205,48 @@ def marker_in_page(url: str, marker: str) -> Optional[bool]:
     """
     want_host = (urlparse(url).hostname or "").lower().replace("www.", "")
     saw_page = False
+    cards = p_cards()
+    print(f"      [audit] {url} via {len(cards)} card(s)", flush=True)
+    if not cards:
+        print("      [audit] no browser card on the dashboard; cannot read the destination",
+              flush=True)
+        return None
     # Try every card, newest first. A card whose session was torn down mid-run can WEDGE: it answers
     # `navigate` with "Navigated to <url>" in ~80ms and never leaves the page it was on. Measured
     # here on a reddit card that reported a successful hop to x.com/home four times running while
     # document.title stayed "Submit to Reddit". Trusting that reply would have this function read
     # some other site and report a confident answer about the destination.
-    for bid in reversed(p_cards()):
+    for bid in reversed(cards):
         try:
             p_cmd(bid, "navigate", {"url": url})
-        except Exception:
+        except Exception as e:
+            print(f"      [audit] {bid} navigate raised: {type(e).__name__}", flush=True)
             continue
+        last = ""
         for wait in (2.0, 3.0, 4.0, 5.0):
             time.sleep(wait)
             try:
                 r = p_cmd(bid, "evaluate", {"expression": AUDIT_EXPR})
-            except Exception:
+            except Exception as e:
+                last = f"evaluate raised {type(e).__name__}"
                 continue
             try:
                 v = json.loads(str(r.get("text") or ""))
             except ValueError:
+                last = f"unparseable evaluate reply {str(r)[:70]}"
                 continue
             landed = (urlparse(str(v.get("u") or "")).hostname or "").lower().replace("www.", "")
             body = str(v.get("body") or "")
             # The URL is the load-bearing half. A body with no host check is a page we cannot name.
             if not body or (want_host and landed != want_host):
+                last = f"landed on {landed or '(nothing)'}, wanted {want_host}, {len(body)} chars"
                 continue
             saw_page = True
             if marker in body:
+                print(f"      [audit] {bid} FOUND {marker} on {landed} ({len(body)} chars)", flush=True)
                 return True
+            last = f"read {landed} ok, {len(body)} chars, marker absent"
+        print(f"      [audit] {bid}: {last}", flush=True)
         if saw_page:
             break
     return False if saw_page else None
