@@ -182,6 +182,53 @@ def p_cards() -> List[str]:
     return list(cards)
 
 
+AUDIT_CARD_PREFIX = "browser-audit"
+
+
+def p_audit_card() -> str:
+    """A browser card that belongs to the AUDIT and to nothing else, created once and reused.
+
+    Borrowing whatever card happened to be lying around is what made the destination read
+    unreliable: agent cards are reaped down to the newest few once their session stops running
+    (browser_agent.p_reap_idle_agent_cards), and a card whose session was torn down mid-run wedges,
+    answering `navigate` with a cheerful "Navigated to <url>" while never leaving the page it was on.
+    Measured across one canary round: the audit read the destination on the first site and had no
+    card at all by the third, which is indistinguishable from "the post is not there".
+
+    A card with no `spawned_by` is skipped by the reaper entirely (that is what a user's own card
+    looks like), so this one survives the whole run. Created through the dashboard PUT and verified
+    drivable end to end.
+    """
+    dash = req("GET", BASE.replace("/agents", "") + "/dashboards/list")
+    ds = dash if isinstance(dash, list) else dash.get("dashboards", [])
+    if not ds:
+        return ""
+    did = ds[0]["id"]
+    full = req("GET", BASE.replace("/api/agents", "/api/dashboards") + "/" + did)
+    cards = (full.get("layout") or {}).get("browser_cards") or {}
+    for bid in cards:
+        if bid.startswith(AUDIT_CARD_PREFIX):
+            return bid
+    bid = AUDIT_CARD_PREFIX + secrets.token_hex(3)
+    tid = "tab-" + secrets.token_hex(4)
+    url = "https://example.com"
+    cards[bid] = {"browser_id": bid, "url": url, "dashboard_id": did,
+                  "tabs": [{"id": tid, "url": url, "title": ""}], "activeTabId": tid,
+                  "x": 60, "y": 120, "width": 1200, "height": 760}
+    req("PUT", BASE.replace("/api/agents", "/api/dashboards") + "/" + did, full)
+    # The renderer mounts it a beat after the layout lands; the first evaluate against an unattached
+    # webview errors rather than lying, so a short poll is enough and never masks a real failure.
+    for _ in range(8):
+        time.sleep(4)
+        try:
+            r = p_cmd(bid, "evaluate", {"expression": "1"})
+        except Exception:
+            continue
+        if r.get("text") and "error" not in r:
+            return bid
+    return bid
+
+
 def p_cmd(browser_id: str, action: str, params: dict) -> dict:
     return req("POST", BASE.replace("/api/agents", "/api/browser") + "/command",
                {"action": action, "browser_id": browser_id, "params": params})
@@ -208,18 +255,18 @@ def marker_in_page(url: str, marker: str) -> Optional[bool]:
     """
     want_host = (urlparse(url).hostname or "").lower().replace("www.", "")
     saw_page = False
-    cards = p_cards()
-    print(f"      [audit] {url} via {len(cards)} card(s)", flush=True)
+    cards = [p_audit_card()] or []
+    cards = [c for c in cards if c]
     if not cards:
-        print("      [audit] no browser card on the dashboard; cannot read the destination",
-              flush=True)
+        print("      [audit] no dashboard; cannot read the destination", flush=True)
         return None
-    # Try every card, newest first. A card whose session was torn down mid-run can WEDGE: it answers
+    print(f"      [audit] {url} via {cards[0]}", flush=True)
+    # Never trust the navigate REPLY, always re-read location.href. A card can WEDGE: it answers
     # `navigate` with "Navigated to <url>" in ~80ms and never leaves the page it was on. Measured
-    # here on a reddit card that reported a successful hop to x.com/home four times running while
+    # on a reddit card that reported a successful hop to x.com/home four times running while
     # document.title stayed "Submit to Reddit". Trusting that reply would have this function read
     # some other site and report a confident answer about the destination.
-    for bid in reversed(cards):
+    for bid in cards:
         try:
             p_cmd(bid, "navigate", {"url": url})
         except Exception as e:
