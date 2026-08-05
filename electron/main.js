@@ -3570,7 +3570,13 @@ function wireChildSessions(wc) {
     }
     if (method === 'Target.attachedToTarget') {
       const info = params.targetInfo || {};
-      if (info.type !== 'iframe') return;
+      // A cross-origin OOPIF is reported as type 'page', NOT 'iframe'. Filtering on 'iframe' alone
+      // therefore discarded exactly the frames we most need to see into: an embedded comment box, a
+      // helpdesk widget, a checkout field. Measured on disqus.com, whose composer is a cross-origin
+      // iframe: perception returned textboxes=0, so no composer matching could have found it, and
+      // the site scored 0/2 on the editor-shape holdout reading as "no composer" when the truth was
+      // "we are blind in here". Accept both; everything else (workers, extensions) still drops.
+      if (info.type !== 'iframe' && info.type !== 'page') return;
       // The event's own sessionId is the PARENT session (empty = root frame).
       sessions.set(params.sessionId, {
         frameId: info.targetId,
