@@ -10,6 +10,10 @@ WHAT IT DOES: per site, one full round trip on the user's own account, then clea
 A site "passes" only if the post was receipt-verified AND the cleanup verified gone. Anything else
 is drift, reported with the stage it died at.
 
+"Confirm" means the canary drives a browser card to the destination itself and reads
+document.body.innerText (see `marker_in_page`). It never asks a model whether the post is there,
+and it never takes the receipt's word for it: those are the two claims under audit.
+
 SAFETY:
   - Never runs by itself. No cron, no import side effects; a human or a CI job invokes it.
   - --dry (default) posts NOTHING: it exercises discovery only, so it is safe anywhere.
@@ -34,6 +38,7 @@ import sys
 import time
 import urllib.request
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.environ.get("OSW_CANARY_BASE", "http://127.0.0.1:8326") + "/api/agents"
@@ -47,16 +52,14 @@ SITES: Dict[str, Dict[str, str]] = {
         "probe": 'Go to x.com. Do NOT type or post anything. Is the tweet compose box present on the page? Answer with exactly one word: YES or NO.',
         "post": 'Go to x.com and post this tweet, exactly: "{m}"',
         "delete": 'Go to x.com/{handle} and delete the post that says "{m}"',
-        "verify": ('Go to x.com/{handle}. Do NOT post, delete or change anything. Is there a post '
-                   'containing "{m}"? Answer with exactly one word: GONE if absent, PRESENT if there.'),
+        "audit": "https://x.com/{handle}",
         "handle_env": "OSW_CANARY_X_HANDLE",
     },
     "linkedin": {
         "probe": 'Go to linkedin.com. Do NOT type or post anything. Is the "Start a post" compose control present on the feed? Answer with exactly one word: YES or NO.',
         "post": 'Go to linkedin.com and create a post with exactly this text: "{m}"',
         "delete": 'Go to my LinkedIn activity and delete the post that says "{m}"',
-        "verify": ('Go to my LinkedIn activity. Do NOT post, delete or change anything. Is there a post '
-                   'containing "{m}"? Answer with exactly one word: GONE if absent, PRESENT if there.'),
+        "audit": "https://www.linkedin.com/in/me/recent-activity/all/",
     },
     "reddit": {
         "probe": 'Go to reddit.com/r/test/submit. Do NOT type or submit anything. Is the post title/body compose form present? Answer with exactly one word: YES or NO.',
@@ -68,10 +71,21 @@ SITES: Dict[str, Dict[str, str]] = {
         # that trips the thing it is measuring reports its own bug as the system's.
         "post": 'Go to reddit.com/r/test/submit and create a text post whose title is exactly "{m}". Submit it.',
         "delete": 'Go to reddit.com and delete my post titled "{m}"',
-        "verify": ('Go to my reddit profile. Do NOT post, delete or change anything. Is there a post '
-                   'titled "{m}"? Answer with exactly one word: GONE if absent, PRESENT if there.'),
+        "audit": "https://www.reddit.com/r/test/new/",
     },
 }
+
+# Every line the product emits when a write is receipt-VERIFIED. There are two producers and the
+# canary knew about one of them, plus one string ("DELIVERY CONFIRMED") that appears nowhere in the
+# backend at all and therefore could never match. So a write completed through the agent loop, which
+# is what LinkedIn does, was recorded as "no receipt" while the run's own words were the verbatim
+# receipt-verified message. Grep for the strings the code actually prints, and keep this next to the
+# code that prints them.
+P_RECEIPT_MARKERS = (
+    "done sent_receipt=True",          # browser_send_script.py, the fast lane
+    "two-sided receipt passed",        # browser_agent.py, the agent loop
+    "code-send delivered (receipt verified)",   # browser_agent.py, post-fill autosend
+)
 
 
 def req(method: str, url: str, body: Optional[dict] = None) -> dict:
@@ -91,8 +105,12 @@ def log_lines() -> int:
         return 0
 
 
-def run_task(prompt: str, name: str, budget: int = 180) -> Dict[str, object]:
-    """Dispatch one browser task; return {said, status, wall, log} for the slice it produced."""
+def run_task(prompt: str, name: str, budget: int = 180, keep: bool = False) -> Dict[str, object]:
+    """Dispatch one browser task; return {said, status, wall, log} for the slice it produced.
+
+    `keep` leaves the session (and therefore its browser card) alive so the caller can audit the
+    destination through that card before tearing it down. The caller MUST call `teardown(sid)`.
+    """
     mark = log_lines()
     dash = req("GET", BASE.replace("/agents", "") + "/dashboards/list")
     dashboards = dash if isinstance(dash, list) else dash.get("dashboards", [])
@@ -125,69 +143,101 @@ def run_task(prompt: str, name: str, budget: int = 180) -> Dict[str, object]:
         slice_ = "".join(open(LOG, errors="ignore").readlines()[mark:])
     except OSError:
         slice_ = ""
-    # Tear the run down before the next one starts. Each canary round launches several sessions
-    # (post, audit, delete, re-audit) and each leaves a live browser card with its own webview; a
-    # multi-round loop stacks them until the renderer is compositing dozens and stops answering,
-    # which then reads as a product failure. delete_session stops the browser-agent children first,
-    # so this reaps the cards too. The log slice is read ABOVE, so teardown lines never land in the
-    # window this run is judged on.
+    if not keep:
+        teardown(sid)
+    return {"said": said, "status": status, "wall": round(time.time() - t0, 1), "log": slice_,
+            "sid": sid}
+
+
+def teardown(sid: str) -> None:
+    """Stop a run and reap its browser card.
+
+    Each canary round launches several sessions and each leaves a live browser card with its own
+    webview; a multi-round loop stacks them until the renderer is compositing dozens and stops
+    answering, which then reads as a product failure. delete_session stops the browser-agent
+    children first, so this reaps the cards too.
+    """
     try:
         req("DELETE", f"{BASE}/sessions/{sid}")
     except Exception:
         pass
-    return {"said": said, "status": status, "wall": round(time.time() - t0, 1), "log": slice_}
 
 
-def marker_in_page(cfg: Dict[str, str], marker: str, handle: str, site: str) -> Optional[bool]:
-    """Is the marker ACTUALLY on the destination page? None when the read could not be made.
+def p_cards() -> List[str]:
+    """Browser cards currently on the dashboard, newest last."""
+    dash = req("GET", BASE.replace("/agents", "") + "/dashboards/list")
+    ds = dash if isinstance(dash, list) else dash.get("dashboards", [])
+    if not ds:
+        return []
+    full = req("GET", BASE.replace("/api/agents", "/api/dashboards") + "/" + ds[0]["id"])
+    cards = (full.get("layout") or {}).get("browser_cards") or {}
+    return list(cards)
 
-    The two checks around this one both take somebody's word for it. `sent_receipt=True` is OUR
-    mechanism reporting on itself, so a receipt bug reads as a delivered post; and the GONE/PRESENT
-    reply is a model summarising a page, which is the same model whose claim we are trying to audit.
-    Neither is destination-specific evidence.
 
-    This reads the raw perception instead: navigate fresh, then grep the tool output in the log for
-    the marker string. No model judgement is consulted, only whether those characters came back from
-    the page. That is what makes a "posted" claim falsifiable, which is the whole point of counting
-    false successes.
+def p_cmd(browser_id: str, action: str, params: dict) -> dict:
+    return req("POST", BASE.replace("/api/agents", "/api/browser") + "/command",
+               {"action": action, "browser_id": browser_id, "params": params})
+
+
+def marker_in_page(url: str, marker: str) -> Optional[bool]:
+    """Is the marker ACTUALLY rendered on `url`? None when the read could not be made.
+
+    THE INSTRUMENT THIS REPLACES COULD NOT ANSWER THE QUESTION. It looked for the marker in the
+    backend LOG, and the backend does not log page text: a grep for every canary marker ever
+    generated, across every backend log on this box, returns zero lines. So the audit could only
+    ever say "could not look", and LinkedIn and reddit scored `unprovable` for reasons that had
+    nothing to do with LinkedIn or reddit. The session API is no better: it carries the model's
+    ANSWER, never the tool results, so reading it is asking the same model we are trying to audit.
+
+    So read the page directly. Drive a real browser card through /api/browser/command (the same
+    channel the agent's tools use), navigate to the destination, and pull `document.body.innerText`.
+    No model is consulted at any point, which is what makes a "posted" claim falsifiable.
+
+    Poll rather than sleep once: a fresh post can take a few seconds to appear in a feed, and
+    calling absence early would invent a failure. Missing evidence is None, never False, because
+    asserting absence from a read that did not happen is the same lie as claiming a delivery nobody
+    saw, just pointed the other way.
     """
-    if not cfg.get("verify"):
-        return None
-    v = run_task(cfg["verify"].format(m=marker, handle=handle), f"canary-audit-{site}")
-    log = str(v["log"])
-    if not log.strip():
-        return None
-    # "the marker is not on the page" and "we never got a good look at the page" are DIFFERENT
-    # answers, and collapsing them is how this audit falsely accused LinkedIn of a false success:
-    # the post was really there (the cleanup that followed deleted it), the read just never
-    # surfaced its text. Absence only counts as evidence once the read itself is known good, so
-    # require proof we saw the destination at all before believing what we did not see on it.
-    # Any evidence the audit run actually looked at a page. The first version listed two exact
-    # "[browser-action] X" strings the log does not emit for reads, so saw_page was always False and
-    # every audit returned "unprovable" no matter what it saw. An instrument that can only ever say
-    # "don't know" is worse than none, because it looks like data.
-    saw_page = any(k in log for k in ("BrowserGetText", "BrowserListInteractives",
-                                      "dryrun-report", "browser-action", "browser-time"))
-    # Excluding every "browser-action" line was the bug that made this instrument dangerous. Tool
-    # RESULTS are logged on those lines too, so the one place the page's own text appears was being
-    # filtered out, and a post that was really there could only ever come back "not on the
-    # destination" — i.e. a FALSE SUCCESS accusation against a send that worked. Measured on
-    # LinkedIn: this reported `canaryffaf69d7 is not on the destination` while an independent read
-    # found it as the most recent post, 7 minutes old, 14 impressions.
-    #
-    # Exclude only the echo of the prompt WE sent, matched on its own distinctive wording, and keep
-    # everything else the run logged.
-    p_echo = ("is there a post", "do not post", "answer with exactly one word", "read only")
-    hit = any(marker in line for line in log.splitlines()
-              if not any(e in line.lower() for e in p_echo))
-    if hit:
-        return True
-    # Absence is only evidence once the read is known good, AND only when we are sure we are not
-    # simply blind to page text. If nothing at all in this log carried the marker, including the
-    # prompt echo that certainly contained it, then this instrument saw nothing and must say so.
-    if marker not in log:
-        return None
+    want_host = (urlparse(url).hostname or "").lower().replace("www.", "")
+    saw_page = False
+    # Try every card, newest first. A card whose session was torn down mid-run can WEDGE: it answers
+    # `navigate` with "Navigated to <url>" in ~80ms and never leaves the page it was on. Measured
+    # here on a reddit card that reported a successful hop to x.com/home four times running while
+    # document.title stayed "Submit to Reddit". Trusting that reply would have this function read
+    # some other site and report a confident answer about the destination.
+    for bid in reversed(p_cards()):
+        try:
+            p_cmd(bid, "navigate", {"url": url})
+        except Exception:
+            continue
+        for wait in (2.0, 3.0, 4.0, 5.0):
+            time.sleep(wait)
+            try:
+                r = p_cmd(bid, "evaluate", {"expression": AUDIT_EXPR})
+            except Exception:
+                continue
+            try:
+                v = json.loads(str(r.get("text") or ""))
+            except ValueError:
+                continue
+            landed = (urlparse(str(v.get("u") or "")).hostname or "").lower().replace("www.", "")
+            body = str(v.get("body") or "")
+            # The URL is the load-bearing half. A body with no host check is a page we cannot name.
+            if not body or (want_host and landed != want_host):
+                continue
+            saw_page = True
+            if marker in body:
+                return True
+        if saw_page:
+            break
     return False if saw_page else None
+
+
+# One expression, so what counts as "the page" is defined in exactly one place. innerText only:
+# innerHTML would match the marker inside a hidden template or a JSON blob the site ships, and a
+# post nobody can see is not a post that landed.
+AUDIT_EXPR = ('(()=>{try{return {body:(document.body&&document.body.innerText)||"",'
+              'u:location.href};}catch(e){return {body:"",u:""};}})()')
 
 
 def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
@@ -213,22 +263,36 @@ def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
 
     # 1. POST, and require the two-sided receipt (composer cleared), not the model's word for it.
     handle = os.environ.get(cfg.get("handle_env", ""), "") if cfg.get("handle_env") else ""
-    r = run_task(cfg["post"].format(m=marker, handle=handle), f"canary-post-{site}")
+    audit_url = cfg["audit"].format(handle=handle)
+    r = run_task(cfg["post"].format(m=marker, handle=handle), f"canary-post-{site}", keep=True)
     log = str(r["log"])
-    delivered = "done sent_receipt=True" in log or "DELIVERY CONFIRMED" in log
+    sid = str(r["sid"])
     res["post_wall"] = r["wall"]
+    # A run whose log slice is EMPTY was not observed, and the receipt question cannot be answered
+    # about it either way. Saying "no receipt" there charges the product for the harness pointing at
+    # the wrong file, which is exactly what happened: OSW_CANARY_LOG named a file the backend was no
+    # longer writing to, so every LinkedIn round scored a receipt failure with no receipt evidence in
+    # the frame at all. Refuse to grade instead.
+    if not log.strip():
+        teardown(sid)
+        res.update(stage="post", ok=False, invalid=True,
+                   detail=f"INVALID: no log slice (is OSW_CANARY_LOG={LOG} the live backend's log?)")
+        return res
+    delivered = any(k in log for k in P_RECEIPT_MARKERS)
     # What the run TOLD the user, kept apart from what the page shows, because the gap between the
     # two is the number that matters. A claim with no evidence under it is a false success, and it
     # cannot be counted at all unless the two are recorded separately.
     said = str(r["said"])
     res["claimed"] = delivered or bool(
         re.search(r"\b(posted|published|tweeted|submitted|sent it|has been posted)\b", said, re.I))
-    proven = marker_in_page(cfg, marker, handle, site)
+    # Audit through the run's OWN card, before teardown: it is already signed in and on the site.
+    proven = marker_in_page(audit_url, marker)
+    teardown(sid)
     res["proven"] = proven
     res["false_success"] = bool(res["claimed"]) and proven is False
     if not delivered:
         res.update(stage="post", ok=False,
-                   detail=f"no receipt (status={r['status']}): {said[:120]}")
+                   detail=f"no receipt (status={r['status']}, on_page={proven}): {said[:100]}")
         return res
     if proven is False:
         # The receipt fired and the destination does not have it. This is exactly the failure the
@@ -237,32 +301,21 @@ def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
                    detail=f"FALSE SUCCESS: receipt says sent, {marker} is not on the destination")
         return res
 
-    # 2. DELETE, and require the in-page verify-gone, so cleanup can't be claimed falsely.
-    d = run_task(cfg["delete"].format(m=marker, handle=handle), f"canary-clean-{site}")
-    dlog = str(d["log"])
-    removed = "removed=True" in dlog
+    # 2. DELETE, and require the in-page verify-gone, so cleanup can't be claimed falsely. The
+    # authority is the OUTCOME (is it still on the page?) and never the implementation detail:
+    # grepping for `removed=True`, which only the BrowserDeleteItem dispatch path prints, called
+    # DRIFT on a model-driven delete that had plainly worked, twice on X.
+    d = run_task(cfg["delete"].format(m=marker, handle=handle), f"canary-clean-{site}", keep=True)
     res["delete_wall"] = d["wall"]
-    if not removed and cfg.get("verify") is not None:
-        # Same evidence channel as the post audit: gone means the characters are not coming back
-        # from the page, not that a model said "GONE".
-        still_there = marker_in_page(cfg, marker, handle, site)
-        if still_there is False:
-            removed = True
-            res["verified_by"] = "marker absent from raw page text"
-    if not removed and cfg.get("verify"):
-        # `removed=True` only exists on the BrowserDeleteItem dispatch path. A model-driven delete is
-        # every bit as real, and grepping for the mechanism called DRIFT on a delete that had plainly
-        # worked: X said "Your post was deleted" and an independent profile audit found the marker
-        # gone, twice. A canary that cries wolf gets ignored, which is worse than no canary, so the
-        # authority here is the OUTCOME (is it still on the page?) and never the implementation detail.
-        v = run_task(cfg["verify"].format(m=marker, handle=handle), f"canary-verify-{site}")
-        vsaid = str(v["said"])
-        removed = bool(re.search(r"\bGONE\b", vsaid, re.I)) and not re.search(r"\bPRESENT\b", vsaid, re.I)
-        res["verify_wall"] = v["wall"]
-        res["verified_by"] = "re-read" if removed else "re-read (still present)"
+    still_there = marker_in_page(audit_url, marker)
+    teardown(str(d["sid"]))
+    removed = still_there is False
+    res["verified_by"] = {True: "marker still on page", False: "marker absent from raw page text",
+                          None: "could not read the destination"}[still_there]
     if not removed:
         res.update(stage="cleanup", ok=False,
-                   detail=f"POSTED BUT NOT CLEANED, marker {marker} may be live: {str(d['said'])[:100]}")
+                   detail=f"POSTED BUT NOT CLEANED, marker {marker} may be live "
+                          f"({res['verified_by']}): {str(d['said'])[:70]}")
         return res
     res.update(stage="done", ok=True, detail="posted, receipt-verified, deleted, verified gone")
     return res
@@ -294,14 +347,20 @@ def main() -> int:
     stranded = [r for r in bad if r.get("stage") == "cleanup"]
     print(f"\n{len(rows) - len(bad)}/{len(rows)} sites healthy")
     if args.live:
-        proven = [r for r in rows if r.get("proven") is True]
-        unprovable = [r for r in rows if r.get("proven") is None]
-        liars = [r for r in rows if r.get("false_success")]
-        print(f"verified writes: {len(proven)}/{len(rows)} proven on the destination"
-              + (f", {len(unprovable)} unprovable (no audit read)" if unprovable else ""))
+        graded = [r for r in rows if not r.get("invalid")]
+        proven = [r for r in graded if r.get("proven") is True]
+        unprovable = [r for r in graded if r.get("proven") is None]
+        liars = [r for r in graded if r.get("false_success")]
+        invalid = [r for r in rows if r.get("invalid")]
+        print(f"verified writes: {len(proven)}/{len(graded)} proven on the destination"
+              + (f", {len(unprovable)} unprovable (audit read failed)" if unprovable else ""))
         print(f"FALSE SUCCESS CLAIMS: {len(liars)}"
               + (" <- hard gate, must be 0: " + ", ".join(str(r["site"]) for r in liars)
                  if liars else ""))
+        # Printed, never folded in. An excluded row is a claim that the product was not on trial,
+        # and that claim has to survive being read out loud.
+        for r in invalid:
+            print(f"  EXCLUDED (not graded): {r['site']} - {r['detail']}")
     if stranded:
         print("!! MANUAL CLEANUP NEEDED: " + ", ".join(f"{r['site']}:{r['marker']}" for r in stranded))
     if bad:
