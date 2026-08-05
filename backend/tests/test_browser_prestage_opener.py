@@ -163,7 +163,7 @@ def test_a_click_that_reveals_the_composer_ends_the_stage_without_another_aux_ca
     src = inspect.getsource(pre)
     i = src.index("The click may BE the answer")
     block = src[i:i + 900]
-    assert "composer_index_in_state(p_after)" in block, "must check the POST-click perception"
+    assert "composer_index_in_state(p_li_after)" in block, "must check the POST-click perception"
     assert "task_is_send" in block, "send tasks only; a read stages differently"
     assert "staged_complete = True" in block, "and it must end the stage, not just note it"
 
@@ -192,3 +192,24 @@ def test_a_page_that_loaded_content_counts_as_settled_even_with_an_empty_before_
     # and the original difference clauses must survive: this is an ADDITION, not a replacement
     assert "u2 != pre_url" in body and "gt2[:400] != pre_text[:400]" in body
     assert "li2 != pre_li" in body
+
+
+def test_landing_on_the_wrong_content_type_nudges_before_the_stage_is_declared():
+    """Instagram at N=5, all five identical: the story-first feed sent prestage into
+    instagram.com/stories/<user>/, whose reply box IS a real composer, so the tier-0 check would
+    declare the stage READY and the send script then had to refuse ("asked for a post, landed on a
+    story"). The whole run was spent arriving somewhere the next gate always rejects.
+
+    Catching it HERE, while steps remain, is what lets the run recover. The guard downstream is not
+    weakened: a wrong surface must still refuse. This only stops us walking into one on purpose.
+    """
+    import inspect
+    from backend.apps.agents.browser import browser_prestage as pre
+    src = inspect.getsource(pre)
+    i = src.index("Landing on the wrong KIND of thing")
+    block = src[i:i + 1200]
+    assert "content_type_mismatch" in block, "must ask whether the URL contradicts the task"
+    assert "p_ctype_overruled" in block, "and nudge at most once, some tasks legitimately land odd"
+    # the nudge has to come BEFORE the tier-0 READY, or the stage is already declared
+    # the nudge must come BEFORE the tier-0 READY, or the stage is declared on the wrong page
+    assert src.index("p_ctype_overruled = True") < src.index("composer_index_in_state(p_li_after)")

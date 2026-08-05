@@ -399,6 +399,7 @@ async def run_prestage(
         p_system = P_SYSTEM_OPENER if opener_mode() else P_SYSTEM
         p_results_overruled = False
         p_composer_overruled = False
+        p_ctype_overruled = False
         while (not staged_complete and steps < p_max_steps
                and (time.monotonic() - t0) < p_total_timeout):
             # Per-step cost, broken out. Prestage is the largest single phase of a LinkedIn write
@@ -510,15 +511,32 @@ async def run_prestage(
                     logger.info(f"[browser-prestage] click [{idx}] did not settle; stopping unstaged")
                     break
                 done_desc.append(f"clicked {entry[:70]}")
+                # Landing on the wrong KIND of thing is a navigation mistake, and it is cheapest
+                # to catch here, while steps remain to correct it. Measured on instagram at N=5, all
+                # five identical: the story-first feed sent prestage into instagram.com/stories/
+                # <user>/, whose reply box IS a real composer, so the tier-0 check below would have
+                # declared the stage READY and the send script then had to refuse ("asked for a
+                # post, landed on a story"). The whole run was spent arriving somewhere the next
+                # gate always rejects. One nudge only: some tasks legitimately land somewhere that
+                # reads as another type, and the downstream guard still refuses a wrong surface.
+                p_li_after, _, p_url_after = await perceive()
+                p_ctype = browser_send_parse.content_type_mismatch(task, p_url_after or current_url)
+                if p_ctype and not p_ctype_overruled:
+                    p_ctype_overruled = True
+                    logger.info(f"[browser-prestage] {p_ctype}; nudging back toward the right surface")
+                    task = task + (
+                        f"\n\n[You navigated somewhere that does not match the task: {p_ctype}. "
+                        f"Go BACK and open the right kind of item instead.]")
+                    steps += 1
+                    continue
                 # The click may BE the answer. settle() just re-perceived to prove the page changed,
                 # so we already hold the new element list; asking the model whether a composer is now
                 # visible costs 1.2-6.5s to re-read what we can read for free. Measured on ckeditor:
                 # its demo lists a tab link and no textbox because the editor mounts lazily, prestage
                 # clicked the tab, and then never looked again, so the send script never ran at all.
                 # This is the tier-0 check applied AFTER a click as well as before one.
-                p_after = (await perceive())[0]
-                if task_is_send and browser_send_parse.composer_index_in_state(p_after):
-                    li_text = p_after
+                if task_is_send and browser_send_parse.composer_index_in_state(p_li_after):
+                    li_text = p_li_after
                     staged_complete = True
                     logger.info(f"[browser-prestage] READY tier-0 after click [{idx}]: the click "
                                 f"revealed a composer, no further aux call needed")
