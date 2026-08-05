@@ -50,9 +50,14 @@ def test_two_boxes_matching_the_hint_stand_down():
 
 def test_the_hint_words_stay_off_compose_shaped_fields():
     """'body', 'message' and 'comment' are deliberately NOT hints: those boxes are already found by
-    shape, and a second route to the same element is a second thing to keep in sync."""
-    for word in ("body", "message", "comment"):
-        assert bp.P_FIELD_HINT_RE.search(word) is None
+    shape, and a second route to the same element is a second thing to keep in sync. Asserted
+    through the public finder, not the regex, so the test survives the pattern being rewritten."""
+    for word, state in (
+        ("body", '[1]<textbox "Post body text field" />'),
+        ("message", '[1]<textbox "Write a message" />'),
+        ("comment", '[1]<textbox "Add a comment" />'),
+    ):
+        assert bp.hinted_field_in_state(state, f'write the {word} "hello"') is None
 
 
 def test_the_old_single_argument_call_still_works():
