@@ -129,7 +129,8 @@ async def complete_send(
                 await execute_tool("BrowserClickIndex", {"index": p_idx, "text": payload},
                                    browser_id, tab_id)
                 log.append({"tool": "BrowserClickIndex", "input": {"index": p_idx, "text": payload},
-                            "ok": True, "result_summary": f"filled required field {p_name!r}"[:200],
+                            "ok": True, "clicked_role": "textbox", "clicked_name": p_name,
+                            "result_summary": f"filled required field {p_name!r}"[:200],
                             "elapsed_ms": 0})
                 r_ev2 = await execute_tool(
                     "BrowserEvaluate",
@@ -374,7 +375,12 @@ async def run_send_script(
             r_open = await execute_tool("BrowserClickIndex", {"index": opener[0]}, browser_id, tab_id)
             if not (isinstance(r_open, dict) and "error" not in r_open):
                 return None
+            # clicked_name/clicked_role are the fields the skill distiller reads. Putting the
+            # element's name only into result_summary prose is why that layer recorded nothing in 95
+            # consecutive gate passes: distill_steps hits a click it cannot name, truncates there,
+            # and the navigation-only remainder is then correctly refused by its own guard.
             log.append({"tool": "BrowserClickIndex", "input": {"index": opener[0]}, "ok": True,
+                        "clicked_role": "button", "clicked_name": opener[1],
                         "result_summary": f"script opened composer via {opener[1]!r}"[:200], "elapsed_ms": 0})
             # Wait for the surface to STOP MOVING, not for a number of seconds. Fixed budgets kept
             # being wrong in both directions: 1.8s missed gmail and linkedin entirely, 5.3s still
@@ -464,8 +470,13 @@ async def run_send_script(
         # 1. fill (focused by node, the composer overlay path coordinate clicks miss)
         r_fill = await execute_tool("BrowserClickIndex", {"index": composer[0], "text": payload}, browser_id, tab_id)
         fill_ok = isinstance(r_fill, dict) and "error" not in r_fill
+        # Named for the distiller, same as the opener. The payload does NOT ride along: a
+        # BrowserClickIndex distills to a BrowserClickByName carrying role and name only, so a
+        # replay re-focuses this box and the send script fills it with the CURRENT text. Baking the
+        # payload in here is how a replay would re-post last week's message.
         log.append({"tool": "BrowserClickIndex", "input": {"index": composer[0], "text": payload},
-                    "ok": fill_ok, "result_summary": f"script fill into {composer[1]!r}"[:200], "elapsed_ms": 0})
+                    "ok": fill_ok, "clicked_role": "textbox", "clicked_name": composer[1],
+                    "result_summary": f"script fill into {composer[1]!r}"[:200], "elapsed_ms": 0})
         if not fill_ok and browser_submit_click.is_stale_index_error(r_fill):
             # The opener click opens a modal that keeps re-rendering after we listed it, so the
             # composer node we resolved is already detached by the time the fill lands. Measured
@@ -499,6 +510,7 @@ async def run_send_script(
                 fill_ok = isinstance(r_fill, dict) and "error" not in r_fill
                 log.append({"tool": "BrowserClickIndex",
                             "input": {"index": composer[0], "text": payload}, "ok": fill_ok,
+                            "clicked_role": "textbox", "clicked_name": composer[1],
                             "result_summary": f"script fill retry into {composer[1]!r}"[:200],
                             "elapsed_ms": 0})
         if not fill_ok:
