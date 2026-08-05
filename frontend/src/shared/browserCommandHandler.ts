@@ -737,14 +737,25 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
   // is perfectly readable, and treating that as terminal loses the composer for good: measured on
   // blog.disqus.com, where the finder threw `page is still loading` on every run and the frame
   // fallback below never even got a chance. One cheap retry costs nothing on a page that was ready.
+  const p_stillLoading = (e: any) => /still loading|never finished loading/i.test(String(e?.message || e));
   let result: any;
   try {
     result = await evalInPage(wv, code);
   } catch (err: any) {
-    if (!/still loading|never finished loading/i.test(String(err?.message || err))) throw err;
+    if (!p_stillLoading(err)) throw err;
     console.log('[find_composer] page still loading; one retry after a settle');
     await new Promise((r) => setTimeout(r, 1200));
-    result = await evalInPage(wv, code);
+    try {
+      result = await evalInPage(wv, code);
+    } catch (err2: any) {
+      if (!p_stillLoading(err2)) throw err2;
+      // The TOP document timing out says nothing about the frames inside it, and each child frame
+      // is a separate CDP session with its own load state. Rethrowing here was the whole disqus
+      // failure: an ad-heavy page kept the top document in isLoading forever, and the composer,
+      // which lives in the embedded Disqus iframe and was perfectly readable, never got looked at.
+      console.log('[find_composer] top document never settled; trying child frames anyway');
+      result = null;
+    }
   }
   // Nothing in the top document? Run the SAME search inside each child frame. deepMatch pierces
   // shadow DOM but starts at `document` and recurses only into shadowRoot, so an iframe is a wall
