@@ -152,11 +152,25 @@ def marker_in_page(cfg: Dict[str, str], marker: str, handle: str, site: str) -> 
     # "don't know" is worse than none, because it looks like data.
     saw_page = any(k in log for k in ("BrowserGetText", "BrowserListInteractives",
                                       "dryrun-report", "browser-action", "browser-time"))
+    # Excluding every "browser-action" line was the bug that made this instrument dangerous. Tool
+    # RESULTS are logged on those lines too, so the one place the page's own text appears was being
+    # filtered out, and a post that was really there could only ever come back "not on the
+    # destination" — i.e. a FALSE SUCCESS accusation against a send that worked. Measured on
+    # LinkedIn: this reported `canaryffaf69d7 is not on the destination` while an independent read
+    # found it as the most recent post, 7 minutes old, 14 impressions.
+    #
+    # Exclude only the echo of the prompt WE sent, matched on its own distinctive wording, and keep
+    # everything else the run logged.
+    p_echo = ("is there a post", "do not post", "answer with exactly one word", "read only")
     hit = any(marker in line for line in log.splitlines()
-              if "browser-action" not in line and "prompt" not in line.lower()
-              and "canary-audit" not in line)
+              if not any(e in line.lower() for e in p_echo))
     if hit:
         return True
+    # Absence is only evidence once the read is known good, AND only when we are sure we are not
+    # simply blind to page text. If nothing at all in this log carried the marker, including the
+    # prompt echo that certainly contained it, then this instrument saw nothing and must say so.
+    if marker not in log:
+        return None
     return False if saw_page else None
 
 
