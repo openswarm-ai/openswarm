@@ -340,7 +340,7 @@ async def run_send_script(
         return None
     log: list[dict] = []
 
-    composer = browser_send_parse.composer_index_in_state(state_text)
+    composer = browser_send_parse.composer_index_in_state(state_text, task_sans_brief)
     if composer and browser_send_parse.surface_mismatch(task_sans_brief, composer[1]):
         # Asked to POST and found a COMMENT box, or found a DM box nobody asked for: either way it
         # is someone else's surface, not a slower route to ours. Drop it and let the tiers below
@@ -352,7 +352,7 @@ async def run_send_script(
         for wait_s in (0.0, 1.2, 1.4):
             await asyncio.sleep(wait_s)
             fresh = await fresh_list()
-            composer = browser_send_parse.composer_index_in_state(fresh)
+            composer = browser_send_parse.composer_index_in_state(fresh, task_sans_brief)
             if composer:
                 state_text = fresh
                 break
@@ -393,7 +393,7 @@ async def run_send_script(
             for wait_s in (0.0, 1.2, 1.5, 2.0, 2.0, 2.0):
                 await asyncio.sleep(wait_s)
                 state_text = await fresh_list()
-                composer = browser_send_parse.composer_index_in_state(state_text)
+                composer = browser_send_parse.composer_index_in_state(state_text, task_sans_brief)
                 if composer:
                     break
                 p_settled = p_settled + 1 if state_text and state_text == p_prev else 0
@@ -495,7 +495,8 @@ async def run_send_script(
                 if wait_s:
                     await asyncio.sleep(wait_s)
                 state_retry = await fresh_list()
-                composer_retry = browser_send_parse.composer_index_in_state(state_retry)
+                composer_retry = browser_send_parse.composer_index_in_state(
+                    state_retry, task_sans_brief)
                 if composer_retry:
                     break
             if not composer_retry:

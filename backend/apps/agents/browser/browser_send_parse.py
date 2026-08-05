@@ -292,9 +292,43 @@ def opener_contradicts_task(task: str, opener_name: str) -> bool:
     return responding and bool(P_CREATE_OPENER_RE.search(name))
 
 
-def composer_index_in_state(state_text: str):
-    """(index, name) of the single compose-shaped textbox, or None. Two
-    candidates = ambiguous = model's problem."""
+# Fields a person names out loud that a compose-shaped picker will never choose, because they are
+# short single-line inputs and nothing about them looks like a composer. Deliberately excludes
+# "body"/"message"/"comment": those ARE compose-shaped, the existing picker already finds them, and
+# adding them here would only create a second way to pick the same box.
+P_FIELD_HINT_RE = re.compile(r"\b(title|subject|headline)\b", re.I)
+
+
+def hinted_field_in_state(state_text: str, task: str):
+    """(index, name) of the textbox the TASK named by field, or None.
+
+    Measured live on reddit 2026-08-05: the task was 'create a text post whose title is exactly X',
+    the picker below chose 'Post body text field' (correctly, by its own compose-shape rule), the
+    Title stayed empty, and reddit's submit therefore stayed DISABLED on every attempt. The task had
+    already said which field it meant, and nobody read it.
+
+    Not a guess: the field word comes from the user's own sentence and has to appear in the
+    element's accessible name. Ambiguity still stands down, same rule as everywhere else here.
+    """
+    m = P_FIELD_HINT_RE.search(task or "")
+    if not m:
+        return None
+    word = m.group(1).lower()
+    hits = [(int(i), n) for i, n in P_COMPOSER_ROW_RE.findall(state_text or "")
+            if word in (n or "").lower()]
+    return hits[0] if len(hits) == 1 else None
+
+
+def composer_index_in_state(state_text: str, task: str = ""):
+    """(index, name) of the textbox to write into, or None. Two candidates = ambiguous =
+    model's problem.
+
+    A field the task named by name wins over the compose-shaped guess, because it is the one piece
+    of evidence here that came from the person asking rather than from the page's shape.
+    """
+    hinted = hinted_field_in_state(state_text, task)
+    if hinted:
+        return hinted
     hits = [(int(m.group(1)), m.group(2)) for m in P_COMPOSER_ROW_RE.finditer(state_text or "")
             if P_COMPOSER_NAME_RE.search(m.group(2) or "")]
     return hits[0] if len(hits) == 1 else None
