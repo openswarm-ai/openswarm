@@ -189,6 +189,22 @@ async def complete_send(
             sent = True
             break
         p_why = f"payload-still-in-a-textbox (textbox rows={sum(1 for x in state3.splitlines() if '<textbox' in x)})"
+    if not sent and p_why.startswith("payload-still"):
+        # A cleared composer is ABSENCE evidence, and some sites never provide it: LinkedIn keeps
+        # the text in its editor after a successful post, so the receipt polls 7.6s, sees the
+        # payload still sitting there, and calls a post that LANDED unverified. Measured four times;
+        # an independent read of the activity feed found the post each time. That is not a cosmetic
+        # miss, it sends the model back to re-verify work that already succeeded (60s against ~24s).
+        #
+        # So ask for PRESENCE instead, and count it. One hit is ambiguous (draft or posted item, no
+        # way to tell). Two hits cannot both be the composer, so the second is rendered content,
+        # which is exactly what "it posted" means. Runs only on the path that was about to report a
+        # failure, so a site whose composer does clear pays nothing for this.
+        p_n = await browser_delivery_check.payload_occurrences(payload, browser_id, tab_id, execute_tool)
+        if p_n is not None and p_n >= 2:
+            sent = True
+            logger.info(f"[browser-sendscript] receipt via rendered content: the payload appears "
+                        f"{p_n}x on the page, so one of them is not the composer")
     if not sent:
         logger.info(f"[browser-sendscript] receipt withheld after {sum(p_waits):.1f}s of polling: {p_why}")
     # A cleared composer is proof of delivery everywhere EXCEPT the ghost-drop hosts, which clear
