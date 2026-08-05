@@ -399,6 +399,17 @@ async def run_prestage(
             li_text, gt_text, seen_url = await perceive()
             p_t_perceive = time.monotonic() - p_t_step
             current_url = seen_url or current_url
+            # TIER 0: the box is already here, so there is nothing to discover and no reason to ask.
+            # Staged means "a composer is visible", which this perception just answered directly; the
+            # aux call below can only agree with it, and it costs 1.7-6.5s to do so. That call was
+            # the whole cost of a steps=0 run: 4.6s median where the page was ready the entire time.
+            # The model stays exactly where it belongs, as the fallback for pages that need finding.
+            if task_is_send and browser_send_parse.composer_index_in_state(li_text):
+                staged_complete = True
+                logger.info(f"[browser-prestage] READY tier-0 in "
+                            f"{int((time.monotonic() - p_t_step) * 1000)}ms: a composer is already "
+                            f"on the page, no aux call needed")
+                break
             p_t_aux = time.monotonic()
             reply = safe_resp_text(await asyncio.wait_for(
                 client.messages.create(

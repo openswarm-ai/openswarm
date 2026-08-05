@@ -121,3 +121,25 @@ def test_ready_on_a_page_with_nowhere_to_write_gets_one_nudge():
     from backend.apps.agents.browser.browser_send_parse import composer_index_in_state
     assert composer_index_in_state(NO_COMPOSER) is None, "the feed shape must read as no composer"
     assert composer_index_in_state(COMPOSER_PRESENT) is not None, "a staged page must read as one"
+
+
+def test_a_composer_already_on_the_page_needs_no_aux_call():
+    """Criterion 5's tier-0. Measured: a steps=0 prestage took 4.6s median, and essentially all of
+    it was one aux LLM call (1.7-6.5s) asking whether a page was ready that already was.
+
+    "Staged" means a composer is visible. The perception answers that directly, so on this path the
+    model can only agree at a cost. It stays as the fallback for pages where the box must be found.
+
+    The condition is deliberately the SAME one the READY postcondition enforces (a send task is not
+    staged until there is somewhere to write), so the fast path and the safety check can never
+    disagree about what staged means.
+    """
+    import inspect
+    from backend.apps.agents.browser import browser_prestage as pre
+    src = inspect.getsource(pre)
+    i = src.index("TIER 0")
+    block = src[i:i + 700]
+    assert "composer_index_in_state(li_text)" in block, "tier-0 must key on a visible composer"
+    assert "task_is_send" in block, "and only for a send task; a read has different staging"
+    assert block.index("staged_complete = True") < block.index("p_t_aux = time.monotonic()") \
+        if "p_t_aux = time.monotonic()" in block else True, "it must short-circuit BEFORE the aux call"
