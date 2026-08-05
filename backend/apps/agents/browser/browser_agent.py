@@ -1725,6 +1725,13 @@ async def run_browser_agent(
     delivery_verified = False
     # Completion detection uses task_is_send (computed above, before the candidate scan): once an irreversible SEND has confirmed, the goal is met. The model otherwise stalls re-verifying what the confirm already proved (measured: send done at turn ~11, then ~12 wasted perception turns). We drive it to the OUTCOME and, if it keeps re-perceiving, end the run. A genuine multi-send task issues its NEXT send (an action) which resets the stall, so only true spinning ends here. Meaningless for a gather/read task, and arming it there let a cookie 'Accept all' click masquerade as the task's send, so we gate it on intent.
     send_confirmed = False
+    # The resend guard, deliberately SEPARATE from send_confirmed above. That flag answers "may we
+    # claim delivery?" and must stay False without proof; this one answers "has an irreversible send
+    # click already run?" and must go True the moment one does, proof or not. They were one flag,
+    # which forced a choice between claiming a send we could not prove and re-sending one we already
+    # made. The second is the worse failure and it happened: LinkedIn, receipt missed, model re-typed
+    # into the same composer, stranded post read the payload twice.
+    p_send_clicked = False
     # Two-sided receipt evidence: the fill must have VISIBLY committed its text to a textbox before a send-class click may end the run in code. r228 clicked a send-labeled control after an uncommitted fill and the old click-name-only receipt claimed a send that never happened.
     composer_committed_payload = ""
     perception_stall = 0           # consecutive turns the model only LOOKED (no action)
@@ -1768,6 +1775,7 @@ async def run_browser_agent(
             action_log.extend(p_script["log"])
             if p_script["sent"]:
                 send_confirmed = True
+                p_send_clicked = True  # a confirmed send is a send that ran
                 done_called = True
                 p_aux_c, p_aux_m = await p_get_aux_client()
                 if p_script.get("delivered") is False:
@@ -1786,6 +1794,15 @@ async def run_browser_agent(
             else:
                 # Clicked but the composer did NOT clear: the send is UNVERIFIED. Leave send_confirmed False so the loop can't shortcut to a "done" it never earned (r264 set it True here and the model then FALSELY claimed delivery). The model gets ONE truthful verify pass, never a blind resend.
                 task = f"{task}\n\n[{p_script['note']}]"
+                # ...but "never a blind resend" was only true in the comment. send_confirmed carries
+                # TWO meanings at once, "we may claim delivery" and "do not send again", and they
+                # disagree exactly here: the click ran, so claiming is wrong and re-sending is also
+                # wrong. Leaving one flag False bought the first and lost the second. Measured on
+                # LinkedIn: the post LANDED, the receipt missed, the model re-typed into the same
+                # box, and the stranded post read `canary20ef2f39canary20ef2f39`, the payload twice.
+                # Split them: this one is the resend guard and it arms on the CLICK, never on proof.
+                if p_script.get("clicked"):
+                    p_send_clicked = True
 
     # Code-side DELETE dispatch: the removal analog of the send-script. A "delete the post that
     # says X" task auto-fires the same verified remove flow (find the item by its text, open its
@@ -2612,6 +2629,7 @@ async def run_browser_agent(
                 # An API-first write that returned ok carries its own typed receipt, so it IS the confirmation: mark the send done so the loop drives to Done without a redundant UI re-verify (and never re-fires it).
                 if tu.name == "BrowserApiWrite" and isinstance(result, dict) and result.get("ok"):
                     send_confirmed = True
+                    p_send_clicked = True  # a confirmed send is a send that ran
                     delivery_verified = True  # a typed API receipt IS the evidence, not a proxy for it
 
                 # Act-and-confirm: if the agent declared the change it expects, VERIFY it actually happened, success is observed, never assumed. A hit returns fast (act + confirm in one turn); a miss is a clear "may not have worked" (and a wedge surfaces as a clean not-confirmed, not a blind 20s timeout), so the agent never claims a success it didn't see or re-fires blindly.
@@ -2667,6 +2685,7 @@ async def run_browser_agent(
                         for r in (result.get("results") or []))
                     if p_send_click:
                         send_confirmed = True
+                        p_send_clicked = True  # a confirmed send is a send that ran
                         p_receipt_ok = False
                         if os.environ.get("OSW_RECEIPT_DONE", "1") != "0" and composer_committed_payload:
                             # Deterministic receipt, two-sided: the fill was SEEN committed to a textbox earlier, and the box must now be SEEN empty of it. Click-name alone is not proof (r228: send-labeled click after an uncommitted fill = false success); missing evidence falls through to the old model-verified path, so the failure mode costs turns, never a lie.
@@ -2774,7 +2793,12 @@ async def run_browser_agent(
                     # this path CLICKS Send. On a delete task the text the model just typed is a
                     # search query, so without the guard we would search for a post and then post
                     # the search.
+                    # p_send_clicked, not send_confirmed: this path CLICKS SEND, so the question it
+                    # must ask is "has a send click already run?", never "did we prove one landed?".
+                    # With only the proof flag, an unverified-but-real send left this wide open and
+                    # the model re-typed and re-sent into the same composer.
                     if (task_is_send and not p_task_is_removal and not send_confirmed
+                            and not p_send_clicked
                             and tu.name in P_CONFIRM_TOOLS
                             and browser_send_script.autosend_enabled()):
                         p_cs = await browser_send_script.complete_send(
@@ -2787,6 +2811,7 @@ async def run_browser_agent(
                             # send-script path (which runs once and can safely leave this False) a
                             # re-fill would fire another send. It is a resend guard, not evidence.
                             send_confirmed = True
+                            p_send_clicked = True  # a confirmed send is a send that ran
                             action_log.extend(p_cs.get("log") or [])
                             if p_cs.get("sent"):
                                 done_called = True
