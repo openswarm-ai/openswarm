@@ -20,7 +20,7 @@ from typing import Awaitable, Callable, Dict
 
 from backend.apps.agents.browser import (
     browser_delivery_check, browser_fast_path, browser_send_parse, browser_submit_click,
-    browser_verified_action)
+    browser_verified_action, extract_payload)
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +246,7 @@ async def run_send_script(
     send_index_in_state,
     payload_in_textbox,
     payload_source: str = "",
+    extract_payload_fn=None,
     current_url: str = "",
 ) -> dict | None:
     """None = stage not script-ready or aborted pre-click (model path, stage
@@ -308,6 +309,22 @@ async def run_send_script(
                     f"triggered by {p_wall}")
         return None
     payload = browser_send_parse.quoted_payload(payload_source or task)
+    if not payload and extract_payload_fn is not None:
+        # Nobody types quotes. "send hi to charles zheng on linkedin" is how people actually ask,
+        # and it fell to the slow path every time: measured live, that exact task made two
+        # navigation clicks, three reads, typed nothing, and then reported a send it never made.
+        # Deciding WHICH words is a judgement call, so it goes to the aux model; every safety gate
+        # below is unchanged and still runs against whatever comes back. The model picks the text,
+        # the code still refuses to claim anything it cannot watch happen.
+        p_src = payload_source or task_sans_brief
+        if extract_payload.looks_extractable(p_src):
+            try:
+                payload = await asyncio.wait_for(extract_payload_fn(p_src), timeout=8.0) or ""
+            except Exception:
+                payload = ""
+            if payload:
+                logger.info(f"[browser-sendscript] payload extracted from an unquoted ask: "
+                            f"{payload[:60]!r}")
     if not payload:
         logger.info("[browser-sendscript] decline: no unambiguous quoted payload")
         return None

@@ -80,7 +80,9 @@ from backend.apps.agents.browser import browser_extract
 from backend.apps.agents.browser import browser_metrics
 from backend.apps.agents.browser import browser_send_script
 from backend.apps.agents.browser import browser_send_parse
+from backend.apps.agents.browser import browser_fast_read
 from backend.apps.agents.browser import browser_login_handoff
+from backend.apps.agents.browser import extract_payload
 from backend.apps.agents.browser import detect_captcha
 from backend.apps.agents.browser import browser_session_import
 from backend.apps.agents.browser import browser_delivery_check
@@ -1376,6 +1378,19 @@ async def run_browser_agent(
                 logger.warning(f"[browser-agent {session_id}] no aux model for adjudication: {e}")
         return p_aux_state["client"], p_aux_state["model"]
 
+    async def p_extract_payload(src: str) -> str:
+        """The words to send, when the user did not quote them. Judgement only: every safety gate
+        downstream still runs against whatever this returns, and a bad answer costs one slow-path
+        run, which is exactly the old behaviour."""
+        p_c, p_m = await p_get_aux_client()
+        if not p_c:
+            return ""
+        try:
+            p_reply = await browser_fast_read.ask_aux(p_c, p_m, extract_payload.P_SYSTEM, src)
+        except Exception:
+            return ""
+        return extract_payload.clean_payload(p_reply, src) or ""
+
     latest_working_mem = ""  # most recent ReportProgress memory, for the tier-2 playbook distill
 
     # auto candidate scan: aux-read results pages so pick-a-candidate happens in the same turn as the landing, not a read-then-decide pair later
@@ -1765,6 +1780,7 @@ async def run_browser_agent(
                 task, browser_id, tab_id, preloaded_perception,
                 execute_browser_tool, send_submit_index_in_state, payload_in_textbox,
                 payload_source=user_prompt, current_url=current_url,
+                extract_payload_fn=p_extract_payload,
             ), timeout=browser_send_script.WORST_CASE_BUDGET_S)
         except Exception as p_se:
             # Name the class: a bare TimeoutError stringifies to nothing, so this used to log
