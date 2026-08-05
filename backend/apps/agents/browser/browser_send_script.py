@@ -130,8 +130,15 @@ async def complete_send(
     # post that HAD landed, 60s total against ~24s when the receipt passes), and "sent_receipt=False"
     # alone cannot tell you whether the composer still holds the text or we simply could not read the
     # page. Those are different bugs with different fixes.
+    # The tail is long because the loop RETURNS on the first clear: a site that clears instantly
+    # exits at the 0.0 probe and pays none of it, so this window costs time only where we would
+    # otherwise emit a false negative. Measured live on LinkedIn, every round of a 3-round canary:
+    # the post LANDED (an independent read of the activity feed found it) while the composer still
+    # held the text at 2.6s, so the old window called a real send unverified. That is not a harmless
+    # miss; it sends the model back to re-verify a post that already succeeded, 60s against ~24s.
     p_why = "no-poll"
-    for wait_s in (0.0, 1.0, 1.6):
+    p_waits = (0.0, 1.0, 1.6, 2.0, 3.0)
+    for wait_s in p_waits:
         await asyncio.sleep(wait_s)
         state3 = await fresh_list()
         if not state3:
@@ -142,7 +149,7 @@ async def complete_send(
             break
         p_why = f"payload-still-in-a-textbox (textbox rows={sum(1 for x in state3.splitlines() if '<textbox' in x)})"
     if not sent:
-        logger.info(f"[browser-sendscript] receipt withheld after {sum((0.4, 1.0, 1.6)):.1f}s of polling: {p_why}")
+        logger.info(f"[browser-sendscript] receipt withheld after {sum(p_waits):.1f}s of polling: {p_why}")
     # A cleared composer is proof of delivery everywhere EXCEPT the ghost-drop hosts, which clear
     # then silently eat the post; there we verify it persisted. delivered stays None (unchecked,
     # composer-clear trusted) for every other site, so proven sends keep their exact speed.
