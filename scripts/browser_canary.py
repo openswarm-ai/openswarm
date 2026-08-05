@@ -125,6 +125,16 @@ def run_task(prompt: str, name: str, budget: int = 180) -> Dict[str, object]:
         slice_ = "".join(open(LOG, errors="ignore").readlines()[mark:])
     except OSError:
         slice_ = ""
+    # Tear the run down before the next one starts. Each canary round launches several sessions
+    # (post, audit, delete, re-audit) and each leaves a live browser card with its own webview; a
+    # multi-round loop stacks them until the renderer is compositing dozens and stops answering,
+    # which then reads as a product failure. delete_session stops the browser-agent children first,
+    # so this reaps the cards too. The log slice is read ABOVE, so teardown lines never land in the
+    # window this run is judged on.
+    try:
+        req("DELETE", f"{BASE}/sessions/{sid}")
+    except Exception:
+        pass
     return {"said": said, "status": status, "wall": round(time.time() - t0, 1), "log": slice_}
 
 
