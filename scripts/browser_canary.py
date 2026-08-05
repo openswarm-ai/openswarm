@@ -146,8 +146,12 @@ def marker_in_page(cfg: Dict[str, str], marker: str, handle: str, site: str) -> 
     # the post was really there (the cleanup that followed deleted it), the read just never
     # surfaced its text. Absence only counts as evidence once the read itself is known good, so
     # require proof we saw the destination at all before believing what we did not see on it.
-    saw_page = any(k in log for k in ("[browser-action] BrowserGetText",
-                                      "[browser-action] BrowserListInteractives"))
+    # Any evidence the audit run actually looked at a page. The first version of this listed two
+    # exact "[browser-action] X" strings that the log does not emit for reads, so `saw_page` was
+    # always False and every audit came back "unprovable" no matter what it saw. An instrument that
+    # can only ever return "don't know" is worse than none, because it looks like data.
+    saw_page = any(k in log for k in ("BrowserGetText", "BrowserListInteractives",
+                                      "dryrun-report", "browser-action", "browser-time"))
     hit = any(marker in line for line in log.splitlines()
               if "browser-action" not in line and "prompt" not in line.lower()
               and "canary-audit" not in line)

@@ -148,6 +148,26 @@ async def complete_send(
             sent = True
             break
         p_why = f"payload-still-in-a-textbox (textbox rows={sum(1 for x in state3.splitlines() if '<textbox' in x)})"
+    if not sent and p_why.startswith("payload-still"):
+        # LinkedIn keeps the text in its composer AFTER a successful post: measured at 2.6s, then
+        # again at 7.6s, on every round of a 3-round canary whose posts an independent feed read
+        # found PRESENT. So a cleared composer is a fine signal on X and simply false here, and
+        # waiting longer only buys a slower wrong answer.
+        #
+        # Ask the opposite question instead. A cleared box is ABSENCE evidence; the payload showing
+        # up in the page as CONTENT is presence evidence, and presence is what "it posted" means.
+        # One extra read, only on the path that was already about to report a failure.
+        try:
+            r_txt = await asyncio.wait_for(
+                execute_tool("BrowserGetText", {}, browser_id, tab_id), timeout=6.0)
+            p_page = str(r_txt.get("text") or "") if isinstance(r_txt, dict) else ""
+            p_boxes = "\n".join(x for x in (await fresh_list()).splitlines() if "<textbox" in x)
+            if payload and payload in p_page and payload not in p_boxes:
+                sent = True
+                logger.info("[browser-sendscript] receipt via rendered content: the payload is on the "
+                            "page outside any textbox, so it posted even though the composer kept it")
+        except Exception:
+            pass
     if not sent:
         logger.info(f"[browser-sendscript] receipt withheld after {sum(p_waits):.1f}s of polling: {p_why}")
     # A cleared composer is proof of delivery everywhere EXCEPT the ghost-drop hosts, which clear
