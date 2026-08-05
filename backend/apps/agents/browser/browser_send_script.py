@@ -105,9 +105,50 @@ async def complete_send(
             # title field is filled, and every run blind-tapped a coordinate and claimed success.
             # Handing back untouched is what lets the model do the one thing that CAN fix this,
             # fill the rest of the form, and it costs a run that was never going to send anyway.
-            logger.info(f"[browser-sendscript] submit {str(p_v.get('name'))!r} is present but DISABLED; "
-                        f"the form is incomplete, handing to the model without clicking anything")
-            return {"clicked": False, "sent": False, "log": log,
+            # The form is incomplete, and on a two-field form we can usually say WHICH field. The
+            # composer we filled is the compose-shaped one (reddit's "Post text"); the one still
+            # empty is what the submit is waiting on (reddit's "Title"). Fill that too and re-ask.
+            # Measured: reddit's create-post flow could never complete, because the send path is
+            # single-composer by construction and reddit needs a title before its submit enables.
+            #
+            # Deliberately narrow: EXACTLY one other empty textbox, so there is no guessing about
+            # which field gets the payload, and the submit must ENABLE on its own afterwards. If it
+            # stays disabled we fall through to the same honest hand-off as before, so the failure
+            # mode is unchanged and nothing is ever clicked on a form the site still refuses.
+            p_state = await fresh_list()
+            # Exclude the composer BY INDEX, not by looking for the payload in the row: the row
+            # regex captures the accessible NAME only, so a filled box and an empty one are
+            # indistinguishable by name and every field would read as "still empty".
+            p_empty = [(i, n) for i, n in browser_send_parse.P_COMPOSER_ROW_RE.findall(p_state)
+                       if int(i) != composer_index
+                       and not browser_send_parse.P_AUTH_FIELD_NAME_RE.search(n or "")]
+            if len(p_empty) == 1:
+                p_idx, p_name = int(p_empty[0][0]), p_empty[0][1]
+                logger.info(f"[browser-sendscript] submit disabled and one field is still empty "
+                            f"({p_name!r}); filling it and re-checking the submit")
+                await execute_tool("BrowserClickIndex", {"index": p_idx, "text": payload},
+                                   browser_id, tab_id)
+                log.append({"tool": "BrowserClickIndex", "input": {"index": p_idx, "text": payload},
+                            "ok": True, "result_summary": f"filled required field {p_name!r}"[:200],
+                            "elapsed_ms": 0})
+                r_ev2 = await execute_tool(
+                    "BrowserEvaluate",
+                    {"expression": browser_submit_click.container_submit_expression(payload)},
+                    browser_id, tab_id)
+                p_v2 = browser_submit_click.parse_eval_value(r_ev2)
+                if isinstance(p_v2, dict) and p_v2.get("ok") and p_v2.get("xPct") is not None:
+                    logger.info("[browser-sendscript] the submit enabled once the required field was filled")
+                    r_send = await execute_tool(
+                        "BrowserClickPoint",
+                        {"xPercent": float(p_v2["xPct"]), "yPercent": float(p_v2["yPct"])},
+                        browser_id, tab_id)
+                    send_name = str(p_v2.get("name") or "submit")
+                    via = "container-after-required-field"
+                    p_v = p_v2
+            if via == "index" and not (isinstance(p_v, dict) and p_v.get("ok")):
+                logger.info(f"[browser-sendscript] submit {str(p_v.get('name'))!r} is present but DISABLED; "
+                            f"the form is incomplete, handing to the model without clicking anything")
+                return {"clicked": False, "sent": False, "log": log,
                     "note": (f"The {str(p_v.get('name')) or 'submit'} button is visible but disabled, so this "
                              f"form is not ready to send: something it requires is still empty (often a "
                              f"title or subject), or the editor never registered the typed text. Fill the "
