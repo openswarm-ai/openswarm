@@ -500,6 +500,20 @@ async def run_prestage(
                     logger.info(f"[browser-prestage] click [{idx}] did not settle; stopping unstaged")
                     break
                 done_desc.append(f"clicked {entry[:70]}")
+                # The click may BE the answer. settle() just re-perceived to prove the page changed,
+                # so we already hold the new element list; asking the model whether a composer is now
+                # visible costs 1.2-6.5s to re-read what we can read for free. Measured on ckeditor:
+                # its demo lists a tab link and no textbox because the editor mounts lazily, prestage
+                # clicked the tab, and then never looked again, so the send script never ran at all.
+                # This is the tier-0 check applied AFTER a click as well as before one.
+                p_after = (await perceive())[0]
+                if task_is_send and browser_send_parse.composer_index_in_state(p_after):
+                    li_text = p_after
+                    staged_complete = True
+                    logger.info(f"[browser-prestage] READY tier-0 after click [{idx}]: the click "
+                                f"revealed a composer, no further aux call needed")
+                    steps += 1
+                    break
             steps += 1
 
         if steps or not li_text:

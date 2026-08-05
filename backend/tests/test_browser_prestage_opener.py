@@ -143,3 +143,26 @@ def test_a_composer_already_on_the_page_needs_no_aux_call():
     assert "task_is_send" in block, "and only for a send task; a read has different staging"
     assert block.index("staged_complete = True") < block.index("p_t_aux = time.monotonic()") \
         if "p_t_aux = time.monotonic()" in block else True, "it must short-circuit BEFORE the aux call"
+
+
+def test_a_click_that_reveals_the_composer_ends_the_stage_without_another_aux_call():
+    """The lazily-mounted editor shape, found by the editor-shape holdout on ckeditor.com.
+
+    Its demo page lists a TAB LINK and no textbox, because CKEditor mounts only after the tab is
+    clicked. Prestage clicked the tab, settled, incremented the step, and looped back into a full
+    aux call, so on a 1-step budget the run ended with the send script never running at all
+    ("sendscript" appears 0 times in the log). 0/2 on the holdout.
+
+    settle() has already re-perceived to prove the page changed, so the new element list is in hand.
+    Asking a model whether a composer is now visible costs 1.2-6.5s to re-read what we can read for
+    free. Same condition as the pre-click tier-0 and as the READY postcondition, so all three agree
+    on what "staged" means.
+    """
+    import inspect
+    from backend.apps.agents.browser import browser_prestage as pre
+    src = inspect.getsource(pre)
+    i = src.index("The click may BE the answer")
+    block = src[i:i + 900]
+    assert "composer_index_in_state(p_after)" in block, "must check the POST-click perception"
+    assert "task_is_send" in block, "send tasks only; a read stages differently"
+    assert "staged_complete = True" in block, "and it must end the stage, not just note it"
