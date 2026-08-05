@@ -80,3 +80,37 @@ test('no composer anywhere still reports a clean miss', async () => {
   assert.equal(r.found, false);
   assert.equal(r.frameSessionId, undefined);
 });
+
+test('a still-loading page is retried once, not treated as a verdict', async () => {
+  // "still loading" is a TIMING answer about the eval, not a statement that the page has no
+  // composer. A heavy embed can hold isLoading past the grace while the DOM is perfectly readable.
+  // Measured on blog.disqus.com: the finder threw this on every run, so the frame fallback never
+  // got a chance and the site scored 0/2 as "no composer" when nothing had actually looked.
+  let calls = 0;
+  const findWithRetry = async (): Promise<Found> => {
+    try {
+      calls++;
+      if (calls === 1) throw new Error('Browser command failed: page is still loading; retry shortly');
+      return { found: true, selector: '[data-osw-composer="1"]' };
+    } catch (err: any) {
+      if (!/still loading|never finished loading/i.test(String(err?.message || err))) throw err;
+      calls++;
+      return { found: true, selector: '[data-osw-composer="1"]' };
+    }
+  };
+  const r = await findWithRetry();
+  assert.equal(r.found, true);
+  assert.ok(calls >= 2, 'the first attempt must not be the last word');
+});
+
+test('a real page error still throws, so a broken page is not retried forever', async () => {
+  const boom = async (): Promise<Found> => {
+    try {
+      throw new Error('ReferenceError: x is not defined');
+    } catch (err: any) {
+      if (!/still loading|never finished loading/i.test(String(err?.message || err))) throw err;
+      return { found: false };
+    }
+  };
+  await assert.rejects(boom, /ReferenceError/);
+});

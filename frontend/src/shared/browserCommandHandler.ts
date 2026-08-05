@@ -732,7 +732,20 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       role: best.isContentEditable ? 'contenteditable' : (best.getAttribute('role') || best.tagName.toLowerCase()),
       score: Math.round(hit.score * 10) / 10, nearSubmit: hit.near, filled, reveals: acts };
   })()`;
-  let result = await evalInPage(wv, code);
+  // "still loading" is a TIMING answer, not a verdict about the page. A heavy embed (a Disqus
+  // thread, an ad-laden article) can keep a webview in isLoading past the eval grace while the DOM
+  // is perfectly readable, and treating that as terminal loses the composer for good: measured on
+  // blog.disqus.com, where the finder threw `page is still loading` on every run and the frame
+  // fallback below never even got a chance. One cheap retry costs nothing on a page that was ready.
+  let result: any;
+  try {
+    result = await evalInPage(wv, code);
+  } catch (err: any) {
+    if (!/still loading|never finished loading/i.test(String(err?.message || err))) throw err;
+    console.log('[find_composer] page still loading; one retry after a settle');
+    await new Promise((r) => setTimeout(r, 1200));
+    result = await evalInPage(wv, code);
+  }
   // Nothing in the top document? Run the SAME search inside each child frame. deepMatch pierces
   // shadow DOM but starts at `document` and recurses only into shadowRoot, so an iframe is a wall
   // to it: the composer of every embedded widget (Disqus, a helpdesk box, an embedded compose
