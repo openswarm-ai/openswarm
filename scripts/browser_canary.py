@@ -346,7 +346,12 @@ def main() -> int:
         r = check_site(s, SITES[s], args.live)
         rows.append(r)
         flag = "PASS" if r.get("ok") else "DRIFT"
-        print(f"  [{flag}] {s:10} stage={r.get('stage','?'):10} {r.get('detail','')}", flush=True)
+        # The marker rides on EVERY row, not just the ones that admit trouble. It is the only record
+        # of what this run put on a real account: it is never written to the backend log (a grep for
+        # every marker ever generated returns nothing), so a row that printed no marker and later
+        # turned out to be stranded could not be cleaned up by hand at all.
+        print(f"  [{flag}] {s:10} {r.get('marker','')}  stage={r.get('stage','?'):10} "
+              f"{r.get('detail','')}", flush=True)
 
     bad = [r for r in rows if not r.get("ok")]
     stranded = [r for r in bad if r.get("stage") == "cleanup"]
