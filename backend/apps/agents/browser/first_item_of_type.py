@@ -56,11 +56,21 @@ def first_link_expression(content_type: str) -> str:
     }.get(content_type, "")
     if not pattern:
         return ""
-    return (
-        "(() => { const rx = new RegExp(" + repr(pattern).replace("'", '"') + "); "
+    # Scan, and if a feed has lazy-loaded nothing yet, nudge it once and scan again. Measured on
+    # instagram: 2 of 5 runs found no /p/ link at all because the cards mount on scroll, and those
+    # two fell back to the aux path and failed. Scrolling is the one page action that cannot change
+    # anything, so this stays a read.
+    scan = (
+        "const find = () => { const rx = new RegExp(" + repr(pattern).replace("'", '"') + "); "
         "for (const a of document.querySelectorAll('a[href]')) { "
         "  let u; try { u = new URL(a.href, location.href); } catch (e) { continue; } "
         "  if (u.origin !== location.origin) continue; "
-        "  if (rx.test(u.pathname)) return u.href; } "
-        "return ''; })()"
+        "  if (rx.test(u.pathname)) return u.href; } return ''; };"
+    )
+    return (
+        "(async () => { " + scan +
+        " let hit = find(); if (hit) return hit;"
+        " window.scrollBy(0, window.innerHeight);"
+        " await new Promise(r => setTimeout(r, 900));"
+        " return find(); })()"
     )
