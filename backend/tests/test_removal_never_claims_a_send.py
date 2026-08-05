@@ -90,5 +90,8 @@ def test_the_completion_gate_describes_the_task_the_user_actually_gave():
     assert "deletion" in why and "may still be there" in why
     assert "gone out" not in why, "a delete must not be described as a send"
 
-    honest, why = completion_is_honest([], publish_task=True, send_confirmed=False)
+    # A run that DID type keeps the unconfirmed-send wording. (An empty log now correctly reports
+    # "never typed" instead, which is a different true statement; see test_never_typed_message.py.)
+    typed = [{"tool": "BrowserClickIndex", "ok": True, "input": {"index": 5, "text": "hello"}}]
+    honest, why = completion_is_honest(typed, publish_task=True, send_confirmed=False)
     assert not honest and "gone out" in why, "a real send keeps its own wording"

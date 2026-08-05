@@ -223,6 +223,38 @@ P_PRODUCTIVE_TOOLS = {
     "BrowserClick", "BrowserClickIndex", "BrowserType", "BrowserNavigate",
     "BrowserPressKey", "BrowserScroll", "BrowserBatch", "BrowserActVerified",
 }
+def typed_anything(action_log: list[dict]) -> bool:
+    """Did this run put TEXT into the page, as opposed to merely moving around it?
+
+    Keyed on the text ARGUMENT, not the tool name, because the same tool does both jobs:
+    BrowserClickIndex with a `text` arg is the fill path, and without one it is navigation. A run of
+    bare clicks and reads is busy and has typed nothing. Reported live on a "send hi to charles zheng
+    on linkedin" run whose entire trace was ListInteractives/GetText/ClickIndex/ListInteractives/
+    GetText: two reads, two navigation clicks, no message. Telling that user their send "may not have
+    gone out" points them at a page where nothing was ever composed.
+    """
+    for a in action_log:
+        if not a.get("ok"):
+            continue
+        inp = a.get("input") or {}
+        if isinstance(inp, dict) and str(inp.get("text") or "").strip():
+            return True
+        if a.get("tool") in ("BrowserType", "BrowserFindComposer", "send click"):
+            return True
+        # Some paths record the fill in the RESULT rather than the input: BrowserActVerified logs
+        # "filled:<payload>", and the send script's own rows describe the fill in prose. Missing
+        # those would call a run that really did type "never typed", which is the same class of
+        # wrong answer in the other direction.
+        if "fill" in str(a.get("result_summary") or "").lower():
+            return True
+        # A batch carries its own sub-actions; any typed sub counts.
+        for sub in (inp.get("actions") or []) if isinstance(inp, dict) else []:
+            sp = (sub or {}).get("params") or {}
+            if str(sp.get("text") or "").strip():
+                return True
+    return False
+
+
 # Read/extract tools: a look-only task's evidence is that a read returned content.
 P_READ_TOOLS = {
     "BrowserGetText", "BrowserGetElements", "BrowserListInteractives",
@@ -391,6 +423,16 @@ def completion_is_honest(
         if removal_task:
             return False, ("the deletion was never confirmed, so the item may still be there; "
                            "check the page before trusting this")
+        # "may not have gone out" implies something WAS attempted. When the run only ever read the
+        # page, nothing was: reported live on a "send hi to charles zheng on linkedin" run whose
+        # whole trace was ListInteractives/GetText/ClickIndex/ListInteractives/GetText, two reads
+        # and no typing. Telling that user to "check the page" sends them looking for a message that
+        # was never composed, and it hides the actual reason the run stopped early. Say which of the
+        # two happened, because they have completely different fixes.
+        if not typed_anything(action_log):
+            return False, ("I never actually typed the message, so nothing was sent and there is "
+                           "nothing on the page to check. Tell me the exact words to send "
+                           "(in quotes) and I will do it in one go")
         return False, ("the send was never confirmed, so it may not have gone out; "
                        "check the page before trusting this")
     if not action_log:
