@@ -19,6 +19,7 @@ import time
 from typing import Awaitable, Callable
 
 from backend.apps.agents.browser import browser_send_parse, compose_discovery, compose_entry
+from backend.apps.agents.browser import first_item_of_type
 from backend.apps.agents.browser.strip_lone_surrogates import strip_lone_surrogates
 
 logger = logging.getLogger(__name__)
@@ -400,6 +401,7 @@ async def run_prestage(
         p_results_overruled = False
         p_composer_overruled = False
         p_ctype_overruled = False
+        p_first_item_tried = False
         while (not staged_complete and steps < p_max_steps
                and (time.monotonic() - t0) < p_total_timeout):
             # Per-step cost, broken out. Prestage is the largest single phase of a LinkedIn write
@@ -421,6 +423,36 @@ async def run_prestage(
                             f"{int((time.monotonic() - p_t_step) * 1000)}ms: a composer is already "
                             f"on the page, no aux call needed")
                 break
+            # TIER 1: the task asked for the FIRST <thing>, and the page's own links say which ones
+            # are that thing. Instagram posts are /p/, tiktok videos /video/, youtube /watch. Picking
+            # the first matching link is deterministic; asking a model to find it in a feed is not,
+            # and that is where instagram kept going wrong (1/10, 3/5, 0/5, 0/5 across four windows,
+            # landing in the stories viewer, on a profile, or nowhere). Costs one evaluate against
+            # the 1.7-6.5s aux call it replaces, and it can only ever choose a URL the downstream
+            # wrong-surface guard would also accept, because both read the same type patterns.
+            if task_is_send and not p_first_item_tried:
+                p_first_item_tried = True
+                p_want = first_item_of_type.wanted_type(task)
+                p_expr = first_item_of_type.first_link_expression(p_want) if p_want else ""
+                if p_expr and not browser_send_parse.content_type_mismatch(task, current_url):
+                    try:
+                        p_r = await asyncio.wait_for(
+                            execute_tool("BrowserEvaluate", {"expression": p_expr},
+                                         browser_id, tab_id), timeout=6.0)
+                        p_href = str((p_r or {}).get("value") or (p_r or {}).get("text") or "").strip()
+                    except Exception:
+                        p_href = ""
+                    if p_href.startswith("http") and p_href != current_url:
+                        logger.info(f"[browser-prestage] tier-1: first {p_want} is {p_href[:70]}")
+                        r = await execute_tool("BrowserNavigate", {"url": p_href}, browser_id, tab_id)
+                        if isinstance(r, dict) and "error" not in r:
+                            recs.append({"tool": "BrowserNavigate", "input": {"url": p_href},
+                                         "ok": True, "result_summary": f"first {p_want}"[:200],
+                                         "elapsed_ms": 0})
+                            done_desc.append(f"opened the first {p_want}")
+                            current_url = p_href
+                            steps += 1
+                            continue
             p_t_aux = time.monotonic()
             reply = safe_resp_text(await asyncio.wait_for(
                 client.messages.create(
