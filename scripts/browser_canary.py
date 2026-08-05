@@ -76,7 +76,10 @@ SITES: Dict[str, Dict[str, str]] = {
         # profile, so auditing the subreddit would call a post that genuinely landed a false
         # success. Auditing where the author can see it separates "we never posted" from "reddit
         # removed it", which are different bugs with different owners.
-        "audit": "https://www.reddit.com/user/helciminc/submitted/",
+        # Read off the agent's own navigation during a live round, not scraped from the feed HTML:
+        # a /user/<name>/ regex over reddit's home page matches whoever posted the first card, and
+        # the first version of this line audited a stranger's profile.
+        "audit": "https://www.reddit.com/user/Hot-Interview1150/submitted/",
     },
 }
 
