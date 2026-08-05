@@ -60,7 +60,13 @@ SITES: Dict[str, Dict[str, str]] = {
     },
     "reddit": {
         "probe": 'Go to reddit.com/r/test/submit. Do NOT type or submit anything. Is the post title/body compose form present? Answer with exactly one word: YES or NO.',
-        "post": 'Go to reddit.com and create a text post in r/test titled "{m}" with body "canary check". Submit it.',
+        # ONE quoted span, deliberately. The old wording quoted a title AND a body, and
+        # quoted_payload refuses a task with two candidate payloads rather than guess which text to
+        # send, which is correct: guessing there is how you post the wrong string. So the send
+        # script declined every reddit round, the model finished it the slow way, no receipt fired,
+        # and the canary scored the PRODUCT for a defect in this prompt. A measurement instrument
+        # that trips the thing it is measuring reports its own bug as the system's.
+        "post": 'Go to reddit.com/r/test/submit and create a text post whose title is exactly "{m}". Submit it.',
         "delete": 'Go to reddit.com and delete my post titled "{m}"',
         "verify": ('Go to my reddit profile. Do NOT post, delete or change anything. Is there a post '
                    'titled "{m}"? Answer with exactly one word: GONE if absent, PRESENT if there.'),
