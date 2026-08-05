@@ -71,7 +71,12 @@ SITES: Dict[str, Dict[str, str]] = {
         # that trips the thing it is measuring reports its own bug as the system's.
         "post": 'Go to reddit.com/r/test/submit and create a text post whose title is exactly "{m}". Submit it.',
         "delete": 'Go to reddit.com and delete my post titled "{m}"',
-        "audit": "https://www.reddit.com/r/test/new/",
+        # The AUTHOR's own submitted list, not r/test/new. reddit's spam filter removes automated
+        # posts from the subreddit listing within minutes while leaving them on the author's
+        # profile, so auditing the subreddit would call a post that genuinely landed a false
+        # success. Auditing where the author can see it separates "we never posted" from "reddit
+        # removed it", which are different bugs with different owners.
+        "audit": "https://www.reddit.com/user/helciminc/submitted/",
     },
 }
 
@@ -105,7 +110,7 @@ def log_lines() -> int:
         return 0
 
 
-def run_task(prompt: str, name: str, budget: int = 180, keep: bool = False) -> Dict[str, object]:
+def run_task(prompt: str, name: str, budget: int = 300, keep: bool = False) -> Dict[str, object]:
     """Dispatch one browser task; return {said, status, wall, log} for the slice it produced.
 
     `keep` leaves the session (and therefore its browser card) alive so the caller can audit the
