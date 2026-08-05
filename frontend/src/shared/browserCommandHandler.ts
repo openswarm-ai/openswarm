@@ -272,13 +272,13 @@ const STUCK_EVAL_LIMIT_MS = 9000;
 // A/B via window.__OSW_CDP_EVAL__ = false) we fall back to the executeJavaScript path unchanged,
 // so behavior never regresses where CDP can't run. Both paths keep the same contract: return the
 // value, throw on a page-side error, mark dom-ready on success.
-async function evalInPage(wv: BrowserWebview, code: string): Promise<any> {
+async function evalInPage(wv: BrowserWebview, code: string, sessionId?: string): Promise<any> {
   const cdpBridge = (window as any).openswarm?.sendCdpCommand;
   if (cdpBridge && (window as any).__OSW_CDP_EVAL__ !== false) {
     let cdp: any;
     try {
       cdp = await sendCdp(wv, 'Runtime.evaluate',
-        { expression: code, returnByValue: true, awaitPromise: true });
+        { expression: code, returnByValue: true, awaitPromise: true }, sessionId);
     } catch {
       // CDP INFRA failure (the debugger can't attach because DevTools or a remote-debugging
       // port already holds this webContents, or the bridge errored). Never worse than today:
@@ -732,7 +732,25 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       role: best.isContentEditable ? 'contenteditable' : (best.getAttribute('role') || best.tagName.toLowerCase()),
       score: Math.round(hit.score * 10) / 10, nearSubmit: hit.near, filled, reveals: acts };
   })()`;
-  const result = await evalInPage(wv, code);
+  let result = await evalInPage(wv, code);
+  // Nothing in the top document? Run the SAME search inside each child frame. deepMatch pierces
+  // shadow DOM but starts at `document` and recurses only into shadowRoot, so an iframe is a wall
+  // to it: the composer of every embedded widget (Disqus, a helpdesk box, an embedded compose
+  // view) is invisible here even though the AX walk can now see into those frames. Measured on
+  // blog.disqus.com: perception reported textboxes=1 while this finder returned found:false,
+  // because it was looking in the wrong document. Only runs on the miss path, so a page whose
+  // composer is in the main document pays nothing.
+  if (!result || !result.found) {
+    for (const child of await getChildSessions(wv)) {
+      let inFrame: any;
+      try { inFrame = await evalInPage(wv, code, child.sessionId); } catch { continue; }
+      if (inFrame && inFrame.found) {
+        console.log(`[find_composer] found in child frame ${String(child.url).slice(0, 60)}`);
+        result = { ...inFrame, frameSessionId: child.sessionId, frameUrl: child.url };
+        break;
+      }
+    }
+  }
   // Real-keystroke fill fallback: some editors (Reddit's Lexical, strict React contenteditables)
   // manage their own state through beforeinput and ignore execCommand insertText, so the in-page
   // fill reads back empty. Retype the SAME text as OS-level key events (isTrusted, the way a human
