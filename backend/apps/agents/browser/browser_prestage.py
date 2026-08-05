@@ -381,7 +381,17 @@ async def run_prestage(
                 await asyncio.sleep(0.35)
                 li2, gt2, u2 = await perceive()
                 if ((u2 and u2 != pre_url) or (gt2 and gt2[:400] != pre_text[:400])
-                        or (li2 and pre_li and li2 != pre_li)):
+                        or (li2 and pre_li and li2 != pre_li)
+                        # A page that HAS content is a settled page, whether or not it differs from
+                        # what came before. Every clause above asks "is this different?", and on a
+                        # fresh card the before-state is empty, so `pre_li` is falsy and a perfectly
+                        # good load can satisfy none of them. Measured on disqus: the embed URL
+                        # served 200, the nav landed, and settle returned ok=False after 3.4s, so
+                        # prestage stopped unstaged and BrowserListInteractives was never called at
+                        # all. That reads downstream as "no composer" when the truth is we never
+                        # looked. Not a disqus quirk: any page that renders nothing like its own
+                        # blank pre-state trips it.
+                        or (li2 and not pre_li)):
                     return True
             return False
         p_max_steps = 0 if perceive_only else (OPENER_MAX_STEPS if opener_mode() else MAX_STEPS)

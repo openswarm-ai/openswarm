@@ -166,3 +166,29 @@ def test_a_click_that_reveals_the_composer_ends_the_stage_without_another_aux_ca
     assert "composer_index_in_state(p_after)" in block, "must check the POST-click perception"
     assert "task_is_send" in block, "send tasks only; a read stages differently"
     assert "staged_complete = True" in block, "and it must end the stage, not just note it"
+
+
+def test_a_page_that_loaded_content_counts_as_settled_even_with_an_empty_before_state():
+    """Found on disqus via the editor-shape holdout, and it is general.
+
+    settle() proves an action took by asking "is the page DIFFERENT now?", comparing url, the first
+    400 chars of text, and the element list against the pre-action snapshot. On a fresh card the
+    pre-state is empty, so `pre_li` is falsy and the element-list clause is skipped entirely; a page
+    whose URL the aux navigated to directly, and whose text starts empty, can satisfy none of the
+    clauses no matter how well it loads.
+
+    Measured: the disqus embed URL served 200, the navigation landed, settle returned ok=False after
+    3.4s, prestage stopped unstaged, and BrowserListInteractives was NEVER CALLED. Downstream that
+    read as "no composer" when the truth was that we never looked. Having content is itself the
+    evidence a navigation settled.
+    """
+    import inspect
+    from backend.apps.agents.browser import browser_prestage as pre
+    src = inspect.getsource(pre)
+    i = src.index("async def settle")
+    body = src[i:i + 2200]
+    assert "or (li2 and not pre_li)" in body, \
+        "a load into an empty before-state must count as settled"
+    # and the original difference clauses must survive: this is an ADDITION, not a replacement
+    assert "u2 != pre_url" in body and "gt2[:400] != pre_text[:400]" in body
+    assert "li2 != pre_li" in body
