@@ -1,6 +1,6 @@
 # Handoff: browser v3, state as of 2026-08-06
 
-Branch `eric/browser-merged`, 41 commits past `origin/eric/dev`. Browser suite 707 passing, tsc 0,
+Branch `eric/browser-merged`, 45 commits past `origin/eric/dev`, pushed. Browser suite 707 passing, tsc 0,
 linter no new violations, tree clean. The goal and the harness are described in `README.md`.
 
 **Six of nine criteria pass. Three are open, and none of them is open because the fix is unknown.**
@@ -17,7 +17,7 @@ linter no new violations, tree clean. The goal and the harness are described in 
 | 6 | other_ms | -50% | none | **-70%** (417 -> 126ms) | PASS |
 | 7 | infra flake | <=1% | 60% | 34 runs, 0 failures; sample too small | OPEN |
 | 8 | holdout | >=80%, <=10pt | untested | **87%**, 6pt gap | PASS |
-| 9 | learned path | remove or >=50% | 0/55 | recording bug fixed; live rate unmeasured | OPEN |
+| 9 | learned path | remove or >=50% | 0/55 | **recording 4/4 = 100%**; replays 0 of 2 | OPEN |
 
 Per-site reach at N=5 (criterion 1): x 5/5, linkedin 5/5, reddit 5/5, **instagram 5/5** (was 1/10),
 youtube 4/5, **twitch 4/5** (was 0/3). gmail, tiktok and substack are excluded, see Exclusions.
@@ -80,8 +80,9 @@ Needs a box with nothing on :8324, then `N=12 c7_run.sh` for the full 108.
 
 ### Criterion 9, learned fast path
 
-Baseline is now measured properly: **427 gate decisions, 95 eligible, 0 recorded (0%), 0 replays**,
-with one refusal reason (`host empty or no robust steps`).
+The starting baseline, over 427 gate decisions on **dry** sweeps: **95 eligible, 0 recorded, 0
+replays**, with one refusal reason (`host empty or no robust steps`). Read on its own that number is
+misleading, see "measure this on a LIVE run" below; but the refusal reason was a real bug.
 
 The gate was never the problem. Every eligible run died inside `record_skill`: `distill_steps` reads
 `clicked_name`, and `browser_send_script.py` wrote the element name into `result_summary` prose only.
@@ -97,15 +98,41 @@ Safety held rather than added: a `BrowserClickIndex` distills to a name-only `Br
 the payload never enters the skill, and the send click's tool name matches no distill branch, so a
 replay cannot re-fire a send.
 
-**Not yet proven live.** A later dry sweep still showed 0/11, but the eligible hosts were
-`accounts.google.com`, `substack.com` and `twitch.tv` (signed-out and no-composer runs), which the
-fix does not touch. Separately, `skillstats.py` reported 8 prefix replays alongside 0 "matched",
-which cannot both be true, so it has a counting bug of its own. **The honest reading is that
-criterion 9 has no verdict yet, not that the fix failed.**
+**Recording is PROVEN live, at 100%.** On the live canary rounds (`r4`): 14 runs reached the gate,
+**4 were eligible, 4 recorded, 0 refused.** Two skills persist on disk with exactly the shape the
+unit test predicts, both timestamped after the fix:
 
-Fix the `skillstats` counter, then read the recording rate off a fresh 108-run sweep. If replay shows
-no benefit on off-table hosts, removal is the honest answer and the criterion explicitly allows it;
-the two `browser-memory` endpoints have no frontend caller, so removal is not user-visible.
+```
+x.com            BrowserNavigate(https://x.com/compose/post)
+                 BrowserClickByName(textbox "Post text")
+www.linkedin.com BrowserNavigate(https://www.linkedin.com/feed/?shareActive=true)
+                 BrowserClickByName(textbox "Text editor for creating content")
+```
+
+**Measure this on a LIVE run, never a dry one.** Recording is gated on `delivery_verified`, which a
+dry run can never produce, so a dry sweep correctly records nothing. Reading a dry log as a verdict
+is how this was first misreported as "0/95, the fix did not fire". `skillstats.py` now prints a note
+when it sees that shape. (It also had two counting bugs of its own, fixed: it counted the
+`slots unfillable` FAILURE line under a label that read "skill matched", and it never surfaced
+quarantines.)
+
+**What still fails is REPLAY: 0 of 2.**
+
+1. **x.com truncates to a bare navigate.** `is_replay_boundary` flags the composer click as
+   irreversible because the accessible name `Post text` contains "post". It is a textbox, and
+   focusing a textbox is reversible, but the guard matches on the name only. The prefix therefore
+   replays a single navigate, which prestage already does in 0.13s.
+2. **linkedin quarantines.** `replay step failed (BrowserClickByName: No element matching
+   role="textbox" name="Text editor for creating content")`. LinkedIn's composer is lazily mounted
+   and does not exist at navigate time; the recorded skill never learned the opener click that
+   reveals it. Quarantine is correct behaviour here, not a bug.
+
+**So criterion 9 clears the >=50% recording bar and fails the "successful replays and measured
+benefit" half.** Before investing in either replay fix, answer the question that decides it: prestage
+already reaches a tier-0/1 composer in **0.13s**, so what is a replay actually worth? If the answer is
+"nothing", removal is the honest path and the criterion explicitly allows it. The two
+`browser-memory` endpoints have no frontend caller (grep of `frontend/src` and `electron/` returns
+nothing), so removal is not user-visible.
 
 ## Product bugs found by the fixed instrument
 
@@ -163,8 +190,8 @@ loudly rather than audit a malformed URL.
 
 1. `verify_markers.py` (32/32 expected).
 2. Confirm reddit's Title field name against the live page.
-3. Fix the `skillstats.py` replay counter.
+3. Decide criterion 9: is a replay worth anything against a 0.13s prestage? If not, remove.
 4. `N=12 c7_run.sh` on a box with nothing on :8324. Gives criteria 1, 4, 5, 6, 7.
-5. `skillstats.py` on that sweep's log. Gives criterion 9's live recording rate.
+5. `skillstats.py` on a LIVE round's log (not the dry sweep) for criterion 9.
 6. `ROUNDS=7 c2_rounds.sh` then `c2_tally.py`. Gives criterion 2.
 7. `N=2 c8_run.sh` to re-check criterion 8 after the disqus fix.
