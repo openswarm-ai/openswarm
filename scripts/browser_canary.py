@@ -76,10 +76,13 @@ SITES: Dict[str, Dict[str, str]] = {
         # profile, so auditing the subreddit would call a post that genuinely landed a false
         # success. Auditing where the author can see it separates "we never posted" from "reddit
         # removed it", which are different bugs with different owners.
-        # Read off the agent's own navigation during a live round, not scraped from the feed HTML:
-        # a /user/<name>/ regex over reddit's home page matches whoever posted the first card, and
-        # the first version of this line audited a stranger's profile.
-        "audit": "https://www.reddit.com/user/Hot-Interview1150/submitted/",
+        # Get the handle from the environment, the same way x does. It is whoever the browser
+        # profile is signed in as, so hardcoding it both bakes one person's account into an
+        # open-source repo and silently audits the WRONG profile for everyone else. Do NOT scrape it
+        # from reddit's home page either: a /user/<name>/ regex there matches whoever posted the
+        # first card, and the first version of this line audited a stranger's profile.
+        "audit": "https://www.reddit.com/user/{handle}/submitted/",
+        "handle_env": "OSW_CANARY_REDDIT_HANDLE",
     },
 }
 
@@ -331,7 +334,16 @@ def check_site(site: str, cfg: Dict[str, str], live: bool) -> Dict[str, object]:
         return res
 
     # 1. POST, and require the two-sided receipt (composer cleared), not the model's word for it.
-    handle = os.environ.get(cfg.get("handle_env", ""), "") if cfg.get("handle_env") else ""
+    env = cfg.get("handle_env", "")
+    handle = os.environ.get(env, "") if env else ""
+    # REFUSE rather than audit a broken URL. Without this, an unset handle silently builds
+    # ".../user//submitted/", the read comes back empty, and the round reports "unprovable" as
+    # though the product were at fault. That is the exact silent-failure shape this whole file
+    # exists to eliminate, so it must not be reintroduced by a missing environment variable.
+    if env and not handle:
+        res.update(stage="config", ok=False, invalid=True,
+                   detail=f"INVALID: ${env} is not set, so the {site} audit URL cannot be built")
+        return res
     audit_url = cfg["audit"].format(handle=handle)
     r = run_task(cfg["post"].format(m=marker, handle=handle), f"canary-post-{site}", keep=True)
     log = str(r["log"])
