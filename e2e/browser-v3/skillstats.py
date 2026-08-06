@@ -18,8 +18,13 @@ PATTERNS = [
     ("recorded",      re.compile(r"\[browser-skills\] (learned|EDITED) \d+-step skill for (\S+)")),
     ("re_derived",    re.compile(r"re-derived identical \d+-step skill")),
     ("not_recorded",  re.compile(r"NOT recorded \(([^)]*)\)")),
-    ("matched",       re.compile(r"\[browser-skills\] skill matched on (\S+)")),
+    # "skill matched on" appears exactly ONCE in the codebase, inside the line that says the match
+    # was UNUSABLE ("but slots unfillable from task"). The old label read "skill matched for the
+    # host", so this counter presented a failure mode as a success and then sat at 0 next to 8 real
+    # replays, which cannot both be true. Count the outcome, not a substring that looked promising.
+    ("match_unusable", re.compile(r"skill matched on (\S+) but slots unfillable")),
     ("no_skill",      re.compile(r"no skill for host=")),
+    ("quarantined",   re.compile(r"failed replay -> quarantined")),
     ("replay_prefix",  re.compile(r"PREFIX replay: (\d+)/(\d+) steps on (\S+)")),
     ("replay_attempt", re.compile(r"REPLAY attempt: (\d+) steps on (\S+)")),
     ("replay_ok",      re.compile(r"REPLAY SUCCEEDED in (\d+)ms")),
@@ -69,8 +74,9 @@ def main() -> int:
         print(f"    recorded on {h}  x{n}")
 
     print("\n=== REPLAY ===")
-    print(f"  skill matched for the host    : {counts['matched']}")
     print(f"  no skill for the host         : {counts['no_skill']}")
+    print(f"  matched but slots unfillable  : {counts['match_unusable']}")
+    print(f"  QUARANTINED after a bad replay: {counts['quarantined']}")
     print(f"  full replay attempts          : {counts['replay_attempt']}")
     print(f"  full replays SUCCEEDED        : {counts['replay_ok']}")
     print(f"  prefix replays performed      : {counts['replay_prefix']}")
@@ -82,6 +88,12 @@ def main() -> int:
     print(f"\n  RECORDING RATE {recorded}/{gate_passed}"
           f" = {100*recorded//gate_passed if gate_passed else 0}%   (criterion 9 wants >=50%)")
     print(f"  REPLAYS PERFORMED {replayed}, of which succeeded {counts['replay_ok']}")
+    # Recording is gated on delivery_verified, which a dry run can never produce, so a dry sweep
+    # correctly records NOTHING and its 0% says nothing about the layer. Reading a dry log as a
+    # verdict is how this was first misreported as "the fix did not fire".
+    if gate_passed and not recorded and not counts["replay_attempt"]:
+        print("\n  NOTE: 0 recordings with 0 replays usually means this was a DRY log. Recording "
+              "needs a verified send, so measure criterion 9 on a LIVE run.")
     return 0
 
 
