@@ -1,0 +1,4 @@
+# Run output: logs, per-trial artifacts, and a multi-gigabyte Electron profile with live logins.
+# The raw jsonl rows under results/ ARE committed; they are the evidence. Nothing else here is.
+runs/
+results/*.log
