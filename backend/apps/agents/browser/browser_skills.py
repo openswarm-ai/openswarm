@@ -387,7 +387,8 @@ def first_unsafe_step(steps: list[dict]) -> tuple[int, str]:
             name = p.get("name") or p.get("selector") or ""
             # Real Send controls have short names ("Send", "Send InMail"); a 100ch profile-card blob containing "Send a..." is not one, and flagging it cut a 6-step prefix to 1 (measured, r19).
             if len(name) <= 40:
-                probe = {"action": "click", "name": name}
+                # role rides along: recorded steps carry params.role (set by the distiller), and dropping it here meant is_replay_boundary could only ever reason from the name, which is how a textbox called "Post text" was ruled an irreversible send.
+                probe = {"action": "click", "name": name, "role": p.get("role", "")}
         elif tool == "BrowserType":
             probe = {"action": "type", "selector": p.get("selector") or ""}
         if probe and browser_batch_replay.is_replay_boundary(probe):

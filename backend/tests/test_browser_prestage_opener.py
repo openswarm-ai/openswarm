@@ -186,7 +186,16 @@ def test_a_page_that_loaded_content_counts_as_settled_even_with_an_empty_before_
     from backend.apps.agents.browser import browser_prestage as pre
     src = inspect.getsource(pre)
     i = src.index("async def settle")
-    body = src[i:i + 2200]
+    # Scoped to settle()'s own body by DEDENT, not by a character count. The window was a fixed 2200
+    # and a legitimate comment inside the function pushed the clause to offset 2432, failing a test
+    # whose subject was still right there: a magic constant that breaks on unrelated edits tests the
+    # length of the source, not its meaning. settle() is nested at 8 spaces, so the first line back
+    # at that indent ends it, and this can never read into a neighbouring function either.
+    tail = src[i:]
+    end = next((m for m in range(1, len(tail))
+                if tail[m - 1] == "\n" and tail[m:m + 9].startswith(" " * 8)
+                and not tail[m + 8:m + 9].isspace()), len(tail))
+    body = tail[:end]
     assert "or (li2 and not pre_li)" in body, \
         "a load into an empty before-state must count as settled"
     # and the original difference clauses must survive: this is an ADDITION, not a replacement
@@ -213,3 +222,41 @@ def test_landing_on_the_wrong_content_type_nudges_before_the_stage_is_declared()
     # the nudge has to come BEFORE the tier-0 READY, or the stage is already declared
     # the nudge must come BEFORE the tier-0 READY, or the stage is declared on the wrong page
     assert src.index("p_ctype_overruled = True") < src.index("composer_index_in_state(p_li_after)")
+
+
+def test_a_navigate_to_the_page_we_are_already_on_is_refused_before_it_costs_a_settle():
+    """Measured 2026-08-06 on dpaste: the aux proposed back the entry URL it had just been handed,
+    prestage ran the navigate anyway, and settle() then compared the page against its own URL, found
+    nothing changed, and spent its cap before reporting unstaged.
+
+    Across 210 prestage runs, 50% ended unstaged (29% repeated-step, 21% settle-failed) at a median
+    of 5363ms each, 606s of wall in one session. This is the cheapest slice of that: a step that
+    provably cannot stage anything should not be executed, let alone waited on.
+    """
+    from backend.apps.agents.browser import browser_prestage as pre
+    # the same page, by the only two things a browser itself ignores
+    assert pre.same_page("https://dpaste.org/", "https://dpaste.org") is True
+    assert pre.same_page("https://dpaste.org/#top", "https://dpaste.org/") is True
+    assert pre.same_page("https://x.com/compose/post", "https://x.com/compose/post") is True
+    # genuinely different pages must still navigate
+    assert pre.same_page("https://x.com/compose/post", "https://x.com/home") is False
+    assert pre.same_page("https://dpaste.org/new", "https://dpaste.org/") is False
+    # a query string is usually the WHOLE difference between two pages, so it is never stripped
+    assert pre.same_page("https://r.com/s?q=cats", "https://r.com/s?q=dogs") is False
+    assert pre.same_page("https://r.com/s?q=cats", "https://r.com/s") is False
+    # an empty current_url is a fresh card, which must not swallow the first real navigation
+    assert pre.same_page("https://x.com/home", "") is False
+    assert pre.same_page("", "") is False
+
+
+def test_the_same_page_guard_runs_before_the_navigate_is_executed():
+    """A guard that fires after the command has run saves nothing: the cost being removed is the
+    BrowserNavigate plus the settle that follows it, not the bookkeeping."""
+    import inspect
+    from backend.apps.agents.browser import browser_prestage as pre
+    src = inspect.getsource(pre)
+    i = src.index('if verb == "navigate":')
+    block = src[i:i + 1400]
+    assert "same_page(arg, current_url)" in block, "must compare the proposed URL to the live one"
+    assert block.index("same_page(arg, current_url)") < block.index('execute_tool("BrowserNavigate"'), \
+        "the guard must come BEFORE the navigate, or it saves nothing"

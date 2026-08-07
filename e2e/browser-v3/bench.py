@@ -79,11 +79,15 @@ INFRA = (
     # `BACKEND RESTARTED` is written by the supervisor in stack.sh; BACKEND_DOWN by the harness when
     # it cannot reach :8326 at all.
     ("infra_backend", (C.BACKEND_DOWN, "[stack] BACKEND RESTARTED")),
-    ("infra_router", ("9Router watchdog", "9Router process died", "No AI provider connected")),
+    # 'api_retry' is the SDK backing off against the provider, and it belongs here for the same reason a router death does: the run measured the lane, not the write path. Measured 2026-08-06, a cloud-proxy wobble put six retries in front of every dispatch and rows that had been 'not_measurable, signed out' at 15-21s all sweep came back at 180-188s graded product_no_composer, including bsky, mastodon and codemirror. Nothing about the product changed; the sweep simply started grading an outage.
+    ("infra_router", ("9Router watchdog", "9Router process died", "No AI provider connected",
+                      "'subtype': 'api_retry'", "rate_limit_error")),
     # The webview is gone or wedged. "card is unavailable" was in this list and appears NOWHERE in
     # the codebase, so a third of this bucket could never match; these are P_CARD_GONE_MARKERS
     # (browser_loop.py) plus the renderer's own read-timeout wording, all grep-verified.
-    ("infra_browser", ("Browser command timed out", "too busy to read", "not an electron webview",
+    # "Browser command timed out" was in this tuple and did not belong: ONE command blowing its own budget is not the webview being gone. Measured 2026-08-06, all 4 "infra" rows were BrowserFindComposer at exactly its 30s cap on dpaste/disqus, every run COMPLETED after, the next card opened fine, and the 34-run log had zero card-gone markers.
+    # Filed as infra it read as 11.8% flake AND shrank criterion 8's denominator 23 -> 19, lifting reach 70% -> 84%: bench.py's own documented sin, calling a real bug infrastructure. A genuinely wedged card still trips the markers below, and those still win.
+    ("infra_browser", ("too busy to read", "not an electron webview",
                        "no dashboard is connected", "page unresponsive")),
     # No renderer attached. Its own bucket because it is neither the router nor the page: Electron
     # launched before webpack was serving, hit a dead URL and quit, and 44 straight runs then failed
@@ -97,6 +101,18 @@ INFRA = (
 # EDITOR LIBRARY, not per famous site: the web's writing surfaces cluster into ~8 shapes and most
 # sites adopt one. These five fill the two holes the popularity-picked suites left entirely empty,
 # iframe-embedded composers and the classic CMS editors. All public demos, so no login gates them.
+# Hosts that have gone OFFLINE since the holdout was frozen. A dead site cannot measure our code, so
+# it leaves the denominator exactly as a signed-out one does. Listed with its evidence rather than
+# deleted from HOLDOUT, because an exclusion is a claim that the product was not on trial and that
+# claim has to survive being read out loud. Confirmed by fetching the page directly, never on the
+# agent's say-so -- same rule as every other exclusion here. Grading a site's own shutdown notice as
+# "no composer" charges our code for someone else's decision: txti alone cost 2 rows and dragged
+# holdout reach from 82% to 75%.
+RETIRED = {
+    "txti": "txti.es retired; the page reads 'Txti has retired' (direct fetch, 2026-08-06)",
+    "dpaste": "dpaste.org offline; 'dpaste has temporarily halted its operation as a public "
+              "pastebin' (direct fetch, 2026-08-06)",
+}
 HOLDOUT.update({
     "disqus":    'Go to https://blog.disqus.com/ and open the first blog post, then write a '
                  'comment "coverage probe alpha" in the Disqus comment box at the bottom',
@@ -117,8 +133,11 @@ EXCLUDED = ("not_measurable", "infra_backend", "infra_router", "infra_browser",
             "infra_harness", "infra_no_renderer")
 
 
-def classify(v, slice_):
+def classify(v, slice_, site=""):
     """One bucket per trial. Unknowns and timeouts are failures, never silently dropped."""
+    # A host that no longer exists is an unmeasurable row, not a coverage miss. Checked FIRST so a dead site's error page cannot be graded as anything else.
+    if site in RETIRED:
+        return "not_measurable"
     for name, needles in INFRA:
         if any(n in slice_ for n in needles):
             return name
@@ -133,6 +152,11 @@ def classify(v, slice_):
         return "product_fill_died"
     if "WRONG SURFACE" in d:
         return "product_wrong_surface"
+    # A command that blew its own budget while the card kept serving. Named rather than folded into
+    # product_no_composer: "we never found a composer" and "we looked for 30s and gave up" point at
+    # different fixes, and the second one is a latency bug wearing a coverage bug's clothes.
+    if "Browser command timed out" in slice_:
+        return "product_command_timeout"
     return "product_no_composer"
 
 
@@ -159,7 +183,9 @@ def trial(site, task, n_idx):
     t1 = time.time()
     v = C.verdict(site, slice_)
     v["site"], v["trial"] = site, n_idx
-    bucket = classify(v, slice_)
+    bucket = classify(v, slice_, site)
+    if site in RETIRED:
+        v["detail"] = f"NOT MEASURABLE: {RETIRED[site]}"
     rows = metrics_between(t0 - 2, t1 + 2)
     best = max(rows, key=lambda r: r.get("total_ms", 0)) if rows else {}
     rec = {
@@ -167,6 +193,8 @@ def trial(site, task, n_idx):
         "detail": v["detail"], "composer": bool(v["composer"]), "submit": bool(v["submit"]),
         "total_ms": best.get("total_ms"), "llm_ms": best.get("llm_ms"),
         "tools_ms": best.get("tools_ms"), "other_ms": best.get("other_ms"),
+        # prestage_ms/task_ms are the buckets total_ms never contained; criterion 6 is meaningless without them, since other_ms measured 25ms of a 12700ms run on the frozen baseline.
+        "prestage_ms": best.get("prestage_ms"), "task_ms": best.get("task_ms"),
         "turns": best.get("turns"),
     }
     art = os.path.join(HERE, "results", f"{site}_{n_idx}.log")
@@ -196,12 +224,22 @@ def report(recs, label):
     infra = [r for r in recs if r["bucket"].startswith("infra")]
     print(f"\n  REACH (product-measurable denominator): {len(ok)}/{len(meas)} "
           f"= {round(100 * len(ok) / len(meas)) if meas else 0}%")
-    print(f"  not measurable (signed out): {sum(r['bucket'] == 'not_measurable' for r in recs)}")
+    # An UNVERIFIED exclusion rests on the agent's own word with no page evidence, and coverage.py says outright: confirm by hand before quoting any number that leaves them out. Nobody does, including me -- I quoted a 100% that silently excluded onlinegdb on exactly this basis. Print the pessimistic figure alongside so the optimistic one can never be read alone.
+    p_unv = [r for r in recs if "UNVERIFIED" in str(r.get("detail", ""))]
+    if p_unv:
+        p_d2 = len(meas) + len(p_unv)
+        print(f"  REACH if those UNVERIFIED exclusions are really OUR misses: {len(ok)}/{p_d2} "
+              f"= {round(100 * len(ok) / p_d2)}%  <- {sorted({r['site'] for r in p_unv})}")
+    print(f"  not measurable (signed out or offline): "
+          f"{sum(r['bucket'] == 'not_measurable' for r in recs)}")
+    # Named individually, never folded into the count: an offline host is the one exclusion a reader cannot re-derive from the page evidence in the row, so it has to be stated outright.
+    for p_site in sorted({r["site"] for r in recs if r["site"] in RETIRED}):
+        print(f"    EXCLUDED, host offline: {p_site} -- {RETIRED[p_site]}")
     print(f"  INFRASTRUCTURE failures: {len(infra)}/{len(recs)} "
           f"= {round(100 * len(infra) / len(recs), 1) if recs else 0}%  {[r['bucket'] for r in infra]}")
     lat = [r for r in ok if r.get("total_ms")]
     if lat:
-        for key in ("total_ms", "llm_ms", "tools_ms", "other_ms"):
+        for key in ("task_ms", "prestage_ms", "total_ms", "llm_ms", "tools_ms", "other_ms"):
             vals = sorted(r[key] for r in lat if r.get(key) is not None)
             if vals:
                 p95 = vals[min(len(vals) - 1, int(0.95 * len(vals)))]
@@ -210,9 +248,10 @@ def report(recs, label):
         print("  no successful runs carried a timing row")
 
 
-USAGE = """usage: bench.py [known|holdout] [N] [site ...]
+USAGE = """usage: bench.py [known|anon|holdout] [N] [site ...]
 
   known     the known suite (default)
+  anon      popular hosts with an anonymous composer, see anon_suite.py
   holdout   the frozen holdout, see HOLDOUT_FROZEN.md
   N         trials per site (default 5)
   site ...  restrict to these sites
@@ -224,7 +263,7 @@ if __name__ == "__main__":
     # An unrecognised first argument used to be treated as a SUITE NAME, so `bench.py --help`
     # quietly started firing real trials at a backend that was not there. The first thing anyone
     # new types is --help, so refuse anything that is not a real suite.
-    if len(sys.argv) > 1 and sys.argv[1] not in ("known", "holdout"):
+    if len(sys.argv) > 1 and sys.argv[1] not in ("known", "holdout", "anon"):
         print(USAGE)
         sys.exit(0 if sys.argv[1] in ("-h", "--help", "help") else 2)
     suite = sys.argv[1] if len(sys.argv) > 1 else "known"
@@ -233,6 +272,12 @@ if __name__ == "__main__":
     if suite == "holdout":
         tasks, C.ON_PAGE = HOLDOUT, {**C.ON_PAGE, **HOLDOUT_PAGE}
         C.PUBLIC = C.PUBLIC + tuple(HOLDOUT)
+    elif suite == "anon":
+        # Popular hosts serving a composer with no account, so criterion 1 is scoreable on a box with no live sessions. Complements the known suite, never replaces it: C.TASKS is untouched.
+        import anon_suite
+        anon_suite.assert_disjoint_from_holdout(HOLDOUT)
+        tasks, C.ON_PAGE = anon_suite.ANON, {**C.ON_PAGE, **anon_suite.ANON_PAGE}
+        C.PUBLIC = C.PUBLIC + tuple(anon_suite.ANON)
     else:
         tasks = C.TASKS
     if only:

@@ -13,24 +13,19 @@
 // because a caller that fills a selector has to know which document that selector belongs to.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { sweepChildFrames, type ChildFrame, type FrameHit } from './findComposerFrames';
 
-interface Found { found: boolean; selector?: string; frameSessionId?: string; frameUrl?: string }
+type Found = FrameHit;
 
-/** The fallback as implemented in handleFindComposer, isolated so its contract can be tested. */
+// Drives the REAL sweep, so an implementation change fails these tests instead of quietly drifting from them. This wrapper only supplies the top-document short-circuit that lives in handleFindComposer; everything below the first line is production code.
 async function findWithFrames(
   top: () => Promise<Found>,
-  children: Array<{ sessionId: string; url: string }>,
+  children: ChildFrame[],
   inFrame: (sessionId: string) => Promise<Found>,
 ): Promise<Found> {
-  let result = await top();
-  if (!result || !result.found) {
-    for (const child of children) {
-      let r: Found;
-      try { r = await inFrame(child.sessionId); } catch { continue; }
-      if (r && r.found) return { ...r, frameSessionId: child.sessionId, frameUrl: child.url };
-    }
-  }
-  return result;
+  const result = await top();
+  if (result && result.found) return result;
+  return (await sweepChildFrames(children, inFrame)) || result;
 }
 
 const NONE = async (): Promise<Found> => ({ found: false });
@@ -73,6 +68,60 @@ test('a frame that throws is skipped, not fatal', async () => {
     async (sid) => { if (sid === 'DEAD') throw new Error('target closed'); return { found: true }; });
   assert.equal(r.found, true);
   assert.equal(r.frameSessionId, 'LIVE');
+});
+
+test('the frame sweep costs the SLOWEST frame, not the sum of them', async () => {
+  // This is the property that fixes the blowout. Sequentially the sweep is O(frames x timeout) and
+  // an ad-heavy page carries a dozen: measured on dpaste and disqus, the walk was still running
+  // when the 30s BrowserFindComposer cap killed it, so both scored 0/2 with the composer never
+  // looked at. Concurrent, the whole sweep costs one frame's timeout no matter how many there are.
+  // Note it is NOT first-hit-wins: document order still decides (see the next test), so every frame
+  // must settle before a winner is named. Max instead of sum is the guarantee, and it is enough.
+  const started = Date.now();
+  const r = await findWithFrames(
+    NONE,
+    [{ sessionId: 'SLOW_AD', url: 'https://ads.test' }, { sessionId: 'COMPOSER', url: 'https://ok.test' }],
+    async (sid) => {
+      await new Promise((res) => setTimeout(res, 300));
+      return sid === 'COMPOSER' ? { found: true, selector: '[data-osw-composer="1"]' } : { found: false };
+    },
+  );
+  const elapsed = Date.now() - started;
+  assert.equal(r.found, true);
+  assert.equal(r.frameSessionId, 'COMPOSER');
+  assert.ok(elapsed < 450, `two 300ms frames must overlap, not queue (took ${elapsed}ms)`);
+});
+
+test('document order still decides, so a concurrent sweep is faster and not different', async () => {
+  // Two frames both match; the earlier one must win regardless of which promise settles first.
+  const r = await findWithFrames(
+    NONE,
+    [{ sessionId: 'FIRST', url: 'https://a.test' }, { sessionId: 'SECOND', url: 'https://b.test' }],
+    async (sid) => {
+      if (sid === 'FIRST') await new Promise((res) => setTimeout(res, 80));
+      return { found: true, selector: `[data-osw-composer="${sid}"]` };
+    },
+  );
+  assert.equal(r.frameSessionId, 'FIRST', 'the later frame settling first must not steal priority');
+});
+
+test('on a stuck page the frame sweep starts BESIDE the retry, not behind it', async () => {
+  // The starvation that made the concurrent sweep useless on its own. A stuck eval costs
+  // grace+limit = 11.5s, so retry-THEN-frames spends 24.2s of a 30s budget before one frame is
+  // looked at: dpaste and disqus timed out 4/4 at exactly 30s having never logged a frame hit.
+  // Model the real order: first eval throws, sweep is launched, retry is awaited after it.
+  const order: string[] = [];
+  const stuck = async (): Promise<Found> => { throw new Error('page is still loading; retry shortly'); };
+  const sweep = (async () => { order.push('sweep-start'); await new Promise((r) => setTimeout(r, 120));
+    order.push('sweep-done'); return { found: true, frameSessionId: 'F1' } as Found; })();
+  const retry = (async () => { await new Promise((r) => setTimeout(r, 100)); order.push('retry-done');
+    throw new Error('page is still loading; retry shortly'); })();
+  try { await stuck(); } catch { /* expected */ }
+  try { await retry; } catch { /* expected */ }
+  const hit = await sweep;
+  assert.equal(order[0], 'sweep-start', 'the sweep must be in flight before the retry resolves');
+  assert.ok(order.indexOf('sweep-start') < order.indexOf('retry-done'), 'sweep must not queue behind retry');
+  assert.equal(hit.frameSessionId, 'F1');
 });
 
 test('no composer anywhere still reports a clean miss', async () => {

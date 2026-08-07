@@ -54,6 +54,17 @@ P_HARD_BLOCK_RE = re.compile(
 P_COMPOSE_ENTRY_RE = re.compile(r"\b(post|comment|reply|tweet|write|thread|note|caption)\b", re.I)
 
 
+def same_page(a: str, b: str) -> bool:
+    """Whether two URLs address the page we are already on, ignoring only the parts a browser itself
+    ignores when deciding it has not moved: a trailing slash and a #fragment. Query strings are NOT
+    stripped, because ?q= is usually the whole difference between two pages."""
+    def norm(u: str) -> str:
+        u = (u or "").strip().split("#", 1)[0]
+        return u[:-1] if u.endswith("/") else u
+    p_a, p_b = norm(a), norm(b)
+    return bool(p_a) and p_a == p_b
+
+
 def opener_mode() -> bool:
     """Whether prestage may OPEN a composer (click a person's Message / a 'Reply'/'Post'
     surface) instead of only navigating to an already-open one. It's ON when its own flag is
@@ -377,9 +388,13 @@ async def run_prestage(
             real share of prestage's cost, and separating it from the aux plan is what says whether
             the fix is a cheaper decision or a faster wait."""
             # A click returns before the page swaps; perceiving too early reads the OLD page and the aux re-issues the same click (observed 4x loop). Wait for the page to actually change, capped. False = the action verifiably did NOT take. An overlay (message composer) changes the INTERACTIVES but not the URL and often not the first 400 chars of text, so the element list counts as change too.
+            # Probe FIRST, then back off: the old fixed 0.35s pre-sleep charged an 80ms swap what it charged the slowest page it was tuned for (a tier-0 hit spent 1469ms of its 3244ms here). Zero-probing is safe because every clause below demands evidence of CHANGE. Same checks, same 3.0s cap, better schedule.
             t_s = time.monotonic()
-            while time.monotonic() - t_s < 3.0:
-                await asyncio.sleep(0.35)
+            for wait_s in (0.0, 0.12, 0.18, 0.25, 0.35, 0.5, 0.6, 1.0):
+                if wait_s:
+                    await asyncio.sleep(wait_s)
+                if time.monotonic() - t_s >= 3.0:
+                    break
                 li2, gt2, u2 = await perceive()
                 if ((u2 and u2 != pre_url) or (gt2 and gt2[:400] != pre_text[:400])
                         or (li2 and pre_li and li2 != pre_li)
@@ -503,6 +518,11 @@ async def run_prestage(
             seen_steps.add((verb, arg))
             if verb == "navigate":
                 if not arg.startswith(("http://", "https://")):
+                    break
+                # Navigating to the page we are already on cannot stage anything, and it is not free: the command runs, then settle() compares against that same URL, finds nothing changed and burns its full 3s cap before reporting unstaged. Measured 2026-08-06 on dpaste, where the aux proposed back the entry URL it had just been handed. Same no-progress signal seen_steps catches, one round earlier and ~3s cheaper.
+                if same_page(arg, current_url):
+                    logger.info(f"[browser-prestage] nav {arg[:60]} is the page we are on; "
+                                f"no progress, stopping unstaged")
                     break
                 r = await execute_tool("BrowserNavigate", {"url": arg}, browser_id, tab_id)
                 ok = isinstance(r, dict) and "error" not in r

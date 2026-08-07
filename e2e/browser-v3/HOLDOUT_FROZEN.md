@@ -61,6 +61,35 @@ flatter us, and one of only textareas would not exercise the path that actually 
 
 Same rules as above: reach only, dry run, never submitted, every attempt published.
 
+### Retired since the freeze: txti.es and dpaste.org (2026-08-06)
+
+**Two of these six hosts are now offline**, which matters more than either row: the anonymous-composer
+addendum exists precisely because session state can never be the reason a run fails there, and a third
+of it has since stopped answering. `dpaste.org` serves "dpaste has temporarily halted its operation as
+a public pastebin" (direct fetch, 2026-08-06), and it is the more expensive of the two: its shutdown
+page hangs `BrowserFindComposer` to its full 30s cap, so each row also costs ~43s of sweep time.
+
+The set should be topped back up to six live anonymous-composer hosts, frozen before their first run
+per criterion 8. Until that happens, holdout reach rests on a 4-host anonymous set plus the editor-shape
+addendum, and that reduced base should be stated whenever the number is quoted.
+
+
+`txti.es` no longer exists. The page serves a shutdown notice reading **"Txti has retired"**, verified
+by fetching the URL directly rather than by the agent's report, per the never-grade-the-guard-with-the-
+guard rule. There is no composer to reach and no session state that would bring one back.
+
+It is therefore **unmeasurable** and leaves the reach denominator, exactly as a signed-out host does.
+It is NOT deleted from the set: the row is still run and still published, carrying its exclusion
+reason, because an exclusion is a claim that the product was not on trial and that claim has to
+survive being read out loud. The mechanism is `RETIRED` in `bench.py`.
+
+This matters to the score. Graded as `product_no_composer` it cost 2 rows and read as holdout reach
+**18/24 = 75%** (a criterion 8 FAIL); excluded, the same runs are **18/22 = 82%** (a PASS). A dead
+host is not a generalisation failure, and charging our code for someone else's shutdown is the same
+error as charging it for a login wall.
+
+The holdout is NOT burned by this: nothing was tuned against txti, and no other host is affected.
+
 ## Editor-shape addendum, frozen 2026-08-04 at HEAD `e445ca3e`, before evaluating any of it
 
 Eric's observation, and it is the sharpest critique of this benchmark so far: the suite was picked by

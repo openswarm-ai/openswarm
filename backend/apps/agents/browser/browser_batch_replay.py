@@ -116,6 +116,8 @@ P_LIVE_IRREVERSIBLE_RE = re.compile(
 # a real Send. A true Send control is short and exact ("Send", "Send now"); these
 # describe opening a conversation, so they must NOT trip the irreversible boundary.
 P_SEND_OPENER_RE = re.compile(r"send (a |an |the )?(message|note|inmail|dm) to\b", re.I)
+# Roles whose click is a FOCUS, not an action. Deliberately only text-entry roles: "button" is absent because that is exactly what a Send is.
+P_TEXT_ENTRY_ROLES = frozenset({"textbox", "searchbox", "combobox"})
 
 
 def is_replay_boundary(step: dict) -> bool:
@@ -128,6 +130,9 @@ def is_replay_boundary(step: dict) -> bool:
     name = str(step.get("name") or "")
     if action == "click" and P_SEND_OPENER_RE.search(name):
         return False  # opener phrasing, not a real send
+    # Clicking a TEXT-ENTRY box focuses it; focusing is reversible whatever the box happens to be called. The wordlist matches on the name alone, so x.com's composer -- a textbox literally named "Post text" -- tripped \bpost\b and was ruled irreversible, truncating that skill's replay to a bare navigate (measured: PREFIX replay 1/2 steps). A real Send control is a button/link/menuitem, never a textbox, so excluding these roles cannot let a send through. is_send_completed below already reasons from role for the same reason.
+    if action == "click" and str(step.get("role") or "").lower() in P_TEXT_ENTRY_ROLES:
+        return False
     if action == "click" and P_LIVE_IRREVERSIBLE_RE.search(name):
         return True
     if action == "type" and P_COMPOSE_SEL_RE.search(str(step.get("selector") or "")):

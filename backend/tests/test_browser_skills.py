@@ -777,3 +777,44 @@ def test_step_touches_composer():
     # nav + opener are NOT composer steps (they stay in the marriage prefix)
     assert SK.step_touches_composer({"tool": "BrowserNavigate", "params": {"url": "https://x"}}) is False
     assert SK.step_touches_composer({"tool": "BrowserClickByName", "params": {"name": "Send a message to Tyler Chen"}}) is False
+
+
+def test_clicking_a_textbox_is_focus_not_a_send_whatever_it_is_called():
+    """x.com's composer is a textbox literally named "Post text". The boundary wordlist matches on
+    the NAME alone, so \\bpost\\b ruled it irreversible and the learned skill's replay truncated to a
+    bare navigate -- which prestage already does. Measured: "PREFIX replay: 1/2 steps".
+
+    A real Send control is a button/link/menuitem, never a textbox, so reasoning from role here
+    cannot let a send through. is_send_completed already reasons from role for the same reason.
+    """
+    from backend.apps.agents.browser import browser_batch_replay as BR
+    # the exact x.com and linkedin shapes that were being truncated
+    assert BR.is_replay_boundary(
+        {"action": "click", "role": "textbox", "name": "Post text"}) is False
+    assert BR.is_replay_boundary(
+        {"action": "click", "role": "textbox", "name": "Text editor for creating content"}) is False
+    assert BR.is_replay_boundary(
+        {"action": "click", "role": "searchbox", "name": "Search or submit"}) is False
+    # and the safety property: a BUTTON with the same word is still a boundary
+    assert BR.is_replay_boundary({"action": "click", "role": "button", "name": "Post"}) is True
+    assert BR.is_replay_boundary({"action": "click", "role": "button", "name": "Send"}) is True
+    assert BR.is_replay_boundary({"action": "click", "role": "", "name": "Send"}) is True
+    # typing into a composer is still the boundary; only the FOCUS was ever reversible
+    assert BR.is_replay_boundary(
+        {"action": "type", "selector": "div.compose-box"}) is True
+
+
+def test_first_unsafe_step_passes_the_role_through_or_the_fix_above_is_dead():
+    """The probe is built here, and it used to drop role entirely, so is_replay_boundary could only
+    ever see the name no matter how role-aware it became."""
+    from backend.apps.agents.browser import browser_skills as SK
+    steps = [
+        {"tool": "BrowserNavigate", "params": {"url": "https://x.com/compose/post"}},
+        {"tool": "BrowserClickByName", "params": {"role": "textbox", "name": "Post text"}},
+    ]
+    i, why = SK.first_unsafe_step(steps)
+    assert i == -1, f"a nav + composer-focus skill has no irreversible step, got {i} ({why})"
+    # the same skill with a real Send appended must still stop, at the Send
+    steps.append({"tool": "BrowserClickByName", "params": {"role": "button", "name": "Post"}})
+    i2, _ = SK.first_unsafe_step(steps)
+    assert i2 == 2, f"the real send must still be the boundary, got {i2}"

@@ -6,6 +6,7 @@ import { resumeBrowserCard, focusBrowserCard } from './state/dashboardLayoutSlic
 import { dashboardWs } from './ws/WebSocketManager';
 import { resolveInput } from './resolveUrl';
 import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
+import { sweepChildFrames, type FrameHit } from './findComposerFrames';
 import { shouldStopWaiting, SETTLE_POLL_MS, settleProbeJs } from './browserSettle';
 import { unwrapCdpEval } from './cdpEval';
 import { typeChars, type TypedKeys } from './typeChars';
@@ -569,6 +570,22 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       for (const el of all) { if (el.shadowRoot) deepMatch(el.shadowRoot, sel, out, depth + 1); }
       return out;
     };
+    // The visible editing surface a hidden proxy input belongs to, or null. Kept deliberately tight,
+    // because loosening a size gate is how a scraper starts filling honeypots: the input itself must
+    // NOT be display:none / visibility:hidden / opacity:0 (which is exactly what a spam trap uses),
+    // and a real editor-sized ancestor must exist within a few levels. An offscreen input floating in
+    // no visible container still gets skipped, same as before.
+    const HIDDEN = (s) => s.visibility === 'hidden' || s.display === 'none' || s.opacity === '0';
+    const proxyHost = (el) => {
+      if (HIDDEN(getComputedStyle(el))) return null;
+      let p = el.parentElement, depth = 0;
+      while (p && depth++ < 4) {
+        const pr = p.getBoundingClientRect();
+        if (pr.width >= 200 && pr.height >= 60 && !HIDDEN(getComputedStyle(p))) return p;
+        p = p.parentElement;
+      }
+      return null;
+    };
     const EDIT = 'textarea, [contenteditable="true"], [role="textbox"], input[type="text"]';
     const labelOf = (el) => ((el.getAttribute('aria-label')||'') + ' ' + (el.getAttribute('placeholder')||'')
       + ' ' + (el.getAttribute('data-placeholder')||'') + ' ' + (el.getAttribute('name')||'')).trim();
@@ -577,7 +594,19 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       const all = deepMatch(document, EDIT, [], 0);
       let best = null, bestScore = 0, bestNear = false;
       for (const el of all) {
-        if (!vis(el) || el.readOnly || el.disabled) continue;
+        if (el.readOnly || el.disabled) continue;
+        // Code editors (ACE, CodeMirror 5, Monaco) take keystrokes through a ~1x1 offscreen textarea
+        // and paint the text in a sibling div, so their real input can NEVER pass a size gate.
+        // Measured 2026-08-06: w3schools and onlinegdb scored 0/3 as "no composer" while every
+        // contenteditable-based editor (CodeMirror 6, Quill, TinyMCE, CKEditor) passed, which is the
+        // input MECHANISM splitting the suite, not the site. Accept the proxy when a visible ancestor
+        // is composer-sized, and score it on that ancestor's geometry.
+        let rect = el.getBoundingClientRect();
+        if (!vis(el)) {
+          const host = proxyHost(el);
+          if (!host) continue;
+          rect = host.getBoundingClientRect();
+        }
         const label = labelOf(el);
         if (el.type === 'search' || SEARCH.test(label)) continue;
         const rich = el.tagName === 'TEXTAREA' || el.isContentEditable || el.getAttribute('role') === 'textbox';
@@ -588,7 +617,7 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
           if (bt.length < 40 && SUBMIT.test(bt)) { near = true; break; }
         }
         if (!rich && !near) continue;                     // a bare form input near nothing is not a composer
-        const r = el.getBoundingClientRect();
+        const r = rect;
         const score = (el.isContentEditable ? 2 : 0) + (el.tagName === 'TEXTAREA' ? 2 : 0)
           + (near ? 3 : 0) + Math.min((r.width * r.height) / 40000, 3) + (SUBMIT.test(label) ? 1 : 0);
         if (score > bestScore) { bestScore = score; best = el; bestNear = near; }
@@ -739,11 +768,17 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
   // fallback below never even got a chance. One cheap retry costs nothing on a page that was ready.
   const p_stillLoading = (e: any) => /still loading|never finished loading/i.test(String(e?.message || e));
   let result: any;
+  // The child-frame sweep, started early on a stuck page so the retry cannot eat its budget.
+  let framesEarly: Promise<FrameHit | null> | null = null;
   try {
     result = await evalInPage(wv, code);
   } catch (err: any) {
     if (!p_stillLoading(err)) throw err;
-    console.log('[find_composer] page still loading; one retry after a settle');
+    // Start the frame sweep NOW, beside the retry rather than after it: a stuck eval costs STUCK_EVAL_GRACE_MS + STUCK_EVAL_LIMIT_MS = 11.5s, so retry-THEN-frames burns 24.2s of the caller's 30s BrowserFindComposer budget before a single frame is looked at, and making the sweep itself concurrent did not help because the starvation is upstream of it (measured 2026-08-06: dpaste and disqus timed out 4/4 at exactly 30s having never logged a frame hit).
+    // The retry still wins whenever it lands, so a page that merely needed a moment is unaffected.
+    console.log('[find_composer] page still loading; retry and child frames run together');
+    framesEarly = sweepFrames(wv, code);
+    framesEarly.catch(() => undefined);
     await new Promise((r) => setTimeout(r, 1200));
     try {
       result = await evalInPage(wv, code);
@@ -765,14 +800,10 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
   // because it was looking in the wrong document. Only runs on the miss path, so a page whose
   // composer is in the main document pays nothing.
   if (!result || !result.found) {
-    for (const child of await getChildSessions(wv)) {
-      let inFrame: any;
-      try { inFrame = await evalInPage(wv, code, child.sessionId); } catch { continue; }
-      if (inFrame && inFrame.found) {
-        console.log(`[find_composer] found in child frame ${String(child.url).slice(0, 60)}`);
-        result = { ...inFrame, frameSessionId: child.sessionId, frameUrl: child.url };
-        break;
-      }
+    const hit = await (framesEarly || sweepFrames(wv, code));
+    if (hit) {
+      console.log(`[find_composer] found in child frame ${String(hit.frameUrl).slice(0, 60)}`);
+      result = hit;
     }
   }
   // Real-keystroke fill fallback: some editors (Reddit's Lexical, strict React contenteditables)
@@ -786,6 +817,26 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     result.fillMode = ok ? 'keystroke' : 'keystroke-failed';
   }
   return result;
+}
+
+/** Binds the webview and the search expression to the pure sweep in findComposerFrames. */
+async function sweepFrames(wv: BrowserWebview, code: string): Promise<FrameHit | null> {
+  const kids = await getChildSessions(wv);
+  // Count and URLs, because "found in child frame" never appearing has two completely different causes -- no frames were enumerated, or frames were searched and genuinely had no composer -- and the log could not tell them apart. Measured 2026-08-06: w3schools and disqus reach 0/5 on iframe-embedded composers while top-document composers are 12/12, and this line is what says which half of the pipeline to fix.
+  console.log(`[find_composer] child frames: ${kids.length}`
+    + (kids.length ? ` -> ${kids.map((k) => String(k.url).slice(0, 48)).join(' | ')}` : ''));
+  // The sweep treats a throwing frame as a miss, which is right for control flow and useless for diagnosis: "searched every frame and none had a composer" and "every frame's eval blew up" are the same silent null. Surface the reason HERE, in the impure binding, so findComposerFrames stays a pure function with no logger in it.
+  let errs = 0;
+  const hit = await sweepChildFrames(kids, async (sessionId) => {
+    try {
+      return await evalInPage(wv, code, sessionId);
+    } catch (err: any) {
+      if (errs++ < 3) console.log(`[find_composer] frame eval failed: ${String(err?.message || err).slice(0, 90)}`);
+      throw err;
+    }
+  });
+  if (!hit && kids.length) console.log(`[find_composer] ${kids.length} frames searched, no composer, ${errs} eval error(s)`);
+  return hit;
 }
 
 // Type `text` into the element at `selector` as real, trusted key events, for editors that reject

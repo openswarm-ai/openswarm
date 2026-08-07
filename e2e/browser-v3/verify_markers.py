@@ -30,6 +30,8 @@ MARKERS = [
     ("disabled submit", "is present but DISABLED", "backend/apps"),
     ("fill target", "[browser-sendscript] fill target ", "backend/apps"),
     ("fill errored", "fill errored (", "backend/apps"),
+    ("fill tier", "[browser-sendscript] fill ok via ", "backend/apps"),
+    ("prestage cost", "[browser-prestage] cost ", "backend/apps"),
     ("login wall", "decline: login/auth wall", "backend/apps"),
     ("signed out", "decline: signed OUT", "backend/apps"),
     ("recovery", "one recovery dispatch", "backend/apps"),

@@ -145,7 +145,7 @@ def record_skill_event(kind, host, task_sig, rev=0, state="", extra=None) -> Non
 
 def record_task(session_id, browser_id, task, status, started_at, turns,
                 action_log, tokens, path="llm", task_sig="", playbook_seeded=False,
-                llm_ms: int = 0, tools_ms: int = 0) -> dict:
+                llm_ms: int = 0, tools_ms: int = 0, prestage_ms: int = 0) -> dict:
     """One summary line per finished task: completion, total time, per-tier
     latency, token cost, and the recurring-error rollup. `path` records HOW the
     task finished (replay = no-LLM fast path, llm = full agent, llm_fallback =
@@ -183,6 +183,12 @@ def record_task(session_id, browser_id, task, status, started_at, turns,
         "llm_ms": llm_ms,
         "tools_ms": tools_ms,
         "other_ms": max(0, total_ms - llm_ms - tools_ms),
+        # Prestage runs BEFORE started_at, so it is in none of the three buckets above. Published
+        # separately rather than folded into total_ms, because redefining total_ms would silently
+        # break every before/after comparison already recorded against it. task_ms is the honest
+        # end-to-end figure: a criterion-6 claim has to name which of these two it moved.
+        "prestage_ms": prestage_ms,
+        "task_ms": total_ms + prestage_ms,
         "turns": turns,
         "tool_calls": len(action_log),
         "tokens_in": (tokens or {}).get("input", 0),

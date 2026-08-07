@@ -15,6 +15,22 @@ TREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$TREE" || exit 1
 
 N="${N:-12}"
+# This sweep slices r6_be.log, but stack.sh names its log after TAG ($SP/${TAG}_be.log). Boot with
+# any other TAG and bench.py reads a file that does not exist: every slice comes back empty, every
+# trial grades as a silent miss, and the run reports a confident 0/108 that measured nothing. That
+# is the half-booted-stack failure this directory keeps re-learning, so check it instead of trusting
+# the operator to remember. Stale counts too: a leftover log from an earlier sweep passes an
+# existence test while the live backend writes somewhere else entirely.
+LOGF="$SP/r6_be.log"
+if [ ! -s "$LOGF" ]; then
+  echo "REFUSING: $LOGF missing or empty. Boot with TAG=r6: 'TAG=r6 $HARNESS/stack.sh up dry'" >&2
+  exit 2
+fi
+if [ -z "$(find "$LOGF" -mmin -5 2>/dev/null)" ]; then
+  echo "REFUSING: $LOGF has not been written in 5min, so the live backend is logging elsewhere." >&2
+  echo "Boot with TAG=r6: 'TAG=r6 $HARNESS/stack.sh up dry'" >&2
+  exit 2
+fi
 OUT="$SP/c7_r6.txt"
 : > "$OUT"
 echo "started $(date +%H:%M:%S), N=$N, log=$SP/r6_be.log" >> "$OUT"

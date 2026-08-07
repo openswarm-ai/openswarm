@@ -14,7 +14,8 @@ import json, os, re, sys, time, urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE = os.environ.get("OSW_BASE", "http://127.0.0.1:8326") + "/api/agents"
 LOG  = os.environ.get("OSW_LOG", "")
-MODEL = "opus-4-8"
+# Overridable so a sweep can name its lane, and so a quota'd lane is a reason to switch rather than to stop: "opus-4-8" resolves by connection_mode, which on an openswarm-pro box sends every dispatch through the cloud proxy (429'd 2026-08-06, ten backoffs, 188s per trial). Suffixed ids route via 9Router instead: opus-4-8-cc = Claude sub, gpt-5.6 = codex, gemini-3.1-flash-lite = antigravity.
+MODEL = os.environ.get("OSW_MODEL", "opus-4-8")
 
 # This list was captioned "only sites this profile is genuinely signed into" and that was not true:
 # gmail and substack hit a login wall on every single sweep, and their rows were scored as composer
@@ -168,9 +169,11 @@ def surface(site, slice_):
 # reasons too, and a live run on twitch died with "'utf-8' codec can't encode '\ud83e'" (half an
 # emoji) which this harness then filed as an environment problem and told me to re-run. A real bug
 # wearing an INVALID badge is worse than no harness. Only provider-shaped reasons count as sick.
+# 'api_retry' is provider-shaped by exactly this definition: it is the SDK backing off against the model lane, printed in the backend's SystemMessage dump. Measured 2026-08-06, a cloud-proxy wobble put six retries in front of every dispatch and rows that had been 'signed out' at 15-21s all sweep came back at 180-188s reading as product failures, with nothing about the product changed.
 UNHEALTHY = ("9Router watchdog", "9Router process died", "No AI provider connected",
              "prestage] skipped (No AI provider", "prestage] skipped (classifier",
-             "dispatch refused: no dashboard")
+             # api_retry is the SDK backing off; rate_limit_error is a bare 429 that does NOT always announce itself as one. Measured 2026-08-06: the main model answered while prestage's aux took a 429, and the run graded 0/1 measurable, a quota wearing a product failure's badge.
+             "dispatch refused: no dashboard", "'subtype': 'api_retry'", "rate_limit_error")
 
 def row(**kw):
     base = {"composer": False, "reached": False, "submit": False, "rank": 0,
@@ -247,9 +250,15 @@ def preflight():
     # Count the real interpreters only. `pgrep -f "uvicorn backend.main"` also matches the
     # supervising shell (its command line quotes the whole uvicorn line), so with a supervisor in
     # place this refused to run every single time, on a box holding exactly one backend.
+    # The "/bin/python" half of this test did not work either: stack.sh's supervisor is a `bash -c`
+    # whose command line QUOTES the whole uvicorn line, so it carries "-m uvicorn backend.main" AND
+    # "./backend/.venv/bin/python" and got counted as a second backend. That refused every sweep on
+    # a box holding exactly one. Discriminate on POSITION instead of substring: the interpreter's
+    # command line STARTS with the python binary, the supervisor's starts with bash.
     ps = subprocess.run(["ps", "-Ao", "command"], capture_output=True, text=True).stdout
     n = sum(1 for ln in ps.splitlines()
-            if "-m uvicorn backend.main" in ln and "/bin/python" in ln)
+            if "-m uvicorn backend.main" in ln and ln.split()[:1]
+            and os.path.basename(ln.split()[0]).startswith("python"))
     router = urllib.request.urlopen("http://127.0.0.1:20128/v1/models", timeout=5).status
     if n > 1 or router != 200:
         print(f"REFUSING: {n} backends on this box (want 1), 9router HTTP {router} (want 200).")

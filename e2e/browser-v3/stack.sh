@@ -30,9 +30,17 @@ status() {
   echo "=== procs ==="
   local ps_out
   ps_out="$(ps -Ao pid,command)"
-  for p in "\-m uvicorn backend.main" "bin/webpack" "MacOS/Electron" \
-           "keep_renderer" "bench\.py" "browser_canary"; do
-    printf "  %-34s %s\n" "$p" "$(echo "$ps_out" | grep -cE "$p")"
+  # The backend pattern is anchored on POSITION, not just the words: this script's own supervisor is
+  # a `bash -c` whose command line quotes the whole uvicorn invocation, so a bare match on
+  # "-m uvicorn backend.main" counts the supervisor as a second backend and reports 2 on a box
+  # holding exactly 1. Overcounting here is the same class of lie as the pgrep -fc bug above, and it
+  # sends you hunting a stack that does not exist. The interpreter's line starts with the python
+  # binary right after the pid; the supervisor's starts with bash.
+  for entry in "\-m uvicorn backend.main|^ *[0-9]+ +[^ ]*python[^ ]* +-m uvicorn backend\.main" \
+               "bin/webpack|(bin/webpack|^ *[0-9]+ +webpack\b)" "MacOS/Electron|MacOS/Electron" \
+               "keep_renderer|keep_renderer" "bench.py|bench\.py" "browser_canary|browser_canary"; do
+    label="${entry%%|*}"; pat="${entry#*|}"
+    printf "  %-34s %s\n" "$label" "$(echo "$ps_out" | grep -cE "$pat")"
   done
   echo "=== ports ==="
   for pt in 8324 8326 3000 3026 20128; do

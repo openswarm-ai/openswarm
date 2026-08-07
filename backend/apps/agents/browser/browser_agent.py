@@ -1230,8 +1230,16 @@ async def run_browser_agent(
 
     from backend.apps.agents.browser import browser_prestage
     from backend.apps.agents.browser import browser_plan_dispatch
+    # Prestage's own wall, kept so record_task can PUBLISH it. It is spent before metrics_started_at
+    # is set below, so total_ms/other_ms have never contained a millisecond of it: measured over the
+    # 93 successful runs in results/known_raw.jsonl, wall median was 12700ms against total_ms 1211ms
+    # (9.5%), leaving 11489ms unattributed, while other_ms -- the number criterion 6 is scored on --
+    # sat at 25ms. Reducing a 25ms bucket by half says nothing about a 12.7s run, so publish the
+    # missing cost rather than keep optimising the part that was already small.
+    p_prestage_ms = 0
     if (browser_prestage.prestage_enabled() and not app_mode and not cancel_event.is_set()
             and not p_skip_prestage_for_skill):
+        p_ps_t0 = time.time()
         try:
             p_ps_block, p_ps_url, p_ps_recs = await asyncio.wait_for(
                 browser_prestage.run_prestage(
@@ -1248,6 +1256,10 @@ async def run_browser_agent(
                 preloaded_reads.extend(p_ps_recs)
         except Exception as e:
             logger.info(f"[browser-prestage] outer skip ({e})")
+        # Timed in a finally-equivalent position on purpose: a prestage that TIMED OUT or threw still
+        # spent the time, and a bucket that only counts successes is how an expensive failure hides.
+        p_prestage_ms = int((time.time() - p_ps_t0) * 1000)
+        logger.info(f"[browser-prestage] cost {p_prestage_ms}ms (outside total_ms)")
 
     # Early dead-card catch: a wedged or unmounted webview perceives as nothing (no url, no
     # elements) even after prestage's warmup. Left alone the model burns a whole run piling up
@@ -3224,7 +3236,8 @@ async def run_browser_agent(
                                     path="llm_fallback" if replay_attempted else "llm",
                                     task_sig=browser_skills.compute_sig(skill_key_task),
                                     playbook_seeded=pb_seeded,
-                                    llm_ms=llm_ms_total, tools_ms=p_tools_ms_total)
+                                    llm_ms=llm_ms_total, tools_ms=p_tools_ms_total,
+                                    prestage_ms=p_prestage_ms)
         # Learn this task ONLY from a genuinely successful run whose deliverable a deterministic replay can actually reproduce. We skip recording when the run was dishonest (ghost) OR when its answer was gathered/judged content (a list/report): replay can redo the clicks but not regenerate the judgment, so recording it would create a thin shortcut that later ghosts.
         informational = deliverable_is_informational(summary, skill_key_task)
         # A removal run is NOT a recordable skill: the actual delete is a one-shot destructive

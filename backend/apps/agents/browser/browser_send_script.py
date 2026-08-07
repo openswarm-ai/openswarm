@@ -349,6 +349,14 @@ async def run_send_script(
         composer = None
     if not composer:
         # The staged snapshot is prestage's, frozen the instant it clicked Message; the overlay composer lazy-renders a beat later (r263/r269 declined on exactly this, prestage's LAST step was the Message click). Poll a short window so the overlay has time to appear before we fall back to the opener.
+        # Stop when the surface stops MOVING, not after a fixed budget -- the same rule the opener poll
+        # below already applies, which this one never got. Blind, it sleeps 0+1.2+1.4 = 2.6s whenever
+        # prestage staged no composer, and that is nearly every run: measured 2026-08-06, other_ms sat
+        # at 2610-2613ms on every single send-script run regardless of whether tools_ms was 316ms or
+        # 14488ms, i.e. a constant, and this poll is it. When two consecutive reads are identical no
+        # overlay is mounting and more waiting is pure cost; when one IS mounting the list differs and
+        # the poll runs on exactly as before, so nothing that needed the time loses it.
+        p_prev_list = ""
         for wait_s in (0.0, 1.2, 1.4):
             await asyncio.sleep(wait_s)
             fresh = await fresh_list()
@@ -356,6 +364,11 @@ async def run_send_script(
             if composer:
                 state_text = fresh
                 break
+            if fresh and fresh == p_prev_list:
+                logger.info("[browser-sendscript] composer poll: page settled with no composer, "
+                            "stopping early instead of waiting out the budget")
+                break
+            p_prev_list = fresh
     p_struct_selector: str = ""
     if not composer:
         # Reversible-opener hop: prestage often stops on the profile with the "Message" opener visible (its settle raced the overlay). Opening a composer is the allowed opener class; the irreversible bar is unchanged.
@@ -522,6 +535,12 @@ async def run_send_script(
             logger.info(f"[browser-sendscript] fill errored ({str(p_err)[:160]}); "
                         f"handing to model untouched")
             return None
+        # Name the tier that carried the text: the frontend labels it in its SUCCESS string ('via editor command' / 'via keystrokes') but only the FAILURE string was ever logged here, so a grep for a tier's success line could not match on principle and got read as "that tier has never worked" (typeChars.ts still carries that conclusion).
+        # Log the tier, never the payload: which mechanism a site needs is the diagnostic, the user's text is not.
+        p_fill_text = str(r_fill.get("text") or "") if isinstance(r_fill, dict) else ""
+        p_via = ("keystrokes" if "via keystrokes" in p_fill_text
+                 else "editor command" if "via editor command" in p_fill_text else "insertText")
+        logger.info(f"[browser-sendscript] fill ok via {p_via}")
         # 2. verify the fill committed. Send is resolved AFTER, two ways: LinkedIn enables Send only once its JS digests the input (beats later than the text is visible), so the scan waits a little.
         state2 = ""
         committed = False
