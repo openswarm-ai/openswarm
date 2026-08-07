@@ -85,6 +85,13 @@
     display: block;
   }
 }
+/* Vendored roots cap themselves at 448-576px, which reads half-sized in the chat column; unlayered
+   beats the utilities layer, so the scope's direct child always fills the bubble. */
+.tool-ui-scope > * {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
 .tool-ui-scope {
   color: var(--foreground);
   /* The app's chat voice is a serif at a 19.2px root; generated UI needs the crisp product-sans

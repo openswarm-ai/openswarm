@@ -18,8 +18,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import LanguageIcon from '@mui/icons-material/Language';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { renderMarkdownCached, renderMarkdownNow } from './markdownCache';
 import WindowedMarkdown from './WindowedMarkdown';
 import WindowedPlainText from './WindowedPlainText';
 import { renderUserTextWithPills } from './renderUserTextWithPills';
@@ -27,7 +26,7 @@ import { estimateRenderedTextHeight, oversizedCharThreshold, RECHECK_VISIBILITY_
 import { THINKING_LABELS } from '../thinkingLabels';
 import { extractPlatformNote } from '../parsing/toolResultParsing';
 import { AgentMessage, retryLastUserMessage } from '@/shared/state/agentsSlice';
-import { openSettingsModal } from '@/shared/state/settingsSlice';
+import { openSettingsCard } from '@/shared/state/dashboardLayoutSlice';
 import { fetchSubscriptionStatus } from '@/shared/state/subscriptionsSlice';
 import { shallowEqual } from 'react-redux';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -231,6 +230,22 @@ function parseOpenSwarmError(text: string, ctx?: OverflowContext): OpenSwarmErro
       kind: 'network',
       title: 'Connection issue',
       detail: "We couldn't reach the service. Once your connection is back, send a new message to continue.",
+    };
+  }
+  // The local relay (9router) mid-restart: recovers by itself in seconds, so the card says so instead of the generic snag.
+  if (/API Error:\s*Unable to connect|Connection refused|fetch failed/i.test(text)) {
+    return {
+      kind: 'network',
+      title: 'Brief connection hiccup',
+      detail: 'The local AI connection restarted mid-request. It recovers on its own; send again and it should go through.',
+    };
+  }
+  // A failure that named its own recovery window healed itself; say when, not just "something broke".
+  if (/reset after\s+\d/i.test(text)) {
+    return {
+      kind: 'network',
+      title: 'Provider is refreshing',
+      detail: 'The model provider asked for a short wait and recovers on its own. Send again in a minute or two.',
     };
   }
   // Last resort: a raw API error or SDK traceback we don't have specific copy for. Never let JSON or a stack trace land in the card; give a calm retry instead (the raw text is in the console).
@@ -800,12 +815,23 @@ const ThinkingBubble: React.FC<{
   );
 };
 
+const REASONING_VARIANTS = [
+  "It's still thinking, we just aren't allowed to peek behind the curtain.",
+  "Wheels are turning, but this provider keeps its thoughts private.",
+  "Brain's busy back there; the provider just isn't letting us listen in.",
+  "Mulling it over quietly. Only Claude shows its work out loud.",
+  "Thinking happened, just not in the open. (GPT and Gemini play their cards close.)",
+  "Reasoning's underway, but this provider doesn't broadcast it. Trust the process.",
+];
+
 // Shown when the model thought but the provider didn't expose the text.
 const ProviderReasoningExplanation: React.FC<{
   isStreaming: boolean;
   tokens: number | null;
   elapsedMs: number | null;
 }> = ({ isStreaming, tokens, elapsedMs }) => {
+  // Hook first, unconditionally: isStreaming flips false on a mounted instance when reasoning ends.
+  const idx = useMemo(() => Math.floor(Math.random() * REASONING_VARIANTS.length), []);
   if (isStreaming) {
     return (
       <Box component="span" sx={{ fontStyle: 'italic', opacity: 0.85 }}>
@@ -826,16 +852,7 @@ const ProviderReasoningExplanation: React.FC<{
     }
     return segs.join(', ');
   })();
-  const variants = [
-    "It's still thinking, we just aren't allowed to peek behind the curtain.",
-    "Wheels are turning, but this provider keeps its thoughts private.",
-    "Brain's busy back there; the provider just isn't letting us listen in.",
-    "Mulling it over quietly. Only Claude shows its work out loud.",
-    "Thinking happened, just not in the open. (GPT and Gemini play their cards close.)",
-    "Reasoning's underway, but this provider doesn't broadcast it. Trust the process.",
-  ];
-  const idx = useMemo(() => Math.floor(Math.random() * variants.length), []);
-  const line = variants[idx];
+  const line = REASONING_VARIANTS[idx];
 
   return (
     <Box component="span" sx={{ fontStyle: 'italic', opacity: 0.85 }}>
@@ -858,12 +875,11 @@ interface Props {
   revealRef?: React.RefObject<HTMLElement | null>;
 }
 
-const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, onSaveEdit, onCancelEdit, isStreaming, dynamicTurnLabel, viewportHeight = 0, viewportWidth = 0, scrollRoot = null, revealRef }) => {
+// Role dispatcher with a FIXED hook count: the chat body's ten-plus hooks live in ChatMessageBubble
+// below, so a mounted instance whose role flips can never trip React's positional hook matching.
+const MessageBubble: React.FC<Props> = React.memo((props) => {
   const c = useClaudeTokens();
-  const dispatch = useAppDispatch();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const bubbleRootRef = React.useRef<HTMLDivElement | null>(null);
-  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const { message, isStreaming, dynamicTurnLabel, revealRef } = props;
   const { role, content } = message;
 
   if (role === 'system') {
@@ -904,6 +920,17 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     return null;
   }
 
+  return <ChatMessageBubble {...props} />;
+});
+
+const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEdit, onCancelEdit, isStreaming, dynamicTurnLabel, viewportHeight = 0, viewportWidth = 0, scrollRoot = null, revealRef }) => {
+  const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const bubbleRootRef = React.useRef<HTMLDivElement | null>(null);
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const { role, content } = message;
+
   const isUser = role === 'user';
   const rawText = typeof content === 'string' ? content : JSON.stringify(content);
   const { userMessage: displayText, elements: selectedElements } = isUser
@@ -921,16 +948,11 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
     return { text: rawText, start: 0, end: rawText.length, windowed: false };
   }, [rawText, shouldRenderMarkdown]);
 
-  const renderedMarkdown = useMemo(() => (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        a: ({ children, ...props }) => (
-          <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
-        ),
-      }}
-    >{markdownWindow.text}</ReactMarkdown>
-  ), [markdownWindow.text]);
+  // Streaming prefixes are unique per chunk, so they bypass the LRU; finished text hits it and survives remounts.
+  const renderedMarkdown = useMemo(
+    () => (isStreaming ? renderMarkdownNow(markdownWindow.text) : renderMarkdownCached(markdownWindow.text)),
+    [markdownWindow.text, isStreaming],
+  );
 
   // Height to reserve for this message's off-screen placeholder before it has ever been measured. Estimated from the FULL text length (we render in full when in view) with the same model as AgentChat's spacer estimate, so the placeholder and the spacer reserve the same space. Once rendered, oversizedContentHeights wins over this.
   const placeholderFallbackHeight = useMemo(
@@ -1229,7 +1251,7 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
                         if (openswarmError.ctaAction === 'upgrade') {
                           setPickerOpen(true);
                         } else if (openswarmError.ctaAction === 'settings') {
-                          dispatch(openSettingsModal('models'));
+                          dispatch(openSettingsCard({ tab: 'models' }));
                         } else if (openswarmError.ctaAction === 'retry_last') {
                           if (activeSessionId) dispatch(retryLastUserMessage({ sessionId: activeSessionId }));
                         } else if (openswarmError.ctaAction === 'waitlist') {
@@ -1303,6 +1325,6 @@ const MessageBubble: React.FC<Props> = React.memo(({ message, editing = false, o
       />
     </Box>
   );
-});
+};
 
 export default MessageBubble;

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
-import { collapseSession, expandSession, type AgentSession } from '@/shared/state/agentsSlice';
+import { collapseSession, type AgentSession } from '@/shared/state/agentsSlice';
 import {
   placeCard,
   removeCard,
@@ -93,14 +93,9 @@ export function useSubAgentLifecycle({
         // Pass the current expanded-session set so placeCard's collision check uses real visual heights (expanded cards render ~620px tall instead of their stored collapsed height). Without this, sub-agents spawn into space the parent card visually occupies.
         expandedSessionIds,
       }));
-      dispatch(expandSession(sub.id));
+      // Reveal COLLAPSED: force-expanding here painted a full-height empty white chat shell for every spawned child (the transcript hadn't hydrated yet), which is the recurring giant-white-card report. The pill already shows the child's live narration and answer; a click expands it.
       const label = sub.mode === 'sub-agent' ? 'Create Agent' : 'Invoke Agent';
       dispatch(setGlowingAgentCard({ sessionId: sub.id, sourceId: sub.parent_session_id!, label }));
-
-      if (sub.status === 'completed' || sub.status === 'error' || sub.status === 'stopped') {
-        const subId = sub.id;
-        setTimeout(() => dispatch(collapseSession(subId)), 2000);
-      }
     }
 
     // 2) Auto-collapse sub-agents when they complete

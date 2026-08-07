@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, List, Optional
@@ -99,6 +100,54 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             yield
 
     @typechecked
+    async def prewarm_client(self, session_id: str) -> None:
+        """Spawn the session's CLI in the seconds between create and the first message, so the first
+        turn's acquire is a pool hit instead of a 0.6-1.6s cold connect. Best-effort: any failure
+        just means the first turn pays the connect it always paid. Kill switch OSW_PREWARM_CLI=0."""
+        if os.environ.get("OSW_PREWARM_CLI", "1") == "0":
+            return
+        session = self.sessions.get(session_id)
+        if not session or session.messages:
+            return
+        try:
+            import claude_agent_sdk  # noqa: F401
+        except ImportError:
+            return
+        try:
+            from backend.apps.agents.providers.registry import (
+                resolve_model_id_for_sdk as p_resolve,
+                get_api_type as p_api_of,
+            )
+            p_router_model_id = p_resolve(session.model, load_settings())
+            p_api_type = p_api_of(session.model)
+            builtin_perms = load_builtin_permissions()
+            # Representative-LENGTH prompt: thinking derives from prompt length (<50 chars forces it
+            # off), so an empty prewarm prompt would boot a different thinking config than a typical
+            # first message and fingerprint-miss into a respawn. 50+ chars matches the common case.
+            p_representative = "prewarm placeholder prompt of representative length for boot"
+            (options, options_kwargs, _pc, _stderr, _gs) = await self.build_agent_options(
+                session, session_id, p_representative, "", builtin_perms,
+                None, None, None, False, p_router_model_id, p_api_type)
+            from claude_agent_sdk import ClaudeSDKClient
+            from backend.apps.agents.manager.run.client_pool import acquire_client, boot_fingerprint
+
+            async def p_connect():
+                p_client = ClaudeSDKClient(options=options)
+                logger.info(f"[SPAWN-PHASE] prewarm-connect start session={session_id[:8]} t={time.monotonic():.3f}")
+                await p_client.connect()
+                logger.info(f"[SPAWN-PHASE] prewarm-connect done session={session_id[:8]} t={time.monotonic():.3f}")
+                return p_client
+
+            fp = boot_fingerprint(options_kwargs, session)
+            await acquire_client(self.client_pool, session_id, fp, p_connect)
+            # Deleted mid-connect: the late-arriving client just pooled into a dead session; nothing else will ever dispose it.
+            if session_id not in self.sessions:
+                from backend.apps.agents.manager.run.client_pool import dispose_client
+                await dispose_client(self.client_pool, session_id)
+        except Exception:
+            logger.info("[client-pool] prewarm skipped for %s", session_id[:8], exc_info=True)
+
+    @typechecked
     async def run_agent_loop(self, session_id: str, prompt: str, images: Optional[List] = None, context_paths: Optional[List] = None, forced_tools: Optional[List[str]] = None, attached_skills: Optional[List] = None, fork_session: bool = False, selected_browser_ids: Optional[List[str]] = None, selected_app_output_ids: Optional[List[str]] = None, selected_setting_ids: Optional[List[str]] = None, context_valve_retry: bool = False):
         """Run the Claude Agent SDK query loop for a session."""
         session = self.sessions.get(session_id)
@@ -138,6 +187,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         # Read BEFORE build_agent_options consumes these flags: a fresh-session/fork request must force the persistent client to respawn (same branch id would otherwise fingerprint-match a client still holding the old transcript).
         p_force_respawn = bool(session.needs_fresh_session or session.needs_fork or fork_session)
         try:
+            logger.info(f"[SPAWN-PHASE] run-loop start session={session_id[:8]} t={time.monotonic():.3f}")
             (options, options_kwargs, prompt_content, p_stderr_buffer,
              global_settings) = await self.build_agent_options(
                 session, session_id, prompt, prompt_content, builtin_perms,
@@ -148,13 +198,22 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
 
             thinking = ThinkingState()
             # Gate the CLI turn (spawn + stream) behind the admission slot so a burst can't run every turn at once; the slot is held ONLY for run_turn_with_retry, so the context-valve retry below re-acquires cleanly instead of nesting.
+            logger.info(f"[SPAWN-PHASE] admission-wait session={session_id[:8]} t={time.monotonic():.3f}")
             async with self.turn_admission_slot(session, session_id):
+                logger.info(f"[SPAWN-PHASE] admitted session={session_id[:8]} t={time.monotonic():.3f}")
                 await self.run_turn_with_retry(
                     session, session_id, prompt_content, options, options_kwargs,
                     turn, thinking, p_stderr_buffer, resolved_model, api_type, global_settings,
                     force_respawn=p_force_respawn,
                 )
             session.status = "completed"
+
+            # Silent-quit seal: a turn that ran tools and ended with no visible answer gets ONE hidden continue nudge (dispatched by the auto-continuation block below); a second silent quit in the same ask surfaces as-is rather than looping.
+            try:
+                from backend.apps.agents.manager.run.empty_finish import maybe_nudge_empty_finish
+                maybe_nudge_empty_finish(session, session_id)
+            except Exception:
+                logger.exception("empty-finish detection failed; continuing")
 
             # Auto-continuation hook (Phase 3). If MCPActivate (or any analogous flow) flagged pending_continuation during this turn, kick off a follow-up turn immediately with the captured prompt. We dispatch as a fire-and-forget task so the current run_agent_loop frame can unwind cleanly before the next turn's options + history rebuild kicks in. The follow-up is `hidden=True` so it doesn't add a user bubble to the visible chat; the model sees it as a synthetic prompt to keep working.
             try:
@@ -181,14 +240,17 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             turn.stream_text_msg_id = None
             turn.stream_text_accum = ""
         except Exception as e:
-            from backend.apps.agents.core.error_classify import is_context_pressure_death
+            from backend.apps.agents.core.error_classify import is_context_overflow_error, is_context_pressure_death
             p_stderr_tail = "\n".join(p_stderr_buffer[-50:])
-            if not context_valve_retry and is_context_pressure_death(e, turn.compact_boundaries, extra_text=p_stderr_tail):
-                # Pressure-release valve: the CLI compacted this turn and still died (its "autocompact is thrashing" giving-up class). Its resume transcript is beyond saving, but ours isn't: rebuild from the local mirror via the proven fresh-session recap path and transparently re-run the turn ONCE.
+            p_overflow = is_context_overflow_error(e, extra_text=p_stderr_tail)
+            if not context_valve_retry and (p_overflow or is_context_pressure_death(e, turn.compact_boundaries, extra_text=p_stderr_tail)):
+                # Pressure-release valve, two entry shapes: the CLI compacted this turn and still died (autocompact thrash), or the provider rejected the query outright as over the context window. Either way the CLI's resume transcript is beyond saving, but ours isn't: rebuild from the local mirror via the proven fresh-session recap path and transparently re-run the turn ONCE.
                 logger.warning(
-                    f"Agent {session_id}: context-pressure death after "
+                    f"Agent {session_id}: {'context overflow' if p_overflow else 'context-pressure death'} after "
                     f"{turn.compact_boundaries} compact boundaries; one fresh-session recap retry"
                 )
+                # The recap rebuild trims at compacted_through_msg_id; an overflow can hit before the proactive threshold ever fired, so force a cutoff or the rebuilt prompt is full history again.
+                self.maybe_compact(session, force=True)
                 session.needs_fresh_session = True
                 if turn.stream_text_msg_id:
                     await ws_manager.send_to_session(session_id, "agent:stream_end", {
@@ -210,9 +272,10 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     logger.debug("context_recovered broadcast failed", exc_info=True)
                 try:
                     from backend.apps.service.client import submit_diagnostic
-                    from backend.apps.agents.core.error_classify import redact_for_telemetry
+                    from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
                     submit_diagnostic({
                         "kind": "context_pressure_valve",
+                        "trigger": "overflow" if p_overflow else "pressure_death",
                         "session_id": session_id,
                         "model": session.model,
                         "compact_boundaries": turn.compact_boundaries,

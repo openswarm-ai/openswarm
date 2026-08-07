@@ -2,7 +2,7 @@ import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, isPendingLo
 import { shouldSelfHealClick } from './selfHealClick';
 import { FP_EXPR, clickEffect } from './clickEffect';
 import { store } from './state/store';
-import { resumeBrowserCard, focusBrowserCard } from './state/dashboardLayoutSlice';
+import { resumeBrowserCard } from './state/dashboardLayoutSlice';
 import { dashboardWs } from './ws/WebSocketManager';
 import { resolveInput } from './resolveUrl';
 import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
@@ -148,8 +148,6 @@ async function removeAnnotations(wv: BrowserWebview): Promise<void> {
 // while a card at x=-15185 timed out on guest capturePage, on host capturePage, AND on CDP
 // Page.captureScreenshot in both fromSurface modes. Panning the card into view is not a nicety,
 // it is the only thing that makes the pixels exist.
-const ONSCREEN_POLL_MS = 60;
-const ONSCREEN_WAIT_MS = 1500;
 // A sliver poking over the edge composites the sliver, not the page, so ask for a real chunk of card.
 const ONSCREEN_MIN_PX = 80;
 
@@ -163,23 +161,17 @@ function p_cardIsOnScreen(wv: BrowserWebview): boolean {
     && p_overlap(r.top, r.bottom, window.innerHeight) >= ONSCREEN_MIN_PX;
 }
 
-/** Pan the canvas to the card if it is out of view. '' once it is in view, else why it never will be. */
-async function ensureCardOnScreen(wv: BrowserWebview, browserId: string): Promise<string> {
+/** '' when the card is visible enough to capture, else why not. Never moves the camera: yanking the user's view because the agent wants a screenshot was the top annoyance report, so an off-screen card degrades to reading tools instead. */
+function ensureCardOnScreen(wv: BrowserWebview): string {
   if (p_cardIsOnScreen(wv)) return '';
-  store.dispatch(focusBrowserCard(browserId));
-  const deadline = Date.now() + ONSCREEN_WAIT_MS;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, ONSCREEN_POLL_MS));
-    if (p_cardIsOnScreen(wv)) return '';
-  }
-  return 'the browser card is off screen and the canvas could not pan to it (it may live on another dashboard)';
+  return 'the browser card is off screen (screenshots need it visible; the user can bring it into view)';
 }
 
 async function handleScreenshot(wv: BrowserWebview, browserId: string, params?: Record<string, any>): Promise<Record<string, any>> {
   const p_t0 = Date.now();
   const p_stages: string[] = [];
   const p_mark = (stage: string): void => { p_stages.push(`${stage}:${Date.now() - p_t0}`); };
-  const p_hidden = await ensureCardOnScreen(wv, browserId);
+  const p_hidden = ensureCardOnScreen(wv);
   p_mark('onscreen');
   if (p_hidden) {
     return {

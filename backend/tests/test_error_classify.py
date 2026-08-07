@@ -13,11 +13,12 @@ from backend.apps.agents.core.error_classify import (
     capacity_retry_wait,
     is_auth_error,
     is_cli_binary_missing,
+    is_context_overflow_error,
     is_free_trial_exhausted,
     is_transient_capacity_error,
     is_unknown_model_error,
-    redact_for_telemetry,
 )
+from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
 from backend.apps.agents.core.first_real_exception import first_real_exception
 
 # Verbatim field strings from prod analytics (2026-07): the exact shapes users hit.
@@ -87,6 +88,31 @@ def test_cli_missing_matches_sdk_exception_type():
     class CLINotFoundError(Exception):
         pass
     assert is_cli_binary_missing(CLINotFoundError("whatever text"))
+
+
+# The overflow family across providers; each of these shapes used to kill the run with either a raw error card or (worse) a fake "completed".
+P_OVERFLOW_SHAPES = (
+    "API Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 214384 tokens > 200000 maximum\"}}",
+    "Error code: 429 - extra usage is required for long context",
+    "This model's maximum context length is 128000 tokens. However, your messages resulted in 131074 tokens.",
+    "Error code: 400 - {'error': {'code': 'context_length_exceeded'}}",
+    "The input token count (1048577) exceeds the maximum number of tokens allowed (1048576).",
+    "Error code: 429 - Request too large for gpt-4o on tokens per min (TPM)",
+)
+
+
+def test_overflow_family_is_claimed_and_never_retried_verbatim():
+    for s in P_OVERFLOW_SHAPES:
+        e = Exception(s)
+        assert is_context_overflow_error(e), s
+        # Retrying the identical oversized request is guaranteed futile; the valve owns it.
+        assert not is_transient_capacity_error(e), s
+        assert capacity_retry_wait(e, 0) is None, s
+
+
+def test_overflow_does_not_claim_ordinary_errors():
+    for s in (P_FIELD_POOL_BUSY, P_FIELD_CLI_MISSING, "529 overloaded, try again shortly", "401 invalid x-api-key"):
+        assert not is_context_overflow_error(Exception(s)), s
 
 
 def test_first_real_exception_unwraps_nested_groups():

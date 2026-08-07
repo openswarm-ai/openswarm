@@ -113,7 +113,7 @@ def portable_skills() -> List[PortableSkill]:
     out: List[PortableSkill] = []
     budget = MAX_TOTAL_SKILL_CHARS
     for skill in sync_skills():
-        if skill.built_in or len(out) >= MAX_SKILLS:
+        if skill.built_in or not skill.enabled or len(out) >= MAX_SKILLS:
             continue
         # The id becomes a directory name in the container, so it has to survive being one.
         slug = safe_slug(skill.id)

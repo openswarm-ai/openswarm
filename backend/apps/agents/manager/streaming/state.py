@@ -56,3 +56,8 @@ class TurnState(BaseModel):
     baseline_captured: bool = False
     # CLI compact_boundary events seen this turn; one plus a ProcessError = the autocompact-thrash death the context-pressure valve retries.
     compact_boundaries: int = 0
+    # Mid-turn context breaker: fires once per turn, and only after a below-trigger reading (a turn that STARTS over the trigger must run, or a failed shrink would break-loop forever).
+    context_break_fired: bool = False
+    saw_input_below_trigger: bool = False
+    # The LAST inference step's request size (input + cache read + cache creation): the true live context. The ResultMessage's usage sums these across every step of the turn, which is billing, not context.
+    last_step_input: int = 0

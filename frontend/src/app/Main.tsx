@@ -23,7 +23,7 @@ import {
 } from '@/shared/state/updateSlice';
 import AppShell from './components/Layout/AppShell';
 import ImportEntryPoint from './components/share/ImportEntryPoint';
-import DashboardSelection from './pages/DashboardSelection/DashboardSelection';
+import DashboardAutoEnter from './pages/DashboardAutoEnter/DashboardAutoEnter';
 import ErrorBoundary from './components/feedback/ErrorBoundary';
 import { setPanelMode, disableOnboardingAfterCrash } from '@/shared/state/onboardingProgressSlice';
 
@@ -325,7 +325,8 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
   const modelsLoaded = useAppSelector((s) => s.models.loaded);
   // Until 9Router answers, /models omits subscription models, so the saved default can look "no longer available" when it's really just not loaded yet. Reconciling then would clobber a real sub user's default down to a fallback (and persist it). Only reconcile against the complete list.
   const nineRouterUp = useAppSelector((s) => s.subscriptions.status?.running === true);
-  const sessions = useAppSelector((s) => s.agents.sessions);
+  // A primitive fingerprint, not the sessions map: subscribing the app ROOT to whole sessions re-rendered it on every stream tick; this only changes when some session's MODEL changes.
+  const sessionModelsKey = useAppSelector((s) => Object.values(s.agents.sessions).map((x) => x.model || '').join('|'));
   const connectionMode = useAppSelector((s) => s.settings.data.connection_mode);
   const freeTrialRemaining = useAppSelector((s) => s.settings.data.free_trial_remaining);
 
@@ -366,7 +367,7 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
     if (!fallback) return;
     const target = valid.has(settings.default_model) ? settings.default_model : fallback.value;
     let switched = false;
-    for (const sess of Object.values(sessions)) {
+    for (const sess of Object.values(store.getState().agents.sessions)) {
       if (sess.model && !valid.has(sess.model)) {
         switched = true;
         dispatch(updateSessionModel({ sessionId: sess.id, model: target }));
@@ -376,7 +377,7 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
       const toLabel = flat.find((m) => m.value === target)?.label ?? target;
       setSessionSwitch({ toFreeTrial: connectionMode === 'free-trial', runs: freeTrialRemaining ?? null, toLabel });
     }
-  }, [settingsLoaded, modelsLoaded, nineRouterUp, connectionMode, freeTrialRemaining, byProvider, sessions, settings, dispatch]);
+  }, [settingsLoaded, modelsLoaded, nineRouterUp, connectionMode, freeTrialRemaining, byProvider, sessionModelsKey, settings, dispatch]);
 
   return (
     <>
@@ -530,7 +531,7 @@ const ThemedApp: React.FC = () => {
                   <Suspense fallback={null}>
                     <Routes>
                       <Route element={<AppShell />}>
-                        <Route path="/" element={<DashboardSelection />} />
+                        <Route path="/" element={<DashboardAutoEnter />} />
                         {/* Dashboard renders persistently in AppShell so webviews survive nav. */}
                         <Route path="/dashboard/:id" element={null} />
                         <Route path="/analytics" element={<Analytics />} />

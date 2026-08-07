@@ -1,10 +1,11 @@
 import React from 'react';
+import type { ToolSelectAttrs } from './ToolCallBubble';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import { COLLAPSE_MS, COLLAPSE_EASE, chevronSx, shimmerTextSx, keepRowAnchored } from './toolRowMotion';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import BlockIcon from '@mui/icons-material/Block';
 import SearchIcon from '@mui/icons-material/Search';
@@ -19,7 +20,8 @@ import { ParsedResult } from '../parsing/toolResultParsing';
 import { isSettingsWriteTool, settingsWriteSummary } from '../parsing/settingsToolMeta';
 import { McpToolInfo, getMcpShortAction, getMcpInputSummary, getWorkflowToolLabel } from '@/shared/mcpToolMeta';
 import { McpResultCard } from '../mcp-cards/McpResultCard';
-import { domainFromUrl, faviconUrlForDomain } from './SourceFavicons';
+import { domainFromUrl } from './SourceFavicons';
+import { DomainIcon } from './DomainIcon';
 
 interface CompactMcpBubbleProps {
   call: AgentMessage;
@@ -39,7 +41,7 @@ interface CompactMcpBubbleProps {
   toggle: () => void;
   parsedResult: ParsedResult | null;
   isBrowserAgent: boolean;
-  selectAttrs: Record<string, string>;
+  selectAttrs: ToolSelectAttrs;
 }
 
 export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
@@ -78,7 +80,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
   return (
     <Box {...selectAttrs} sx={{ my: 0 }}>
       <Box
-        onClick={canToggleDetails ? toggle : undefined}
+        onClick={canToggleDetails ? (e: React.MouseEvent) => { keepRowAnchored(e.currentTarget as HTMLElement); toggle(); } : undefined}
         sx={{
           cursor: canToggleDetails ? 'pointer' : 'default',
           borderBottom: showBody && canToggleDetails ? `1px solid ${c.border.subtle}` : 'none',
@@ -95,10 +97,12 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           {!hideVerbLabel && !isWebRow && (
             <Typography
               sx={{
-                color: c.accent.primary,
+                color: isPending ? c.accent.primary : c.text.secondary,
                 fontSize: '0.75rem',
-                fontWeight: 600,
+                fontWeight: isPending ? 600 : 500,
                 flexShrink: 0,
+                transition: 'color 0.25s ease',
+                ...(isPending ? shimmerTextSx(c.accent.primary) : {}),
               }}
             >
               {serviceLabel}
@@ -106,16 +110,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           )}
           {visibleSummary && !isError && !stackBelow && (
             <>
-              {webDomain && (
-                <Box
-                  component="img"
-                  src={faviconUrlForDomain(webDomain)}
-                  alt=""
-                  loading="lazy"
-                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = 'none'; }}
-                  sx={{ width: 13, height: 13, borderRadius: '3px', flexShrink: 0 }}
-                />
-              )}
+              {webDomain && <DomainIcon domain={webDomain} size={13} />}
               <Typography
                 sx={{
                   color: hideVerbLabel ? c.text.primary : c.text.secondary,
@@ -162,7 +157,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
           )}
           {canToggleDetails && (
             <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.15, flexShrink: 0, opacity: 0, transition: 'opacity 120ms', '.osw-mcp-row:hover &': { opacity: 1 }, ...(showBody ? { opacity: 1 } : {}) }}>
-              {showBody ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
+              <ExpandMoreIcon sx={{ fontSize: 16, ...chevronSx(showBody) }} />
             </IconButton>
           )}
         </Box>
@@ -184,11 +179,12 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
         )}
       </Box>
 
-      <Collapse in={showBody && canToggleDetails}>
+      <Collapse in={showBody && canToggleDetails} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE}>
         <Box
           sx={{
             bgcolor: tc.TERM_BG,
-            maxHeight: '60vh',
+            borderRadius: 1.5,
+            maxHeight: 'min(40vh, 320px)',
             overflowY: 'auto',
             overflowX: 'hidden',
             '&::-webkit-scrollbar': { width: 5 },

@@ -13,10 +13,11 @@ import { searchHistory, resumeSession, HistorySession } from '@/shared/state/age
 import { displaySessionName } from '@/shared/state/sessionDisplay';
 import { setPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { createDashboard } from '@/shared/state/dashboardsSlice';
-import { openSettingsModal } from '@/shared/state/settingsSlice';
+import { openSettingsCard } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
 import TopLayerPortal from '@/shared/TopLayerPortal';
+import { openMarketplace } from '@/app/pages/Directory/openMarketplace';
 
 interface Props {
   open: boolean;
@@ -48,6 +49,8 @@ interface ActionResult {
 type Result = DashboardResult | SessionResult | ActionResult;
 
 // Spotlight-style commands; matched against name + keywords once the user types.
+const EMPTY_SESSIONS: Record<string, never> = {};
+
 const ACTIONS: ActionResult[] = [
   { kind: 'action', id: 'new-dashboard', name: 'New dashboard', keywords: 'create board canvas workspace' },
   { kind: 'action', id: 'settings', name: 'Open Settings', keywords: 'preferences general theme options' },
@@ -67,7 +70,8 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dashboards = useAppSelector((s) => s.dashboards.items);
-  const sessions = useAppSelector((s) => s.agents.sessions);
+  // Closed palette = constant selector result: an always-mounted overlay must not re-render on every stream tick of every session.
+  const sessions = useAppSelector((s) => (open ? s.agents.sessions : EMPTY_SESSIONS));
   const history = useAppSelector((s) => s.agents.history);
   const searchResults = useAppSelector((s) => s.agents.historySearch.results);
   const searchLoading = useAppSelector((s) => s.agents.historySearch.loading);
@@ -147,11 +151,11 @@ const GlobalSearchPalette: React.FC<Props> = ({ open, onClose }) => {
           if (createDashboard.fulfilled.match(res)) navigate(`/dashboard/${res.payload.id}`);
         });
         break;
-      case 'settings': dispatch(openSettingsModal()); break;
-      case 'settings-models': dispatch(openSettingsModal('models')); break;
+      case 'settings': dispatch(openSettingsCard()); break;
+      case 'settings-models': dispatch(openSettingsCard({ tab: 'models' })); break;
       // Skills/Actions live in Settings now (the sidebar Customization section moved there).
-      case 'go-skills': dispatch(openSettingsModal('skills')); break;
-      case 'go-actions': dispatch(openSettingsModal('tools')); break;
+      case 'go-skills': openMarketplace('my-skills'); break;
+      case 'go-actions': openMarketplace('my-connectors'); break;
       case 'all-dashboards': navigate('/'); break;
     }
   }, [dispatch, navigate]);

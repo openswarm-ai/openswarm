@@ -1,9 +1,12 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useAppSelector } from '@/shared/hooks';
 import { useTiledCard } from './useTiledCard';
 import { useCardTiling } from './useCardTiling';
 import { useCanvasWindowResize } from './useCanvasWindowResize';
 import { useDragEndBackstops } from '../hooks/interaction/useDragEndBackstops';
+import { openCardContextMenu, isNativeMenuTarget, type CardMenuRow } from '../desktop/openCardContextMenu';
+import { tileMenuRows } from './tileMenuRows';
 import type { CardType } from '@/shared/state/dashboardLayoutSlice';
 
 const DRAG_THRESHOLD = 3;
@@ -40,14 +43,17 @@ interface CanvasWindowCardProps {
   background: string; highlightColor: string;
   getCanvasState: () => { panX: number; panY: number; zoom: number };
   isSelected?: boolean; isHighlighted?: boolean;
-  multiDragDelta?: { dx: number; dy: number } | null;
-  onCardSelect?: (id: string, type: CardType, shiftKey: boolean) => void;
+  multiDragActive?: boolean;
+  onCardSelect?: (id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart?: (id: string, type: CardType) => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
   onDragEnd?: (dx: number, dy: number, didDrag: boolean) => void;
   onBringToFront?: (id: string, type: CardType) => void;
   onCommitPosition: (x: number, y: number) => void;
   onCommitSize: (width: number, height: number) => void;
+  /** ENG-148: right-click rows the window offers when the host wires them; the menu itself is standard chrome. */
+  onMinimize?: () => void;
+  onClose?: () => void;
   children: (chrome: CanvasWindowChrome) => React.ReactNode;
 }
 
@@ -59,12 +65,14 @@ const CanvasWindowCard: React.FC<CanvasWindowCardProps> = ({
   cardX, cardY, cardWidth, cardHeight, cardZOrder = 0,
   minimized = false, minWidth, minHeight, background, highlightColor,
   getCanvasState,
-  isSelected = false, isHighlighted = false, multiDragDelta = null,
+  isSelected = false, isHighlighted = false, multiDragActive = false,
   onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
   onCommitPosition, onCommitSize,
+  onMinimize, onClose,
   children,
 }) => {
   const c = useClaudeTokens();
+  const zOverride = useAppSelector((state) => state.dashboardLayout.zOrders[cardId]);
   const tiling = useCardTiling({ cardId, getCanvasState, commitPosition: onCommitPosition });
 
   // ---- Drag (title bar is the handle) ----
@@ -152,16 +160,14 @@ const CanvasWindowCard: React.FC<CanvasWindowCardProps> = ({
     getCanvasState, onCommitPosition, onCommitSize, untileForResize: tiling.untileForResize,
   });
 
-  const mdDx = (!isDragging && !isResizing && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
-  const mdDy = (!isDragging && !isResizing && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
-  const dx = (localResize?.x ?? localDragPos?.x ?? cardX) + mdDx;
-  const dy = (localResize?.y ?? localDragPos?.y ?? cardY) + mdDy;
+  const dx = localResize?.x ?? localDragPos?.x ?? cardX;
+  const dy = localResize?.y ?? localDragPos?.y ?? cardY;
   const dw = localResize?.w ?? cardWidth;
   const dh = localResize?.h ?? cardHeight;
   const tiledSize = useTiledCard({ cardId, zone: tiling.zone, active: !minimized, originX: dx, originY: dy, getCamera: getCanvasState });
 
   const border = isHighlighted ? `2px solid ${highlightColor}` : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.subtle}`;
-  const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
+  const noTransition = isDragging || isResizing || (isSelected && multiDragActive);
 
   return (
     <div
@@ -177,7 +183,23 @@ const CanvasWindowCard: React.FC<CanvasWindowCardProps> = ({
         if (justDraggedRef.current) return;
         const target = e.target as HTMLElement;
         if (target.closest('[data-no-drag]')) return;
-        onCardSelect?.(cardId, cardType, e.shiftKey);
+        onCardSelect?.(cardId, cardType, e.shiftKey, e.target);
+      }}
+      onContextMenu={(e: React.MouseEvent) => {
+        // Same grammar as every other card; typing surfaces keep the OS menu, content with its own menu stopPropagates before this.
+        if (isNativeMenuTarget(e)) return;
+        const items: CardMenuRow[] = [
+          { kind: 'header', label: selectName },
+          { label: tiling.isFullscreen ? 'Exit Full Screen' : 'Full Screen', onClick: () => tiling.applyZone(tiling.isFullscreen ? 'restore' : 'fullscreen') },
+          { label: 'Tile to zone', submenu: tileMenuRows(tiling.applyZone, tiling.zone) },
+        ];
+        if (onMinimize) items.push({ label: minimized ? 'Restore' : 'Minimize', onClick: onMinimize });
+        if (onBringToFront) items.push({ label: 'Bring to front', onClick: () => onBringToFront(cardId, cardType) });
+        if (onClose) {
+          items.push({ kind: 'separator' });
+          items.push({ label: 'Close', onClick: onClose });
+        }
+        openCardContextMenu(e, { items });
       }}
       data-keepalive-hidden={minimized ? '1' : undefined}
       style={{
@@ -199,7 +221,7 @@ const CanvasWindowCard: React.FC<CanvasWindowCardProps> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: tiledSize ? 999990 : (isDragging || isResizing) ? 999999 : cardZOrder,
+        zIndex: tiledSize ? 999990 : (isDragging || isResizing) ? 999999 : (zOverride ?? cardZOrder),
         transition: noTransition ? 'none' : 'box-shadow 0.3s ease, border-color 0.2s ease',
       }}
     >

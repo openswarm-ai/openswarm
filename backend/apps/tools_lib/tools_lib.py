@@ -362,6 +362,10 @@ async def delete_tool(tool_id: str):
 async def discover_tools(tool_id: str):
     tool = load(tool_id)
 
+    # A credential-driven server with no credentials dies at boot with a crash dump; refuse to spawn and say the useful thing instead.
+    if tool.auth_type == "env_vars" and not tool.credentials:
+        raise HTTPException(status_code=409, detail=f"{tool.name} isn't connected yet. Connect it first, then discover its tools.")
+
     if tool.auth_type == "oauth2" and tool.auth_status == "connected":
         if tool.oauth_tokens.get("refresh_token"):
             if tool.name.lower() == "airtable":

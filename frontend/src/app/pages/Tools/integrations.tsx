@@ -185,7 +185,7 @@ export const INTEGRATIONS: Integration[] = [
     id: 'slack',
     name: 'Slack',
     description: 'Search messages, send messages, read channels, DMs, and threads in Slack workspaces.',
-    mcp_config: { type: 'stdio', command: 'npx', args: ['-y', 'slack-mcp-server@latest', '--transport', 'stdio'], env: { SLACK_MCP_ADD_MESSAGE_TOOL: 'true' } },
+    mcp_config: { type: 'stdio', command: 'npx', args: ['-y', 'slack-mcp-server@1.3.0', '--transport', 'stdio'], env: { SLACK_MCP_ADD_MESSAGE_TOOL: 'true' } },
     color: '#4A154B',
     website: 'https://github.com/korotovsky/slack-mcp-server',
     icon: (

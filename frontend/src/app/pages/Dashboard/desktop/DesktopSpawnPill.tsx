@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { comboDisplay, dictationDefaultCombo } from '@/app/pages/Settings/sections/general/ShortcutRecorderChip';
+import { comboDisplay, dictationDefaultCombo } from '@/app/pages/Settings/sections/general/parts/ShortcutRecorderChip';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';

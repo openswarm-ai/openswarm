@@ -17,7 +17,7 @@ interface Props {
   onFitToView: () => void;
   onTidy: () => void;
   onDeleteSelected: () => void;
-  hasSelection: boolean;
+  deleteMode: 'selection' | 'newest' | 'none';
   minimapProps: Omit<MinimapProps, 'onPan'>;
   onMinimapPan: (panX: number, panY: number) => void;
 }
@@ -53,7 +53,7 @@ const circleSx = {
   '&:hover': { color: '#fff' },
 };
 
-const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, onDeleteSelected, hasSelection, minimapProps, onMinimapPan }) => {
+const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, onDeleteSelected, deleteMode, minimapProps, onMinimapPan }) => {
   const pct = Math.round(zoom * 100);
   const [minimapOpen, setMinimapOpen] = useState<boolean>(() => readMinimapPref());
   const setAndPersistMinimap = (next: boolean) => {
@@ -103,12 +103,12 @@ const CanvasControls: React.FC<Props> = ({ zoom, actions, onFitToView, onTidy, o
           </Box>
         </Tooltip>
 
-        <Tooltip title={hasSelection ? 'Close selected' : 'Select a card to close it'} placement="top">
+        <Tooltip title={deleteMode === 'selection' ? 'Close selected' : deleteMode === 'newest' ? 'Close newest card' : 'Select a card to close it'} placement="top">
           <Box
             role="button"
-            aria-label="Close selected"
-            onClick={() => { if (hasSelection) onDeleteSelected(); }}
-            sx={{ ...circleSx, ...(!hasSelection && { color: 'rgba(255,255,255,0.35)', cursor: 'default', '&:hover': { color: 'rgba(255,255,255,0.35)' } }) }}
+            aria-label="Close card"
+            onClick={() => { if (deleteMode !== 'none') onDeleteSelected(); }}
+            sx={{ ...circleSx, ...(deleteMode === 'none' && { color: 'rgba(255,255,255,0.35)', cursor: 'default', '&:hover': { color: 'rgba(255,255,255,0.35)' } }) }}
           >
             <DeleteOutlineIcon sx={{ fontSize: 15 }} />
           </Box>

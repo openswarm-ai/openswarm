@@ -4,7 +4,7 @@ import { getWebview } from '@/shared/browserRegistry';
 // Dictation lands where the user's cursor actually is, like every real dictation tool: a focused
 // in-app field gets the text typed in (undo-friendly, fires React input events), a focused browser
 // card forwards into the guest page's field, anything else falls back to the OS-level paste.
-export type InjectTarget = 'field' | 'webview' | null;
+export type InjectTarget = 'field' | 'webview' | 'composer' | null;
 
 export function injectAtFocus(text: string): InjectTarget {
   const active = document.activeElement as HTMLElement | null;
@@ -40,5 +40,7 @@ export function injectAtFocus(text: string): InjectTarget {
       try { wv.focus?.(); void wv.insertText(text); return 'webview'; } catch { /* fall through */ }
     }
   }
-  return null;
+  // No cursor anywhere: open the dashboard composer with the transcript typed in. Words are never dropped.
+  window.dispatchEvent(new CustomEvent('openswarm:dictation-fallback', { detail: { text } }));
+  return 'composer';
 }

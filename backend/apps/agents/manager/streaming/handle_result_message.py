@@ -15,10 +15,13 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 
-try:
+# Annotation-only here (no isinstance dispatch), so the runtime symbol can stay `object` and the SDK chain stays off the boot import graph.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     from claude_agent_sdk import ResultMessage
-except ImportError:  # the SDK is optional at runtime (mock mode); keep this module importable
-    ResultMessage = object  # type: ignore
+else:
+    ResultMessage = object
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +143,9 @@ async def handle_result_message(
         cache_create = usage.get("cache_creation_input_tokens", 0) or 0
         cache_read = usage.get("cache_read_input_tokens", 0) or 0
         total_input = inp + cache_create + cache_read
-        session.tokens["input"] = total_input
+        # The result's input usage is summed across every inference step of the turn, which is BILLING; live context is the last step's request size. On a 9-step audit turn the sum read 589K while the real context was 70K, and the meter (plus the compaction trigger) believed it.
+        p_ctx_input = turn.last_step_input if turn.last_step_input > 0 else total_input
+        session.tokens["input"] = p_ctx_input
         session.tokens["input_fresh"] = inp
         session.tokens["output"] = out
 
@@ -202,12 +207,12 @@ async def handle_result_message(
     if isinstance(usage, dict):
         # Per-turn context-usage broadcast. Drives the UI status pill and the auto-compact threshold. The denominator is the session's real model cap, populated from registry.get_context_window at session creation, restore, and model-switch (see apply_context_window). max(1, ...) is a belt-and-braces guard against zero/None drift from any future restore-from-disk corner case.
         ctx_window = max(1, getattr(session, "context_window", 0) or 200_000)
-        ctx_used_pct = round(total_input / ctx_window, 4) if total_input else 0.0
+        ctx_used_pct = round(p_ctx_input / ctx_window, 4) if p_ctx_input else 0.0
         cache_read_pct = round(cache_read / total_input, 4) if total_input else 0.0
         try:
             await ws_manager.send_to_session(session_id, "agent:context_update", {
                 "session_id": session_id,
-                "input_tokens": total_input,
+                "input_tokens": p_ctx_input,
                 "output_tokens": out,
                 "cache_read_tokens": cache_read,
                 "cache_read_pct": cache_read_pct,

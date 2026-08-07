@@ -46,7 +46,7 @@ def p_recent_topics(limit: int = MAX_TOPICS) -> List[str]:
     return topics
 
 
-def p_parse_lines(raw: str, count: int) -> List[str]:
+def parse_suggestion_lines(raw: str, count: int) -> List[str]:
     """One suggestion per line; strip bullets/numbering/quotes, drop empties, cap at count."""
     out: List[str] = []
     for line in raw.splitlines():
@@ -115,7 +115,7 @@ async def predict_prompts(count: int = MAX_SUGGESTIONS) -> List[str]:
         ) as stream:
             async for text in stream.text_stream:
                 chunks.append(text)
-        return p_parse_lines("".join(chunks), count)
+        return parse_suggestion_lines("".join(chunks), count)
     except Exception as e:
         logger.info(f"[predict-prompts] fail-open ([]): {e}")
         return []

@@ -208,3 +208,68 @@ def test_dev_token_is_dev_only():
         assert noauth.get("/api/dev/token").status_code == 404
     finally:
         os.environ.pop("OPENSWARM_PACKAGED", None)
+
+
+# --------------------------------------------------------------------------- /api/auth/email-prefs ---------------------------------------------------------------------------
+
+def p_set_bearer(value):
+    from backend.apps.settings.settings import load_settings, save_settings
+    s = load_settings()
+    s.openswarm_bearer_token = value
+    save_settings(s)
+
+
+def test_email_prefs_signed_out_reads_unavailable(client, reset_settings):
+    p_set_bearer(None)
+    r = client.get("/api/auth/email-prefs")
+    assert r.status_code == 200
+    assert r.json() == {"available": False, "run_emails": None}
+
+
+def test_email_prefs_passthrough_when_cloud_answers(client, reset_settings):
+    p_set_bearer("bearer-abc")
+    fake_response = AsyncMock()
+    fake_response.status_code = 200
+    fake_response.json = lambda: {"run_emails": True}
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=fake_response)
+        r = client.get("/api/auth/email-prefs")
+    assert r.json() == {"available": True, "run_emails": True}
+    sent_headers = instance.get.call_args.kwargs["headers"]
+    assert sent_headers["Authorization"] == "Bearer bearer-abc"
+
+
+def test_email_prefs_old_prod_404_degrades_to_unavailable(client, reset_settings):
+    p_set_bearer("bearer-abc")
+    fake_response = AsyncMock()
+    fake_response.status_code = 404
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=fake_response)
+        r = client.get("/api/auth/email-prefs")
+    assert r.json() == {"available": False, "run_emails": None}
+
+
+def test_email_prefs_network_failure_never_500s(client, reset_settings):
+    import httpx as p_httpx
+    p_set_bearer("bearer-abc")
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(side_effect=p_httpx.ConnectError("down"))
+        r = client.get("/api/auth/email-prefs")
+    assert r.status_code == 200
+    assert r.json() == {"available": False, "run_emails": None}
+
+
+def test_email_prefs_put_flips_through_the_cloud(client, reset_settings):
+    p_set_bearer("bearer-abc")
+    fake_response = AsyncMock()
+    fake_response.status_code = 200
+    fake_response.json = lambda: {"run_emails": False}
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.put = AsyncMock(return_value=fake_response)
+        r = client.put("/api/auth/email-prefs", json={"run_emails": False})
+    assert r.json() == {"available": True, "run_emails": False}
+    assert instance.put.call_args.kwargs["json"] == {"run_emails": False}

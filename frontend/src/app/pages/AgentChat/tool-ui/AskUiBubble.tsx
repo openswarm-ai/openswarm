@@ -60,8 +60,9 @@ function AskUiBubble({ pair, sessionId, isPending, suppressReveal }: AskUiBubble
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ session_id: sessionId, component_id: componentId, response }),
       })
-        .then((r) => {
-          if (!r.ok) {
+        .then(async (r) => {
+          const body = r.ok ? await r.json().catch(() => null) : null;
+          if (!r.ok || (body && body.gone)) {
             // Nothing parked server-side (agent gone or this is a replayed transcript): say so instead of silently swallowing the click.
             setSubmitted(false);
             setLocalChoice(undefined);

@@ -54,6 +54,10 @@ const AgentWorkflowsSection: React.FC = () => {
                 size="small"
                 checked={!!w.exposed_as_tool}
                 onChange={(e) => dispatch(updateWorkflow({ id: w.id, patch: { exposed_as_tool: e.target.checked } }))}
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+                }}
               />
             </Box>
           ))}

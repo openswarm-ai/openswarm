@@ -77,3 +77,50 @@ def test_an_auth_failure_stays_non_transient_even_when_it_is_a_transport_type():
 def test_a_transport_error_that_says_nothing_at_all_still_retries():
     # An exception stringifying to "" used to bail out before it was ever classified.
     assert capacity_retry_wait(httpx.ConnectError(""), 0) == 5
+
+
+# --- the router-respawn family: turn-RESULT errors, which bypass capacity_retry_wait entirely ---
+# The CLI reports "API Error: Unable to connect" as an error-shaped ResultMessage when our
+# localhost 9Router is mid-respawn (a dev reload kills it, the watchdog revives it in seconds).
+# TurnRunner consults is_router_unreachable_error on the TurnResultError text and resumes the turn
+# instead of surfacing a terminal card; these pin exactly which texts qualify.
+
+from backend.apps.agents.core.error_classify import is_router_unreachable_error
+
+
+def test_the_cli_unable_to_connect_text_is_router_unreachable():
+    live = ("The agent runtime reported this turn failed (error_during_execution). "
+            "API Error: Unable to connect. Is the computer able to access the url?")
+    assert is_router_unreachable_error(live)
+
+
+def test_connection_refused_variants_are_router_unreachable():
+    for text in ("ECONNREFUSED 127.0.0.1:20128", "connect: Connection refused", "fetch failed", "Connection error."):
+        assert is_router_unreachable_error(text), text
+
+
+def test_ordinary_turn_failures_are_not_router_unreachable():
+    for text in (
+        "The model hit its maximum output length before finishing (max_tokens).",
+        "The model refused to continue this turn (refusal).",
+        "invalid_request_error: tool schema rejected",
+        "denied tools: Bash",
+        "",
+    ):
+        assert not is_router_unreachable_error(text), text
+
+
+# --- self-healing 401s: mid-refresh tokens must retry, never flash the reconnect card ------------
+from backend.apps.agents.core.error_classify import is_auth_error
+
+
+def test_reset_window_401_is_transient_not_auth():
+    # Verbatim live codex body (2026-08-06): healed itself two minutes later, chats were fine.
+    body = '[codex/gpt-5.2] [401]: Provided authentication token is expired. Please try signing in again. (reset after 1m 57s)'
+    assert not is_auth_error(Exception(body)), "a self-healing 401 must not show the reconnect card"
+    assert capacity_retry_wait(Exception(body), 0) == 5, "and the turn silently retries through the window"
+
+
+def test_genuine_auth_death_still_cards():
+    assert is_auth_error(Exception("401 unauthorized: invalid authentication credentials"))
+    assert capacity_retry_wait(Exception("401 unauthorized: invalid api key"), 0) is None

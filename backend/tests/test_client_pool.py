@@ -244,3 +244,61 @@ def test_seeded_simulation_invariants():
             assert not pool["sim"].client.disconnected
 
     asyncio.run(run())
+
+
+def test_concurrent_acquires_share_one_spawn() -> None:
+    """A pre-warm and a racing first turn must never double-spawn: the second spawn used to leak the first CLI."""
+    import asyncio
+
+    from backend.apps.agents.manager.run.client_pool import acquire_client
+
+    async def run() -> None:
+        pool: dict = {}
+        spawns = 0
+
+        class FakeClient:
+            async def disconnect(self) -> None:
+                return None
+
+        async def connect_fn():
+            nonlocal spawns
+            spawns += 1
+            await asyncio.sleep(0.05)
+            return FakeClient()
+
+        a, b = await asyncio.gather(
+            acquire_client(pool, "sess-race", "fp1", connect_fn),
+            acquire_client(pool, "sess-race", "fp1", connect_fn),
+        )
+        assert spawns == 1, f"double spawn: {spawns}"
+        assert a is b
+        assert pool["sess-race"].client is a.client
+
+    asyncio.run(run())
+
+
+def test_cancelled_waiter_does_not_kill_the_shared_spawn() -> None:
+    import asyncio
+
+    from backend.apps.agents.manager.run.client_pool import acquire_client
+
+    async def run() -> None:
+        pool: dict = {}
+
+        class FakeClient:
+            async def disconnect(self) -> None:
+                return None
+
+        async def connect_fn():
+            await asyncio.sleep(0.08)
+            return FakeClient()
+
+        first = asyncio.ensure_future(acquire_client(pool, "sess-cancel", "fp1", connect_fn))
+        await asyncio.sleep(0.01)
+        second = asyncio.ensure_future(acquire_client(pool, "sess-cancel", "fp1", connect_fn))
+        await asyncio.sleep(0.01)
+        second.cancel()
+        handle = await first
+        assert pool["sess-cancel"].client is handle.client
+
+    asyncio.run(run())

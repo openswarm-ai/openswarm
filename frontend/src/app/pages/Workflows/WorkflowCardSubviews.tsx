@@ -30,6 +30,7 @@ import { isScheduleConfigured, needsScheduleTestWarning, stepsSignature } from '
 import ScheduleTestWarningDialog from './ScheduleTestWarningDialog';
 import { runWorkflowTest } from './runWorkflowTest';
 import { useOpenSidecar } from './WorkflowCardLiveViews';
+import { openCardContextMenu } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
 
 export function statusColor(s: string, c: ReturnType<typeof useClaudeTokens>): string {
   if (s === 'success') return c.status.success;
@@ -704,6 +705,13 @@ export function HistoryList({ runs, onOpen, showWorkflow = false, workflowTitleF
               <Box key={r.id}>
                 <Box
                   onClick={() => setExpandedId(expanded ? null : r.id)}
+                  onContextMenu={(e) => openCardContextMenu(e, {
+                    items: [
+                      { label: 'Open run', onClick: () => onOpen(r) },
+                      { label: expanded ? 'Collapse' : 'Expand', onClick: () => setExpandedId(expanded ? null : r.id) },
+                      ...(r.error ? [{ label: 'Copy error', onClick: () => { navigator.clipboard.writeText(r.error || ''); } }] : []),
+                    ],
+                  })}
                   sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.6, px: 0.5, cursor: 'pointer', borderRadius: c.radius.sm, '&:hover': { bgcolor: c.bg.elevated } }}>
                   <Box sx={{ fontSize: '0.75rem', fontWeight: 700, color: statusColor(r.status, c), bgcolor: statusBg(r.status, c), px: 0.8, py: 0.3, borderRadius: c.radius.sm, minWidth: 64, textAlign: 'center' }}>
                     {labelForStatus(r.status)}

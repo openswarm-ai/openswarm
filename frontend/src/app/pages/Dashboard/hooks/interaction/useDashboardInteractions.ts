@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, type Dispatch, type SetStateActi
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
+import { isAgentDrivenBrowser } from '@/shared/isAgentDrivenBrowser';
 import { expandSession } from '@/shared/state/agentsSlice';
 import { bringToFront } from '@/shared/state/dashboardLayoutSlice';
 import { setScrollFocusedCard } from '@/shared/cardScrollFocus';
@@ -23,6 +24,11 @@ function isCardTarget(target: EventTarget | null, boundary: EventTarget | null):
 }
 
 const CONTROL_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'WEBVIEW']);
+
+function cardIsDocked(id: string): boolean {
+  const dl = store.getState().dashboardLayout;
+  return !!(dl.browserCards[id]?.docked_to || dl.viewCards[id]?.docked_to);
+}
 
 // True when the press landed on a real control (text field, button, browser URL bar/tabs, note textarea, webview) rather than the card's frame. Walk up ONLY to the card root so a button living above the card never counts.
 function pressLandedOnControl(target: EventTarget | null | undefined): boolean {
@@ -78,7 +84,9 @@ export function useDashboardInteractions({
     }
 
     selection.selectCard(id, type, false);
-    dispatch(bringToFront({ id, type }));
+    // Selection paints THIS frame (instant feedback); the z-restack invalidates the whole cards
+    // dict and reconciles every card, so it runs after the interaction's paint (INP critical path).
+    afterPaint(() => dispatch(bringToFront({ id, type })));
 
     // Clicking a control INSIDE a card (text field, button, browser URL bar/tabs, note textarea) selects + raises it but must NOT re-center the camera onto it: yanking focus to a card just to click into its input is hostile (same reasoning as the guest-page and Workflows carve-outs). Card frame/body clicks still auto-focus.
     if (pressLandedOnControl(originTarget)) return;
@@ -89,6 +97,9 @@ export function useDashboardInteractions({
     // A tiled (fullscreen/snapped) card is pinned Arc-style: clicking inside it must not collapse
     // it or glide the camera; it leaves the mode via its own controls (yellow, Esc, dock swap).
     if (store.getState().dashboardLayout.tiledCards[id]) return;
+
+    // A docked mini lives INSIDE a chat; getCardRect knows only its undocked home, so a fit here flies the camera to an empty patch of canvas.
+    if (cardIsDocked(id)) return;
 
     // Single-click on an already-expanded chat is focus, never collapse: the old delayed-collapse
     // toggle made a click land, collapse the chat, and force a second click to reopen ("takes
@@ -124,7 +135,9 @@ export function useDashboardInteractions({
   }, [selection, getCardRect, canvas.actions, dispatch, expandedSessionIds]);
 
   const handleBringToFront = useCallback((id: string, type: CardType) => {
-    dispatch(bringToFront({ id, type }));
+    // Deferred past the pointerdown's paint: this fires on EVERY card press and the z-restack was
+    // the measured 101ms block inside the 272ms INP; one frame of stacking lag is imperceptible.
+    afterPaint(() => dispatch(bringToFront({ id, type })));
     // Pressing ANY part of a card (header, body, composer) focuses it for scrolling, so its content scrolls instead of the canvas zooming (Google Maps model). Fires via onPointerDownCapture on every card, so a click into a chat's composer focuses it even though the body swallows the bubble. Cleared on blank-canvas press.
     setScrollFocusedCard(id);
   }, [dispatch]);
@@ -137,13 +150,7 @@ export function useDashboardInteractions({
       // Mid-drag/marquee a selection change joins the card to the multi-drag (the browser visibly chased the cursor); the shield class is up for exactly that window.
       if (document.body.classList.contains('dashboard-marquee-active')) return;
       // The guest preload fires app-clicked for the AGENT's clicks too; a working agent driving its own page must not steal selection (it also re-anchored spawn-beside onto its browser).
-      const st = store.getState();
-      const working = (s?: { status?: string }) => !!s && (s.status === 'running' || s.status === 'waiting_approval');
-      const glow = st.dashboardLayout.glowingBrowserCards[browserId];
-      const agentDriven =
-        Object.values(st.agents.sessions).some((s) => s.browser_id === browserId && working(s)) ||
-        (!!glow && !glow.fading && working(st.agents.sessions[glow.sourceId]));
-      if (agentDriven) return;
+      if (isAgentDrivenBrowser(browserId)) return;
       selection.selectCard(browserId, 'browser', false);
       dispatch(bringToFront({ id: browserId, type: 'browser' }));
       // In-guest clicks never reach the host capture handler, so mark the browser focused here, mainly to UN-focus any chat so scroll over other cards behaves right (the browser's own page scroll/zoom is native regardless).
@@ -219,16 +226,9 @@ export function useDashboardInteractions({
     if (e.button !== 0) return;
     if (isCardTarget(e.target, e.currentTarget)) return;
     report('dashboard', 'canvas_double_clicked');
-    const vp = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const cx = e.clientX - vp.left;
-    const cy = e.clientY - vp.top;
-    const cur = canvas.actions.getLiveState();
-    const nextZoom = Math.max(0.15, cur.zoom * 0.55);
-    canvas.actions.animateTo({
-      zoom: nextZoom,
-      panX: cx - ((cx - cur.panX) / cur.zoom) * nextZoom,
-      panY: cy - ((cy - cur.panY) / cur.zoom) * nextZoom,
-    });
+    // Double-tap on empty space = show me everything (Eric's call): the same animated fit the
+    // overview affordances use, instead of the old blind 0.55x zoom-out that just lost people.
+    canvas.actions.fitToView();
   }, [canvas.actions]);
 
   // Double-click a card → always expand + center + zoom (cancels pending collapse from single-click)
@@ -244,6 +244,7 @@ export function useDashboardInteractions({
     dispatch(bringToFront({ id, type }));
     setFocusedCardId(id);
     if (store.getState().dashboardLayout.tiledCards[id]) return;
+    if (cardIsDocked(id)) return;
     setTimeout(() => {
       const rect = getCardRect(id, type);
       if (rect) canvas.actions.fitToCards([rect], 1.15, true);

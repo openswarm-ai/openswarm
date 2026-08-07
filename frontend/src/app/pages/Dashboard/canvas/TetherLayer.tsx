@@ -70,17 +70,16 @@ const TetherLayer: React.FC<TetherLayerProps> = ({ tethers, c }) => {
             markerEnd="url(#tether-arrow)"
           />
           {t.label && (
+            // Same glass capsule language as the narrator pills; the old white accent-bordered box read as a stray form element.
             <g transform={`translate(${t.labelX},${t.labelY})`}>
               <rect
-                x={-4}
-                y={-14}
-                width={t.label.length * 7.5 + 8}
-                height={20}
-                rx={4}
-                fill={c.bg.surface}
-                stroke={c.accent.primary}
-                strokeWidth={1}
-                opacity={0.95}
+                x={-6}
+                y={-15}
+                width={t.label.length * 7.5 + 12}
+                height={22}
+                rx={11}
+                fill="rgba(24,14,32,0.85)"
+                opacity={0.98}
               />
               <text
                 x={t.label.length * 7.5 / 2}
@@ -89,7 +88,7 @@ const TetherLayer: React.FC<TetherLayerProps> = ({ tethers, c }) => {
                 fontSize={11}
                 fontWeight={600}
                 fontFamily="inherit"
-                fill={c.accent.primary}
+                fill="rgba(255,255,255,0.92)"
               >
                 {t.label}
               </text>

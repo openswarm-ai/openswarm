@@ -24,7 +24,7 @@ interface CardRect {
   y: number;
   width: number;
   height: number;
-  type: 'agent' | 'view' | 'browser' | 'workflow' | 'workflows-hub';
+  type: 'agent' | 'view' | 'browser' | 'docked-browser' | 'workflow' | 'workflows-hub';
 }
 
 const Minimap: React.FC<MinimapProps> = ({
@@ -45,6 +45,18 @@ const Minimap: React.FC<MinimapProps> = ({
       result.push({ x: vc.x, y: vc.y, width: vc.width, height: vc.height, type: 'view' });
     }
     for (const bc of Object.values(browserCards)) {
+      // A docked browser's stored x/y is its stale undocked home; drawing that painted a phantom card. It lives inside its chat, so it renders as a strip INSIDE the chat's rect, and pops back out as its own rect the moment it undocks.
+      const parent = bc.docked_to ? cards[bc.docked_to] : undefined;
+      if (parent) {
+        result.push({
+          x: parent.x + parent.width * 0.14,
+          y: parent.y + parent.height * 0.66,
+          width: parent.width * 0.72,
+          height: parent.height * 0.24,
+          type: 'docked-browser',
+        });
+        continue;
+      }
       result.push({ x: bc.x, y: bc.y, width: bc.width, height: bc.height, type: 'browser' });
     }
     for (const wc of Object.values(workflowCards)) {
@@ -147,6 +159,7 @@ const Minimap: React.FC<MinimapProps> = ({
       case 'agent': return c.accent.primary;
       case 'view': return c.status.info;
       case 'browser': return c.status.success;
+      case 'docked-browser': return c.status.success;
       case 'workflow': return c.status.warning;
       case 'workflows-hub': return c.status.warning;
     }
@@ -168,7 +181,7 @@ const Minimap: React.FC<MinimapProps> = ({
           width={card.width * layout.scale}
           height={card.height * layout.scale}
           fill={typeColor(card.type)}
-          opacity={0.6}
+          opacity={card.type === 'docked-browser' ? 0.95 : 0.6}
           rx={1}
         />
       ))}

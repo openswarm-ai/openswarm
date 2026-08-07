@@ -11,6 +11,8 @@ import { getActivity, isAnyBrowserBusy } from '@/shared/browserCommandHandler';
 import { isKeepAliveBrowser } from '@/shared/browserFocus';
 import { captureTabCapsule } from '@/shared/browserStateCapsule';
 import { getMinimizedShot } from '../../desktop/minimizedShots';
+import { useAppHidden } from './useAppHidden';
+import { cardIntersectsViewport, distFromCenter, type Viewport } from './suspendGeometry';
 
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
 
@@ -23,23 +25,6 @@ const SNAPSHOT_MAX_W = 1024;
 const RESUME_MIN_CARD_PX = 220;
 // Hard ceiling on simultaneous live webviews; past it the farthest-from-center non-agent card gets parked, so heavy pages degrade gracefully instead of OOMing.
 const MAX_LIVE_WEBVIEWS = 8;
-
-interface Viewport {
-  panX: number;
-  panY: number;
-  zoom: number;
-  vpW: number;
-  vpH: number;
-}
-
-function cardIntersectsViewport(card: BrowserCardPosition, vp: Viewport, marginPx: number): boolean {
-  const m = marginPx / vp.zoom;
-  const vx = -vp.panX / vp.zoom - m;
-  const vy = -vp.panY / vp.zoom - m;
-  const vw = vp.vpW / vp.zoom + 2 * m;
-  const vh = vp.vpH / vp.zoom + 2 * m;
-  return card.x < vx + vw && card.x + card.width > vx && card.y < vy + vh && card.y + card.height > vy;
-}
 
 // Grace after terminal so an agent whose status blips completed->running between back-to-back turns can't lose its browser in the gap.
 const WORKING_GRACE_MS = 20_000;
@@ -128,6 +113,9 @@ export function useWebviewSuspend(
   const prevMinimizedRef = useRef<Record<string, boolean>>({});
   const vpRef = useRef<Viewport>({ panX, panY, zoom, vpW: 1200, vpH: 800 });
 
+  // Hidden long enough = the user left; park every idle renderer, working agents keep theirs.
+  const appHidden = useAppHidden(isElectron);
+
   // Window resize changes the viewport without touching pan/zoom/cards; tick so the evaluation below reruns, or a shrunken window never suspends anything.
   const [resizeTick, setResizeTick] = useState(0);
   useEffect(() => {
@@ -168,7 +156,8 @@ export function useWebviewSuspend(
         budget--;
         continue;
       }
-      if (budget <= 0 || minimized[id]) continue;
+      // While the app is hidden nothing idle resumes; the same loop wakes in-view cards on return.
+      if (appHidden || budget <= 0 || minimized[id]) continue;
       // Un-minimizing is an explicit "give it back", so it wakes the card wherever the camera happens to be pointing.
       if (wasMinimized[id]) {
         restoredAt.set(id, Date.now());
@@ -187,7 +176,8 @@ export function useWebviewSuspend(
       const isSuspended = (id: string) => !!store.getState().dashboardLayout.suspendedBrowserCards[id];
       // Read live, not off the effect's closure: this re-runs after an await, and the user can restore a card mid-capture.
       const wantsPark = (id: string, card: BrowserCardPosition): boolean =>
-        isMinimized(id)
+        appHidden
+        || isMinimized(id)
         || (!withinRestoreGrace(id) && !cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX));
       await refreshVisibleFrames(browserCards, isSuspended, vpRef.current);
       for (const [id, card] of Object.entries(browserCards)) {
@@ -216,16 +206,9 @@ export function useWebviewSuspend(
     }, SETTLE_MS);
 
     return () => clearTimeout(timer);
-  }, [browserCards, suspended, minimized, panX, panY, zoom, viewportRef, dispatch, resizeTick]);
+  }, [browserCards, suspended, minimized, panX, panY, zoom, viewportRef, dispatch, resizeTick, appHidden]);
 }
 
-function distFromCenter(card: BrowserCardPosition, vp: Viewport): number {
-  const cx = (-vp.panX + vp.vpW / 2) / vp.zoom;
-  const cy = (-vp.panY + vp.vpH / 2) / vp.zoom;
-  const dx = card.x + card.width / 2 - cx;
-  const dy = card.y + card.height / 2 - cy;
-  return dx * dx + dy * dy;
-}
 
 // capturePage on an already-off-screen webview can HANG forever (Electron 42/Viz stops producing frames for unpainted guests), and one hung await used to wedge the whole suspend pass, silently disabling suspension for every card. Bound it hard.
 const CAPTURE_TIMEOUT_MS = 1500;

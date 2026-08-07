@@ -209,6 +209,23 @@ async def list_workflows(dashboard_id: Optional[str] = None):
     return {"workflows": [_enriched(w) for w in items]}
 
 
+async def p_sync_cloud_copy(wf: Workflow, data: dict) -> None:
+    """A cloud-hosted workflow's schedule truth lives in the CLOUD; a PATCH that only edits the
+    local copy pauses nothing (the 'toggled the schedule off but it still runs' bug). Push the
+    edit up before persisting locally; if the cloud cannot be reached, roll the shared cached
+    instance back to disk truth and fail the PATCH so the UI never shows a state the cloud ignores."""
+    if wf.execution_target != "cloud" or not wf.cloud_workflow_id:
+        return
+    if not any(k in data for k in ("schedule", "steps", "title")):
+        return
+    from backend.apps.workflows.cloud.handover import hand_to_cloud
+
+    outcome = await hand_to_cloud(wf, enabled=wf.schedule.enabled)
+    if not outcome.ok:
+        storage.reload_workflow(wf.id)
+        raise HTTPException(status_code=502, detail=outcome.message or "The cloud copy could not be updated; try again.")
+
+
 def _normalize_schedule_state(wf: Workflow, source_allowed_tools: Optional[list[str]] = None) -> None:
     if wf.schedule.timezone == "local" and wf.schedule.enabled:
         wf.schedule.timezone = scheduler.host_timezone_name()
@@ -798,6 +815,8 @@ async def update_workflow(
         await p_relabel_steps(wf, before_draft, wf.draft_steps, wf.model)
         wf.updated_at = datetime.now()
         _normalize_schedule_state(wf)
+        # Steps went to the DRAFT, not live, so only the non-steps fields need the cloud copy synced; commit pushes the steps.
+        await p_sync_cloud_copy(wf, {k: v for k, v in data.items() if k != "steps"})
         storage.save_workflow(wf)
         enriched = _enriched(wf)
         try:
@@ -818,6 +837,7 @@ async def update_workflow(
     if not wf.icon:
         wf.icon = _derive_icon(wf)
     _normalize_schedule_state(wf)
+    await p_sync_cloud_copy(wf, data)
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))
     scheduler.kick()
@@ -1184,6 +1204,7 @@ async def commit_draft(workflow_id: str, body: Optional[DraftCommitBody] = None)
     p_sync_model_on_save(wf, body.model if body else None)
     if not (body and body.keep_session):
         await p_end_edit_session(wf)
+    await p_sync_cloud_copy(wf, {"steps": wf.steps})
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))
     scheduler.kick()

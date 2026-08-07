@@ -25,6 +25,32 @@ SLACK_NO_TOKENS = (
     '"app":"slack-mcp-server","stacktrace":"provider.New\\n\\tapi.go:682"}'
 )
 
+# Byte-for-byte the FULL stderr of a tokenless `npx -y slack-mcp-server` run (2026-08-04): the Go
+# fatal comes FIRST, then the npm wrapper's execFileSync crash dump buries it under ~20 Node lines.
+# This is the exact toast Haik and Eric saw; a translator fed only the last few lines can never win.
+SLACK_NO_TOKENS_WITH_NPX_DUMP = SLACK_NO_TOKENS + """
+node:child_process:963
+    throw err;
+    ^
+
+Error: Command failed: /Users/x/.npm/_npx/2f12aed4e6049c73/node_modules/slack-mcp-server-darwin-arm64/bin/slack-mcp-server-darwin-arm64 --transport stdio
+    at genericNodeError (node:internal/errors:983:15)
+    at wrappedFn (node:internal/errors:537:14)
+    at checkExecSyncError (node:child_process:924:11)
+    at Object.execFileSync (node:child_process:960:15)
+    at Object.<anonymous> (/Users/x/.npm/_npx/2f12aed4e6049c73/node_modules/slack-mcp-server/bin/index.js:64:14)
+    at Module._compile (node:internal/modules/cjs/loader:1692:14)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  status: 1,
+  signal: null,
+  output: [ null, null, null ],
+  pid: 96234,
+  stdout: null,
+  stderr: null
+}
+
+Node.js v24.4.0"""
+
 
 def test_the_real_slack_failure_becomes_reconnect_advice():
     out = readable_mcp_failure(SLACK_REAL)
@@ -44,6 +70,14 @@ def test_missing_tokens_reads_differently_from_expired_ones():
     expired = readable_mcp_failure(SLACK_REAL)
     assert "signed in" in never
     assert never != expired
+
+
+def test_the_npx_crash_dump_never_buries_the_real_reason():
+    # The regression that survived 1.7.2: the useful fatal line is FIRST and the Node noise last.
+    out = readable_mcp_failure(SLACK_NO_TOKENS_WITH_NPX_DUMP)
+    assert "signed in" in out
+    for leak in ("TracingChannel", "execFileSync", "node:child_process", "status: 1", "Node.js v"):
+        assert leak not in out, f"{leak!r} leaked into what the user reads"
 
 
 def test_revoked_access_says_so():

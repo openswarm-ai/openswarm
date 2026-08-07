@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { fetchWorkflows } from '@/shared/state/workflowsSlice';
 
 import ImportDigest, { DigestHandle } from './ImportDigest';
@@ -62,6 +63,8 @@ const ImportEntryPoint: React.FC = () => {
       setToast({ msg, sev: 'success' });
       // A workflow has no route of its own, so nothing would pull it in: an open Workflows hub only fetches on mount and would keep showing a stale list. Import drops dashboard_id, and /list keeps unassigned workflows for every dashboard, so this surfaces it wherever the user is.
       if (rootType === 'workflow') dispatch(fetchWorkflows(dashboardId));
+      // Same staleness for apps: the Apps dock reads the outputs slice, which nothing refetches on import.
+      if (rootType === 'app') dispatch(fetchOutputs());
       const to = DEST[rootType]?.(rootId);
       if (to) navigate(to);
     },

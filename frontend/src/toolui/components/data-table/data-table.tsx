@@ -150,8 +150,33 @@ function DataTableProvider<T extends object = RowData>({
     [sortBy, sortDirection, controlledSort, onSortChange],
   );
 
+  // User-adjustable column order + widths (drag header to reorder, drag the edge strip to resize).
+  const [colOrder, setColOrder] = React.useState<string[] | null>(null);
+  const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
+  const orderedColumns = React.useMemo(() => {
+    if (!colOrder) return columns;
+    const byKey = new Map(columns.map((c) => [String(c.key), c]));
+    const out = colOrder.map((k) => byKey.get(k)).filter(Boolean) as Column<T>[];
+    for (const c of columns) if (!colOrder.includes(String(c.key))) out.push(c);
+    return out;
+  }, [columns, colOrder]);
+  const setColWidth = React.useCallback((key: string, px: number) => {
+    setColWidths((w) => ({ ...w, [key]: Math.max(64, Math.round(px)) }));
+  }, []);
+  const moveColumn = React.useCallback((fromKey: string, toKey: string) => {
+    if (fromKey === toKey) return;
+    setColOrder((prev) => {
+      const keys = prev ?? columns.map((c) => String(c.key));
+      const next = keys.filter((k) => k !== fromKey);
+      const at = next.indexOf(toKey);
+      if (at < 0) return keys;
+      next.splice(at, 0, fromKey);
+      return next;
+    });
+  }, [columns]);
+
   const contextValue: DataTableContextValue<T> = {
-    columns,
+    columns: orderedColumns,
     data,
     rowIdKey,
     sortBy,
@@ -159,6 +184,9 @@ function DataTableProvider<T extends object = RowData>({
     toggleSort: handleSort,
     id,
     locale: resolvedLocale,
+    colWidths,
+    setColWidth,
+    moveColumn,
   };
 
   return (
@@ -181,7 +209,7 @@ function DataTableLayout({
   maxHeight,
   className,
 }: DataTableLayoutProps) {
-  const { columns, data, rowIdKey, sortBy, sortDirection, id } = useDataTable();
+  const { columns, data, rowIdKey, sortBy, sortDirection, id, colWidths } = useDataTable();
   const rowKeys = React.useMemo(
     () =>
       createDataTableRowKeys(
@@ -222,7 +250,7 @@ function DataTableLayout({
         <div className="relative">
           <div
             className={cn(
-              "bg-card relative w-full overflow-clip overflow-y-auto rounded-lg border",
+              "bg-card relative w-full overflow-x-auto overflow-y-auto rounded-lg border",
               "touch-pan-x",
               maxHeight && "max-h-[--max-height]",
             )}
@@ -232,15 +260,18 @@ function DataTableLayout({
                 : undefined
             }
           >
-            <Table>
+            <Table style={colWidths && Object.keys(colWidths).length ? { tableLayout: "fixed" } : undefined}>
               {columns.length > 0 && (
                 <colgroup>
-                  {columns.map((col) => (
-                    <col
-                      key={String(col.key)}
-                      style={col.width ? { width: col.width } : undefined}
-                    />
-                  ))}
+                  {columns.map((col) => {
+                    const w = colWidths?.[String(col.key)] ?? col.width;
+                    return (
+                      <col
+                        key={String(col.key)}
+                        style={w ? { width: w } : undefined}
+                      />
+                    );
+                  })}
                 </colgroup>
               )}
               {data.length === 0 ? (
@@ -437,14 +468,34 @@ interface DataTableHeadProps {
   totalColumns?: number;
 }
 
+const COL_DRAG_MIME = "application/x-osw-col";
+
 function DataTableHead({
   column,
   columnIndex = 0,
   totalColumns = 1,
 }: DataTableHeadProps) {
-  const { sortBy, sortDirection, toggleSort } = useDataTable();
+  const { sortBy, sortDirection, toggleSort, colWidths, setColWidth, moveColumn } = useDataTable();
   const isFirstColumn = columnIndex === 0;
   const isLastColumn = columnIndex === totalColumns - 1;
+
+  const startResize = (e: React.PointerEvent) => {
+    if (!setColWidth) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const th = (e.currentTarget as HTMLElement).closest("th");
+    if (!th) return;
+    const startX = e.clientX;
+    const startW = th.getBoundingClientRect().width;
+    const key = String(column.key);
+    const onMove = (ev: PointerEvent) => setColWidth(key, startW + (ev.clientX - startX));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const isSortable = column.sortable !== false;
 
@@ -478,15 +529,35 @@ function DataTableHead({
         ? "text-center"
         : "text-left";
 
+  const effectiveWidth = colWidths?.[String(column.key)] ?? column.width;
   return (
     <TableHead
       scope="col"
       className={cn(
+        "relative",
         alignClass,
         isFirstColumn && "pl-1",
         isLastColumn && "pr-1",
       )}
-      style={column.width ? { width: column.width } : undefined}
+      style={effectiveWidth ? { width: effectiveWidth } : undefined}
+      draggable={!!moveColumn}
+      onDragStart={(e: React.DragEvent) => {
+        e.dataTransfer.setData(COL_DRAG_MIME, String(column.key));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes(COL_DRAG_MIME)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }
+      }}
+      onDrop={(e: React.DragEvent) => {
+        const from = e.dataTransfer.getData(COL_DRAG_MIME);
+        if (from && moveColumn) {
+          e.preventDefault();
+          moveColumn(from, String(column.key));
+        }
+      }}
       aria-sort={
         isSorted
           ? direction === "asc"
@@ -552,6 +623,16 @@ function DataTableHead({
         )}
         {isSortable && <SortIcon state={direction} />}
       </Button>
+      {setColWidth && (
+        <span
+          aria-hidden
+          draggable={false}
+          onDragStart={(e: React.DragEvent) => e.preventDefault()}
+          onPointerDown={startResize}
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          className="hover:bg-border absolute inset-y-1 right-0 w-1 cursor-col-resize touch-none rounded select-none"
+        />
+      )}
     </TableHead>
   );
 }
@@ -570,7 +651,9 @@ function DataTableBody() {
 
   React.useEffect(() => {
     if (hasWarnedRowKeyRef.current) return;
-    if (process.env.NODE_ENV !== "production" && !rowIdKey && data.length > 0) {
+    // Only nag when the data actually CARRIES an id-like field the caller forgot to point at; model payloads usually have none, and the warning was pure console noise for them.
+    const hasIdLikeField = data.length > 0 && ["id", "uuid", "key", "symbol"].some((k) => k in (data[0] as Record<string, unknown>));
+    if (process.env.NODE_ENV !== "production" && !rowIdKey && hasIdLikeField) {
       hasWarnedRowKeyRef.current = true;
       console.warn(
         "[DataTable] Missing `rowIdKey` prop. Falling back to inferred/content-derived row keys. " +

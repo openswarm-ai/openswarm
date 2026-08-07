@@ -9,8 +9,8 @@ import MenuItem from '@mui/material/MenuItem';
 import ListSubheader from '@mui/material/ListSubheader';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { useAppDispatch } from '@/shared/hooks';
-import { resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { resetSystemPrompt, fetchDefaultSystemPrompt, AppSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { SettingsStyles } from '../settingsStyles';
 import { settingSelectAttrs } from '../settingSelect';
@@ -29,6 +29,10 @@ const GeneralAgentDefaults: React.FC<{
 }> = ({ form, setForm, styles, setBrowseOpen, modelOptions, modesList, providerColors, openswarmGradient }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const defaultPrompt = useAppSelector((s) => s.settings.defaultSystemPrompt);
+  React.useEffect(() => {
+    if (defaultPrompt === null) void dispatch(fetchDefaultSystemPrompt());
+  }, [defaultPrompt, dispatch]);
   const { fieldSx, sectionSx, rowSx, inlineRowSx, inlineRowLastSx, labelSx, descSx } = styles;
 
   return (
@@ -37,13 +41,13 @@ const GeneralAgentDefaults: React.FC<{
       <Box sx={rowSx} {...settingSelectAttrs('default_system_prompt', 'System prompt', 'Agent Defaults', 'Prepended to every agent session before mode-specific instructions.')}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
           <Typography sx={labelSx}>System prompt</Typography>
-          {form.default_system_prompt !== DEFAULT_SYSTEM_PROMPT && (
+          {defaultPrompt !== null && (form.default_system_prompt ?? defaultPrompt) !== defaultPrompt && (
             <Button
               size="small"
               startIcon={<RestartAltIcon sx={{ fontSize: 14 }} />}
               onClick={async () => {
                 await dispatch(resetSystemPrompt());
-                setForm((prev) => ({ ...prev, default_system_prompt: DEFAULT_SYSTEM_PROMPT }));
+                setForm((prev) => ({ ...prev, default_system_prompt: defaultPrompt }));
               }}
               sx={{
                 color: c.accent.primary,
@@ -61,7 +65,7 @@ const GeneralAgentDefaults: React.FC<{
           Prepended to every agent session.
         </Typography>
         <TextField
-          value={form.default_system_prompt ?? DEFAULT_SYSTEM_PROMPT}
+          value={form.default_system_prompt ?? defaultPrompt ?? ''}
           onChange={(e) => setForm({ ...form, default_system_prompt: e.target.value || null })}
           multiline
           minRows={3}

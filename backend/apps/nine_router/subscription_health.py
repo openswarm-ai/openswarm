@@ -57,6 +57,10 @@ def classify_auth_dead(status_code: int, body_text: str) -> bool:
     if status_code not in (401, 403):
         return False
     low = body_text.lower()
+    # A 401 that names its own recovery window ("reset after 1m 57s") is a token mid-refresh, not a
+    # dead login; it heals itself and the banner would cry wolf while real chats work (caught live).
+    if "reset after" in low or "try again in" in low:
+        return False
     return any(m in low for m in P_AUTH_DEAD_MARKERS)
 
 
@@ -101,10 +105,17 @@ async def probe_subscription_health(connections: List[Dict]) -> List[Dict[str, s
     async with p_probe_lock:
         if p_cached_result is not None and time.monotonic() - p_cached_at < P_CACHE_TTL_S:
             return p_cached_result
-        subs = [
-            c for c in connections
-            if isinstance(c, dict) and c.get("provider") in PREFIX_BY_PROVIDER and c.get("isActive")
-        ]
+        # One probe per PROVIDER: db.json can hold several active rows for one provider (a stale +
+        # a fresh connect), and probing per row reported "ChatGPT and ChatGPT" in the banner.
+        p_seen: set = set()
+        subs = []
+        for c in connections:
+            if not (isinstance(c, dict) and c.get("provider") in PREFIX_BY_PROVIDER and c.get("isActive")):
+                continue
+            if c.get("provider") in p_seen:
+                continue
+            p_seen.add(c.get("provider"))
+            subs.append(c)
         dead: List[Dict[str, str]] = []
         if subs:
             async with httpx.AsyncClient(timeout=P_PROBE_TIMEOUT_S) as client:

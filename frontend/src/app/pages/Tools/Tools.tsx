@@ -2,19 +2,11 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import MenuItem from '@mui/material/MenuItem';
 import Chip from '@mui/material/Chip';
-import Collapse from '@mui/material/Collapse';
-import Menu from '@mui/material/Menu';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
-import AddIcon from '@mui/icons-material/Add';
-import BuildIcon from '@mui/icons-material/Build';
 import LockIcon from '@mui/icons-material/Lock';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
-import StorefrontIcon from '@mui/icons-material/Storefront';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   fetchTools,
@@ -29,19 +21,33 @@ import {
 import { Skeleton } from '@/app/components/feedback/Loading';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { Integration, INTEGRATIONS } from './integrations';
+import { INTEGRATIONS } from './integrations';
 import { CATEGORY_ORDER } from './toolsHelpers';
 import ToolSection from './cards/ToolSection';
 import BrowserPermissionCard from './cards/BrowserPermissionCard';
 import AgentWorkflowsSection from './cards/AgentWorkflowsSection';
 import RegistryBrowserDialog from './dialogs/RegistryBrowserDialog';
+import ToolsAddMenu from './dialogs/ToolsAddMenu';
 import ToolDialogs from './dialogs/ToolDialogs';
 import CustomToolCard from './cards/CustomToolCard';
+import PopularConnectorsRow from './cards/PopularConnectorsRow';
+import TextField from '@mui/material/TextField';
+import IconButton from '@mui/material/IconButton';
+import SearchIcon from '@mui/icons-material/Search';
 import IntegrationGalleryCard from './cards/IntegrationGalleryCard';
 import { useToolsActions } from './hooks/useToolsActions';
 import { useBuiltinSections } from './hooks/useBuiltinSections';
+import { useConnectorFilters } from './hooks/useConnectorFilters';
+import { useCuratedRegistry } from './hooks/useCuratedRegistry';
 
-const Tools: React.FC = () => {
+interface ToolsProps {
+  /** Provided when hosted inside the Marketplace: Browse connectors switches the view in place. */
+  onBrowseConnectors?: () => void;
+  /** Connector to expand when returning from the Marketplace browse grid. */
+  expandToolId?: string | null;
+}
+
+const Tools: React.FC<ToolsProps> = ({ onBrowseConnectors, expandToolId }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const { items, builtinTools, builtinPermissions, loading } = useAppSelector((s) => s.tools);
@@ -65,11 +71,10 @@ const Tools: React.FC = () => {
   const [expandedBuiltin, setExpandedBuiltin] = useState<string | null>(null);
   const [coreSectionOpen, setCoreSectionOpen] = useState(false);
   const [deferredSectionOpen, setDeferredSectionOpen] = useState(false);
-  const [customSectionOpen, setCustomSectionOpen] = useState(true);
   const [browserSectionOpen, setBrowserSectionOpen] = useState(false);
   const [browserCollapsed, setBrowserCollapsed] = useState<Record<string, boolean>>({ browser_delegation: true, browser_action: true });
-  const [builtinSectionOpen, setBuiltinSectionOpen] = useState(true);
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  // claude.ai's Connectors page tabs: All / Connected / Not connected.
+  const { connFilter, setConnFilter, searchOpen, setSearchOpen, searchQ, setSearchQ, q, visibleTools, visibleGallery, popularUninstalled } = useConnectorFilters(tools, uninstalledIntegrations);
 
   useEffect(() => {
     dispatch(fetchTools());
@@ -84,72 +89,80 @@ const Tools: React.FC = () => {
 
   const toggleCategory = (cat: string) => setCollapsedCategories((p) => ({ ...p, [cat]: !p[cat] }));
   const toggleBuiltinExpand = (name: string) => setExpandedBuiltin((p) => (p === name ? null : name));
+  // The Add menu closes itself now (ToolsAddMenu), so the hook's closeMenu hook-in is a no-op.
+  const a = useToolsActions({ items, allTools, regServersRaw, closeMenu: () => {} });
 
-  const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget);
-  const handleMenuClose = () => setMenuAnchor(null);
+  useEffect(() => { if (expandToolId) a.setExpandedToolId(expandToolId); }, [expandToolId]);
 
-  const a = useToolsActions({ items, allTools, regServersRaw, closeMenu: handleMenuClose });
-
-  // Curated whitelist matches the MCPSearch alias map in main.py (mcp-meta).
-  const CURATED_MCP_NAMES = useMemo(() => new Set([
-    'google-workspace', 'microsoft-365', 'slack', 'discord',
-    'notion', 'airtable', 'hubspot', 'reddit', 'youtube',
-  ]), []);
-  const regServers = useMemo(() => {
-    if (a.regSource !== 'curated') return regServersRaw;
-    return regServersRaw.filter((srv: any) => {
-      const id = (srv?.name || srv?.id || '').toLowerCase();
-      return CURATED_MCP_NAMES.has(id);
-    });
-  }, [regServersRaw, a.regSource, CURATED_MCP_NAMES]);
+  const regServers = useCuratedRegistry(regServersRaw, a.regSource);
 
   return (
     <Box sx={{ px: 3, pt: 1, pb: 3, height: '100%', overflow: 'auto' }}>
-      {/* The pane header already says "Tools"; a slim action row beats a second page title. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: 1.5 }}>
-        <Box>
-          <Button
+      {/* claude.ai's Connectors page grammar: filter pills left, Add right, one table below. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          {([['all', 'All'], ['connected', 'Connected'], ['not-connected', 'Not connected']] as const).map(([value, label]) => (
+            <Box
+              key={value}
+              role="button"
+              onClick={() => setConnFilter(value)}
+              sx={{
+                px: 1.5, py: 0.4, borderRadius: 999, cursor: 'pointer', userSelect: 'none',
+                fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.6,
+                color: connFilter === value ? c.text.primary : c.text.tertiary,
+                bgcolor: connFilter === value ? c.bg.secondary : 'transparent',
+                '&:hover': { color: c.text.primary },
+              }}
+            >
+              {label}
+            </Box>
+          ))}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {searchOpen ? (
+          <TextField
+            autoFocus
             size="small"
-            variant="contained"
-            startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-            endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16 }} />}
-            onClick={handleMenuOpen}
-            sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.pressed }, textTransform: 'none', borderRadius: 2, fontSize: '0.8125rem' }}
-          >
-            New Tool
-          </Button>
-          <Menu
-            anchorEl={menuAnchor}
-            open={!!menuAnchor}
-            onClose={handleMenuClose}
-            PaperProps={{ sx: { bgcolor: c.bg.surface, border: `1px solid ${c.border.subtle}`, borderRadius: 2, mt: 0.5, minWidth: 200 } }}
-          >
-            <MenuItem onClick={a.openCreate} sx={{ color: c.text.primary, fontSize: '0.875rem', gap: 1.5, '&:hover': { bgcolor: c.bg.secondary } }}>
-              <BuildIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
-              Create Custom
-            </MenuItem>
-            <MenuItem onClick={a.openRegistryBrowser} sx={{ color: c.text.primary, fontSize: '0.875rem', gap: 1.5, '&:hover': { bgcolor: c.bg.secondary } }}>
-              <StorefrontIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
-              Browse MCP Registry
-            </MenuItem>
-          </Menu>
+            placeholder="Search connectors..."
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            onBlur={() => { if (!searchQ.trim()) setSearchOpen(false); }}
+            sx={{ width: 240, '& .MuiOutlinedInput-root': { fontSize: '0.875rem', borderRadius: 999, '& input': { py: 0.6 } } }}
+          />
+        ) : (
+          <IconButton size="small" onClick={() => setSearchOpen(true)} sx={{ color: c.text.tertiary, '&:hover': { color: c.text.primary } }}>
+            <SearchIcon sx={{ fontSize: 19 }} />
+          </IconButton>
+        )}
+        <ToolsAddMenu
+          devMode={!!devMode}
+          onBrowseConnectors={onBrowseConnectors}
+          onOpenCreate={a.openCreate}
+          onOpenRegistry={a.openRegistryBrowser}
+          onSnackbar={(message, severity) => a.setSnackbar({ open: true, message, severity: severity === 'error' ? 'error' : undefined })}
+        />
         </Box>
       </Box>
 
-      <Box sx={{ mb: 3 }}>
-        <Box
-          onClick={() => setBuiltinSectionOpen((v) => !v)}
-          sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1, px: 0.5, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}
-        >
-          <Typography sx={{ color: c.text.muted, fontWeight: 700, fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            Built-in
-          </Typography>
-          <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', fontWeight: 600 }}>{coreTools.length + deferredTools.length + browserTools.length}</Typography>
-          {builtinSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 15, color: c.text.ghost, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 15, color: c.text.ghost, transition: 'color 0.15s' }} />}
+      {loading ? (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} variant="card" height={72} />
+          ))}
         </Box>
-        <Collapse in={builtinSectionOpen} timeout={0} unmountOnExit>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
-
+      ) : (
+        <>
+        {connFilter === 'all' && !q && (
+          <PopularConnectorsRow integrations={popularUninstalled} loading={a.integrationLoading} onConnect={a.handleIntegrationToggle} />
+        )}
+        <Box sx={{ border: `1px solid ${c.border.subtle}`, borderRadius: '12px', overflow: 'hidden', bgcolor: c.bg.surface }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 200px', gap: 2, px: 2, py: 1.1, borderBottom: `1px solid ${c.border.subtle}` }}>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.8125rem' }}>Connector</Typography>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.8125rem' }}>Type</Typography>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.8125rem', textAlign: 'right' }}>Status</Typography>
+          </Box>
+          {connFilter === 'all' && !q && (
+            <>
       {coreTools.length > 0 && (
         <ToolSection label="Core Tools" icon={<LockIcon sx={{ fontSize: 14, color: c.text.tertiary }} />} count={coreTools.length} open={coreSectionOpen} onToggle={() => setCoreSectionOpen((v) => !v)} grouped={groupedCore} collapsedCategories={collapsedCategories} toggleCategory={toggleCategory} expandedBuiltin={expandedBuiltin} toggleBuiltinExpand={toggleBuiltinExpand} builtinPermissions={builtinPermissions} onPermissionChange={a.handleBuiltinPermissionChange} onCategoryPermissionChange={a.handleBuiltinCategoryPermissionChange} enabled={coreSectionEnabled} onEnabledChange={(v) => a.handleSectionEnabledChange(coreTools, v)} />
       )}
@@ -174,43 +187,9 @@ const Tools: React.FC = () => {
           onPermissionChange={a.handleBuiltinPermissionChange}
         />
       )}
-
-          </Box>
-        </Collapse>
-      </Box>
-      <AgentWorkflowsSection />
-
-      <Box sx={{ mb: 2 }}>
-        <Box onClick={() => setCustomSectionOpen((v) => !v)} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1, px: 0.5, cursor: 'pointer', userSelect: 'none', '&:hover .section-arrow': { color: c.text.secondary } }}>
-          <Typography sx={{ color: c.text.muted, fontWeight: 700, fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            Connections
-          </Typography>
-          <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', fontWeight: 600 }}>{tools.length + uninstalledIntegrations.length}</Typography>
-          {customSectionOpen ? <KeyboardArrowDownIcon className="section-arrow" sx={{ fontSize: 15, color: c.text.ghost, transition: 'color 0.15s' }} /> : <KeyboardArrowRightIcon className="section-arrow" sx={{ fontSize: 15, color: c.text.ghost, transition: 'color 0.15s' }} />}
-        </Box>
-        <Collapse in={customSectionOpen} timeout={0} unmountOnExit>
-          {loading ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1, mt: 1 }}>
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} variant="card" height={72} />
-              ))}
-            </Box>
-          ) : (tools.length === 0 && uninstalledIntegrations.length === 0) ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6, color: c.text.ghost, gap: 1.5 }}>
-              <BuildIcon sx={{ fontSize: 40, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.875rem' }}>No custom tools defined yet. Create one to get started.</Typography>
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pl: 1 }}>
-              {uninstalledIntegrations.map((ig) => (
-                <IntegrationGalleryCard
-                  key={ig.id}
-                  integration={ig}
-                  isLoading={!!a.integrationLoading[ig.id]}
-                  onToggle={a.handleIntegrationToggle}
-                />
-              ))}
-              {tools.map((tool) => (
+            </>
+          )}
+              {visibleTools.map((tool) => (
                 <CustomToolCard
                   key={tool.id}
                   tool={tool}
@@ -239,9 +218,25 @@ const Tools: React.FC = () => {
                   onDelete={a.handleDelete}
                 />
               ))}
+              {visibleGallery.map((ig) => (
+                <IntegrationGalleryCard
+                  key={ig.id}
+                  integration={ig}
+                  isLoading={!!a.integrationLoading[ig.id]}
+                  onToggle={a.handleIntegrationToggle}
+                />
+              ))}
+          {connFilter !== 'all' && visibleTools.length === 0 && visibleGallery.length === 0 && (
+            <Box sx={{ px: 2, py: 4, textAlign: 'center' }}>
+              <Typography sx={{ fontSize: '0.875rem', color: c.text.ghost }}>Nothing {connFilter === 'connected' ? 'connected' : 'disconnected'} yet.</Typography>
             </Box>
           )}
-        </Collapse>
+        </Box>
+        </>
+      )}
+
+      <Box sx={{ mt: 3 }}>
+        <AgentWorkflowsSection />
       </Box>
 
       <ToolDialogs
@@ -251,6 +246,7 @@ const Tools: React.FC = () => {
         onSlackAutoConnect={a.handleSlackAutoConnect}
         onCredentialsSave={a.handleCredentialsSave}
       />
+
 
       <RegistryBrowserDialog
         open={a.registryOpen}

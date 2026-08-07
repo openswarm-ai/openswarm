@@ -44,6 +44,7 @@ from backend.apps.outputs.runtime_proc import (
     suspend_process_tree,
     write_env_value,
 )
+from backend.config.paths import AUTH_TOKEN_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -427,6 +428,8 @@ class AppRuntime:
         REST API back via its own creds if it really needs to, but it
         shouldn't inherit the host process's token by default."""
         env = {k: v for k, v in os.environ.items() if k != "OPENSWARM_AUTH_TOKEN"}
+        # Where the token lives, not the token itself: an app that legitimately calls our REST API reads it from disk and so picks up rotations, without the value sitting in its env for any child to inherit. Dev and packaged builds keep their data roots in different places, so an app hardcoding one of them is silently wrong in the other.
+        env["OPENSWARM_HOST_TOKEN_FILE"] = AUTH_TOKEN_FILE
         # Hand the workspace's backend/run.sh the exact interpreter we're running on. In the packaged build that's the bundled standalone Python, so a fresh machine with no system `python3` still works; in dev it's whatever launched uvicorn. OPENSWARM_NODE_PATH already rides in via os.environ (set by the Electron shell) for run.sh's Node resolution.
         env["OPENSWARM_PYTHON"] = sys.executable
         # Force npm to skip dependency lifecycle scripts for every install run.sh triggers. An imported app's package.json is untrusted (it brings its own run.sh, so we can't gate the flag there); a malicious dep's postinstall would otherwise run arbitrary code on the host the moment its preview boots. Vite/esbuild get their platform binary via optionalDependencies, not a script, so this doesn't break the build.

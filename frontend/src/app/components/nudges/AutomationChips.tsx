@@ -17,13 +17,15 @@ function scheduleFor(cadence: string) {
   return { ...base, repeat_unit: 'week' as const, on_days: [1] };
 }
 
+// Identity-stable fallback: `?? []` inline minted a fresh array per store tick and re-rendered this on every streamed character.
+const EMPTY_AUTOMATIONS: PersonalizedAutomation[] = [];
 const CADENCE_LABEL: Record<string, string> = { daily: 'daily at 9am', weekday: 'weekdays at 9am', weekly: 'Mondays at 9am' };
 
 // Prep proposed routines worth automating for THIS user; each chip is one click to a real scheduled workflow. Falls back to a generic morning brief when prep gave none. One-shot per install (localStorage), so a returning user is never re-nagged.
 const AutomationChips: React.FC<{ c: ClaudeTokens }> = ({ c }) => {
   const dispatch = useAppDispatch();
   const model = useAppSelector((s) => s.settings.data.default_model);
-  const proposed = useAppSelector((s) => s.settings.data.personalized_automations ?? []);
+  const proposed = useAppSelector((s) => s.settings.data.personalized_automations) ?? EMPTY_AUTOMATIONS;
   const items: PersonalizedAutomation[] = proposed.length > 0 ? proposed.slice(0, 3) : [
     { title: 'Morning brief', prompt: "Put together my morning brief: today's date, my location's weather, and top tech + world headlines. Keep it under 300 words and save it as a dated note on my dashboard.", cadence: 'daily' },
   ];

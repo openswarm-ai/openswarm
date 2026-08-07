@@ -78,6 +78,8 @@ export function buildDockEntries({ sessions, cards, viewCards, browserCards, wor
     });
   }
   for (const bc of Object.values(browserCards)) {
+    // A browser living inside a chat is represented by that chat's tile; its own tile read as a phantom window ("invisible openai browser"). Pulling it out brings the tile back.
+    if (bc.docked_to && cards[bc.docked_to]) continue;
     const activeTab = bc.tabs.find((t) => t.id === bc.activeTabId) || bc.tabs[0];
     list.push({
       id: bc.browser_id,

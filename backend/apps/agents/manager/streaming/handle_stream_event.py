@@ -15,10 +15,14 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 
-try:
+# Runtime annotation stays `object` (the old ImportError fallback already admitted that); the real
+# type lives behind TYPE_CHECKING so importing this module stops paying the 350ms claude_agent_sdk+mcp chain at boot.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     from claude_agent_sdk.types import StreamEvent
-except ImportError:  # the SDK is optional at runtime (mock mode); keep this module importable
-    StreamEvent = object  # type: ignore
+else:
+    StreamEvent = object
 
 
 @typechecked

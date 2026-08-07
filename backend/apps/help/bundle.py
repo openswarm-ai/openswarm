@@ -92,6 +92,26 @@ def p_count_dir(path: str) -> int:
 
 
 @typechecked
+def p_recent_crash_reports(limit: int = 3) -> str:
+    """The newest Electron crash reports (ENG-102), metadata only: the backend-log tail inside each
+    report is dropped here because this bundle already carries its own scrubbed tail."""
+    try:
+        crash_dir = os.path.join(os.path.dirname(DATA_ROOT), "crash-reports")
+        files = sorted((f for f in os.listdir(crash_dir) if f.endswith(".json")), reverse=True)[:limit]
+        if not files:
+            return "(none)"
+        out: List[str] = []
+        for name in files:
+            with open(os.path.join(crash_dir, name), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            data.pop("backendLogTail", None)
+            out.append(json.dumps(data, indent=2, default=str))
+        return "\n".join(out)
+    except Exception:
+        return "(none)"
+
+
+@typechecked
 def p_build_report(req: BundleRequest) -> str:
     from backend.apps.settings.store import load_settings
 
@@ -133,6 +153,11 @@ def p_build_report(req: BundleRequest) -> str:
         "## Recent backend log",
         "```",
         p_log_tail(),
+        "```",
+        "",
+        "## Recent crashes",
+        "```json",
+        p_recent_crash_reports(),
         "```",
         "",
     ]

@@ -19,6 +19,7 @@ import {
   clearPendingFocusWorkflowId,
   clearPendingFocusWorkflowsHub,
   clearPendingFocusSettingsCard,
+  clearPendingFocusMarketplaceCard,
   type ViewCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs, type Output } from '@/shared/state/outputsSlice';
@@ -82,6 +83,7 @@ export function useDashboardLifecycle({
   const pendingFocusWorkflowId = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowId);
   const pendingFocusWorkflowsHub = useAppSelector((state) => state.dashboardLayout.pendingFocusWorkflowsHub);
   const pendingFocusSettingsCard = useAppSelector((state) => state.dashboardLayout.pendingFocusSettingsCard);
+  const pendingFocusMarketplaceCard = useAppSelector((state) => state.dashboardLayout.pendingFocusMarketplaceCard);
 
   // Once per app launch: if scheduled fires elapsed while we were closed, fetch them. The slice flips its toast flag on fulfilled, so a bottom-left nudge shows instead of a card popping unrequested; the user opens the card from it.
   useEffect(() => {
@@ -293,6 +295,25 @@ export function useDashboardLifecycle({
     const fallback = setTimeout(fit, 300);
     return () => clearTimeout(fallback);
   }, [isActive, pendingFocusSettingsCard, layoutInitialized, dispatch, canvasActions]);
+
+  // And the Marketplace window, same glide-on-open contract as Settings.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!pendingFocusMarketplaceCard || !layoutInitialized) return;
+    dispatch(clearPendingFocusMarketplaceCard());
+    const fit = () => {
+      const card = store.getState().dashboardLayout.marketplaceCard;
+      if (!card) return;
+      canvasActions.fitToCards(
+        [{ x: card.x, y: card.y, width: card.width, height: card.height }],
+        1.1,
+        true,
+      );
+    };
+    requestAnimationFrame(() => requestAnimationFrame(fit));
+    const fallback = setTimeout(fit, 300);
+    return () => clearTimeout(fallback);
+  }, [isActive, pendingFocusMarketplaceCard, layoutInitialized, dispatch, canvasActions]);
 
   useEffect(() => {
     if (!layoutInitialized || restoredExpandedRef.current) return;

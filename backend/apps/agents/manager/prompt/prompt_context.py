@@ -397,7 +397,7 @@ def build_installed_skills_catalog() -> Optional[str]:
         return None
     try:
         from backend.apps.skills.skills import sync_skills
-        skills = [s for s in sync_skills() if not s.built_in]
+        skills = [s for s in sync_skills() if not s.built_in and s.enabled]
     except Exception:
         return None
     if not skills:

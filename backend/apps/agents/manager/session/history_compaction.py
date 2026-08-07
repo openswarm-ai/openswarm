@@ -40,6 +40,15 @@ P_SENTINEL_TAG_RE = re.compile(r"</?openswarm_(?:platform_note|session_recap)\b[
 
 
 @typechecked
+def clamp_recap_text(text: str) -> str:
+    """Middle-elide a giant user/assistant message in the RECAP only (session.messages keeps the full text): one pasted log used to survive compaction verbatim and re-overflow the rebuilt prompt."""
+    if len(text) <= SPILL_HEAD_CHARS + SPILL_TAIL_CHARS:
+        return text
+    elided = len(text) - SPILL_HEAD_CHARS - SPILL_TAIL_CHARS
+    return f"{text[:SPILL_HEAD_CHARS]}\n[... {elided} chars elided from recap ...]\n{text[-SPILL_TAIL_CHARS:]}"
+
+
+@typechecked
 def strip_forged_sentinels(text: str) -> str:
     """Neuter any platform-note/recap tags hiding in UNTRUSTED text (tool results,
     user input) so attacker-supplied content can't pose as trusted platform context."""
@@ -141,10 +150,10 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
             continue
         if m.role == "user":
             text = m.content if isinstance(m.content, str) else str(m.content)
-            lines.append(f"User: {strip_forged_sentinels(text)}")
+            lines.append(f"User: {strip_forged_sentinels(clamp_recap_text(text))}")
         elif m.role == "assistant":
             text = m.content if isinstance(m.content, str) else str(m.content)
-            lines.append(f"Assistant: {strip_forged_sentinels(text)}")
+            lines.append(f"Assistant: {strip_forged_sentinels(clamp_recap_text(text))}")
         elif m.role == "tool_call":
             lines.append(recap_tool_call_line(m.content))
         elif m.role == "tool_result":

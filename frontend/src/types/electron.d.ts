@@ -62,6 +62,7 @@ declare global {
     getWebviewPreloadPath: () => string;
     getAppVersion: () => Promise<string>;
     setWindowButtonsVisible?: (visible: boolean) => Promise<void>;
+    setWindowBackground?: (color: string) => Promise<void>;
     getBuildInfo: () => Promise<{ sha: string; shortSha: string; builtAt: string | null; channel: string }>;
     getUpdateStatus: () => Promise<{ status: string; info: any; error: string | null }>;
     getCrashRecoveryInfo?: () => Promise<{ ts: number; parent_pid: number; uptime_ms: number } | null>;
@@ -75,6 +76,8 @@ declare global {
     onUpdateError: (cb: (message: string) => void) => () => void;
     onWebviewNewWindow: (cb: (url: string, webContentsId: number, disposition?: string) => void) => () => void;
     onReloadShortcut?: (cb: () => void) => () => void;
+    onCloseShortcut?: (cb: () => void) => () => void;
+    onNewTabShortcut?: (cb: () => void) => () => void;
     onBrowserShortcut?: (cb: (payload: { action: string; webContentsId: number }) => void) => () => void;
     openExternal: (url: string) => Promise<void>;
     harvestUsage?: (provider: string) => Promise<{ ok: boolean; total: number; titles: string[]; memories: string[] } | null>;
@@ -86,6 +89,11 @@ declare global {
     voiceSetModel?: (id: string) => Promise<{ ok: boolean; ready: boolean }>;
     voiceTranscribe?: (wav: ArrayBuffer) => Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceInject?: (text: string) => Promise<{ ok: boolean; pasted?: boolean; error?: string }>;
+    voiceStreamStart?: () => Promise<{ ok: boolean; error?: string }>;
+    voiceStreamChunk?: (pcm: ArrayBuffer) => void;
+    voiceStreamStop?: () => Promise<{ ok: boolean; text?: string; degraded?: boolean; error?: string }>;
+    voiceStreamCancel?: () => void;
+    onVoicePartial?: (cb: (p: { committed: string; tentative: string; seq: number }) => void) => () => void;
     onVoiceToggle?: (cb: () => void) => () => void;
     voiceHoldCapable?: () => Promise<boolean>;
     voiceRequestHoldPermission?: () => Promise<boolean>;
@@ -93,6 +101,11 @@ declare global {
     onOauthClaim?: (cb: (url: string) => void) => () => void;
     notify?: (payload: OpenSwarmNotifyRequest) => Promise<boolean>;
     onNotificationAction?: (cb: (payload: OpenSwarmNotifyAction) => void) => () => void;
+    revealPath?: (filePath: string) => Promise<{ ok: boolean }>;
+    onDockShortcut?: (cb: (index: number) => void) => () => void;
+    setOverlayEnabled?: (enabled: boolean) => Promise<{ ok: boolean }>;
+    showOverlay?: () => Promise<{ ok: boolean }>;
+    onOverlaySubmit?: (cb: (text: string) => void) => () => void;
   }
 
   interface Window {

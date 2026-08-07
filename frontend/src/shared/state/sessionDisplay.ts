@@ -35,6 +35,8 @@ export function displayChatTitle(session: AgentSession | null | undefined): stri
   if (session.name && !isLegacyAutoName(session.name)) {
     return session.name;
   }
+  // A spawned sub-agent's first message is its parent's raw instruction; titling the card with it reads as a leak.
+  if (session.parent_session_id) return 'Sub-agent';
   const firstUserMsg = session.messages?.find((m) => m.role === 'user');
   const firstUserContent = firstUserMsg && typeof firstUserMsg.content === 'string'
     ? firstUserMsg.content

@@ -5,6 +5,7 @@ Lifted out of the agent loop; mutates the passed TurnState / ThinkingState by re
 through the manager's live-partial mirror + session registry, exactly as it did inline."""
 
 import asyncio
+import logging
 from typing import Dict, Optional
 from uuid import uuid4
 
@@ -17,11 +18,13 @@ from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 
-try:
+# The block types drive isinstance DISPATCH, so they must be real at runtime; imported inside the handler because by stream time the SDK is already resident (the turn's presence check imported it), keeping the 350ms sdk+mcp chain off the boot graph.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     from claude_agent_sdk import AssistantMessage
-    from claude_agent_sdk.types import ThinkingBlock, TextBlock, ToolUseBlock
-except ImportError:  # the SDK is optional at runtime (mock mode); keep this module importable
-    AssistantMessage = ThinkingBlock = TextBlock = ToolUseBlock = object  # type: ignore
+else:
+    AssistantMessage = object
 
 
 @typechecked
@@ -34,6 +37,8 @@ async def handle_assistant_message(
     live_partial: Dict[str, PartialReply],
     sessions: Dict[str, AgentSession],
 ) -> None:
+    from claude_agent_sdk.types import ThinkingBlock, TextBlock, ToolUseBlock
+
     content_parts = []
     new_thinking_parts = []
     tool_uses = []
@@ -74,6 +79,24 @@ async def handle_assistant_message(
             ot = int(msg_usage.get("output_tokens", 0) or 0)
             if ot > 0:
                 turn.output_tokens += ot
+            from backend.apps.agents.manager.context_budget import maybe_break_midturn
+            if maybe_break_midturn(session, turn, msg_usage):
+                logging.getLogger(__name__).warning(
+                    f"[context-break] session {session_id}: mid-turn input "
+                    f"{session.tokens.get('input')} crossed the compact trigger; breaking at the "
+                    "next message boundary and continuing on a fresh compacted session"
+                )
+                try:
+                    from backend.apps.service.client import submit_diagnostic
+                    submit_diagnostic({
+                        "kind": "context_midturn_break",
+                        "session_id": session_id,
+                        "model": session.model,
+                        "input_tokens": session.tokens.get("input"),
+                        "context_window": session.context_window,
+                    })
+                except Exception:
+                    pass
     except Exception:
         pass
 

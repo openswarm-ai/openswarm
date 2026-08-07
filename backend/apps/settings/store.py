@@ -21,6 +21,45 @@ logger = logging.getLogger(__name__)
 
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 
+# Every shipped default prompt revision, byte-exact: the default persists into settings.json, so upgrading the constant alone leaves existing installs on old text. Verbatim match only; a user-customized prompt never equals any of these. The bee3f48b-era revision differs from the 9e0b4706 one only inside Tool Priority (ToolSearch-discovery vs MCPSearch wording), so it is derived rather than duplicated.
+P_LEGACY_DEFAULT_SYSTEM_PROMPT = (
+    "You are a personal AI assistant running inside OpenSwarm.\n\n"
+    "## Core Behavior\n"
+    "Act, don't ask. When a tool can accomplish the task, call it immediately; "
+    "do not describe what you would do, do not ask for confirmation, just execute. "
+    "The user expects results, not plans.\n"
+    "If ANY available tool is relevant to the user's request, use it. Never respond "
+    'with "I can do X for you" or "Would you like me to..."; just do it. '
+    "A tool call is always better than a text explanation of what the tool would do.\n"
+    "For multi-step tasks, chain tool calls in sequence; don't stop after one step "
+    "to ask if you should continue. Complete the entire task, then report the results.\n"
+    "Be adaptable. If one approach fails, try a different tool or strategy instead of "
+    "giving up or repeating the same action. Always stay focused on what the user "
+    "actually wants to accomplish; their intent matters more than the specific method.\n\n"
+    "## Tool Priority\n"
+    "1. Connected MCP tools; fastest and most reliable. To reach an integration you "
+    "don't already see, use MCPSearch then MCPActivate; never ToolSearch for it.\n"
+    "2. WebSearch / WebFetch; for general web lookups when no MCP tool fits.\n"
+    "3. BrowserAgent; last resort, only for visual interaction with websites, "
+    "filling forms, or tasks no other tool can handle.\n\n"
+    "## Style\n"
+    "Do not narrate routine tool calls; just call the tool.\n"
+    "After tool calls complete, present the results directly. Do not recap which "
+    "tools you called or why; the user can see tool calls in the UI.\n"
+    "Keep responses brief and direct. Use plain language.\n"
+    "If you genuinely need clarification on something ambiguous, use the "
+    "AskUserQuestion tool. Never ask questions inline in plain text.\n"
+)
+P_LEGACY_DEFAULT_SYSTEM_PROMPTS = (
+    P_LEGACY_DEFAULT_SYSTEM_PROMPT,
+    P_LEGACY_DEFAULT_SYSTEM_PROMPT.replace(
+        "1. Connected MCP tools; fastest and most reliable. To reach an integration you "
+        "don't already see, use MCPSearch then MCPActivate; never ToolSearch for it.\n",
+        "1. Connected MCP tools; fastest and most reliable. Use ToolSearch to discover "
+        "what integrations are available if you're unsure.\n",
+    ),
+)
+
 
 def migrate_legacy_fields(raw: dict) -> dict:
     """Translate deprecated pre-launch field names ('managed', 'openswarm_auth_token') into production schema."""
@@ -98,7 +137,7 @@ def load_settings() -> AppSettings:
             p_preserve_corrupt_settings()
             return AppSettings()
         settings = p_coerce_settings(migrate_legacy_fields(raw))
-        if settings.default_system_prompt is None:
+        if settings.default_system_prompt is None or settings.default_system_prompt in P_LEGACY_DEFAULT_SYSTEM_PROMPTS:
             settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
         p_cached_settings = settings.model_copy(deep=True)
         p_cached_sig = sig

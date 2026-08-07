@@ -16,6 +16,9 @@
     <true/>
     <key>com.apple.security.inherit</key>
     <true/>
+    <!-- Dictation: without this, a hardened-runtime signed build denies getUserMedia mic capture with NO TCC prompt, which is exactly how prod dictation stayed dead while dev worked (ENG-103). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     <!-- Secure-Enclave WebAuthn credential storage (Touch ID passkeys). Authorized by the embedded Developer ID provisioning profile (Y26NUZH4NG.* wildcard); must match the group passed to app.configureWebAuthn. Main app only, NOT the helper-inherit file. -->
     <key>keychain-access-groups</key>
     <array>

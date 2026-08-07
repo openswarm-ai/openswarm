@@ -105,6 +105,14 @@ if lsof -ti :$BACKEND_PORT >/dev/null 2>&1; then
     sleep 0.3
 fi
 
+# Same guard for webpack's port: a stray dev server (or a test harness) holding :3000 made the
+# frontend die with EADDRINUSE and took the whole run down.
+if lsof -ti :3000 >/dev/null 2>&1; then
+    echo -e "${YELLOW}${BOLD}[preflight]${RESET} Port 3000 still bound from a prior run, killing stale process..."
+    lsof -ti :3000 | xargs kill -9 2>/dev/null || true
+    sleep 0.3
+fi
+
 # --- Start backend ---
 # Mark this as a dev launch so backend/run.sh enables --reload. Packaged
 # builds never run this top-level script (Electron spawns backend

@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { AgentMessage, expandSession, collapseSession, fetchSession } from '@/shared/state/agentsSlice';
-import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { placeCard, removeCard, setGlowingAgentCard, clearGlowingAgentCard, DEFAULT_CARD_W, DEFAULT_CARD_H, EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
+import { AgentMessage } from '@/shared/state/agentsSlice';
+import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { revealSubAgent } from './revealSubAgent';
 import { ensureToolCallKeyframes } from '../parsing/toolBubbleChrome';
 import {
   getToolData,
@@ -25,6 +25,7 @@ import { InvokeAgentBubble } from './InvokeAgentBubble';
 import { CreateAgentBubble } from './CreateAgentBubble';
 import { CompactMcpBubble } from './CompactMcpBubble';
 import { DefaultToolBubble } from './DefaultToolBubble';
+import { openCardContextMenu, isNativeMenuTarget, type CardMenuRow } from '../../Dashboard/desktop/openCardContextMenu';
 
 export { parseMcpToolName, getMcpShortAction } from '@/shared/mcpToolMeta';
 export type { McpToolInfo } from '@/shared/mcpToolMeta';
@@ -34,6 +35,14 @@ export interface ToolPair {
   id: string;
   call: AgentMessage;
   result: AgentMessage | null;
+}
+
+/** Spread onto every bubble variant's root: the select-frame data attrs plus the shared right-click menu. */
+export interface ToolSelectAttrs {
+  'data-select-type': 'tool-call';
+  'data-select-id': string;
+  'data-select-meta': string;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
 interface ToolCallBubbleProps {
@@ -52,7 +61,6 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
-    const cards = useAppSelector((s) => s.dashboardLayout.cards);
     const [expanded, setExpanded] = useState(false);
     const bubbleRef = useRef<HTMLDivElement>(null);
 
@@ -112,73 +120,14 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
     const revealTargetSessionId = invokedSessionId || createAgentSessionId;
 
-    const sessions = useAppSelector((s) => s.agents.sessions);
-    const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
-
     const handleRevealAgent = useCallback(
       (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!revealTargetSessionId || !sessionId) return;
-
-        if (cards[revealTargetSessionId]) {
-          dispatch(collapseSession(revealTargetSessionId));
-          dispatch(removeCard(revealTargetSessionId));
-          setTimeout(() => {
-            dispatch(clearGlowingAgentCard(revealTargetSessionId));
-          }, 500);
-          return;
-        }
-
-        let sourceYRatio: number | undefined;
-        if (bubbleRef.current) {
-          const bubbleEl = bubbleRef.current;
-          const cardEl = bubbleEl.closest('[data-select-type="agent-card"]') as HTMLElement | null;
-          if (cardEl) {
-            const cardRect = cardEl.getBoundingClientRect();
-            const bubbleRect = bubbleEl.getBoundingClientRect();
-            const bubbleCenterY = bubbleRect.top + bubbleRect.height / 2;
-            const ratio = (bubbleCenterY - cardRect.top) / cardRect.height;
-            sourceYRatio = Math.max(0, Math.min(1, ratio));
-          }
-        }
-
-        const doPlace = () => {
-          const parentCard = cards[sessionId];
-          const targetX = parentCard
-            ? parentCard.x + parentCard.width + GRID_GAP * 12
-            : 40;
-          let targetY = parentCard ? parentCard.y : 100;
-          if (parentCard) {
-            const columnCards = Object.values(cards).filter(
-              (c) => Math.abs(c.x - targetX) < 50 && c.session_id !== revealTargetSessionId,
-            );
-            if (columnCards.length > 0) {
-              const lowestBottom = Math.max(
-                ...columnCards.map((c) => c.y + Math.max(EXPANDED_CARD_MIN_H, c.height)),
-              );
-              targetY = lowestBottom + GRID_GAP;
-            }
-          }
-          dispatch(placeCard({
-            sessionId: revealTargetSessionId,
-            x: targetX,
-            y: targetY,
-            width: DEFAULT_CARD_W,
-            height: DEFAULT_CARD_H,
-            expandedSessionIds,
-          }));
-          dispatch(expandSession(revealTargetSessionId));
-          const label = isCreateAgent ? 'Create Agent' : isInvokeAgent ? 'Invoke Agent' : 'Agent';
-          dispatch(setGlowingAgentCard({ sessionId: revealTargetSessionId, sourceId: sessionId, sourceYRatio, label }));
-        };
-
-        if (!sessions[revealTargetSessionId]) {
-          dispatch(fetchSession(revealTargetSessionId)).then(doPlace);
-        } else {
-          doPlace();
-        }
+        const label = isCreateAgent ? 'Create Agent' : isInvokeAgent ? 'Invoke Agent' : 'Agent';
+        revealSubAgent(dispatch, sessionId, revealTargetSessionId, bubbleRef.current, label);
       },
-      [revealTargetSessionId, sessionId, cards, sessions, dispatch],
+      [revealTargetSessionId, sessionId, dispatch, isCreateAgent, isInvokeAgent],
     );
 
     const toggle = useCallback(() => {
@@ -193,10 +142,25 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
 
     const promptPrefix = getPromptPrefix(toolName);
 
-    const selectAttrs = {
+    // ENG-148: tool rows answer right-click with the shared grammar (copy the command/output, toggle details) instead of falling through to the OS text menu.
+    const handleContextMenu = useCallback((e: React.MouseEvent) => {
+      if (isNativeMenuTarget(e)) return;
+      const selection = window.getSelection()?.toString() ?? '';
+      const inputText = formattedInput || inputSummary || JSON.stringify(input, null, 2);
+      const items: CardMenuRow[] = [{ kind: 'header', label: mcpInfo.isMcp ? mcpInfo.displayName : toolName }];
+      if (selection) items.push({ label: 'Copy selection', onClick: () => { void navigator.clipboard.writeText(selection); } });
+      items.push({ label: toolName === 'Bash' ? 'Copy command' : 'Copy input', disabled: !inputText, onClick: () => { void navigator.clipboard.writeText(inputText); } });
+      items.push({ label: 'Copy output', disabled: !resultRawText, onClick: () => { void navigator.clipboard.writeText(resultRawText); } });
+      items.push({ kind: 'separator' });
+      items.push({ label: expanded ? 'Collapse details' : 'Expand details', disabled: isStreaming, onClick: toggle });
+      openCardContextMenu(e, { items });
+    }, [formattedInput, inputSummary, input, mcpInfo, toolName, resultRawText, expanded, isStreaming, toggle]);
+
+    const selectAttrs: ToolSelectAttrs = {
       'data-select-type': 'tool-call' as const,
       'data-select-id': call.id,
       'data-select-meta': JSON.stringify({ tool: toolName, inputSummary }),
+      onContextMenu: handleContextMenu,
     };
 
     if (isInvokeAgent) {

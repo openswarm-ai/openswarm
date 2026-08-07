@@ -1,31 +1,8 @@
 import re
 from typing import Optional, Tuple
 
-import anthropic
 import httpx
 from typeguard import typechecked
-
-# Secret shapes that must never ride along when we ship a stderr tail or an error string to telemetry. own_key mode means the subprocess stderr can echo the user's OWN provider key, so this scrub is the wall between a diagnostic and a key leak; over-redacting is fine, leaking is not.
-P_TELEMETRY_SECRET_PATTERNS = (
-    re.compile(r"sk-ant-[A-Za-z0-9_\-]{12,}"),
-    re.compile(r"sk-[A-Za-z0-9_\-]{16,}"),
-    re.compile(r"AIza[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
-    re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
-    re.compile(r"(?i)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|authorization)\b[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9._\-]{6,}"),
-)
-
-
-def redact_for_telemetry(text: str, *, limit: int = 2000) -> str:
-    """Scrub secret-shaped substrings, then keep the tail (where the real error
-    lands), bounded so a runaway log can't bloat the payload. Every raw
-    error/stderr string goes through here before it leaves the machine."""
-    if not text:
-        return ""
-    for pat in P_TELEMETRY_SECRET_PATTERNS:
-        text = pat.sub("[redacted]", text)
-    return text[-limit:]
-
 
 # Patterns that indicate an upstream transient problem (overload / rate limit / infra blip), safe to silently retry with backoff. Checked against the stringified exception from claude_agent_sdk / Claude CLI.
 TRANSIENT_CAPACITY_PATTERNS = re.compile(
@@ -37,6 +14,7 @@ TRANSIENT_CAPACITY_PATTERNS = re.compile(
     r"|internal\s+server\s+error"
     r"|rate[_\s-]?limit(?:_error)?"
     r"|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch\s+failed"
+    r"|reset\s+after\s+\d"
     r"|resource[_\s-]?exhausted"
     r"|upstream\s+connect\s+error)",
     re.IGNORECASE,
@@ -73,6 +51,25 @@ NON_TRANSIENT_PATTERNS = re.compile(
 
 
 @typechecked
+def is_router_unreachable_error(text: str) -> bool:
+    """True when a turn-result error is the CLI failing to REACH its endpoint (our localhost
+    9Router, which every provider call goes through). A dev reload kills and respawns the router,
+    so this is a seconds-long outage: the caller re-ensures the router and resumes the turn
+    instead of surfacing a terminal error card."""
+    if not text.strip():
+        return False
+    return bool(re.search(
+        r"unable\s+to\s+connect"
+        r"|econnrefused"
+        r"|connection\s+refused"
+        r"|fetch\s+failed"
+        r"|connection\s+error",
+        text,
+        re.IGNORECASE,
+    ))
+
+
+@typechecked
 def is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
     """True when the upstream error is the 'long context tier required' 429.
 
@@ -85,6 +82,31 @@ def is_long_context_error(exc: BaseException, extra_text: str = "") -> bool:
     return bool(re.search(
         r"extra\s+usage\s+is\s+required\s+for\s+long\s+context"
         r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))",
+        combined,
+        re.IGNORECASE,
+    ))
+
+
+@typechecked
+def is_context_overflow_error(exc: BaseException, extra_text: str = "") -> bool:
+    """The context-window overflow family across providers: Anthropic's 'prompt is too
+    long' 400 and long-context tier gate, OpenAI's 'maximum context length' /
+    'context_length_exceeded' / 'request too large', Gemini's 'input token count exceeds'.
+    Gates the reactive compact-and-retry valve in run_agent_loop; a misfire costs one
+    bounded fresh-session recap retry, a miss means today's terminal error card.
+    """
+    if is_long_context_error(exc, extra_text):
+        return True
+    combined = f"{exc!s}\n{extra_text}".strip()
+    if not combined:
+        return False
+    return bool(re.search(
+        r"prompt\s+is\s+too\s+long"
+        r"|maximum\s+context\s+length"
+        r"|context[_\s-]?length[_\s-]?exceeded"
+        r"|input\s+token\s+count[^.\n]{0,40}exceeds"
+        r"|exceeds?\s+the\s+(?:maximum\s+)?(?:context|token)\s+(?:window|limit)"
+        r"|request\s+too\s+large",
         combined,
         re.IGNORECASE,
     ))
@@ -132,6 +154,10 @@ def is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
         return False
     # A tool-schema translation 400 can carry provider/connection wording that trips the auth regex below; it isn't auth, so don't claim it is.
     if is_translation_error(exc, extra_text):
+        return False
+    # A 401 that names its own recovery window ("reset after 1m 57s") is a token mid-refresh; it
+    # heals itself, so the reconnect card would lie. The transient classifier retries it instead.
+    if re.search(r"reset\s+after|try\s+again\s+in", combined, re.IGNORECASE):
         return False
     return bool(re.search(
         r"\b(401|403)\b"
@@ -204,19 +230,36 @@ def parse_retry_after(exc: BaseException, extra_text: str = "") -> int | None:
 # anthropic.APIConnectionError stringifies to the bare "Connection error.", so the patterns above
 # score it NON-transient and one network hiccup throws away a whole run (measured live, twice). A
 # transport failure is transient by construction, so classify by TYPE, which no rewording breaks.
-P_TRANSIENT_EXC_TYPES: Tuple[type, ...] = (
-    anthropic.APIConnectionError, anthropic.InternalServerError,  # APITimeoutError subclasses the first
-    httpx.TransportError, ConnectionError, TimeoutError)          # connect/read/pool timeouts, protocol errors
+# Built lazily: importing the anthropic SDK at module scope cost 224ms of every backend boot.
+p_transient_exc_types: Optional[Tuple[type, ...]] = None
+
+
+def p_get_transient_exc_types() -> Tuple[type, ...]:
+    global p_transient_exc_types
+    if p_transient_exc_types is None:
+        import anthropic
+
+        p_transient_exc_types = (
+            anthropic.APIConnectionError, anthropic.InternalServerError,  # APITimeoutError subclasses the first
+            httpx.TransportError, ConnectionError, TimeoutError)          # connect/read/pool timeouts, protocol errors
+    return p_transient_exc_types
 
 
 @typechecked
 def is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
     # The Claude CLI's underlying ProcessError stringifies to a generic "Command failed with exit code 1 / Check stderr output for details"; the real cause (rate_limit_error / No pool capacity available / 429 / overloaded) only surfaces in the subprocess's stderr stream, which we capture via the SDK's `stderr` callback and pass in as extra_text. Classify against both so we catch capacity errors regardless of which channel carried the message.
     combined = f"{exc!s}\n{extra_text}".strip()
+    # An overflow can arrive dressed as a 429 ("request too large"); retrying the identical oversized request is guaranteed futile, the valve owns it.
+    if is_context_overflow_error(exc, extra_text):
+        return False
+    # A failure that names its own recovery window ("reset after 1m 57s") heals itself, even when
+    # it's dressed as a 401; the reset hint outranks the auth-shaped non-transient veto (caught live).
+    if combined and re.search(r"reset\s+after\s+\d", combined, re.IGNORECASE):
+        return True
     if combined and NON_TRANSIENT_PATTERNS.search(combined):
         return False
     # Ahead of the empty-string bail on purpose: what the exception IS doesn't depend on whether it bothered to say anything.
-    if isinstance(exc, P_TRANSIENT_EXC_TYPES):
+    if isinstance(exc, p_get_transient_exc_types()):
         return True
     if not combined:
         return False
@@ -284,16 +327,3 @@ def is_context_pressure_death(exc: BaseException, compact_boundaries: int, extra
     return True
 
 
-@typechecked
-def extract_reset_hint(text: str) -> str:
-    """Pull a human reset phrase ('at 7:42 AM', 'in 2h 30m', 'after 1m 59s') out of
-    a provider usage error so we can tell the user when their limit comes back.
-    """
-    if not text:
-        return ""
-    m = re.search(
-        r"(?:try\s+again|resets?|reset)\s+((?:in|at|after)\s+[^.\n)]{1,40})",
-        text,
-        re.IGNORECASE,
-    )
-    return m.group(1).strip() if m else ""

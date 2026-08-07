@@ -4,8 +4,11 @@ import Typography from '@mui/material/Typography';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import CheckIcon from '@mui/icons-material/Check';
+import CircularProgress from '@mui/material/CircularProgress';
+import { summarizeToolGroup } from './summarizeToolGroup';
+import { COLLAPSE_MS, COLLAPSE_EASE, chevronSx, shimmerTextSx, railEnterSx, pressSx, keepRowAnchored } from './toolRowMotion';
 import { AgentMessage, ToolGroupMeta } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useMountReveal } from './useMountReveal';
@@ -124,6 +127,7 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
     return domains;
   }, [group]);
   const webGroupLabel = webDomains ? 'Searched the web' : null;
+  const restingLabel = webGroupLabel ?? workflowGroupLabel;
   const displayName = workflowGroupLabel || webGroupLabel || meta?.name || group.label;
   const hasSvg = !!meta?.svg && !workflowGroupLabel && !webGroupLabel;
 
@@ -141,20 +145,12 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
         ...reveal,
       }}
     >
-      <Box
-        sx={{
-          ...(expanded && {
-            bgcolor: c.bg.elevated,
-            border: `1px solid ${c.border.subtle}`,
-            borderRadius: 2,
-            overflow: 'hidden',
-          }),
-        }}
-      >
-        {/* Collapsed = the quiet "N tool calls ›" line; the detail card only materializes on expand. */}
+      <Box>
+        {/* Both states stay FLAT (the Claude/ChatGPT transition language): expanding never draws a
+            box around the group, the detail hangs off a thin indent rail under the same quiet row. */}
         {!expanded ? (
           <Box
-            onClick={() => { userToggledRef.current = true; setExpanded(true); }}
+            onClick={(e: React.MouseEvent) => { keepRowAnchored(e.currentTarget as HTMLElement); userToggledRef.current = true; setExpanded(true); }}
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -163,15 +159,17 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               cursor: 'pointer',
               color: c.text.tertiary,
               '&:hover': { color: c.text.secondary },
+              ...pressSx,
             }}
           >
+            {!allDone && <CircularProgress size={12} thickness={5} sx={{ color: c.accent.primary, flexShrink: 0 }} />}
             {webDomains && webDomains.length > 0 && <SourceFavicons domains={webDomains} size={16} />}
-            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit' }}>
-              {webGroupLabel ?? `${group.callCount} tool call${group.callCount === 1 ? '' : 's'}`}
+            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'inherit', ...(allDone ? {} : shimmerTextSx(c.accent.primary)) }}>
+              {allDone ? (restingLabel ?? summarizeToolGroup(toolNames) ?? `Ran ${group.callCount} step${group.callCount === 1 ? '' : 's'}`) : (restingLabel ?? 'Working')}
             </Typography>
-            {!allDone && (
-              <Typography sx={{ fontSize: '0.6875rem', color: 'inherit', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums' }}>
-                {completedCount}/{group.callCount}
+            {!allDone && group.callCount > 1 && (
+              <Typography sx={{ fontSize: '0.6875rem', color: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
+                {completedCount} of {group.callCount}
               </Typography>
             )}
             {allDone && webDomains && webDomains.length > 0 && (
@@ -184,29 +182,31 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
                 {deniedCount} denied
               </Typography>
             )}
-            <ExpandMoreIcon sx={{ fontSize: 15, transform: 'rotate(-90deg)' }} />
+            <ExpandMoreIcon sx={{ fontSize: 15, ...chevronSx(false) }} />
           </Box>
         ) : (
         <Box
-          onClick={() => { userToggledRef.current = true; setExpanded(false); }}
+          onClick={(e: React.MouseEvent) => { keepRowAnchored(e.currentTarget as HTMLElement); userToggledRef.current = true; setExpanded(false); }}
           sx={{
             display: 'flex',
             alignItems: 'center',
             gap: 0.75,
-            px: 1.5,
-            py: 0.7,
+            py: 0.4,
             cursor: 'pointer',
-            '&:hover': { bgcolor: 'rgba(0,0,0,0.02)' },
+            '&:hover': { opacity: 0.85 },
+            ...pressSx,
           }}
         >
-          {webDomains && webDomains.length > 0 ? (
+          {!allDone ? (
+            <CircularProgress size={13} thickness={5} sx={{ color: c.accent.primary, flexShrink: 0 }} />
+          ) : webDomains && webDomains.length > 0 ? (
             <SourceFavicons domains={webDomains} size={16} />
           ) : !meta ? (
             <SkeletonPulse width={15} height={15} borderRadius={8} />
           ) : hasSvg ? (
-            <GeneratedSvgIcon svg={meta.svg} size={15} color={c.accent.primary} />
+            <GeneratedSvgIcon svg={meta.svg} size={15} color={c.text.secondary} />
           ) : (
-            <TerminalIcon sx={{ fontSize: 15, color: c.accent.primary, flexShrink: 0 }} />
+            <TerminalIcon sx={{ fontSize: 15, color: c.text.secondary, flexShrink: 0 }} />
           )}
 
           {!meta && !webGroupLabel && !workflowGroupLabel ? (
@@ -216,10 +216,12 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
           ) : (
             <Typography
               sx={{
-                color: c.accent.primary,
+                color: allDone ? c.text.secondary : c.accent.primary,
                 fontSize: '0.8125rem',
                 fontWeight: 600,
                 flex: 1,
+                transition: 'color 200ms ease',
+                ...(allDone ? {} : shimmerTextSx(c.accent.primary)),
               }}
             >
               {displayName}
@@ -231,32 +233,29 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
               {deniedCount} denied
             </Typography>
           )}
-          {/* Single fraction renders progress AND total; the green color
-              alone signals completion, and the fraction's denominator
-              makes the separate ×N chip redundant. tabular-nums +
-              minWidth keep the position stable as digits change. */}
-          {allDone && completedCount > 0 && (
-            <Typography sx={{ color: c.status.success, fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontFamily: c.font.mono, minWidth: 36, textAlign: 'right' }}>
-              {completedCount}/{group.callCount}
-            </Typography>
-          )}
+          {allDone && completedCount > 0 && <CheckIcon sx={{ fontSize: 14, color: c.status.success, flexShrink: 0 }} />}
           {!allDone && pendingCount > 0 && (
-            <Typography sx={{ color: c.text.tertiary, fontSize: '0.6875rem', fontFamily: c.font.mono, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
-              {completedCount}/{group.callCount}
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>
+              {completedCount} of {group.callCount}
             </Typography>
           )}
           <IconButton size="small" sx={{ color: c.text.tertiary, p: 0.15 }}>
-            <ExpandLessIcon sx={{ fontSize: 16 }} />
+            <ExpandMoreIcon sx={{ fontSize: 16, ...chevronSx(true) }} />
           </IconButton>
         </Box>
         )}
 
-        <Collapse in={expanded}>
+        <Collapse in={expanded} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE}>
           <Box
             sx={{
-              borderTop: `0.5px solid ${c.border.medium}`,
+              // ChatGPT's indent rail: detail hangs off a thin rule under the row, no enclosing box.
+              borderLeft: `2px solid ${c.border.medium}`,
+              ml: 0.8,
+              pl: 0.75,
+              my: 0.25,
+              ...railEnterSx(expanded),
               '& > *': {
-                animation: 'toolRowFadeIn 140ms ease-out backwards',
+                animation: `toolRowFadeIn ${COLLAPSE_MS}ms ${COLLAPSE_EASE} backwards`,
               },
               // Staggered entrance (assistant-ui's tool-group treatment): rows cascade instead of popping at once.
               '& > *:nth-of-type(2)': { animationDelay: '40ms' },

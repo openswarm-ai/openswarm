@@ -94,45 +94,43 @@ const ToolSection: React.FC<ToolSectionProps> = ({
   };
 
   return (
-  <Card sx={{ bgcolor: c.bg.surface, border: `1px solid ${open && enabled ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: c.accent.primary, boxShadow: '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}>
-    <CardContent sx={{ py: 1.1, px: 1.75, '&:last-child': { pb: 1.1 } }}>
+  <Card sx={{ bgcolor: open && enabled ? c.bg.elevated : 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none', borderBottom: `1px solid ${c.border.subtle}`, '&:last-of-type': { borderBottom: 'none' }, '&:hover': { bgcolor: c.bg.elevated }, transition: 'background-color 0.12s' }}>
+    <CardContent sx={{ py: 1.4, px: 2, '&:last-child': { pb: 1.4 } }}>
       <Box
         onClick={() => enabled && onToggle()}
-        sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: enabled ? 'pointer' : 'default' }}
+        sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 200px', alignItems: 'center', gap: 2, cursor: enabled ? 'pointer' : 'default' }}
       >
-        <Box sx={{
-          width: 30, height: 30, borderRadius: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          bgcolor: c.bg.secondary, color: c.text.tertiary, flexShrink: 0,
-          opacity: enabled ? 1 : 0.4, transition: 'opacity 0.2s',
-        }}>
-          {icon}
-        </Box>
-        <Box sx={{ flex: 1, minWidth: 0, opacity: enabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.9375rem' }}>{label}</Typography>
-            <Chip label={`${count} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
-            {deferred && (
-              <Chip label="on-demand" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.6 } }} />
-            )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <Box sx={{
+            width: 34, height: 34, borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface, color: c.text.tertiary, flexShrink: 0,
+            opacity: enabled ? 1 : 0.55, transition: 'opacity 0.2s',
+          }}>
+            {icon}
           </Box>
-          <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sectionDescription}</Typography>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ color: enabled ? c.text.primary : c.text.tertiary, fontWeight: 600, fontSize: '0.9375rem', mb: 0.25 }}>{label}</Typography>
+            <Typography noWrap sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>{sectionDescription}</Typography>
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', mt: 0.25 }}>{count} tools{deferred ? '  ·  on-demand' : ''}</Typography>
+          </Box>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-          <Switch
-            size="small"
-            checked={enabled}
-            onChange={(_, checked) => onEnabledChange(checked)}
-            sx={{
-              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-            }}
-          />
-        </Box>
-        {enabled && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
+        <Typography sx={{ color: c.text.secondary, fontSize: '0.8125rem' }}>Built-in</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+          <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center' }}>
+            <Switch
+              size="small"
+              checked={enabled}
+              onChange={(_, checked) => onEnabledChange(checked)}
+              sx={{
+                '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+              }}
+            />
+          </Box>
+          {enabled && (
             <KeyboardArrowDownIcon sx={{ fontSize: 18, color: c.text.ghost, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-          </Box>
-        )}
+          )}
+        </Box>
       </Box>
     </CardContent>
     <Collapse in={open && enabled} timeout={0} unmountOnExit>

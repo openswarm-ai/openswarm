@@ -49,6 +49,8 @@ export function useSmoothText(
 
   // Imperative-tail bookkeeping: which committedLen the DOM reflects, and the text node + its committed baseline that per-frame appends write into.
   const domLenRef = useRef<number>(committedLen);
+  const rafRef = useRef<number | null>(null);
+  const tickRef = useRef<((now: number) => void) | null>(null);
   const nodeRef = useRef<Text | null>(null);
   const baseRef = useRef<string>('');
 
@@ -85,7 +87,6 @@ export function useSmoothText(
       return;
     }
 
-    let raf: number | null = null;
     const tick = (now: number) => {
       const full = targetRef.current.length;
       const dtRaw = lastRef.current ? (now - lastRef.current) / 1000 : 0.016;
@@ -118,15 +119,33 @@ export function useSmoothText(
         }
         // else: a commit is mid-flight; skip this frame's append (≤1 frame).
       }
-      raf = requestAnimationFrame(tick); // keep running for the whole stream
+      // Fully revealed AND fully committed: park instead of burning 60fps forever; the growth effect below re-arms.
+      if (posRef.current >= full && committedRef.current >= full) {
+        rafRef.current = null;
+        lastRef.current = 0;
+        return;
+      }
+      rafRef.current = requestAnimationFrame(tick);
     };
 
+    tickRef.current = tick;
     lastRef.current = 0;
-    raf = requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(tick);
     return () => {
-      if (raf != null) cancelAnimationFrame(raf);
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     };
   }, [enabled]);
+
+  // Re-arm a parked loop when new text lands. This never tears the running loop down (the churn the
+  // persistent-loop comment above warns about); it only restarts one that parked itself at idle.
+  useEffect(() => {
+    if (!enabled) return;
+    if (rafRef.current === null && tickRef.current && posRef.current < target.length) {
+      lastRef.current = 0;
+      rafRef.current = requestAnimationFrame(tickRef.current);
+    }
+  }, [target.length, enabled]);
 
   // Target shrank (new turn / reset / branch switch): re-sync so we don't slice past the end of a shorter string and so a fresh turn starts from zero.
   useEffect(() => {

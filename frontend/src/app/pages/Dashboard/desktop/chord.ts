@@ -1,5 +1,5 @@
 // Renders a shortcut the way the platform writes it: mac glyphs run together, Windows spells them with +.
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform);
+export const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform);
 
 const GLYPH: Record<string, string> = {
   mod: IS_MAC ? '⌘' : 'Ctrl',

@@ -23,6 +23,7 @@ interface UseDashboardClipboardArgs {
   browserCards: Record<string, BrowserCardPosition>;
   outputs: Record<string, Output>;
   expandedSessionIds: string[];
+  onCopiedToContext?: (copied: ClipboardCard[]) => void;
 }
 
 export function useDashboardClipboard({
@@ -35,6 +36,7 @@ export function useDashboardClipboard({
   browserCards,
   outputs,
   expandedSessionIds,
+  onCopiedToContext,
 }: UseDashboardClipboardArgs) {
   const dispatch = useAppDispatch();
 
@@ -89,10 +91,12 @@ export function useDashboardClipboard({
       }
       setClipboardCards(copied);
       navigator.clipboard.writeText(names.join(', ')).catch(() => {});
+      // Copy IS attach: the selection lands in the composer as context chips, no select mode, no paste step.
+      if (copied.length > 0) onCopiedToContext?.(copied);
     };
     window.addEventListener('keydown', handleCopy);
     return () => window.removeEventListener('keydown', handleCopy);
-  }, [selection.selectedIds, sessions, cards, viewCards, browserCards, outputs, expandedSessionIds]);
+  }, [selection.selectedIds, sessions, cards, viewCards, browserCards, outputs, expandedSessionIds, onCopiedToContext]);
 
   useEffect(() => {
     const handlePaste = (e: KeyboardEvent) => {

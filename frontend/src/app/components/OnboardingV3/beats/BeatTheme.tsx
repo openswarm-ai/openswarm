@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Monitor, Moon, Sun } from 'lucide-react';
 import { useThemeAccent, useThemeMode, useThemeWash } from '@/shared/styles/ThemeContext';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import AccentColorPad from '@/app/components/theme/AccentColorPad';
@@ -37,12 +36,6 @@ const BeatTheme: React.FC<{
   }, [setMode]);
   const pickMode = useCallback((m: 'light' | 'dark') => { followSystem.current = false; setChoice(m); setMode(m); }, [setMode]);
 
-  const MODES = [
-    { key: 'light' as const, Icon: Sun, onPick: () => pickMode('light') },
-    { key: 'dark' as const, Icon: Moon, onPick: () => pickMode('dark') },
-    { key: 'system' as const, Icon: Monitor, onPick: pickSystem },
-  ];
-
   return (
     <BeatShell
       c={c}
@@ -64,30 +57,13 @@ const BeatTheme: React.FC<{
           display: 'flex', flexDirection: 'column', gap: 12,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-          {MODES.map(({ key, Icon, onPick }) => (
-            <button
-              key={key}
-              onClick={onPick}
-              title={key.charAt(0).toUpperCase() + key.slice(1)}
-              style={{
-                width: 34, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: choice === key ? c.accent.primary : 'transparent',
-                color: choice === key ? '#fff' : 'rgba(255,255,255,0.55)',
-                transition: 'background 140ms ease, color 140ms ease',
-              }}
-            >
-              <Icon size={15} />
-            </button>
-          ))}
-        </div>
         <AccentColorPad
           c={c}
           stops={stops}
           onChange={onStops}
           height={210}
           wash={{ opacity: washOpacity, grain, onOpacity: setWashOpacity, onGrain: setGrain }}
+          scheme={{ value: choice, onPick: (v) => (v === 'system' ? pickSystem() : pickMode(v)) }}
         />
       </motion.div>
     </BeatShell>

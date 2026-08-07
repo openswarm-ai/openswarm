@@ -14,6 +14,49 @@ import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updat
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import type { SettingsStyles } from '../settingsStyles';
 
+/** The breadcrumb's last stop: a pill-shaped relaunch row pinned to the top of Advanced while an update sits downloaded. */
+export const UpdateReadyBanner: React.FC = () => {
+  const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
+  const updateStatus = useAppSelector((s) => s.update.status);
+  const availableVersion = useAppSelector((s) => s.update.availableVersion);
+  const installing = useAppSelector((s) => s.update.installing);
+  if (updateStatus !== 'downloaded') return null;
+  const install = () => {
+    if (installing) return;
+    dispatch(setInstalling());
+    (window as any).openswarm?.installUpdate();
+  };
+  return (
+    <Box
+      onClick={install}
+      role="button"
+      aria-label="Relaunch to update"
+      sx={{
+        display: 'flex', alignItems: 'center', gap: 1.25,
+        px: 1.75, py: 1.25, mb: 2,
+        borderRadius: '999px',
+        border: `1px solid ${c.accent.primary}`,
+        bgcolor: `${c.accent.primary}14`,
+        cursor: installing ? 'default' : 'pointer',
+        transition: 'background-color 0.15s ease',
+        '&:hover': { bgcolor: `${c.accent.primary}22` },
+      }}
+    >
+      <RestartAltIcon sx={{ fontSize: 18, color: c.accent.primary, flexShrink: 0 }} />
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, lineHeight: 1.25 }}>
+          {installing ? 'Relaunching…' : 'Relaunch to update'}
+        </Typography>
+        <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary }}>
+          {availableVersion ? `Version ${availableVersion} is downloaded and ready.` : 'The update is downloaded and ready.'}
+        </Typography>
+      </Box>
+      {installing && <CircularProgress size={16} sx={{ color: c.accent.primary, ml: 'auto', flexShrink: 0 }} />}
+    </Box>
+  );
+};
+
 const SoftwareUpdateRow: React.FC<{ styles: SettingsStyles }> = ({ styles }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();

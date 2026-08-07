@@ -68,13 +68,23 @@ class SessionPersistence(AgentManagerProtocol):
         and stay on disk so the history endpoint can still serve them.
         """
         restored = 0
+        deferred = 0
         for sid, data in load_all_session_data():
+            if not isinstance(data, dict):
+                continue
+            # Only mid-turn sessions need boot hydration (their status finalize below). Everything
+            # else loads on demand: history reads disk, dashboard lists promote by layout card ids,
+            # and resume/send_message both lazy-load. Eagerly validating thousands of settled
+            # sessions was the 2.7s (and hundreds of MB) of every boot.
+            if data.get("closed_at") is not None:
+                continue
+            if data.get("status") not in ("running", "waiting_approval"):
+                deferred += 1
+                continue
             try:
                 session = AgentSession(**data)
             except Exception as e:
                 logger.warning(f"Skipping corrupt session file {sid}: {e}")
-                continue
-            if session.closed_at is not None:
                 continue
             if session.status in ("running", "waiting_approval"):
                 # The app died mid-turn. If the last message in the active branch is already an assistant reply, the turn finished streaming and only the status finalize was lost (-> completed, no spurious "Resume" button); otherwise the agent was genuinely cut off owing a response (-> stopped, resumable).
@@ -88,5 +98,5 @@ class SessionPersistence(AgentManagerProtocol):
             self.sessions[session.id] = session
             restored += 1
         # One summary line, not one per session (startups with hundreds of sessions flooded the console).
-        if restored:
-            logger.info(f"Restored {restored} session(s)")
+        if restored or deferred:
+            logger.info(f"Restored {restored} mid-turn session(s); {deferred} settled session(s) stay on disk for lazy load")

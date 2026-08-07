@@ -252,7 +252,32 @@ build_mcp_bundle_dir() {
 }
 
 build_mcp_bundle_single 'reddit-mcp-buddy'             'reddit-mcp-buddy/dist/index.js'             'reddit-mcp-buddy.js'
-build_mcp_bundle_single '@kirbah/mcp-youtube'           '@kirbah/mcp-youtube/dist/index.js'           'kirbah-mcp-youtube.js'
+# YouTube gets its own build: upstream imports the 526-API googleapis monolith (plus a mongodb
+# driver rider) for exactly ONE surface, google.youtube. Aliasing googleapis to a single-API shim
+# shrinks the bundle 32.6M -> 3.7M, MCP-handshake-verified identical (same serverInfo, same 8 tools).
+build_youtube_mcp_bundle() {
+    local out_file="$MCP_BUNDLE_DIR/kirbah-mcp-youtube.js"
+    if [[ -f "$out_file" && -z "${OPENSWARM_REBUILD_BUNDLES:-}" ]]; then
+        echo "[0b] @kirbah/mcp-youtube bundle already present (set OPENSWARM_REBUILD_BUNDLES=1 to force rebuild)."
+        return
+    fi
+    echo "[0b] Bundling @kirbah/mcp-youtube (googleapis -> @googleapis/youtube shim) ..."
+    local tmp_dir; tmp_dir=$(mktemp -d)
+    (
+        cd "$tmp_dir"
+        npm install '@kirbah/mcp-youtube' '@googleapis/youtube' --silent 2>/dev/null
+        printf '%s\n' 'const { youtube } = require("@googleapis/youtube");' 'module.exports = { google: { youtube } };' > googleapis-shim.js
+        local banner='const __OPENSWARM_IMPORT_META_URL__ = require("url").pathToFileURL(__filename).href;'
+        npx esbuild 'node_modules/@kirbah/mcp-youtube/dist/index.js' --bundle --platform=node --format=cjs --target=node22 --legal-comments=none \
+            --define:import.meta.url=__OPENSWARM_IMPORT_META_URL__ \
+            "--banner:js=$banner" \
+            --alias:googleapis=./googleapis-shim.js \
+            --outfile="$out_file"
+    )
+    rm -rf "$tmp_dir"
+    echo "@kirbah/mcp-youtube bundled ($(du -h "$out_file" | cut -f1))."
+}
+build_youtube_mcp_bundle
 build_mcp_bundle_dir    '@notionhq/notion-mcp-server'  '@notionhq/notion-mcp-server/bin/cli.mjs' \
                         'notionhq-notion-mcp-server' \
                         '@notionhq/notion-mcp-server/scripts/notion-openapi.json=scripts/notion-openapi.json' \
@@ -502,6 +527,9 @@ if [[ "$(uname)" == "Darwin" ]]; then
     echo "Building whisper-server for dictation (arm64 + x64)..."
     bash scripts/build-whisper.sh arm64
     bash scripts/build-whisper.sh x64
+    echo "Building fn-watcher for dictation's fn key (arm64 + x64)..."
+    bash scripts/build-fn-watcher.sh arm64
+    bash scripts/build-fn-watcher.sh x64
 fi
 
 # Node's default ~4 GB heap OOMs while codesign'ing the .app on dual-arch

@@ -7,6 +7,8 @@ loudly instead of shipping a silent gate bypass.
 """
 
 import asyncio
+
+import pytest
 from types import SimpleNamespace
 
 import backend.apps.agents.core.mcp_preflight as pf
@@ -22,6 +24,14 @@ OFFER_SHAPE = {"id", "title", "description", "reason"}
 
 def p_settings(dismissed=None):
     return SimpleNamespace(dismissed_mcp_suggestions=dismissed or {})
+
+
+@pytest.fixture(autouse=True)
+def p_isolated_settings(monkeypatch):
+    """run_preflight reads the REAL settings.json; a suggestion the developer dismissed in their
+    own app silently failed this suite (caught live 2026-08-04, Eric dismissed Google Workspace
+    mid-evening). Every test starts from empty dismissals; dismissal tests override explicitly."""
+    monkeypatch.setattr(pf, "load_settings", p_settings)
 
 
 def test_offer_resolves_both_display_name_and_hotpath_slug(monkeypatch):

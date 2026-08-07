@@ -37,6 +37,9 @@ export function useDashboardShortcuts({
     const needsShift = parts.includes('shift');
     const needsAlt = parts.includes('alt');
 
+    // Main matches this combo inside focused webviews (host keydown never fires there) and echoes it back as openswarm:new-agent.
+    (window as unknown as { openswarm?: { setNewAgentShortcut?: (c: { primary: boolean; shift: boolean; key: string }) => void } }).openswarm?.setNewAgentShortcut?.({ primary: needsPrimary, shift: needsShift, key });
+
     const handleShortcut = (e: KeyboardEvent) => {
       if (!isActive) return;  // Don't fire shortcuts when dashboard is hidden
       if (e.key.toLowerCase() !== key) return;
@@ -46,9 +49,14 @@ export function useDashboardShortcuts({
       e.preventDefault();
       setToolbarOpen(true);
     };
+    const handleForwarded = (): void => { if (isActive) setToolbarOpen(true); };
     window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [newAgentShortcut]);
+    window.addEventListener('openswarm:new-agent', handleForwarded);
+    return () => {
+      window.removeEventListener('keydown', handleShortcut);
+      window.removeEventListener('openswarm:new-agent', handleForwarded);
+    };
+  }, [newAgentShortcut, isActive, setToolbarOpen]);
 
   useEffect(() => {
     const handleEnter = (e: KeyboardEvent) => {
@@ -64,7 +72,7 @@ export function useDashboardShortcuts({
     };
     window.addEventListener('keydown', handleEnter);
     return () => window.removeEventListener('keydown', handleEnter);
-  }, [selection.selectedIds, dispatch]);
+  }, [selection.selectedIds, dispatch, isActive]);
 
   useEffect(() => {
     const handleDelete = (e: KeyboardEvent) => {
@@ -79,13 +87,21 @@ export function useDashboardShortcuts({
     };
     window.addEventListener('keydown', handleDelete);
     return () => window.removeEventListener('keydown', handleDelete);
-  }, [selection, dispatch]);
+  }, [selection, dispatch, isActive]);
 
   // Cmd/Ctrl+Shift+T reopens the most recently closed card (browser, agent, note, app, workflow, or browser tab), like a browser's reopen-closed-tab. The guest-focused case routes through main -> AppShell.
   useEffect(() => {
     const handleReopen = (e: KeyboardEvent) => {
       if (!isActive) return;
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey || e.key.toLowerCase() !== 't') return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const isReopenT = e.shiftKey && e.key.toLowerCase() === 't';
+      // Cmd+Z = undo my last close (chats, browsers, apps), the muscle memory for "I deleted that by accident"; editables keep text-undo.
+      const isUndoZ = !e.shiftKey && e.key.toLowerCase() === 'z';
+      if (!isReopenT && !isUndoZ) return;
+      if (isUndoZ) {
+        const t = e.target as HTMLElement;
+        if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) return;
+      }
       e.preventDefault();
       dispatch(reopenLastClosed());
     };
@@ -123,5 +139,5 @@ export function useDashboardShortcuts({
     };
     window.addEventListener('keydown', handleSearch);
     return () => window.removeEventListener('keydown', handleSearch);
-  }, []);
+  }, [isActive, setSearchPaletteOpen]);
 }

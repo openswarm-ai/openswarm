@@ -1,22 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/shared/config';
+import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { encodeWav, VOICE_SAMPLE_RATE } from './encodeWav';
 import { playVoiceCue } from './voiceCues';
 import { injectAtFocus } from './injectAtFocus';
 import { createSilenceDetector } from './createSilenceDetector';
+import { pushDictation } from './voiceHistory';
+import { learnFromTranscript, isDictionaryEcho } from './voiceDictionary';
+import { getFocusedSurfaceHost, surfaceDisabled } from './voiceSurface';
+import { store } from '@/shared/state/store';
+import { createCaptureNode } from './createCaptureNode';
 
 export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'preparing';
 
+// Live transcript preview: committed phrases are decoded once and never rewritten; the tentative
+// tail is the latest hypothesis for the phrase still being spoken.
+export interface VoicePartial {
+  committed: string;
+  tentative: string;
+}
+
 // WhisperFlow-style push-to-dictate: toggle recording (global hotkey or a mic), speak, and the
-// transcribed text is pasted into whatever field has focus. Capture is 16kHz mono PCM so it feeds
-// whisper.cpp with no server-side resample. The recording path can only be proven with a real mic;
+// transcribed text is pasted into whatever field has focus. Capture is 16kHz mono PCM off the audio
+// thread (AudioWorklet) so it feeds whisper.cpp with no server-side resample, and the same chunks
+// stream to main for live partials. The recording path can only be proven with a real mic;
 // the encode -> transcribe -> inject half is exercised by the encoder round-trip test.
 interface Recorder {
   ctx: AudioContext;
   stream: MediaStream;
-  node: ScriptProcessorNode;
+  node: AudioNode;
+  requestFlush: () => Promise<void>;
   source: MediaStreamAudioSourceNode;
   chunks: Float32Array[];
+  streaming: boolean;
 }
 
 // One object per terminal outcome so the overlay's effect always re-fires (new identity every time).
@@ -25,6 +41,32 @@ export interface VoiceFeedback {
   icon: 'check' | 'clipboard' | 'mic' | 'info';
   text: string;
   at: number;
+}
+
+// Where the transcript will land RIGHT NOW, in the user's words plus the surface's own icon;
+// mirrors injectAtFocus's tiers so the chip never promises a destination injection would not pick.
+export interface InjectTargetInfo {
+  label: string;
+  icon: string | null;
+}
+
+function browserTargetInfo(): InjectTargetInfo {
+  const browserId = getLastInteractedBrowser();
+  const card = browserId ? store.getState().dashboardLayout.browserCards[browserId] : undefined;
+  const tab = card?.tabs?.find((t) => t.id === card.activeTabId);
+  const host = (() => { try { return tab?.url ? new URL(tab.url).hostname : null; } catch { return null; } })();
+  return { label: host || 'browser page', icon: tab?.favicon || null };
+}
+
+export function describeInjectTarget(): InjectTargetInfo {
+  const a = document.activeElement as HTMLElement | null;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) {
+    const hint = a.getAttribute('placeholder') || a.getAttribute('aria-label');
+    return { label: hint ? hint.slice(0, 30) : 'text field', icon: null };
+  }
+  if (a && a.tagName === 'WEBVIEW') return browserTargetInfo();
+  if (getLastInteractedBrowser()) return browserTargetInfo();
+  return { label: 'chat composer', icon: null };
 }
 
 // Context hint for the polisher: what the user is dictating into (a field label, a page title), so
@@ -60,6 +102,9 @@ export function useVoiceDictation() {
   const [error, setError] = useState<string | null>(null);
   const [pct, setPct] = useState<number>(0);
   const [feedback, setFeedback] = useState<VoiceFeedback | null>(null);
+  const [partial, setPartial] = useState<VoicePartial | null>(null);
+  const [target, setTarget] = useState<InjectTargetInfo>({ label: '', icon: null });
+  const partialSeqRef = useRef<number>(0);
   const recRef = useRef<Recorder | null>(null);
   const stateRef = useRef<VoiceState>('idle');
   // Live mic level (0..1) for the aurora; a ref, not state, so 60Hz visuals never re-render React.
@@ -103,33 +148,66 @@ export function useVoiceDictation() {
   const start = useCallback(async (hold = false): Promise<void> => {
     if (stateRef.current !== 'idle') return;
     if (!window.openswarm?.voiceTranscribe) { setError('desktop-only'); return; } // no Electron bridge = web build
+    // Per-surface disable: the user marked this site as no-dictation; refuse loudly, never silently.
+    const disabledList = store.getState().settings.data.dictation_disabled_surfaces ?? '';
+    if (disabledList) {
+      const host = getFocusedSurfaceHost();
+      if (surfaceDisabled(disabledList, host)) {
+        setFeedback({ tone: 'warn', icon: 'mic', text: `Dictation is off for ${host}. Change it in Settings > Interface.`, at: Date.now() });
+        return;
+      }
+    }
     setError(null);
+    // Warm on the DOWN edge, before the mic prompt, so the model load overlaps the user starting to speak.
+    void window.openswarm?.voiceWarmup?.();
+    setPartial(null);
+    partialSeqRef.current = 0;
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-      const ctx = new AudioContext({ sampleRate: VOICE_SAMPLE_RATE });
+      // Fire the OS mic prompt through the main process first: a packaged hardened-runtime build denies renderer getUserMedia outright until TCC granted (the prod dictation-dead cause, ENG-103).
+      const micOk = await (window.openswarm as any)?.voiceRequestMicAccess?.() ?? true;
+      if (micOk === false) { setError('mic-denied'); return; }
+      // autoGainControl OFF is the OSS-dictation consensus (Chromium's hidden AGC rides the mic and
+      // garbles levels mid-utterance; none of the five surveyed shipping apps allow any AGC), and
+      // noiseSuppression smears speech whisper handles better raw. Echo cancellation stays: we play
+      // cues out the speakers while the mic is hot.
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
+      ctx = new AudioContext({ sampleRate: VOICE_SAMPLE_RATE });
       const source = ctx.createMediaStreamSource(stream);
-      const node = ctx.createScriptProcessor(4096, 1, 1);
       const chunks: Float32Array[] = [];
       const endpointer = hold ? null : createSilenceDetector(ctx.sampleRate);
-      node.onaudioprocess = (e): void => {
-        const data = e.inputBuffer.getChannelData(0);
-        chunks.push(new Float32Array(data));
-        // RMS per chunk drives the aurora; smoothed so it breathes instead of flickering.
+      const streamRes = await window.openswarm?.voiceStreamStart?.();
+      const streaming = streamRes?.ok === true;
+      // No AGC: boosting "quiet" speech clipped NORMAL speech into distortion and wrecked accuracy
+      // (Eric's garbled-history report). Whisper handles real levels fine; a whisper-mode boost can
+      // only come back as an opt-in with a proper peak limiter, never inline on the hot path.
+      const capture = await createCaptureNode(ctx, (i16) => {
+        if (streaming) window.openswarm?.voiceStreamChunk?.(i16.buffer as ArrayBuffer);
+        const data = new Float32Array(i16.length);
+        for (let i = 0; i < i16.length; i++) data[i] = i16[i] / 0x8000;
+        chunks.push(data);
+        // RMS per chunk drives the waveform; fast attack + slower release, like a real peak meter,
+        // so the bars snap to speech instead of lagging behind it.
         let sum = 0;
         for (let i = 0; i < data.length; i += 8) sum += data[i] * data[i];
         const rms = Math.sqrt(sum / (data.length / 8));
-        volumeRef.current = volumeRef.current * 0.7 + Math.min(1, rms * 6) * 0.3;
+        const level = Math.min(1, rms * 7);
+        volumeRef.current = level > volumeRef.current
+          ? volumeRef.current * 0.35 + level * 0.65
+          : volumeRef.current * 0.78 + level * 0.22;
         if (endpointer && endpointer.push(data) !== 'listening') void stopRef.current?.();
-      };
-      source.connect(node);
-      node.connect(ctx.destination);
-      recRef.current = { ctx, stream, node, source, chunks };
+      });
+      source.connect(capture.node);
+      capture.node.connect(ctx.destination);
+      recRef.current = { ctx, stream, node: capture.node, requestFlush: capture.requestFlush, source, chunks, streaming };
       setState('recording');
       playVoiceCue('start');
-      void (window.openswarm as { haptic?: (p: string) => Promise<boolean> } | undefined)?.haptic?.('generic');
-      // Warm the model the moment recording begins so transcription is instant on stop.
-      void window.openswarm?.voiceWarmup?.();
+      if (store.getState().settings.data.dictation_haptics ?? true) void (window.openswarm as { haptic?: (p: string) => Promise<boolean> } | undefined)?.haptic?.('generic');
     } catch (err) {
+      // Release whatever was acquired before the failure, or the OS mic indicator stays lit forever on a half-started session.
+      try { stream?.getTracks().forEach((t) => t.stop()); } catch { /* already dead */ }
+      try { void ctx?.close(); } catch { /* already closed */ }
       const msg = err instanceof Error ? err.message : 'mic-unavailable';
       setError(msg);
       const denied = /NotAllowed|Permission|denied/i.test(msg);
@@ -140,14 +218,70 @@ export function useVoiceDictation() {
 
   const stop = useCallback(async (): Promise<void> => {
     if (stateRef.current !== 'recording') return;
+    const rec = recRef.current;
+    const streaming = rec?.streaming === true;
+    // Drain the capture's last partial buffer before teardown (worklet flush carries its own 1s watchdog).
+    if (rec) await rec.requestFlush();
     const samples = teardown();
     playVoiceCue('stop');
-    void (window.openswarm as { haptic?: (p: string) => Promise<boolean> } | undefined)?.haptic?.('alignment');
+    if (store.getState().settings.data.dictation_haptics ?? true) void (window.openswarm as { haptic?: (p: string) => Promise<boolean> } | undefined)?.haptic?.('alignment');
     setState('transcribing');
     try {
-      if (!samples || samples.length < VOICE_SAMPLE_RATE * 0.2) { setState('idle'); return; } // < 0.2s = a misfire
-      const wav = encodeWav(samples);
-      const res = await window.openswarm?.voiceTranscribe?.(wav);
+      if (!samples || samples.length < VOICE_SAMPLE_RATE * 0.2) { // < 0.2s = a misfire
+        if (streaming) window.openswarm?.voiceStreamCancel?.();
+        setPartial(null);
+        setState('idle');
+        return;
+      }
+      // Accuracy first (Eric's call): phrases decoded in isolation lose whisper's cross-phrase
+      // context, which read as "sometimes fine, sometimes off". The FULL clip is always decoded at
+      // stop and wins; the streamed assembly only stands in if the batch decode fails outright.
+      let streamedFallback: string | null = null;
+      if (streaming) {
+        const sres = await window.openswarm?.voiceStreamStop?.();
+        if (sres?.ok && sres.text) streamedFallback = sres.text;
+      }
+      let res: { ok: boolean; text?: string; error?: string } | undefined;
+      {
+        // OpenWhispr's window gate: whole-clip RMS misses a clip that is silence plus one cough, so
+        // judge 100ms windows; no window with real speech energy means no decode, ever.
+        const win = Math.round(VOICE_SAMPLE_RATE * 0.1);
+        let peakRms = 0;
+        let speechWindow = false;
+        for (let off = 0; off + win <= samples.length; off += win) {
+          let sumSq = 0;
+          let peak = 0;
+          for (let i = off; i < off + win; i += 2) { const v = samples[i]; sumSq += v * v; if (Math.abs(v) > peak) peak = Math.abs(v); }
+          const wr = Math.sqrt(sumSq / (win / 2));
+          if (wr > peakRms) peakRms = wr;
+          if (wr >= 0.003 && peak >= 0.02) speechWindow = true;
+        }
+        if (peakRms < 0.002 || (!speechWindow && peakRms < 0.006)) {
+          res = { ok: true, text: '' };
+        } else {
+          // whisper.cpp asserts on sub-second buffers; zero-pad instead of rejecting (FluidVoice).
+          const padded = samples.length < VOICE_SAMPLE_RATE
+            ? (() => { const b = new Float32Array(VOICE_SAMPLE_RATE); b.set(samples); return b; })()
+            : samples;
+          const wav = encodeWav(padded);
+          res = await window.openswarm?.voiceTranscribe?.(wav);
+          if ((!res || !res.ok || !res.text) && streamedFallback) res = { ok: true, text: streamedFallback };
+        }
+      }
+      // Whisper captions non-speech in brackets/parens ("[ Background sounds ]", "(laughs)") and marks speaker turns with ">>"; those are annotations, not dictation.
+      if (res?.ok && res.text) res = { ok: true, text: res.text.replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|(?:^|\s)>>\s?/g, ' ').replace(/\s+/g, ' ').trim() };
+      // Stutter collapse (Handy): three or more consecutive identical words are one decode loop, not speech.
+      if (res?.ok && res.text) res = { ok: true, text: res.text.replace(/\b([A-Za-z']+)(\s+\1\b){2,}/gi, '$1') };
+      // Glossary echo (OpenWhispr): a transcript that is mostly the dictionary read back is the prompt leaking, not dictation.
+      if (res?.ok && res.text && isDictionaryEcho(res.text)) res = { ok: true, text: '' };
+      // A transcript with no letter or digit in it is a hallucination artifact (the lone comma), not dictation.
+      if (res?.ok && res.text && !/[\p{L}\p{N}]/u.test(res.text)) res = { ok: true, text: '' };
+      // Wispr's command grammar, v1: saying only "scratch that" (or "delete/cancel that") throws the take away.
+      if (res?.ok && res.text && /^(scratch|delete|cancel) that[.!?]?$/i.test(res.text.trim())) {
+        setFeedback({ tone: 'ok', icon: 'check', text: 'Scratched.', at: Date.now() });
+        setState('idle');
+        return;
+      }
       if (res?.ok && res.text) {
         // WhisperFlow-style cleanup: punctuation + filler words via the cheap aux tier, fail-open to
         // the raw transcript on any error/timeout so dictation never breaks with the aux down.
@@ -163,6 +297,8 @@ export function useVoiceDictation() {
         // Success is silent: the text landing at the cursor IS the feedback. Only the clipboard
         // fallback still speaks, because the user has to act (paste) to get the text.
         const target = injectAtFocus(text);
+        pushDictation(text, target || 'clipboard');
+        learnFromTranscript(text);
         if (!target) {
           const inj = await window.openswarm?.voiceInject?.(text);
           if (!inj?.pasted) setFeedback({ tone: 'ok', icon: 'clipboard', text: `${text}  (copied, press Cmd+V)`, at: Date.now() });
@@ -189,6 +325,16 @@ export function useVoiceDictation() {
 
   stopRef.current = stop;
 
+  // The capsule's X: throw the take away. No transcription, no cue, straight back to idle.
+  const cancel = useCallback((): void => {
+    if (stateRef.current !== 'recording') return;
+    const rec = recRef.current;
+    if (rec?.streaming) window.openswarm?.voiceStreamCancel?.();
+    teardown();
+    setPartial(null);
+    setState('idle');
+  }, [teardown]);
+
   const toggle = useCallback((): void => {
     if (stateRef.current === 'recording') void stop();
     else if (stateRef.current === 'idle') void start();
@@ -200,8 +346,45 @@ export function useVoiceDictation() {
     return () => { off?.(); };
   }, [toggle]);
 
+  // Live partials from the main-process streaming session; the seq guard drops anything a stale
+  // session (previous recording's in-flight decode) manages to emit after a new one started.
+  useEffect(() => {
+    const off = window.openswarm?.onVoicePartial?.((p) => {
+      if (p.seq <= partialSeqRef.current) return;
+      partialSeqRef.current = p.seq;
+      if (stateRef.current === 'recording' || stateRef.current === 'transcribing') {
+        setPartial({ committed: p.committed, tentative: p.tentative });
+      }
+    });
+    return () => { off?.(); };
+  }, []);
+
+  // The preview belongs to a live session only; any terminal state clears it in one place.
+  useEffect(() => {
+    if (state === 'idle' || state === 'preparing') setPartial(null);
+  }, [state]);
+
+  // The target chip tracks focus LIVE while recording: clicking into a field mid-dictation retargets
+  // injection (by design), and the chip must tell that truth as it happens.
+  useEffect(() => {
+    if (state !== 'recording') { setTarget({ label: '', icon: null }); return undefined; }
+    setTarget(describeInjectTarget());
+    const onFocus = (): void => setTarget(describeInjectTarget());
+    window.addEventListener('focusin', onFocus, true);
+    window.addEventListener('focusout', onFocus, true);
+    return () => {
+      window.removeEventListener('focusin', onFocus, true);
+      window.removeEventListener('focusout', onFocus, true);
+    };
+  }, [state]);
+
   // A dangling recorder (unmount mid-capture) must release the mic.
   useEffect(() => () => { teardown(); }, [teardown]);
 
-  return { state, lastText, error, pct, feedback, toggle, start, stop, volumeRef };
+  // One-line notices from outside the session flow (Globe-key conflict, permission hints) ride the same bubble.
+  const notify = useCallback((text: string): void => {
+    setFeedback({ tone: 'warn', icon: 'info', text, at: Date.now() });
+  }, []);
+
+  return { state, lastText, error, pct, feedback, partial, target, toggle, start, stop, cancel, notify, volumeRef };
 }

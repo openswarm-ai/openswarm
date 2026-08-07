@@ -3,23 +3,6 @@ import { API_BASE } from '@/shared/config';
 
 const SETTINGS_API = `${API_BASE}/settings`;
 
-export const DEFAULT_SYSTEM_PROMPT =
-  `You are a personal AI assistant running inside OpenSwarm.\n\n` +
-  `## Tool Priority\n` +
-  `When a dedicated MCP tool exists for a task, use it directly. Do not use the browser for things MCP tools can handle.\n` +
-  `Priority order:\n` +
-  `1. MCP tools first (Reddit, Google Workspace, etc.); fastest and most reliable\n` +
-  `2. WebSearch / WebFetch for general web lookups without a dedicated MCP\n` +
-  `3. BrowserAgent only when you need to visually interact with a website, fill forms, or do something no other tool can handle\n\n` +
-  `## Tool Call Style\n` +
-  `Default: do not narrate routine tool calls. Just call the tool.\n` +
-  `Narrate only when it helps: multi-step work, complex problems, or when the user explicitly asks.\n` +
-  `Keep narration brief. Use plain language.\n\n` +
-  `## Interaction Style\n` +
-  `Be direct and action-oriented. Do not ask clarifying questions unless genuinely ambiguous; ` +
-  `make reasonable assumptions and act. If you need to ask, use the AskUserQuestion tool.\n` +
-  `Do not over-explain what you are about to do. Just do it and show the results.`;
-
 export interface CustomProvider {
   name: string;
   base_url: string;
@@ -49,6 +32,12 @@ export interface AppSettings {
   new_agent_shortcut: string;
   dictation_shortcut?: string | null;
   dictation_model?: string | null;
+  dictation_dictionary?: string;
+  dictation_sounds?: boolean;
+  memory_enabled?: boolean;
+  dictation_haptics?: boolean;
+  dictation_sound_volume?: number;
+  dictation_disabled_surfaces?: string;
   anthropic_api_key: string | null;
   openai_api_key?: string | null;
   google_api_key?: string | null;
@@ -60,6 +49,9 @@ export interface AppSettings {
   expand_new_chats_in_dashboard: boolean;
   auto_reveal_sub_agents: boolean;
   dev_mode: boolean;
+  /** Notification toggles read before firing native notifications. */
+  notify_agent_completion?: boolean;
+  notify_workflow_runs?: boolean;
   allow_experimental_updates: boolean;
   /** Managed subscription state; surfaces only when user has subscribed via cloud. */
   connection_mode?: 'own_key' | 'openswarm-pro' | 'free-trial';
@@ -148,9 +140,6 @@ interface SettingsState {
   /** The first fetch finished, either way. Only the paint gate wants this, so a dead backend shows a
    *  window with an honest error instead of a blank one. */
   settled: boolean;
-  modalOpen: boolean;
-  /** When non-null, Settings opens to this tab instead of 'general'. */
-  initialTab: string | null;
   /** In-flight form edits preserved across modal close/reopen; null = synced with `data`. */
   draft: AppSettings | null;
   /** Tab the user was on when they closed the modal with unsaved edits. */
@@ -160,11 +149,13 @@ interface SettingsState {
   latestWriteId: string | null;
   /** False until the boot free-trial mint attempt settles; gates the no-model banner. */
   freeTrialArmSettled: boolean;
+  /** The backend's shipped default prompt, fetched on demand; null until it lands. */
+  defaultSystemPrompt: string | null;
 }
 
 /** Baseline for every required settings field. Spread under any backend payload so an older saved shape that predates a newer field (e.g. new_agent_shortcut) can't surface as undefined and crash a consumer. */
 export const DEFAULT_SETTINGS: AppSettings = {
-  default_system_prompt: DEFAULT_SYSTEM_PROMPT,
+  default_system_prompt: null,
   default_folder: null,
   default_model: 'opus-5',
   default_mode: 'agent',
@@ -178,6 +169,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   new_agent_shortcut: 'Meta+l',
   dictation_shortcut: null,
   dictation_model: null,
+  dictation_dictionary: '',
+  dictation_sounds: true,
+  memory_enabled: true,
+  dictation_haptics: true,
+  dictation_sound_volume: 0.7,
+  dictation_disabled_surfaces: '',
   anthropic_api_key: null,
   browser_homepage: 'https://duckduckgo.com',
   browser_import_signins: false,
@@ -193,12 +190,11 @@ const initialState: SettingsState = {
   loading: false,
   loaded: false,
   settled: false,
-  modalOpen: false,
-  initialTab: null,
   draft: null,
   draftTab: null,
   latestWriteId: null,
   freeTrialArmSettled: false,
+  defaultSystemPrompt: null,
 };
 
 export const fetchSettings = createAsyncThunk('settings/fetch', async () => {
@@ -217,6 +213,16 @@ export const updateSettingsPatch = createAsyncThunk(
     });
     const data = await res.json();
     return data.settings as AppSettings;
+  }
+);
+
+// The default lives in ONE place (the backend); shipping a frontend copy rotted once already and made Reset show forever.
+export const fetchDefaultSystemPrompt = createAsyncThunk(
+  'settings/fetchDefaultSystemPrompt',
+  async () => {
+    const res = await fetch(`${SETTINGS_API}/default-system-prompt`);
+    const data = await res.json();
+    return data.default_system_prompt as string;
   }
 );
 
@@ -313,14 +319,6 @@ const settingsSlice = createSlice({
   name: 'settings',
   initialState,
   reducers: {
-    openSettingsModal(state, action: PayloadAction<string | undefined>) {
-      state.modalOpen = true;
-      state.initialTab = action.payload ?? null;
-    },
-    closeSettingsModal(state) {
-      state.modalOpen = false;
-      state.initialTab = null;
-    },
     /** Persist in-flight form edits + tab so they survive modal close; clearDraft drops the marker. */
     setDraft(state, action: PayloadAction<{ form: AppSettings; tab: string }>) {
       state.draft = action.payload.form;
@@ -369,6 +367,9 @@ const settingsSlice = createSlice({
         state.draft = null;
         state.draftTab = null;
       })
+      .addCase(fetchDefaultSystemPrompt.fulfilled, (state, action) => {
+        state.defaultSystemPrompt = action.payload;
+      })
       .addCase(resetSystemPrompt.fulfilled, (state, action) => {
         state.latestWriteId = action.meta.requestId;
         state.data = { ...DEFAULT_SETTINGS, ...action.payload };
@@ -382,5 +383,5 @@ const settingsSlice = createSlice({
   },
 });
 
-export const { openSettingsModal, closeSettingsModal, setDraft, clearDraft, markFreeTrialArmSettled } = settingsSlice.actions;
+export const { setDraft, clearDraft, markFreeTrialArmSettled } = settingsSlice.actions;
 export default settingsSlice.reducer;

@@ -29,13 +29,16 @@ function lineFor(job: PreppedJob, status: JobStatus): string {
   return status === 'done' ? `Tidied up your files (nothing moved or deleted)` : `Tidying up your files (nothing moved or deleted)`;
 }
 
+const EMPTY_SESSIONS: Record<string, never> = {};
+
 const RevealHero: React.FC = () => {
   const c = useClaudeTokens();
   const [dismissed, setDismissed] = useState(false);
   const prepped = useAppSelector((s) => s.onboardingV3.prepped);
   const flowActive = useAppSelector((s) => s.onboardingV3.flowActive);
   const revealPending = useAppSelector((s) => s.onboardingV3.revealPending);
-  const sessions = useAppSelector((s) => s.agents.sessions);
+  // Onboarding-only surface: outside the reveal window it gets a constant, never per-tick re-renders.
+  const sessions = useAppSelector((s) => (s.onboardingV3.revealPending || s.onboardingV3.flowActive ? s.agents.sessions : EMPTY_SESSIONS));
   const userName = useAppSelector((s) => s.settings.data.user_name);
 
   // Dashboard-first order (the star), then research, cleanup, and the recurring task.

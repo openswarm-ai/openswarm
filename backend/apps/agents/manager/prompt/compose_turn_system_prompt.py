@@ -134,4 +134,16 @@ def compose_turn_system_prompt(
     if settings_ctx:
         composed_prompt = f"{composed_prompt}\n\n{settings_ctx}" if composed_prompt else settings_ctx
 
+    # The user's curated memory rides every turn (small by construction, 60 facts hard cap); the
+    # toggle kills it dead so "off" means zero bytes of it reach any model.
+    try:
+        from backend.apps.settings.settings import load_settings
+        if getattr(load_settings(), "memory_enabled", True):
+            from backend.apps.memory.store import build_memory_context
+            memory_ctx = build_memory_context()
+            if memory_ctx:
+                composed_prompt = f"{composed_prompt}\n\n{memory_ctx}" if composed_prompt else memory_ctx
+    except Exception:
+        pass
+
     return composed_prompt

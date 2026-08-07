@@ -182,7 +182,8 @@ async def discover_mcp_tools_stdio(command: str, args: list[str] | None = None, 
                     await asyncio.wait_for(asyncio.shield(stderr_task), timeout=1.0)
                 except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
                     pass
-                tail = "".join(stderr_tail[-10:]).strip()
+                # Full window, not the last few lines: an npx wrapper prints ~20 lines of Node crash dump AFTER the server's one useful fatal line, so a short tail hands the translator pure noise.
+                tail = "".join(stderr_tail).strip()
                 # A Go server's dying breath is a JSON line with a goroutine dump. Handing that to
                 # the UI hides the one fact the user can act on, which is usually "sign in again".
                 raise HTTPException(status_code=502, detail=readable_mcp_failure(tail))

@@ -1,5 +1,6 @@
 const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashReporter, powerMonitor, Menu, clipboard, globalShortcut } = require('electron');
 const whisperService = require('./voice/whisperService');
+const { createStreamingSession } = require('./voice/streamingSession');
 const whisperModels = require('./voice/whisperModels');
 const { injectText } = require('./voice/textInjector');
 
@@ -65,6 +66,19 @@ function hostHasBorrowedSession(url) {
   return false;
 }
 
+// Sites whose browser-support wall PARSES the UA and allowlists browsers: an unknown "openswarm/x" product token reads as an unsupported browser and their sign-in becomes unreachable ("We're very sorry, but your browser is not supported").
+const p_bareUaDomains = ['slack.com', 'slack-edge.com'];
+
+function hostWantsBareUa(url) {
+  if (hostHasBorrowedSession(url)) return true;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return p_bareUaDomains.some((d) => host === d || host.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
 // E2E flag: when OPENSWARM_E2E=1, append a Chromium command-line switch the
 // renderer reads at startup to set window.__OPENSWARM_E2E__ = true BEFORE any
 // page script parses, so the production-build store-on-window gate fires
@@ -88,8 +102,11 @@ try {
 }
 
 // Capture every main-process throw we can. Without these, a throw inside an IPC handler or BrowserWindow event listener can die silently and look indistinguishable from a renderer crash in the trace.
+const crashReports = require('./crashReports');
+crashReports.init(app, null);
 process.on('uncaughtException', (err) => {
   console.error('[diag][main:uncaughtException]', err && err.stack || err);
+  crashReports.writeCrashReport('main-uncaught-exception', { message: String(err && err.message || err), stack: String(err && err.stack || '') });
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[diag][main:unhandledRejection]', reason && reason.stack || reason);
@@ -98,6 +115,10 @@ process.on('unhandledRejection', (reason) => {
 // child-process-gone fires for GPU/utility/renderer process deaths. The GPU one is especially useful: a GPU crash forces the renderer to recover its compositor, and that recovery can itself crash on Windows.
 app.on('child-process-gone', (_event, details) => {
   console.error('[diag][main:child-process-gone]', JSON.stringify(details));
+  // Clean exits and user kills are not crashes; reporting them would bury the real ones.
+  if (details && details.reason && details.reason !== 'clean-exit' && details.reason !== 'killed') {
+    crashReports.writeCrashReport('child-process-gone', details);
+  }
 });
 // Platform-split auto-updater: electron-updater on Mac (full-featured), Electron's
 // built-in autoUpdater on Windows (Squirrel.Windows target; electron-updater dropped Squirrel).
@@ -1199,6 +1220,7 @@ function markBackendReady() {
     // Read lazily: mainWindow is replaced by recreateMainWindow, so a captured value goes stale.
     workflowsLifecycle.setNotificationTarget(() => mainWindow);
     workflowsLifecycle.startPolling();
+    crashReports.init(app, (payload) => { try { workflowsLifecycle.showNativeNotification(payload); } catch (_) {} });
   } catch (_) {}
   try { connectMainBridge(); } catch (_) {}
 }
@@ -1602,6 +1624,50 @@ function sendToRenderer(channel, ...args) {
 // em/en dashes per repo style.
 // Extracted to electron/updateErrorMessage.js so the mapping is unit-testable; see node --test there.
 const { friendlyUpdateError } = require('./updateErrorMessage');
+const { diagnoseSilentUpdateCheck } = require('./updateCheckDiagnosis');
+
+// Squirrel's built-in updater reports only via events; when AV or a proxy kills its request
+// internally, no event EVER arrives and the renderer's spinner spins forever. This watchdog turns
+// that silence into a diagnosed update-error. Settled by every real updater event.
+let p_squirrelCheckWatchdog = null;
+function settleUpdateCheckWatchdog() {
+  if (p_squirrelCheckWatchdog) {
+    clearTimeout(p_squirrelCheckWatchdog);
+    p_squirrelCheckWatchdog = null;
+  }
+}
+
+// Reachability probe through Electron's net stack, so a system proxy that blocks Squirrel blocks this the same way. Any HTTP response (even a redirect) proves the feed is reachable.
+function probeUpdateFeed(timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    try {
+      const { net } = require('electron');
+      const req = net.request({ method: 'HEAD', url: 'https://github.com/openswarm-ai/openswarm/releases/latest/download/RELEASES' });
+      const timer = setTimeout(() => { try { req.abort(); } catch (_) {} resolve(false); }, timeoutMs);
+      req.on('response', () => { clearTimeout(timer); resolve(true); });
+      req.on('error', () => { clearTimeout(timer); resolve(false); });
+      req.end();
+    } catch (_) {
+      resolve(false);
+    }
+  });
+}
+
+function armSquirrelCheckWatchdog() {
+  settleUpdateCheckWatchdog();
+  p_squirrelCheckWatchdog = setTimeout(async () => {
+    p_squirrelCheckWatchdog = null;
+    let updateExeExists = false;
+    try {
+      updateExeExists = fs.existsSync(path.resolve(path.dirname(process.execPath), '..', 'Update.exe'));
+    } catch (_) {}
+    const feedReachable = await probeUpdateFeed();
+    const msg = diagnoseSilentUpdateCheck({ updateExeExists, feedReachable });
+    console.warn('[updater] Squirrel check went silent; diagnosis:', msg);
+    cachedUpdateStatus = { status: 'error', info: null, error: msg };
+    sendToRenderer('update-error', msg);
+  }, 15000);
+}
 
 // Phase 2 provenance: which exact commit produced this build. The build
 // scripts write electron/build-info.json (gitignored, regenerated each build)
@@ -1647,6 +1713,17 @@ async function clearStaleFrontendCache() {
 
 function setupAutoUpdater() {
   if (!autoUpdater) return;
+  // Proactive, not post-mortem: an app running off the DMG or a Gatekeeper-translocated copy can NEVER self-update (Squirrel.Mac refuses read-only volumes, proven in the packaged smoke). Tell that cohort what to do at boot instead of after a failed check they may never click.
+  if (process.platform === 'darwin' && isPackaged) {
+    const exe = process.execPath || '';
+    if (exe.includes('/AppTranslocation/') || exe.startsWith('/Volumes/')) {
+      const msg = 'OpenSwarm is running from the disk image, so macOS blocks self-update. Drag OpenSwarm to Applications, then relaunch it from there.';
+      console.warn('[updater] read-only launch detected at boot:', exe);
+      cachedUpdateStatus = { status: 'error', info: null, error: msg };
+      sendToRenderer('update-error', msg);
+      return;
+    }
+  }
   if (isSquirrelUpdater) {
     // Squirrel.Windows fetches its RELEASES feed from GH /latest/download/. The
     // built-in autoUpdater has no autoDownload/allowPrerelease/allowDowngrade knobs.
@@ -1673,6 +1750,7 @@ function setupAutoUpdater() {
   // args and update-downloaded with positional (event, releaseNotes, releaseName,
   // releaseDate, updateURL). Normalize so these handlers work for both.
   autoUpdater.on('update-available', (info) => {
+    settleUpdateCheckWatchdog();
     const norm = info && info.version ? info : { version: '' };
     console.log(`Update available: ${norm.version || '(version not reported by Squirrel)'}`);
     cachedUpdateStatus = { status: 'available', info: norm, error: null };
@@ -1680,6 +1758,7 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-not-available', (info) => {
+    settleUpdateCheckWatchdog();
     console.log('App is up to date');
     cachedUpdateStatus = { status: 'not-available', info: info || {}, error: null };
     sendToRenderer('update-not-available', info || {});
@@ -1691,6 +1770,7 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info, releaseNotes, releaseName) => {
+    settleUpdateCheckWatchdog();
     const version = (info && info.version) || releaseName || '';
     console.log(`Update downloaded: ${version || '(ready to install)'}`);
     const norm = info && info.version ? info : { version };
@@ -1699,6 +1779,7 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('error', (err) => {
+    settleUpdateCheckWatchdog();
     // Squirrel throws "AutoUpdater process ... is already running" when a check or
     // download is already in flight (e.g. the user clicked Check twice). Benign.
     if (/already running/i.test((err && err.message) || '')) {
@@ -1891,6 +1972,7 @@ app.whenReady().then(async () => {
   // (module missing, or macOS without the Accessibility grant). Tiers live in voiceHotkey.js.
   installVoiceHotkey(() => mainWindow);
 
+
   // PASSKEY SPIKE (macOS only): turn on the Secure-Enclave/Touch ID WebAuthn authenticator that Electron 42 added. Without this, isUserVerifyingPlatformAuthenticatorAvailable() is hardwired false (why the old reject-shim existed). keychainAccessGroup MUST match the keychain-access-groups entitlement (Y26NUZH4NG.<bundle>.webauthn) or this throws. Windows has no equivalent, so the reject-shim still runs there.
   if (process.platform === 'darwin' && typeof app.configureWebAuthn === 'function') {
     try {
@@ -1994,7 +2076,7 @@ app.whenReady().then(async () => {
     { urls: ['http://*/*', 'https://*/*'] },
     (details, callback) => {
       const headers = { ...(details.requestHeaders || {}) };
-      const borrowed = hostHasBorrowedSession(details.url);
+      const borrowed = hostWantsBareUa(details.url);
       for (const k of Object.keys(headers)) {
         const lk = k.toLowerCase();
         if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-full-version-list') {
@@ -2212,7 +2294,36 @@ function swallowCloseWindowShortcut(event, input) {
     (input.key || '').toLowerCase() === 'w'
   ) {
     event.preventDefault();
+    // Arc semantics: the swallowed close becomes "close the focused card" in the renderer (undoable via Cmd+Z).
+    if (!input.shift) {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('openswarm:close-shortcut');
+      } catch (_) {}
+    }
   }
+}
+
+// Cmd/Ctrl+T: new tab in the last-interacted browser, or a new browser card (Arc muscle memory).
+function routeNewTabShortcut(event, input) {
+  if (input.type !== 'keyDown') return;
+  if (!(input.meta || input.control) || input.shift || input.alt) return;
+  if ((input.key || '').toLowerCase() !== 't') return;
+  event.preventDefault();
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('openswarm:newtab-shortcut');
+  } catch (_) {}
+}
+
+// Cmd/Ctrl+1..9: focus the Nth dock tile, Arc-style. Routed through main so it works from a focused webview too.
+function routeDockShortcut(event, input) {
+  if (input.type !== 'keyDown') return;
+  if (!(input.meta || input.control) || input.shift || input.alt) return;
+  const key = input.key || '';
+  if (key < '1' || key > '9' || key.length !== 1) return;
+  event.preventDefault();
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('openswarm:dock-shortcut', Number(key) - 1);
+  } catch (_) {}
 }
 
 // Cmd/Ctrl+R: the default menu's Reload accelerator reloads the WHOLE app even when a browser webview is focused (the "Ctrl+R reloads OpenSwarm, not the browser" complaint). preventDefault kills that accelerator (same electron#19279 path as Cmd+W, dispatched against whichever webContents is focused, hence both main window AND guests); the renderer then reloads the last-interacted browser, or the app if none. Shift+R (force reload) is left alone.
@@ -2230,6 +2341,14 @@ function routeReloadShortcut(event, input) {
 // guest never reach the host renderer, so we catch them here and forward the intent + the guest's
 // webContents id so the renderer can target that exact browser. Attached to guests ONLY: on the host
 // the renderer's own keydown handles canvas-vs-browser, and intercepting there would eat canvas zoom.
+// The renderer registers the user's new-agent combo so it still fires while a guest webview holds focus (host keydown never sees those).
+let newAgentCombo = { primary: true, shift: false, key: 'l' };
+ipcMain.on('set-new-agent-shortcut', (_e, combo) => {
+  if (combo && typeof combo.key === 'string' && combo.key) {
+    newAgentCombo = { primary: !!combo.primary, shift: !!combo.shift, key: combo.key.toLowerCase() };
+  }
+});
+
 function routeBrowserShortcut(event, input, webContentsId) {
   if (input.type !== 'keyDown' || input.alt) return;
   const mod = input.meta || input.control;
@@ -2241,6 +2360,7 @@ function routeBrowserShortcut(event, input, webContentsId) {
   else if (mod && !input.shift && key === 'f') action = 'find';
   else if (mod && input.shift && key === 't') action = 'reopen-closed';
   else if (input.control && !input.meta && key === 'tab') action = input.shift ? 'tab-prev' : 'tab-next';
+  else if (mod === newAgentCombo.primary && input.shift === newAgentCombo.shift && key === newAgentCombo.key) action = 'new-agent';
   if (!action) return;
   event.preventDefault();
   try {
@@ -2314,6 +2434,48 @@ function buildBrowserContextMenu(contents, params, webContentsId) {
   } catch (_) {}
 }
 
+// App-preview webviews (a generated app's live preview) are not browser tabs: no Back/Forward that
+// could strand the preview on an external page, and the link action says where the link really goes.
+function buildAppPreviewContextMenu(contents, params) {
+  const template = [];
+  const sep = () => template.push({ type: 'separator' });
+
+  if (params.linkURL) {
+    template.push({ label: 'Open Link in Browser', click: () => openInNewBrowserTab(params.linkURL, null) });
+    template.push({ label: 'Copy Link', click: () => clipboard.writeText(params.linkURL) });
+    sep();
+  }
+
+  if (params.mediaType === 'image' && params.srcURL) {
+    template.push({ label: 'Copy Image', click: () => { try { contents.copyImageAt(params.x, params.y); } catch (_) {} } });
+    template.push({ label: 'Copy Image Address', click: () => clipboard.writeText(params.srcURL) });
+    sep();
+  }
+
+  const flags = params.editFlags || {};
+  if (params.isEditable) {
+    template.push({ role: 'cut', enabled: flags.canCut !== false });
+    template.push({ role: 'copy', enabled: flags.canCopy !== false });
+    template.push({ role: 'paste', enabled: flags.canPaste !== false });
+    template.push({ role: 'selectAll' });
+    sep();
+  } else if (params.selectionText) {
+    template.push({ role: 'copy' });
+    sep();
+  }
+
+  template.push({ label: 'Reload App', click: () => { try { contents.reload(); } catch (_) {} } });
+
+  if (isDev) {
+    sep();
+    template.push({ label: 'Inspect Element', click: () => { try { contents.inspectElement(params.x, params.y); } catch (_) {} } });
+  }
+
+  try {
+    Menu.buildFromTemplate(template).popup({ window: mainWindow || undefined });
+  } catch (_) {}
+}
+
 // The app's OWN renderer (chat, outputs, sidebar) gets no native menu from Electron by default, so
 // right-clicking text used to do nothing. This is the browser menu minus the nav items that mean
 // nothing inside a single-page app: spelling, copy-link, and the edit/copy roles.
@@ -2367,6 +2529,8 @@ app.on('web-contents-created', (_event, contents) => {
   if (isCreatingMainWindow || contents.getType() === 'webview') {
     contents.on('before-input-event', swallowCloseWindowShortcut);
     contents.on('before-input-event', routeReloadShortcut);
+    contents.on('before-input-event', routeNewTabShortcut);
+    contents.on('before-input-event', routeDockShortcut);
   }
   // The main app window (created while this flag is set) gets a text-focused native menu; OAuth
   // popups are 'window' contents created with the flag OFF, so they keep the OS default.
@@ -2375,8 +2539,15 @@ app.on('web-contents-created', (_event, contents) => {
   }
   if (contents.getType() === 'webview') {
     const wcId = contents.id;
+    // Chrome parity for trackpad pinch: Electron DROPS macOS pinch gestures at the default (1,1) visual-zoom limits, so Figma/Miro/Maps never received the ctrl+wheel their canvas zoom listens for. With limits widened, the guest synthesizes ctrl+wheel first (a preventDefault-ing page like Figma owns the zoom), and plain pages get Chrome's pinch magnify.
+    try { contents.setVisualZoomLevelLimits(1, 3); } catch (_) { /* older Electron */ }
     contents.on('before-input-event', (event, input) => routeBrowserShortcut(event, input, wcId));
-    contents.on('context-menu', (_e, params) => buildBrowserContextMenu(contents, params, wcId));
+    contents.on('context-menu', (_e, params) => {
+      // Browser cards ride the persist:openswarm-browser partition; app previews share the main window's default session, and get the app-flavored menu instead of browser-tab verbs.
+      const isAppPreview = mainWindow && !mainWindow.isDestroyed() && contents.session === mainWindow.webContents.session;
+      if (isAppPreview) buildAppPreviewContextMenu(contents, params);
+      else buildBrowserContextMenu(contents, params, wcId);
+    });
   }
 
   // Override the user-agent on popup BrowserWindows (i.e. anything created
@@ -2402,11 +2573,12 @@ app.on('web-contents-created', (_event, contents) => {
     contents !== mainWindow.webContents
   ) {
     console.log('[diag][main] spoofing UA for popup webContents id=', contents.id);
+    // Pinned to the RUNTIME Chrome version, never a hardcoded one: Slack started rejecting the old hardcoded Chrome/131 as an outdated browser.
     const OAUTH_POPUP_UA = process.platform === 'win32'
       ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        `(KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
       : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+        `(KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
     contents.setUserAgent(OAUTH_POPUP_UA);
   }
 
@@ -2595,7 +2767,7 @@ app.on('web-contents-created', (_event, contents) => {
     // product token we removed, and plenty of anti-bot scripts compare exactly those two.
     contents.on('dom-ready', () => {
       let borrowed = false;
-      try { borrowed = hostHasBorrowedSession(contents.getURL()); } catch { borrowed = false; }
+      try { borrowed = hostWantsBareUa(contents.getURL()); } catch { borrowed = false; }
       if (!borrowed) return;
       const bare = bareChromeUserAgent(contents.getUserAgent());
       contents.executeJavaScript(`
@@ -3042,9 +3214,35 @@ ipcMain.handle('voice:set-model', (_e, id) => {
   if (ready) whisperService.warmInBackground(voiceResourceDir(), voiceUserDataDir());
   return { ok: true, ready };
 });
+ipcMain.on('voice:set-dictionary', (_e, words) => { whisperService.setDictionary(words); });
 // Paste the text into the frontmost app (dictate-anywhere). Returns whether the OS paste actually fired.
 ipcMain.handle('voice:inject', async (_e, text) => {
   try { const pasted = await injectText(String(text || '')); return { ok: true, pasted }; } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }
+});
+// Streaming dictation: renderer streams worklet PCM here; the session re-decodes the open phrase on
+// the warm server and pushes live partials back. One session at a time; a new start evicts the old.
+let voiceStream = null;
+ipcMain.handle('voice:stream-start', () => {
+  if (voiceStream) voiceStream.cancel();
+  voiceStream = createStreamingSession({
+    resourceDir: voiceResourceDir(),
+    userDataDir: voiceUserDataDir(),
+    onPartial: (p) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('voice:partial', p); },
+  });
+  return { ok: true };
+});
+ipcMain.on('voice:stream-chunk', (_e, chunk) => {
+  try { if (voiceStream) voiceStream.pushChunk(Buffer.from(chunk)); } catch (_) { /* a bad chunk never kills the session */ }
+});
+ipcMain.handle('voice:stream-stop', async () => {
+  const s = voiceStream;
+  voiceStream = null;
+  if (!s) return { ok: false, error: 'no-session' };
+  try { return await s.stop(); } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }
+});
+ipcMain.on('voice:stream-cancel', () => {
+  if (voiceStream) voiceStream.cancel();
+  voiceStream = null;
 });
 // Sync mirrors so preload.js can expose window.openswarm synchronously (no await), closing the race where React renders before the async exposure resolves and window.openswarm is briefly undefined. backendPort is assigned in app.whenReady before any BrowserWindow is created, so it is always set by the time preload runs.
 ipcMain.on('get-backend-port-sync', (event) => { event.returnValue = backendPort; });
@@ -3076,11 +3274,32 @@ ipcMain.handle('set-window-buttons-visible', (_e, visible) => {
   if (process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
   try { mainWindow.setWindowButtonVisibility(!!visible); } catch (err) { console.warn('[main] setWindowButtonVisibility failed:', err.message); }
 });
+// The creation-time backgroundColor is boot-dark; the renderer re-points it at the live theme's page
+// color so a live resize paints theme-matched filler, not a dark band behind a light UI.
+ipcMain.handle('set-window-background', (_e, color) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (typeof color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(color)) return;
+  try { mainWindow.setBackgroundColor(color); } catch (err) { console.warn('[main] setBackgroundColor failed:', err.message); }
+});
 // Phase 2 provenance: the renderer's About panel shows the commit this build
 // was cut from, so a screenshot is enough to identify the exact code shipped.
 ipcMain.handle('get-build-info', () => getBuildInfo());
 ipcMain.handle('get-webview-preload-path', () => {
   return `file://${path.join(__dirname, 'webview-preload.js')}`;
+});
+
+
+// Reveal a user-attached composer file in Finder/Explorer. Reveal-only on an existing path:
+// showItemInFolder never opens or executes the file, so the worst misuse is popping a Finder window.
+ipcMain.handle('files:reveal', (event, filePath) => {
+  try {
+    const p = path.resolve(String(filePath || ''));
+    if (!fs.existsSync(p)) return { ok: false };
+    shell.showItemInFolder(p);
+    return { ok: true };
+  } catch (_) {
+    return { ok: false };
+  }
 });
 
 // Reveal a diagnostics bundle in the file manager so the user can drag it into a GitHub issue.
@@ -3289,6 +3508,8 @@ ipcMain.handle('check-for-updates', async () => {
     // update-available / update-not-available events, so don't expect a result.
     if (isSquirrelUpdater) {
       autoUpdater.checkForUpdates();
+      // Silence past this point would leave the spinner forever; the watchdog diagnoses it instead.
+      armSquirrelCheckWatchdog();
       return { success: true };
     }
     const result = await autoUpdater.checkForUpdates();

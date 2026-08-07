@@ -67,6 +67,20 @@ async def list_sessions(dashboard_id: str = ""):
     sessions = agent_manager.get_all_sessions(dashboard_id=dashboard_id or None)
     return {"sessions": [p_session_list_item(s) for s in sessions]}
 
+@agents.router.get("/sessions/{session_id}/followups")
+async def predict_followups_route(session_id: str, count: int = 3):
+    """Chat-specific next-message suggestions in the user's own voice. Empty until the
+    conversation has >= 2 real exchanges; always empty rather than erroring."""
+    session = agent_manager.sessions.get(session_id)
+    if not session:
+        try:
+            session = await agent_manager.resume_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="session not found")
+    from backend.apps.agents.manager.predict_followups import predict_followups
+    return {"suggestions": await predict_followups(session, count=max(1, min(count, 5)))}
+
+
 @agents.router.get("/predict-prompts")
 async def predict_prompts_route(count: int = 5):
     """Guess a few prompts the user might type next, in their own voice, from what they've already
@@ -118,6 +132,12 @@ async def get_session(session_id: str):
 @agents.router.post("/launch")
 async def launch_agent(config: AgentConfig):
     session = await agent_manager.launch_agent(config)
+    # A launch that carries a prompt runs it as the first turn through the same path /message uses.
+    if config.prompt:
+        asyncio.create_task(agent_manager.send_message(session.id, config.prompt))
+    else:
+        # No prompt yet: the user is typing. Spend that window spawning the CLI so the first turn is a pool hit.
+        asyncio.create_task(agent_manager.prewarm_client(session.id))
     return {"session_id": session.id, "session": session.model_dump(mode="json")}
 
 @agents.router.post("/sessions/{session_id}/message")
@@ -350,10 +370,10 @@ async def compact_session(session_id: str):
 
     Wired to the 'Compact memory' button in the pre-send overflow banner and the
     /compact slash command. Marks compacted_through_msg_id AND sets
-    needs_fresh_session: the user explicitly opted into the prompt-cache loss for a
-    real visible trim, so the next turn drops the SDK convo and rebuilds from history
-    with the cutoff (and distilled summary) actually applied. Auto-compact only marks;
-    the button is the user paying for the rebuild.
+    needs_fresh_session so the next turn drops the SDK convo and rebuilds from history
+    with the cutoff (and distilled summary) actually applied. Auto-compact at the
+    threshold now does the same (pre_send_context_guard); this button is the manual
+    "do it now" for a user who wants the trim before the threshold.
     """
     session = agent_manager.sessions.get(session_id)
     if not session:

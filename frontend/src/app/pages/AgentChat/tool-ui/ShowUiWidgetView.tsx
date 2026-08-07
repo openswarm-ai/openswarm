@@ -12,7 +12,7 @@ function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambien
   if (payload.component === 'plan') return <PlanWidget props={payload.props} />;
   if (payload.component === 'stats') return <StatsWidget props={payload.props} />;
   if (payload.component === 'links') return <LinksWidget props={payload.props} />;
-  if (payload.component === 'vendored') return <VendoredToolUi name={payload.name} props={payload.props} />;
+  if (payload.component === 'vendored') return <VendoredToolUi name={payload.name} props={payload.props} quietFail={ambient} />;
   return null;
 }
 

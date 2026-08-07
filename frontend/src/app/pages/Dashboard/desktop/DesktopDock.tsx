@@ -2,7 +2,8 @@ import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from '
 import Box from '@mui/material/Box';
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { store } from '@/shared/state/store';
 import { captureBrowserShot } from '@/shared/captureBrowserShot';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { getWebview } from '@/shared/browserRegistry';
@@ -23,7 +24,6 @@ import type {
 import type { Output } from '@/shared/state/outputsSlice';
 
 interface DesktopDockProps {
-  sessions: Record<string, AgentSession>;
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
@@ -39,7 +39,6 @@ const CARET_H = 13;
 
 /** Left-edge desktop dock: one tile per open card, hover previews, click focuses the window. */
 function DesktopDock({
-  sessions,
   cards,
   viewCards,
   browserCards,
@@ -57,9 +56,14 @@ function DesktopDock({
   const [edges, setEdges] = useState<{ top: boolean; bottom: boolean }>({ top: false, bottom: false });
   const hoverTimer = useRef<number | null>(null);
 
+  // The dock consumes only name + turn_label per session, but the whole-dict identity changes on
+  // every stream tick to ANY session; a primitive fingerprint keeps this from rebuilding per tick.
+  const sessionsKey = useAppSelector((s2) =>
+    Object.values(s2.agents.sessions).map((x) => `${x.id}:${x.name ?? ''}:${x.turn_label?.label ?? ''}`).join('|'));
   const entries = useMemo<DockEntry[]>(
-    () => buildDockEntries({ sessions, cards, viewCards, browserCards, workflowCards, outputs }),
-    [sessions, cards, viewCards, browserCards, workflowCards, outputs],
+    () => buildDockEntries({ sessions: store.getState().agents.sessions, cards, viewCards, browserCards, workflowCards, outputs }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionsKey, cards, viewCards, browserCards, workflowCards, outputs],
   );
 
   const { dockRef, scrollRef, tile, gap, iconSize, scrolls, scrollHeight, bleed, applyMagnify } = useDockLayout({
@@ -110,7 +114,7 @@ function DesktopDock({
     ? `linear-gradient(to bottom, rgba(0,0,0,${edges.top ? 0 : 1}) 0px, #000 ${bleed}px, #000 calc(100% - ${bleed}px), rgba(0,0,0,${edges.bottom ? 0 : 1}) 100%)`
     : undefined;
 
-  const hoveredEntry = hovered ? entries.find((e) => e.id === hovered.id) : undefined;
+  const hoveredEntry = useMemo(() => (hovered ? entries.find((e) => e.id === hovered.id) : undefined), [entries, hovered]);
   const previewImage = hoveredEntry
     ? (liveShot?.id === hoveredEntry.id ? liveShot.dataUrl : hoveredEntry.thumbnail || undefined)
     : undefined;
@@ -261,4 +265,4 @@ function DesktopDock({
   );
 }
 
-export default DesktopDock;
+export default React.memo(DesktopDock);

@@ -7,13 +7,63 @@ Compaction here only MARKS (sets compacted_through_msg_id); it never mutates
 session.messages, the originals stay for the UI drawer and only the history sent to the SDK
 is trimmed downstream (see backend/CLAUDE.md: "compaction must actually trim, not just mark")."""
 
-from typing import Optional
+from typing import Dict, Optional
 
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.session.history_compaction import get_branch_messages
+from backend.apps.agents.manager.streaming.state import TurnState
+
+
+@typechecked
+def compact_trigger_tokens(session: AgentSession) -> int:
+    """The token count where compaction fires: the TIGHTER of the pct threshold and the
+    absolute ceiling (on a 200K window the pct wins at 130K; on a 1M window the ceiling
+    wins at 180K, not 650K)."""
+    window = max(1, session.context_window)
+    abs_pct = min(1.0, session.compact_abs_ceiling_tokens / window)
+    return int(window * min(session.compact_threshold_pct, abs_pct))
+
+
+CONTINUATION_PROMPT = (
+    "Continue the task exactly where you left off. Your earlier progress in this chat is "
+    "summarized above; do not redo completed steps, pick up at the next unfinished one."
+)
+
+
+@typechecked
+def maybe_break_midturn(session: AgentSession, turn: TurnState, msg_usage: Dict) -> bool:
+    """Mid-turn context breaker: one giant turn (dozens of tool calls off a single ask) can
+    blow past every turn-boundary wall, so when a request's input usage crosses the compact
+    trigger MID-turn, end the turn at the next message boundary (the pending_continuation
+    break the MCPActivate flow already uses), force-compact, and auto-continue fresh.
+    Live incident: 925K/1M with zero CLI compact_boundary events, task abandoned mid-way."""
+    try:
+        total = (
+            int(msg_usage.get("input_tokens") or 0)
+            + int(msg_usage.get("cache_creation_input_tokens") or 0)
+            + int(msg_usage.get("cache_read_input_tokens") or 0)
+        )
+    except Exception:
+        return False
+    if total <= 0:
+        return False
+    # Keep the session's counter honest mid-turn: a broken turn never gets its ResultMessage accounting, and the next pre-send guard reads this.
+    session.tokens["input"] = total
+    turn.last_step_input = total
+    if total < compact_trigger_tokens(session):
+        turn.saw_input_below_trigger = True
+        return False
+    if turn.context_break_fired or not turn.saw_input_below_trigger:
+        return False
+    turn.context_break_fired = True
+    maybe_compact(session, force=True)
+    session.needs_fresh_session = True
+    session.pending_continuation = True
+    session.pending_continuation_prompt = CONTINUATION_PROMPT
+    return True
 
 
 @typechecked
@@ -22,12 +72,7 @@ def maybe_compact(session: AgentSession, force: bool = False) -> bool:
     Returns True if a NEW summary boundary was set. Summarizes everything up to (but not
     including) the last 6 messages so recent intent stays visible to the model. Never
     touches session.messages."""
-    window = max(1, session.context_window)
-    # Fire at the TIGHTER of the pct or the absolute ceiling: on a 200K window the pct wins (130K), on a 1M window the ceiling wins (180K, not 650K). Not "just 65%".
-    abs_pct = min(1.0, session.compact_abs_ceiling_tokens / window)
-    trigger = min(session.compact_threshold_pct, abs_pct)
-    ctx_used = session.tokens.get("input", 0) / window
-    if not force and ctx_used < trigger:
+    if not force and session.tokens.get("input", 0) < compact_trigger_tokens(session):
         return False
     msgs = get_branch_messages(session)
     if len(msgs) < 4:

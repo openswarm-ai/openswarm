@@ -1,12 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import Box from '@mui/material/Box';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-
-// Same favicon service LibreChat ships with; the browser cards already load arbitrary sites, so
-// fetching site icons adds no new exposure class.
-export function faviconUrlForDomain(domain: string): string {
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
-}
+import { DomainIcon } from './DomainIcon';
 
 export function domainFromUrl(url: string): string {
   try {
@@ -20,35 +15,26 @@ const MAX_STACK = 3;
 
 const FaviconDot: React.FC<{ domain: string; size: number; overlap: boolean; z: number }> = ({ domain, size, overlap, z }) => {
   const c = useClaudeTokens();
-  const [failed, setFailed] = useState(false);
-  const ring = {
-    width: size,
-    height: size,
-    borderRadius: '50%',
-    border: `1.5px solid ${c.bg.elevated}`,
-    bgcolor: c.bg.secondary,
-    ml: overlap ? '-6px' : 0,
-    zIndex: z,
-    position: 'relative' as const,
-    flexShrink: 0,
-  };
-  if (failed) {
-    // assistant-ui's fallback: the domain's first letter beats a hole in the stack.
-    return (
-      <Box sx={{ ...ring, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: c.text.tertiary, fontSize: size * 0.55, fontWeight: 700 }}>
-        {(domain[0] || '?').toUpperCase()}
-      </Box>
-    );
-  }
   return (
     <Box
-      component="img"
-      src={faviconUrlForDomain(domain)}
-      alt=""
-      loading="lazy"
-      onError={() => setFailed(true)}
-      sx={ring}
-    />
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: `1.5px solid ${c.bg.elevated}`,
+        bgcolor: c.bg.secondary,
+        ml: overlap ? '-6px' : 0,
+        zIndex: z,
+        position: 'relative',
+        flexShrink: 0,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      <DomainIcon domain={domain} size={size - 4} shape="circle" />
+    </Box>
   );
 };
 

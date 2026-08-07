@@ -20,7 +20,7 @@ import os
 import platform
 from collections import Counter
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from fastapi import Body
@@ -275,13 +275,42 @@ def p_load_all_sessions() -> list[dict]:
     return results
 
 
+P_WINDOW_DAYS = {"7d": 7, "30d": 30, "all": 0}
+
+def p_friendly_model(raw: str) -> str:
+    """One display name per model family: '-cc' harness variants fold into their base model."""
+    base = (raw or "unknown").removesuffix("-cc")
+    names = {
+        "opus-5": "Claude Opus 5", "opus": "Claude Opus", "sonnet-5": "Claude Sonnet 5",
+        "sonnet": "Claude Sonnet", "haiku": "Claude Haiku", "fable-5": "Claude Fable 5",
+    }
+    if base in names:
+        return names[base]
+    return base.replace("-", " ").title() if base else "Unknown"
+
+def p_is_automation(sess: dict, tool_profile: "Counter") -> bool:
+    """Harness/automation sessions, not the user's real activity: ReportProgress-dominated tool
+    profiles are the sweep signature, and hidden-prompt sessions are machinery."""
+    # Interactive chats never call ReportProgress (it is harness/workflow reporting machinery), so
+    # any presence marks the session as automation, including one-call sweep sessions.
+    if tool_profile.get("ReportProgress", 0) > 0:
+        return True
+    msgs = sess.get("messages", [])
+    users = [m for m in msgs if m.get("role") == "user"]
+    return bool(users) and all(m.get("hidden") for m in users)
+
 @service.router.get("/usage-summary")
-async def usage_summary():
+async def usage_summary(window: str = "30d"):
     from backend.apps.agents.agent_manager import agent_manager
 
     sessions = p_load_all_sessions()
     for s in agent_manager.get_all_sessions():
         sessions.append(s.model_dump(mode="json"))
+
+    days = P_WINDOW_DAYS.get(window, 30)
+    if days:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        sessions = [s for s in sessions if (s.get("created_at") or "") >= cutoff or not s.get("created_at")]
 
     def p_is_real(sess: dict) -> bool:
         # "Real" = actually ran. Empty draft/abandoned sessions (no assistant turn, no tokens, no active time) otherwise inflate the count and drag every average toward zero.
@@ -294,7 +323,6 @@ async def usage_summary():
 
     sessions = [s for s in sessions if p_is_real(s)]
 
-    total_sessions = len(sessions)
     total_cost = sum(s.get("cost_usd", 0) for s in sessions)
     total_messages = 0
     total_tool_calls = 0
@@ -305,10 +333,30 @@ async def usage_summary():
     tool_counts: Counter = Counter()
     status_counts: Counter = Counter()
 
+    excluded_automation = 0
+    kept = []
+    for s in sessions:
+        lat_probe: Counter = Counter()
+        for tool, d in (s.get("tool_latencies") or {}).items():
+            if tool and ((d or {}).get("count", 0) or 0):
+                lat_probe[tool] += (d or {}).get("count", 0) or 0
+        msg_probe: Counter = Counter()
+        for m in s.get("messages", []):
+            if m.get("role") == "tool_call":
+                c = m.get("content", {})
+                msg_probe[(c.get("tool") if isinstance(c, dict) else None) or "tool"] += 1
+        profile = lat_probe if sum(lat_probe.values()) >= sum(msg_probe.values()) else msg_probe
+        if p_is_automation(s, profile):
+            excluded_automation += 1
+            continue
+        kept.append(s)
+    sessions = kept
+    total_sessions = len(sessions)
+    total_cost = sum(s.get("cost_usd", 0) for s in sessions)
     for s in sessions:
         messages = s.get("messages", [])
         total_messages += sum(1 for m in messages if m.get("role") in ("user", "assistant"))
-        model_counts[s.get("model", "unknown")] += 1
+        model_counts[p_friendly_model(s.get("model", "unknown"))] += 1
         provider_counts[s.get("provider", "anthropic")] += 1
         status_counts[s.get("status", "unknown")] += 1
 
@@ -382,6 +430,8 @@ async def usage_summary():
             }
 
     return {
+        "window": window if window in P_WINDOW_DAYS else "30d",
+        "excluded_automation_sessions": excluded_automation,
         "total_sessions": total_sessions,
         "total_cost_usd": round(total_cost, 4),
         "total_messages": total_messages,

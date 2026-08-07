@@ -22,15 +22,17 @@ export function useCalendarOccurrences(fromIso: string, toIso: string): {
     [items],
   );
 
+  // The optimistic pending update flips the fingerprint BEFORE the PATCH commits, so the fingerprint-keyed fetch can read pre-commit truth and then never re-ask (the "toggled the schedule off but Coming up still shows it" bug). settleSeq bumps when the write settles, forcing one authoritative refetch; it also rides the URL so the interceptor's 1s GET cache cannot serve the raced response back.
+  const settleSeq = useAppSelector((s) => s.workflows.settleSeq);
   const windowKey = `${fromIso}:${toIso}`;
-  const requestKey = `${windowKey}:${scheduleKey}`;
+  const requestKey = `${windowKey}:${scheduleKey}:${settleSeq}`;
   const [events, setEvents] = useState<CalendarOccurrence[]>([]);
   const [fetchedWindowKey, setFetchedWindowKey] = useState('');
 
   useEffect(() => {
     // No AbortController: the global fetch interceptor dedupes GETs by URL onto one request, so aborting on re-run (as workflows hydrate) would reject the shared request. The `cancelled` guard stops stale state writes instead.
     let cancelled = false;
-    fetch(`${API_BASE}/workflows/calendar?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`)
+    fetch(`${API_BASE}/workflows/calendar?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&settle=${settleSeq}`)
       .then((res) => {
         if (!res.ok) throw new Error(`calendar failed ${res.status}`);
         return res.json();

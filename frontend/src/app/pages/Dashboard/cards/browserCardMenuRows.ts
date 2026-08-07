@@ -62,7 +62,8 @@ export function browserCardMenuRows({
       }]),
     },
     { kind: 'separator' },
-    { label: 'Close', danger: true, onClick: () => closeBrowserCard(browserId, dispatch) },
+    // Close is recoverable (Cmd+Shift+T reopens); danger styling is reserved for true deletes, matching the agent and app cards.
+    { label: 'Close', onClick: () => closeBrowserCard(browserId, dispatch) },
   ];
 }
 

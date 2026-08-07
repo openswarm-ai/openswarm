@@ -33,8 +33,7 @@ function WeatherWidget({ props, ambient }: { props: WeatherProps; ambient?: bool
   }));
 
   return (
-    // 4:3 card; the vendored strip reveals at 245px height and its day icons at 280px, so width must be >= 374 for the full frame look.
-    <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`} style={{ width: 384, maxWidth: '100%' }}>
+    <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`} style={{ width: '100%' }}>
       <AnimatedWeatherWidget
         version="3.1"
         id={`weather-${props.location}`}

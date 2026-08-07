@@ -1,3 +1,6 @@
+import base64
+import binascii
+import io
 import os
 import hashlib
 import json
@@ -6,10 +9,11 @@ import re
 import tempfile
 import threading
 import time
+import zipfile
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from backend.config.Apps import SubApp
-from backend.apps.skills.models import Skill, SkillCreate, SkillLoadRequest, SkillUpdate, SkillWorkspaceSeedRequest
+from backend.apps.skills.models import Skill, SkillCreate, SkillLoadRequest, SkillUpdate, SkillUpload, SkillWorkspaceSeedRequest
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +247,16 @@ def p_build_skill(skill_id: str, content: str, md_path: str, kind: str, index: d
         source=meta.get("source", ""),
         folder=meta.get("folder", ""),
         version=meta.get("version", ""),
+        enabled=bool(meta.get("enabled", True)),
+        updated_at=p_mtime(md_path),
     )
+
+
+def p_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0
 
 
 def sync_skills() -> list[Skill]:
@@ -317,7 +330,9 @@ async def load_skill(body: SkillLoadRequest):
     skills_list = sync_skills()
     target = p_resolve_skill(body.id, skills_list)
     if target is None:
-        return {"ok": False, "error": "unknown_skill", "available": [s.id for s in skills_list]}
+        return {"ok": False, "error": "unknown_skill", "available": [s.id for s in skills_list if s.enabled]}
+    if not target.enabled:
+        return {"ok": False, "error": "skill_disabled", "available": [s.id for s in skills_list if s.enabled]}
     folder = target.dir_path if (target.dir_path and target.has_supporting_files) else None
     return {"ok": True, "text": format_skill_for_prompt(target.name, target.content, folder)}
 
@@ -473,6 +488,83 @@ def write_folder_skill(skill_id: str, files: dict[str, str], meta: dict) -> Skil
     return p_build_skill(slug, content, md_path, kind, index)
 
 
+@skills.router.get("/{skill_id}/files")
+async def list_skill_files(skill_id: str):
+    """The detail page's file picker: every text file in a folder skill, SKILL.md first."""
+    md_path, kind = skill_md_path(skill_id)
+    if not md_path:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    if kind != "folder":
+        with open(md_path, encoding="utf-8") as f:
+            return {"files": [{"path": "SKILL.md", "content": f.read()}]}
+    base_abs = os.path.abspath(os.path.join(SKILLS_DIR, skill_id))
+    out: list[dict] = []
+    for root, dirs, names in os.walk(base_abs):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for n in sorted(names):
+            path = os.path.join(root, n)
+            rel = os.path.relpath(path, base_abs)
+            if n.startswith(".") or os.path.getsize(path) > 512_000:
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    out.append({"path": rel, "content": f.read()})
+            except (UnicodeDecodeError, OSError):
+                continue
+    out.sort(key=lambda e: (e["path"] != "SKILL.md", e["path"]))
+    return {"files": out}
+
+
+@skills.router.post("/upload")
+async def upload_skill(body: SkillUpload):
+    """The Directory's Upload skill drop zone: a bare SKILL .md, or a .zip/.skill archive
+    whose shallowest SKILL.md marks the skill root; sibling files ride along as folder extras."""
+    name_l = body.filename.lower()
+    try:
+        raw = base64.b64decode(body.content_b64)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="upload was not valid base64")
+
+    if name_l.endswith(".md"):
+        text = raw.decode("utf-8", errors="replace")
+        meta = p_parse_skill_frontmatter(text)
+        if not meta.get("name") or not meta.get("description"):
+            raise HTTPException(status_code=400, detail=".md file must contain skill name and description formatted in YAML")
+        skill = write_folder_skill(unique_skill_slug(meta["name"]), {"SKILL.md": text}, meta)
+        return {"ok": True, "skill": skill.model_dump()}
+
+    if name_l.endswith(".zip") or name_l.endswith(".skill"):
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="file is not a valid zip archive")
+        entries = [n for n in zf.namelist() if not n.endswith("/")]
+        md_entries = [n for n in entries if n.split("/")[-1] == "SKILL.md"]
+        if not md_entries:
+            raise HTTPException(status_code=400, detail=".zip or .skill file must include a SKILL.md file")
+        md_entry = min(md_entries, key=lambda n: n.count("/"))
+        root = md_entry[: -len("SKILL.md")]
+        files: dict[str, str] = {}
+        for n in entries:
+            if not n.startswith(root):
+                continue
+            rel = n[len(root):]
+            if not rel:
+                continue
+            try:
+                files[rel] = zf.read(n).decode("utf-8")
+            except UnicodeDecodeError:
+                # Binary assets are skipped; the skill contract is text (SKILL.md + scripts).
+                logger.warning("skill upload: skipped binary entry %r", n)
+        meta = p_parse_skill_frontmatter(files.get("SKILL.md", ""))
+        if not meta.get("name"):
+            meta["name"] = re.sub(r"\.(zip|skill)$", "", body.filename, flags=re.IGNORECASE)
+        skill = write_folder_skill(unique_skill_slug(meta["name"]), files, meta)
+        return {"ok": True, "skill": skill.model_dump()}
+
+    raise HTTPException(status_code=400, detail="unsupported file type: upload a .md, .zip, or .skill file")
+
+
 @skills.router.post("/create")
 async def create_skill(body: SkillCreate):
     # All user skills are folders now (<id>/SKILL.md); flat files stay readable but are no longer written, so a skill's on-disk shape no longer depends on how it was created vs imported.
@@ -501,6 +593,8 @@ async def update_skill(skill_id: str, body: SkillUpdate):
         meta["description"] = body.description
     if body.command is not None:
         meta["command"] = body.command
+    if body.enabled is not None:
+        meta["enabled"] = body.enabled
     index[skill_id] = meta
     save_index(index)
 

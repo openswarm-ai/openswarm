@@ -19,16 +19,18 @@ const crypto = require('crypto');
 const MODELS = [
   { id: 'tiny.en-q5_1', file: 'ggml-tiny.en-q5_1.bin', label: 'Tiny', note: 'Fastest, but gets lost past ~15s of speech', bytes: 32166155, sha256: 'c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b' },
   { id: 'base.en-q5_1', file: 'ggml-base.en-q5_1.bin', label: 'Base (compact)', note: 'Base quality and speed, 90MB less to download and hold', bytes: 59721011, sha256: '4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f' },
-  { id: 'base.en', file: 'ggml-base.en.bin', label: 'Base', note: 'Balanced, the default', bytes: 147964211, sha256: 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002' },
-  { id: 'small.en-q5_1', file: 'ggml-small.en-q5_1.bin', label: 'Small', note: 'Steadier on accents and noise, ~2.7x slower', bytes: 190098681, sha256: 'bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30' },
+  { id: 'base.en', file: 'ggml-base.en.bin', label: 'Base', note: 'Fast and light; the instant fallback while Small downloads', bytes: 147964211, sha256: 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002' },
+  { id: 'small.en-q5_1', file: 'ggml-small.en-q5_1.bin', label: 'Small', note: 'Most accurate, the default; steadier on accents and noise', bytes: 190098681, sha256: 'bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30' },
+  { id: 'small-q5_1', file: 'ggml-small-q5_1.bin', label: 'Small (multilingual)', note: 'Auto-detects the spoken language; slightly less sharp on English', bytes: 190085487, sha256: 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb' },
 ];
 // Measured on an M2 (quiet machine, 3.5s/8.1s/26.4s utterances, median of 5):
 //   tiny  174/154/241ms  base-q5_1  212/414/656ms  base  208/398/734ms  small  865/1108/1869ms
-// base.en stays the default: quantizing it saves download and RAM but buys no speed on Metal, and
-// small costs 2.7x the latency. large-v3-turbo is deliberately absent, it measured both slowest and
-// least accurate here (4.1s on a 3.5s clip, and it fell apart on the long one).
+// small.en-q5_1 is the default (Eric's call, 2026-08-05: accuracy first): streaming partials hide
+// most of its extra decode cost, and the bundled base.en serves instantly while it downloads.
+// large-v3-turbo is deliberately absent, it measured both slowest and least accurate here
+// (4.1s on a 3.5s clip, and it fell apart on the long one).
 
-const DEFAULT_MODEL_ID = 'base.en';
+const DEFAULT_MODEL_ID = 'small.en-q5_1';
 const BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
 
 function modelById(id) {

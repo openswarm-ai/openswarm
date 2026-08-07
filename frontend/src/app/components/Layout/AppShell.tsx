@@ -1,26 +1,16 @@
 import React, { useState, useEffect, useCallback, startTransition, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { openSettingsModal } from '@/shared/state/settingsSlice';
+import { openSettingsCard } from '@/shared/state/dashboardLayoutSlice';
 import { getLastInteractedBrowser, getKeepAliveBrowserIds, setLastInteractedBrowser, clearLastInteractedBrowser } from '@/shared/browserFocus';
 import { getWebview } from '@/shared/browserRegistry';
 import { applyBrowserZoom } from '@/shared/browserZoom';
 import Box from '@mui/material/Box';
 import { VoiceDictationProvider } from '@/shared/voice/VoiceDictationContext';
 import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
 import Collapse from '@mui/material/Collapse';
-import Button from '@mui/material/Button';
-import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
 import { Clock } from 'lucide-react';
 
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
-import CloseIcon from '@mui/icons-material/Close';
-import LinearProgress from '@mui/material/LinearProgress';
-import CircularProgress from '@mui/material/CircularProgress';
 // Settings modal lazy-loaded so its 2.3K LOC + Stripe/OAuth helpers don't ship on first paint.
-const Settings = React.lazy(() => import('@/app/pages/Settings/Settings'));
 import DynamicIsland from '@/app/components/overlays/DynamicIsland';
 import Dashboard from '@/app/pages/Dashboard/Dashboard';
 import DashboardHost from '@/app/components/Layout/DashboardHost';
@@ -34,15 +24,16 @@ import { addBrowserCard, addBrowserTab, cycleBrowserTab, reopenLastClosed, addVi
 import { ackRun, runWorkflowNow } from '@/shared/state/workflowsSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
-import { setInstalling } from '@/shared/state/updateSlice';
+import UpdateReadyPill from '@/app/components/Layout/UpdateReadyPill';
+import ShareRequestHost from '@/app/components/share/ShareRequestHost';
+import CardContextMenu from '@/app/pages/Dashboard/desktop/CardContextMenu';
 import { findBrowserByWebContentsId } from '@/shared/browserRegistry';
 import { byPreviewRecency } from '@/shared/previewOrder';
 import { useClaudeTokens, useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
 import SpacesStrip from '@/app/pages/Dashboard/desktop/SpacesStrip';
-import { washBackgroundUrl, effectiveWashStops } from '@/shared/styles/washBackground';
+import { washOpaqueBackgroundUrl, washUnderlayColor, effectiveWashStops } from '@/shared/styles/washBackground';
+import { useGrainTileUrl } from '@/shared/styles/useGrainTileUrl';
 import { ErrorSlime } from '@/app/components/feedback/ErrorSlime';
-
-const UPDATE_DISMISS_KEY = 'openswarm-update-dismissed';
 
 const AppShell: React.FC = () => {
   const c = useClaudeTokens();
@@ -62,18 +53,6 @@ const AppShell: React.FC = () => {
   // Desktop shell: the wallpaper canvas IS the home surface, so the sidebar starts docked away
   // (left-edge hover peeks it; the pin toggle brings it back full-time).
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-
-  const updateStatus = useAppSelector((state) => state.update.status);
-  const availableVersion = useAppSelector((state) => state.update.availableVersion);
-  const downloadPercent = useAppSelector((state) => state.update.downloadPercent);
-  const installing = useAppSelector((state) => state.update.installing);
-  // Windows' Squirrel never reports a version, and a mid-download cache-clear reload wipes it, so render the name version-less instead of "OpenSwarm null".
-  const verSuffix = availableVersion ? ` ${availableVersion}` : '';
-
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(() => {
-    try { return localStorage.getItem(UPDATE_DISMISS_KEY); } catch { return null; }
-  });
-  const [snackbarDismissed, setSnackbarDismissed] = useState(false);
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -98,7 +77,8 @@ const AppShell: React.FC = () => {
   // Arc/Zen fullscreen ground: ONE themed wash across the whole window (sidebar sits on it borderless,
   // the content floats as a rounded card). Mirrors the DashboardCanvas wash formula.
   const { accent: themeAccent, gradient: themeGradient } = useThemeAccent();
-  const { washOpacity: themeWashOpacity } = useThemeWash();
+  const { washOpacity: themeWashOpacity, grain: themeWashGrain } = useThemeWash();
+  const shellGrainUrl = useGrainTileUrl(themeWashGrain);
   const fsWashStops = effectiveWashStops(themeGradient, themeAccent);
   // During an active free trial the user CAN run things, so a red "no model connected" warning is misleading and discouraging (it sits right above the working starter chips). The trial flips connection_mode back to own_key the moment it's spent, so this banner returns then, landing the connect-a-model nudge after the win, not before it.
   const freeTrialActive = useAppSelector((s) => {
@@ -159,30 +139,6 @@ const AppShell: React.FC = () => {
   // Spent nudge hides the moment they connect a real model; the post-wow nudge only shows on the trial lane (so it already implies no own model) and is dismissible.
   const showFreeTrialNudge = isOnline && settingsKnown && ((freeTrialSpent && !hasModelConnected) || (freeTrialUsed && !ftNudgeDismissed));
 
-  const bannerDismissedForVersion = availableVersion != null && dismissedVersion === availableVersion;
-  const isUpdateActionable = updateStatus === 'available' || updateStatus === 'downloaded' || updateStatus === 'downloading';
-
-  const showUpdateDot = (updateStatus === 'available' || updateStatus === 'downloaded') && !bannerDismissedForVersion;
-  const showUpdateBanner = isUpdateActionable && !bannerDismissedForVersion;
-  const showUpdateSnackbar = (updateStatus === 'available' || updateStatus === 'downloaded') && !bannerDismissedForVersion && !snackbarDismissed;
-
-  const handleDismissBanner = useCallback(() => {
-    if (availableVersion) {
-      try { localStorage.setItem(UPDATE_DISMISS_KEY, availableVersion); } catch {}
-      setDismissedVersion(availableVersion);
-    }
-  }, [availableVersion]);
-
-  const handleDownloadUpdate = useCallback(async () => {
-    try { await (window as any).openswarm?.downloadUpdate(); } catch {}
-  }, []);
-
-  const handleInstallUpdate = useCallback(() => {
-    if (installing) return;
-    dispatch(setInstalling());
-    (window as any).openswarm?.installUpdate();
-  }, [installing, dispatch]);
-
   // shallowEqual on top-level Immer dicts: nested mutations bump the dict reference, causing AppShell to re-render on every rename/output bump despite identical structure.
   const dashboardItems = useAppSelector(
     (state) => state.dashboards.items,
@@ -202,7 +158,6 @@ const AppShell: React.FC = () => {
   useEffect(() => {
     const ric = (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
     const handle = ric(() => {
-      import('@/app/pages/Settings/Settings').catch(() => {});
     }, { timeout: 3000 });
     return () => {
       const cic = (window as any).cancelIdleCallback || clearTimeout;
@@ -328,6 +283,7 @@ const AppShell: React.FC = () => {
     return w.openswarm.onBrowserShortcut((payload: { action: string; webContentsId: number }) => {
       // Reopen-last-closed is global (no target browser), so handle it before the per-browser id guard.
       if (payload.action === 'reopen-closed') { dispatch(reopenLastClosed()); return; }
+      if (payload.action === 'new-agent') { window.dispatchEvent(new CustomEvent('openswarm:new-agent')); return; }
       const id = findBrowserByWebContentsId(payload.webContentsId) ?? getLastInteractedBrowser();
       if (!id) return;
       switch (payload.action) {
@@ -456,7 +412,16 @@ const AppShell: React.FC = () => {
   return (
     <Box sx={{
       display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: c.bg.secondary,
-      ...(fsWashStops ? { backgroundImage: washBackgroundUrl(fsWashStops, themeWashOpacity), backgroundSize: '100% 100%' } : {}),
+      // Identical rendering to the canvas wash (opaque pre-blend + the same baked grain tile), so any
+      // sliver of shell peeking past the viewport reads as continuous texture, never a tint/grain seam.
+      ...(fsWashStops ? {
+        backgroundColor: washUnderlayColor(fsWashStops, themeWashOpacity, c.bg.page),
+        backgroundImage: shellGrainUrl
+          ? `${shellGrainUrl}, ${washOpaqueBackgroundUrl(fsWashStops, themeWashOpacity, c.bg.page)}`
+          : washOpaqueBackgroundUrl(fsWashStops, themeWashOpacity, c.bg.page),
+        backgroundSize: shellGrainUrl ? 'auto, 100% 100%' : '100% 100%',
+        backgroundRepeat: shellGrainUrl ? 'repeat, no-repeat' : 'no-repeat',
+      } : {}),
     }}>
       {/* Sidebar retired: dashboards switch via the macOS-Spaces top strip; a slim band below the
           spaces hot zone keeps the frameless window draggable (the sidebar's drag strip is gone). */}
@@ -505,7 +470,7 @@ const AppShell: React.FC = () => {
                   No AI model connected.{' '}
                   <Box
                     component="span"
-                    onClick={() => dispatch(openSettingsModal('models'))}
+                    onClick={() => dispatch(openSettingsCard({ tab: 'models' }))}
                     sx={{
                       textDecoration: 'underline',
                       cursor: 'pointer',
@@ -531,7 +496,7 @@ const AppShell: React.FC = () => {
               : "Nice, you're rolling. "}
             <Box
               component="span"
-              onClick={() => dispatch(openSettingsModal('models'))}
+              onClick={() => dispatch(openSettingsCard({ tab: 'models' }))}
               sx={{ color: c.accent.primary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
             >
               Connect the Claude or ChatGPT you already have
@@ -566,7 +531,7 @@ const AppShell: React.FC = () => {
           {proMaxed && (
             <Box
               component="span"
-              onClick={() => dispatch(openSettingsModal('models'))}
+              onClick={() => dispatch(openSettingsCard({ tab: 'models' }))}
               sx={{ color: c.accent.primary, cursor: 'pointer', fontSize: '0.8125rem', '&:hover': { textDecoration: 'underline' } }}
             >
               Upgrade
@@ -575,100 +540,7 @@ const AppShell: React.FC = () => {
         </Box>
       </Collapse>
 
-      {showUpdateBanner && !fsHideChrome && (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            px: 2,
-            py: 0.5,
-            bgcolor: `${c.accent.primary}14`,
-            borderBottom: `1px solid ${c.accent.primary}30`,
-            flexShrink: 0,
-          }}
-        >
-          <SystemUpdateAltIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />
-          <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {updateStatus === 'available' && `OpenSwarm${verSuffix} is available`}
-            {updateStatus === 'downloading' && `Downloading OpenSwarm${verSuffix}…`}
-            {updateStatus === 'downloaded' && `OpenSwarm${verSuffix} is ready to install`}
-          </Typography>
-          {updateStatus === 'downloading' && (
-            <LinearProgress
-              variant="determinate"
-              value={downloadPercent}
-              sx={{
-                width: 120,
-                height: 3,
-                flexShrink: 0,
-                borderRadius: 2,
-                bgcolor: `${c.accent.primary}20`,
-                '& .MuiLinearProgress-bar': { bgcolor: c.accent.primary, borderRadius: 2 },
-              }}
-            />
-          )}
-          {updateStatus === 'downloading' && (
-            <Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary, flexShrink: 0 }}>
-              {Math.round(downloadPercent)}%
-            </Typography>
-          )}
-          {updateStatus === 'available' && (
-            <Button
-              size="small"
-              variant="contained"
-              onClick={handleDownloadUpdate}
-              sx={{
-                bgcolor: c.accent.primary,
-                '&:hover': { bgcolor: c.accent.pressed },
-                textTransform: 'none',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                borderRadius: 1.5,
-                minWidth: 'auto',
-                py: 0.25,
-                px: 1.5,
-                lineHeight: 1.5,
-                flexShrink: 0,
-              }}
-            >
-              Download
-            </Button>
-          )}
-          {updateStatus === 'downloaded' && (
-            <Button
-              size="small"
-              variant="contained"
-              onClick={handleInstallUpdate}
-              disabled={installing}
-              startIcon={installing ? <CircularProgress size={12} sx={{ color: '#fff' }} /> : undefined}
-              sx={{
-                bgcolor: c.accent.primary,
-                '&:hover': { bgcolor: c.accent.pressed },
-                '&.Mui-disabled': { bgcolor: c.accent.primary, color: '#fff', opacity: 0.7 },
-                textTransform: 'none',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                borderRadius: 1.5,
-                minWidth: 'auto',
-                py: 0.25,
-                px: 1.5,
-                lineHeight: 1.5,
-                flexShrink: 0,
-              }}
-            >
-              {installing ? 'Restarting…' : 'Restart & Update'}
-            </Button>
-          )}
-          <IconButton
-            size="small"
-            onClick={handleDismissBanner}
-            sx={{ color: c.text.tertiary, p: 0.25, flexShrink: 0, '&:hover': { color: c.text.secondary } }}
-          >
-            <CloseIcon sx={{ fontSize: 14 }} />
-          </IconButton>
-        </Box>
-      )}
+      {!fsHideChrome && <UpdateReadyPill />}
 
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
       {/* Sidebar excised: dashboards live in the Spaces strip (hover the top edge; right-click a tile for rename/duplicate/delete). */}
@@ -711,81 +583,12 @@ const AppShell: React.FC = () => {
       </Box>
 
       <React.Suspense fallback={null}>
-        <Settings />
       </React.Suspense>
 
-      <Snackbar
-        open={showUpdateSnackbar}
-        autoHideDuration={10000}
-        onClose={() => setSnackbarDismissed(true)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          severity="info"
-          icon={updateStatus === 'downloaded'
-            ? <RestartAltIcon sx={{ fontSize: 18 }} />
-            : <SystemUpdateAltIcon sx={{ fontSize: 18 }} />
-          }
-          action={
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Button
-                size="small"
-                onClick={() => setSnackbarDismissed(true)}
-                sx={{ color: c.text.muted, textTransform: 'none', fontSize: '0.8125rem', minWidth: 'auto' }}
-              >
-                Dismiss
-              </Button>
-              {updateStatus === 'available' && (
-                <Button
-                  size="small"
-                  variant="contained"
-                  onClick={handleDownloadUpdate}
-                  sx={{
-                    bgcolor: c.accent.primary,
-                    '&:hover': { bgcolor: c.accent.pressed },
-                    textTransform: 'none',
-                    fontSize: '0.8125rem',
-                    borderRadius: 1.5,
-                    minWidth: 'auto',
-                  }}
-                >
-                  Download
-                </Button>
-              )}
-              {updateStatus === 'downloaded' && (
-                <Button
-                  size="small"
-                  variant="contained"
-                  onClick={handleInstallUpdate}
-                  disabled={installing}
-                  startIcon={installing ? <CircularProgress size={12} sx={{ color: '#fff' }} /> : undefined}
-                  sx={{
-                    bgcolor: c.accent.primary,
-                    '&:hover': { bgcolor: c.accent.pressed },
-                    '&.Mui-disabled': { bgcolor: c.accent.primary, color: '#fff', opacity: 0.7 },
-                    textTransform: 'none',
-                    fontSize: '0.8125rem',
-                    borderRadius: 1.5,
-                    minWidth: 'auto',
-                  }}
-                >
-                  {installing ? 'Restarting…' : 'Restart & Update'}
-                </Button>
-              )}
-            </Box>
-          }
-          sx={{
-            bgcolor: c.bg.surface,
-            color: c.text.primary,
-            border: `1px solid ${c.border.medium}`,
-            boxShadow: c.shadow.md,
-            '& .MuiAlert-icon': { color: c.accent.primary },
-          }}
-        >
-          {updateStatus === 'available' && `OpenSwarm${verSuffix} is available`}
-          {updateStatus === 'downloaded' && `OpenSwarm${verSuffix} downloaded; restart to update`}
-        </Alert>
-      </Snackbar>
+      <ShareRequestHost />
+
+      {/* Shell-global right-click host (portals to body): chat surfaces render on non-dashboard routes too, so the menu can't live inside DashboardCanvas. */}
+      <CardContextMenu />
 
 
     </Box>

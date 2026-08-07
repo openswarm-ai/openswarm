@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
+import { clipboardCardToSelectedElement } from '@/app/pages/AgentChat/ChatInput/hooks/pasteCards';
+import { TOOLBAR_OWNER_ID } from '@/app/pages/Dashboard/DashboardToolbar';
+import type { ClipboardCard } from '@/shared/dashboardClipboard';
 import { useCanvasControls } from '../interaction/useCanvasControls';
 import { useDashboardSelection } from './useDashboardSelection';
 import { useDashboardSelectors } from './useDashboardSelectors';
@@ -9,7 +12,7 @@ import { getCardRect } from '../../geometry/getCardRect';
 import { computeContentBounds } from '../../geometry/contentBounds';
 import { useDashboardUiState } from './useDashboardUiState';
 import { useLayoutSave } from './useLayoutSave';
-import { useTethers } from '../../geometry/dashboardTethers';
+import type { TetherInputs } from '../../geometry/dashboardTethers';
 import { useArrowNav } from '../interaction/useArrowNav';
 import { useDashboardShortcuts } from '../interaction/useDashboardShortcuts';
 import { useDashboardClipboard } from '../interaction/useDashboardClipboard';
@@ -70,7 +73,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
 
   const canvas = useCanvasControls(zoomSensitivity, contentBounds, isActive, mouseWheelAction);
   const selection = useDashboardSelection(
-    { panX: canvas.panX, panY: canvas.panY, zoom: canvas.zoom, viewportRef: canvas.viewportRef },
+    { getLiveState: canvas.actions.getLiveState, viewportRef: canvas.viewportRef },
     cards,
     viewCards,
     browserCards,
@@ -87,12 +90,16 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
 
   // Nudge the chat button while the canvas is empty; the first click dismisses it for this visit.
   const bounceDismissedRef = useRef(false);
-  // Truly-empty canvas: matches the empty-state hero's own render condition (fullscreen is handled
+  const settingsWindowOpen = useAppSelector((s) => !!s.dashboardLayout.settingsCard);
+  const marketplaceWindowOpen = useAppSelector((s) => !!s.dashboardLayout.marketplaceCard);
+  // Truly-empty canvas: IS the empty-state hero's render condition (fullscreen is handled
   // separately, it display:none's the whole overlay layer), so "pill hidden" always coincides with
-  // "hero shown" and a workflow-card-only canvas never ends up with no composer at all.
+  // "hero shown". The singleton windows (Settings, Marketplace, Run Monitor) count as content,
+  // otherwise the hero floats on top of an open window.
   const canvasEmpty = layoutInitialized && sessionList.length === 0
     && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0
-    && Object.keys(workflowCards).length === 0 && !workflowsHub;
+    && Object.keys(workflowCards).length === 0 && !workflowsHub
+    && !settingsWindowOpen && !marketplaceWindowOpen && !workflowsMonitorCard;
   useEffect(() => {
     setNewAgentBounce(canvasEmpty && !bounceDismissedRef.current);
   }, [canvasEmpty, setNewAgentBounce]);
@@ -104,8 +111,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   }), [canvas.actions]);
 
   const {
-    multiDragDelta,
-    liveDragInfo,
+    multiDragActive,
     handleCardDragStart,
     handleCardDragMove,
     handleCardDragEnd,
@@ -226,6 +232,26 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     }
   }, [toolbarOpen, toolbarPrefill, toolbarPrefillMode]);
 
+  // Dictation with no field focused lands HERE instead of vanishing: the composer opens with the transcript typed in, unsent.
+  useEffect(() => {
+    if (!isActive) return;
+    const onDictation = (e: Event): void => {
+      const text = (e as CustomEvent).detail?.text;
+      if (typeof text === 'string' && text.trim()) handleStarter(text);
+    };
+    window.addEventListener('openswarm:dictation-fallback', onDictation);
+    return () => window.removeEventListener('openswarm:dictation-fallback', onDictation);
+  }, [isActive, handleStarter]);
+
+  const onCopiedToContext = useCallback((copied: ClipboardCard[]) => {
+    if (!elementSelectionCtx) return;
+    for (const card of copied) {
+      const el = clipboardCardToSelectedElement(card);
+      if (el) elementSelectionCtx.addElementForOwner(TOOLBAR_OWNER_ID, el);
+    }
+    setToolbarOpen(true);
+  }, [elementSelectionCtx, setToolbarOpen]);
+
   useDashboardClipboard({
     isActive,
     dashboardId,
@@ -236,6 +262,7 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     browserCards,
     outputs,
     expandedSessionIds,
+    onCopiedToContext,
   });
 
   // ---- Arrow key card navigation (when zoomed in on a card) ----
@@ -305,7 +332,9 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     measuredHeightsTick,
   });
 
-  const tethers = useTethers({
+  // Bundled for the canvas's TetherLayerHost, which re-renders ALONE on drag frames; holding drag
+  // state here re-rendered the whole page per pointer move (the ENG-88 input delay).
+  const tetherInputs = useMemo<TetherInputs>(() => ({
     glowingAgentCards,
     glowingBrowserCards,
     cards,
@@ -316,7 +345,6 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     viewCards,
     outputs,
     expandedSessionIds,
-    liveDragInfo,
     measuredHeightsRef,
     measuredHeightsTick,
     sessionList,
@@ -324,14 +352,14 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     workflowsMonitorCard,
     workflowsMonitorLabel,
     monitorRunSessionId,
-  });
+  }), [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, viewCards, outputs, expandedSessionIds, measuredHeightsRef, measuredHeightsTick, sessionList, workflowsHub, workflowsMonitorCard, workflowsMonitorLabel, monitorRunSessionId]);
 
   return {
     c, dashboardId, dashboardName, canvas, selection, sessions, sessionList,
     cards, viewCards, browserCards, keepAliveBrowserCards, outputs, glowingAgentCards,
     workflowCards, workflowsHub,
-    expandedSessionIds, tethers, highlightedCardId, autoFocusSessionId,
-    focusedCardId, multiDragDelta, shakeDirection,
+    expandedSessionIds, tetherInputs, highlightedCardId, autoFocusSessionId,
+    focusedCardId, multiDragActive, shakeDirection,
     neighborDirections, toolbarOpen, searchPaletteOpen, newAgentBounce, canvasEmpty,
     toolbarRef, spawnOriginsRef, revealSpawnedRef, measuredHeightsRef, getCanvasState,
     toolbarPrefill,

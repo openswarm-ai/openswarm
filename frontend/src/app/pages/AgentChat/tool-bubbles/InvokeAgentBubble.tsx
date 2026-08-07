@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ToolSelectAttrs } from './ToolCallBubble';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -29,7 +30,7 @@ interface InvokeAgentBubbleProps {
   invokedSessionId: string | null;
   handleRevealAgent: (e: React.MouseEvent) => void;
   bubbleRef: React.RefObject<HTMLDivElement>;
-  selectAttrs: Record<string, string>;
+  selectAttrs: ToolSelectAttrs;
 }
 
 export const InvokeAgentBubble: React.FC<InvokeAgentBubbleProps> = ({

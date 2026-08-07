@@ -54,7 +54,7 @@ interface Props {
   prefillMode?: string;
 }
 
-const TOOLBAR_OWNER_ID = '__toolbar__';
+export const TOOLBAR_OWNER_ID = '__toolbar__';
 
 const MotionBox = motion.div;
 

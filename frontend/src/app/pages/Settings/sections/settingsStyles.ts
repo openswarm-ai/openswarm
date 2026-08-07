@@ -19,19 +19,17 @@ export function makeSettingsStyles(c: ClaudeTokens) {
     px: 0.5,
   };
 
-  // Apple/ChatGPT settings grammar: each row is its own soft contained chip, not a hairline in a
-  // long scroll; the pane reads as a stack of quiet cards.
+  // claude.ai settings grammar: plain rows with a single hairline between them, no per-row cards.
   const rowSx = {
-    px: 2,
-    py: 1.5,
-    mb: 1,
-    bgcolor: c.bg.surface,
-    border: `1px solid ${c.border.subtle}`,
-    borderRadius: '10px',
+    px: 0.5,
+    py: 2,
+    borderBottom: `1px solid ${c.border.subtle}`,
+    '&:last-of-type': { borderBottom: 'none' },
   };
 
   const rowLastSx = {
     ...rowSx,
+    borderBottom: 'none',
   };
 
   const inlineRowSx = {
@@ -57,8 +55,8 @@ export function makeSettingsStyles(c: ClaudeTokens) {
 
   const descSx = {
     color: c.text.tertiary,
-    fontSize: '0.75rem',
-    lineHeight: 1.4,
+    fontSize: '0.8125rem',
+    lineHeight: 1.45,
   };
 
   const toggleGroupSx = {

@@ -6,6 +6,7 @@ import { useCalendarOccurrences } from './useCalendarOccurrences';
 import { colorForWorkflow, useWC, statusChip, statusDot } from './uiKit';
 import { clockOf, whenText } from './model';
 import WorkflowTitle from './WorkflowTitle';
+import { useWorkflowMenu } from './useWorkflowMenu';
 import type { AppNav } from './types';
 
 interface ComingRun { wfId: string; title: string; time: string; sortKey: number; steps: number; color: string; }
@@ -21,6 +22,11 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const missed = useAppSelector((s) => s.missedRuns.items);
   const [missedExpanded, setMissedExpanded] = useState(false);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
+  const openWorkflowMenu = useWorkflowMenu();
+  const menuFor = (wfId: string) => (e: React.MouseEvent) => {
+    const wf = items[wfId];
+    if (wf) openWorkflowMenu(e, wf, { onEdit: () => nav.selectWorkflow(wfId) });
+  };
 
   const now = new Date();
   const todayLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
@@ -103,7 +109,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {ongoing.map((o) => (
-                <div key={o.wfId} onClick={() => dispatch(openWorkflowMonitor({ workflowId: o.wfId }))} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.10)`, borderRadius: WC.radius.md, padding: '11px 15px', cursor: 'pointer' }}>
+                <div key={o.wfId} onClick={() => dispatch(openWorkflowMonitor({ workflowId: o.wfId }))} onContextMenu={menuFor(o.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.10)`, borderRadius: WC.radius.md, padding: '11px 15px', cursor: 'pointer' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, flex: 'none' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -178,7 +184,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
               </div>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(expandedDays.has(g.key) ? g.runs : g.runs.slice(0, COMING_CAP)).map((r, i) => (
-                  <div key={`${r.wfId}-${i}`} onClick={() => nav.selectWorkflow(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '12px 15px', cursor: 'pointer' }}>
+                  <div key={`${r.wfId}-${i}`} onClick={() => nav.selectWorkflow(r.wfId)} onContextMenu={menuFor(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '12px 15px', cursor: 'pointer' }}>
                     <div style={{ width: 3, height: 30, borderRadius: 3, background: r.color, flex: 'none' }} />
                     <WorkflowTitle value={r.title} animate={animateOf(r.wfId)}>
                       {(t) => <span style={{ fontSize: 14, fontWeight: 600, color: WC.ink, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</span>}
@@ -205,7 +211,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
           {recents.length === 0 && <div style={{ fontSize: 13, color: WC.muted }}>No runs yet.</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {recents.map((r) => (
-              <div key={r.id} onClick={() => nav.selectWorkflow(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 4px', borderBottom: `1px solid rgba(${WC.inkRGB},0.05)`, cursor: 'pointer' }}>
+              <div key={r.id} onClick={() => nav.selectWorkflow(r.wfId)} onContextMenu={menuFor(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 4px', borderBottom: `1px solid rgba(${WC.inkRGB},0.05)`, cursor: 'pointer' }}>
                 <div style={statusDot(r.status, WC)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <WorkflowTitle value={r.title} animate={animateOf(r.wfId)}>

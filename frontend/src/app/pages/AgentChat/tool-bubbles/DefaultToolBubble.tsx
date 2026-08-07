@@ -1,10 +1,10 @@
 import React from 'react';
+import type { ToolSelectAttrs } from './ToolCallBubble';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import BlockIcon from '@mui/icons-material/Block';
@@ -17,10 +17,15 @@ import BrowserAgentInlineFeed from '../shell/BrowserAgentInlineFeed';
 import { GoogleServiceIcon } from '../mcp-cards/GoogleServiceIcon';
 import { ElapsedTimer, formatElapsed } from '../parsing/toolBubbleChrome';
 import { useTermColors, colorizeInput, colorizeOutput } from '../parsing/toolColorize';
-import { ParsedResult } from '../parsing/toolResultParsing';
+import { ParsedResult, getToolData } from '../parsing/toolResultParsing';
+import { resolveRichRender } from '../parsing/richResultDispatch';
 import { McpToolInfo } from '@/shared/mcpToolMeta';
 import { McpResultCard } from '../mcp-cards/McpResultCard';
-import { domainFromUrl, faviconUrlForDomain } from './SourceFavicons';
+import { domainFromUrl } from './SourceFavicons';
+import { DomainIcon } from './DomainIcon';
+import VendoredToolUi from '@toolui/VendoredToolUi';
+import WidgetCopyChip from '../tool-ui/WidgetCopyChip';
+import { COLLAPSE_MS, COLLAPSE_EASE, chevronSx, shimmerTextSx, railEnterSx, keepRowAnchored } from './toolRowMotion';
 
 interface DefaultToolBubbleProps {
   call: AgentMessage;
@@ -45,7 +50,7 @@ interface DefaultToolBubbleProps {
   parsedResult: ParsedResult | null;
   isBrowserAgent: boolean;
   accentRgb: string;
-  selectAttrs: Record<string, string>;
+  selectAttrs: ToolSelectAttrs;
   suppressReveal?: boolean;
 }
 
@@ -56,6 +61,12 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
 }) => {
   const c = useClaudeTokens();
   const tc = useTermColors();
+  const richWidgetRef = React.useRef<HTMLDivElement>(null);
+  // Auto-elevated rendering: builtin coding tools map onto the vendored terminal/code components by schema, no ShowUI involved; null keeps the classic colorized <pre>. Streaming stays on the classic path (partial args are unparseable).
+  const richRender = React.useMemo(
+    () => (!isStreaming && result ? resolveRichRender(toolName, input ?? {}, parsedResult, resultElapsedMs, getToolData(call).toolId || call.id) : null),
+    [isStreaming, result, toolName, input, parsedResult, resultElapsedMs, call],
+  );
   // JS-driven mount reveal (see useMountReveal). The streaming pill itself glides in so a tool enters smoothly the moment it starts; when it commits, AgentChat sets suppressReveal on that same row so the hand-off doesn't re-animate what's already on screen. mcpCompact rows opt out (the group's row-fade handles them).
   const reveal = useMountReveal();
   const enterStyle = (!mcpCompact && !suppressReveal) ? reveal : {};
@@ -74,54 +85,42 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
         ...enterStyle,
       }}
     >
-      <Box
-        sx={{
-          '--glow-rgb': accentRgb,
-          bgcolor: mcpCompact ? 'transparent' : c.bg.elevated,
-          border: mcpCompact ? 'none' : `1px solid ${
-            isPending || isStreaming
-              // Half-strength accent: still clearly "working", but a saturated user accent (greens
-              // especially) at full strength read as a loud alarm ring around a routine tool call.
-              ? c.accent.primary + '66'
-              : isDenied
-                ? c.status.error + '60'
-                : c.border.subtle
-          }`,
-          borderRadius: mcpCompact ? 0 : 2,
-          overflow: 'hidden',
-          // Live state stays calm: the accent border + the ElapsedTimer's small pulsing dot carry
-          // "working"; the old whole-bubble box-shadow glow loop read as noise (animation-purge rule).
-          transition: 'border-color 0.3s, box-shadow 0.3s',
-        } as any}
-      >
+      <Box sx={{ '--glow-rgb': accentRgb } as any}>
         <Box
-          onClick={canToggleDetails ? toggle : undefined}
+          className="osw-tool-row"
+          onClick={canToggleDetails ? (e: React.MouseEvent) => { keepRowAnchored(e.currentTarget as HTMLElement); toggle(); } : undefined}
           sx={{
+            // Rows are FLAT in every state (Claude/ChatGPT transition language): no capsule at rest,
+            // no box on expand; the output hangs off the indent rail below.
             display: 'flex',
             alignItems: 'center',
             gap: 0.75,
-            px: 1.5,
-            py: mcpCompact ? 0.6 : 0.75,
+            px: mcpCompact ? 1.5 : 0,
+            py: mcpCompact ? 0.6 : 0.5,
             cursor: canToggleDetails ? 'pointer' : 'default',
             borderBottom: mcpCompact && showBody && canToggleDetails ? `1px solid ${c.border.subtle}` : 'none',
-            '&:hover': canToggleDetails ? { bgcolor: 'rgba(0,0,0,0.02)' } : {},
+            '&:hover': canToggleDetails ? { opacity: 0.9 } : {},
           }}
         >
+          {/* Accent is a LIVE signal only: a finished row goes neutral so a 20-row group reads as calm history, not a wall of orange (open-webui's state language). */}
           {mcpInfo.isMcp && mcpInfo.service
             ? <GoogleServiceIcon service={mcpInfo.service} size={mcpCompact ? 14 : 15} />
             : (() => {
                 const n = toolName.toLowerCase();
+                const p_iconColor = isPending ? c.accent.primary : c.text.tertiary;
                 if (n.includes('search') || n === 'grep' || n === 'glob')
-                  return <SearchIcon sx={{ fontSize: mcpCompact ? 14 : 15, color: c.accent.primary, flexShrink: 0 }} />;
-                return <TerminalIcon sx={{ fontSize: mcpCompact ? 14 : 15, color: c.accent.primary, flexShrink: 0 }} />;
+                  return <SearchIcon sx={{ fontSize: mcpCompact ? 14 : 15, color: p_iconColor, flexShrink: 0 }} />;
+                return <TerminalIcon sx={{ fontSize: mcpCompact ? 14 : 15, color: p_iconColor, flexShrink: 0 }} />;
               })()
           }
           <Typography
             sx={{
-              color: c.accent.primary,
+              color: isPending ? c.accent.primary : c.text.secondary,
               fontSize: mcpCompact ? '0.78rem' : '0.8rem',
-              fontWeight: 600,
+              fontWeight: isPending ? 600 : 500,
               flexShrink: 0,
+              transition: 'color 0.25s ease',
+              ...(isPending ? shimmerTextSx(c.accent.primary) : {}),
             }}
           >
             {(() => {
@@ -141,18 +140,11 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
               {mcpInfo.serverSlug}
             </Typography>
           )}
-          {inputSummary && !isStreaming && (
+          {/* A Bash label is already input-derived ("Checked location"), so its raw command fragment
+              is noise; the expanded terminal block shows the full command anyway. */}
+          {inputSummary && !isStreaming && (!/^bash$/i.test(toolName) || mcpCompact) ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
-              {webDomain && (
-                <Box
-                  component="img"
-                  src={faviconUrlForDomain(webDomain)}
-                  alt=""
-                  loading="lazy"
-                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = 'none'; }}
-                  sx={{ width: 13, height: 13, borderRadius: '3px', flexShrink: 0 }}
-                />
-              )}
+              {webDomain && <DomainIcon domain={webDomain} size={13} />}
               <Typography
                 noWrap
                 sx={{
@@ -165,8 +157,7 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
                 {inputSummary}
               </Typography>
             </Box>
-          )}
-          {!inputSummary && <Box sx={{ flex: 1 }} />}
+          ) : !isStreaming ? <Box sx={{ flex: 1 }} /> : null}
           {isStreaming && <Box sx={{ flex: 1 }} />}
           {isDenied && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
@@ -188,12 +179,15 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
                   )}
                 </>
               )}
+              {/* Timings are debug detail, not content: ghosted at rest, legible on row hover. */}
               {resultElapsedMs != null && (
                 <Typography
                   sx={{
                     fontSize: '0.625rem',
                     fontFamily: c.font.mono,
-                    color: c.text.tertiary,
+                    color: c.text.ghost,
+                    transition: 'color 120ms',
+                    '.osw-tool-row:hover &': { color: c.text.tertiary },
                   }}
                 >
                   {formatElapsed(resultElapsedMs)}
@@ -204,22 +198,33 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
           {showTimer && <ElapsedTimer startTime={call.timestamp} />}
 
           {canToggleDetails && (
-            <IconButton size="small" sx={{ color: c.text.tertiary, p: mcpCompact ? 0.15 : 0.25, flexShrink: 0 }}>
-              {showBody ? (
-                <ExpandLessIcon sx={{ fontSize: mcpCompact ? 16 : 18 }} />
-              ) : (
-                <ExpandMoreIcon sx={{ fontSize: mcpCompact ? 16 : 18 }} />
-              )}
+            <IconButton size="small" sx={{ color: c.text.tertiary, p: mcpCompact ? 0.15 : 0.25, flexShrink: 0, opacity: showBody ? 1 : 0, transition: 'opacity 120ms', '.osw-tool-row:hover &': { opacity: 1 } }}>
+              <ExpandMoreIcon sx={{ fontSize: mcpCompact ? 16 : 18, ...chevronSx(showBody) }} />
             </IconButton>
           )}
         </Box>
 
-        <Collapse in={showBody && canToggleDetails}>
+        <Collapse in={showBody && canToggleDetails} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE}>
+        {/* Standalone rows hang their output off the indent rail; compact rows already sit inside the group's rail. */}
+        <Box sx={mcpCompact ? { ...railEnterSx(showBody) } : { borderLeft: `2px solid ${c.border.medium}`, ml: 0.8, pl: 0.75, my: 0.25, ...railEnterSx(showBody) }}>
+          {richRender ? (
+            <Box sx={{ p: 1, bgcolor: tc.TERM_BG, borderRadius: 1.5, position: 'relative', '&:hover .osw-widget-copy': { opacity: 1 } }}>
+              <WidgetCopyChip component={richRender.name} props={richRender.props} containerRef={richWidgetRef} />
+              <Box ref={richWidgetRef}>
+                <VendoredToolUi name={richRender.name} props={richRender.props} />
+              </Box>
+              {parsedResult?.platformNote && (
+                <Typography sx={{ mt: 0.5, px: 0.5, fontSize: '0.6875rem', color: c.text.tertiary }}>
+                  {parsedResult.platformNote}
+                </Typography>
+              )}
+            </Box>
+          ) : (
           <Box
             sx={{
               bgcolor: tc.TERM_BG,
-              borderTop: `1px solid ${tc.TERM_BORDER}`,
-              maxHeight: 500,
+              borderRadius: 1.5,
+              maxHeight: 'min(40vh, 320px)',
               overflow: 'auto',
               '&::-webkit-scrollbar': { width: 5 },
               '&::-webkit-scrollbar-track': { background: 'transparent' },
@@ -352,6 +357,8 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
               </Box>
             )}
           </Box>
+          )}
+        </Box>
         </Collapse>
       </Box>
     </Box>

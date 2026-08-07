@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('openswarm', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   // Arc-style chrome: the mac traffic lights hide at rest; the dashboard's top-edge hover reveals them.
   setWindowButtonsVisible: (visible) => ipcRenderer.invoke('set-window-buttons-visible', visible),
+  // Native window bg tracks the theme so a live resize never paints the boot-dark color behind a light UI.
+  setWindowBackground: (color) => ipcRenderer.invoke('set-window-background', color),
+  setNewAgentShortcut: (combo) => ipcRenderer.send('set-new-agent-shortcut', combo),
 
   // Phase 2 provenance: { sha, shortSha, builtAt, channel } for the About panel.
   getBuildInfo: () => ipcRenderer.invoke('get-build-info'),
@@ -67,8 +70,19 @@ contextBridge.exposeInMainWorld('openswarm', {
   // Settings' model picker: the catalog with install state, and switching (downloads on demand).
   voiceModels: () => ipcRenderer.invoke('voice:models'),
   voiceSetModel: (id) => ipcRenderer.invoke('voice:set-model', id),
+  voiceSetDictionary: (words) => ipcRenderer.send('voice:set-dictionary', words),
   voiceTranscribe: (wavArrayBuffer) => ipcRenderer.invoke('voice:transcribe', wavArrayBuffer),
   voiceInject: (text) => ipcRenderer.invoke('voice:inject', text),
+  // Streaming dictation: chunks flow up fire-and-forget, live partials flow back down.
+  voiceStreamStart: () => ipcRenderer.invoke('voice:stream-start'),
+  voiceStreamChunk: (pcmArrayBuffer) => ipcRenderer.send('voice:stream-chunk', pcmArrayBuffer),
+  voiceStreamStop: () => ipcRenderer.invoke('voice:stream-stop'),
+  voiceStreamCancel: () => ipcRenderer.send('voice:stream-cancel'),
+  onVoicePartial: (cb) => {
+    const listener = (_event, payload) => cb(payload);
+    ipcRenderer.on('voice:partial', listener);
+    return () => ipcRenderer.removeListener('voice:partial', listener);
+  },
   onVoiceToggle: (cb) => {
     const listener = () => cb();
     ipcRenderer.on('voice:toggle', listener);
@@ -76,6 +90,14 @@ contextBridge.exposeInMainWorld('openswarm', {
   },
   // Reveal a diagnostics folder in Finder/Explorer (path validated in main; diagnostics dir only).
   revealBundle: (folderPath) => ipcRenderer.invoke('help:reveal-bundle', folderPath),
+  // Reveal a user-attached file in Finder/Explorer (reveal-only; main checks existence).
+  revealPath: (filePath) => ipcRenderer.invoke('files:reveal', filePath),
+  // Cmd/Ctrl+1..9: focus the Nth dock tile (0-based index arrives here).
+  onDockShortcut: (cb) => {
+    const listener = (_event, index) => cb(index);
+    ipcRenderer.on('openswarm:dock-shortcut', listener);
+    return () => ipcRenderer.removeListener('openswarm:dock-shortcut', listener);
+  },
 
   // Native OS notification for a finished workflow run, posted by the MAIN process
   // so it survives a minimized/hidden/backgrounded renderer (the renderer's own
@@ -93,6 +115,7 @@ contextBridge.exposeInMainWorld('openswarm', {
   setVoiceHotkey: (combo) => ipcRenderer.send('voice:set-hotkey', combo),
   voiceHoldCapable: () => ipcRenderer.invoke('voice:hold-capable'),
   voiceRequestHoldPermission: () => ipcRenderer.invoke('voice:request-hold-permission'),
+  voiceRequestMicAccess: () => ipcRenderer.invoke('voice:request-mic-access'),
   haptic: (pattern) => ipcRenderer.invoke('haptic:perform', pattern),
   // Native-tap hold relay: real global key-down/key-up for the voice combo, focus-independent.
   onVoiceHold: (onDown, onUp) => {
@@ -101,6 +124,12 @@ contextBridge.exposeInMainWorld('openswarm', {
     ipcRenderer.on('voice:hold-down', down);
     ipcRenderer.on('voice:hold-up', up);
     return () => { ipcRenderer.removeListener('voice:hold-down', down); ipcRenderer.removeListener('voice:hold-up', up); };
+  },
+  // Fires once at fn-watcher arm when macOS's own Globe-key action is still active (emoji picker on tap).
+  onVoiceGlobeConflict: (cb) => {
+    const h = () => cb();
+    ipcRenderer.on('voice:globe-conflict', h);
+    return () => ipcRenderer.removeListener('voice:globe-conflict', h);
   },
   // Hands a vetted social platform's partition cookies to its session-backed MCP shim (allowlisted domains only, gated again in the main process).
   getPartitionCookies: (domain) => ipcRenderer.invoke('get-partition-cookies', domain),
@@ -165,6 +194,20 @@ contextBridge.exposeInMainWorld('openswarm', {
     const listener = () => cb();
     ipcRenderer.on('openswarm:reload-shortcut', listener);
     return () => ipcRenderer.removeListener('openswarm:reload-shortcut', listener);
+  },
+
+  // Cmd/Ctrl+W with the window-close swallowed in main: the renderer closes the focused card instead.
+  onCloseShortcut: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('openswarm:close-shortcut', listener);
+    return () => ipcRenderer.removeListener('openswarm:close-shortcut', listener);
+  },
+
+  // Cmd/Ctrl+T: new tab in the last-interacted browser, else a new browser card.
+  onNewTabShortcut: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('openswarm:newtab-shortcut', listener);
+    return () => ipcRenderer.removeListener('openswarm:newtab-shortcut', listener);
   },
 
   // In-page browser shortcuts (zoom/find/tab-cycle) from a focused guest webview, carrying the guest's webContents id so the renderer targets that exact browser.

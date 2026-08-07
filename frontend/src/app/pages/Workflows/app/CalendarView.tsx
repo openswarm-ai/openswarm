@@ -5,11 +5,13 @@ import { useAppSelector } from '@/shared/hooks';
 import { startOfWeek, startOfMonthGrid, addDays, sameDay } from '@/app/pages/Workflows/scheduleUtils';
 import { useCalendarOccurrences } from './useCalendarOccurrences';
 import { colorForWorkflow, useWC, type WCPalette } from './uiKit';
+import { useWorkflowMenu } from './useWorkflowMenu';
 import type { AppNav } from './types';
 
 interface Occ { wfId: string; title: string; at: Date; color: string; }
 interface DayPop { title: string; runs: Occ[]; x: number; y: number; }
 type OpenDayPop = (title: string, runs: Occ[], e: React.MouseEvent) => void;
+type ContextWorkflow = (wfId: string, e: React.MouseEvent) => void;
 
 const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const POP_W = 240;
@@ -43,6 +45,11 @@ const CalendarView: React.FC<{ nav: AppNav }> = ({ nav }) => {
     const id = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(id);
   }, []);
+  const openWorkflowMenu = useWorkflowMenu();
+  const contextWorkflow: ContextWorkflow = (wfId, e) => {
+    const wf = items[wfId];
+    if (wf) openWorkflowMenu(e, wf, { onEdit: () => nav.selectWorkflow(wfId) });
+  };
   const ref = nav.refDate;
   const refKey = `${ref.getFullYear()}-${ref.getMonth()}-${ref.getDate()}`;
 
@@ -111,8 +118,8 @@ const CalendarView: React.FC<{ nav: AppNav }> = ({ nav }) => {
       </div>
 
       {nav.calView === 'month'
-        ? <MonthGrid ref0={ref} now={now} occByDay={occByDay} dayKey={dayKey} onSelect={nav.selectWorkflow} openDayPop={openDayPop} />
-        : <WeekGrid ref0={ref} now={now} occByDay={occByDay} dayKey={dayKey} onSelect={nav.selectWorkflow} openDayPop={openDayPop} />}
+        ? <MonthGrid ref0={ref} now={now} occByDay={occByDay} dayKey={dayKey} onSelect={nav.selectWorkflow} openDayPop={openDayPop} onContextWorkflow={contextWorkflow} />
+        : <WeekGrid ref0={ref} now={now} occByDay={occByDay} dayKey={dayKey} onSelect={nav.selectWorkflow} openDayPop={openDayPop} onContextWorkflow={contextWorkflow} />}
 
       {dayPop && createPortal(
         <div onClick={() => setDayPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 2147483600 }}>
@@ -120,7 +127,7 @@ const CalendarView: React.FC<{ nav: AppNav }> = ({ nav }) => {
             <div style={{ fontFamily: "'Newsreader',serif", fontSize: 15, fontWeight: 500, color: WC.ink, marginBottom: 10, padding: '0 2px' }}>{dayPop.title}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {dayPop.runs.map((r, i) => (
-                <div key={i} onClick={() => selectFromPop(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 7px', borderRadius: 8, cursor: 'pointer' }}>
+                <div key={i} onClick={() => selectFromPop(r.wfId)} onContextMenu={(e) => contextWorkflow(r.wfId, e)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 7px', borderRadius: 8, cursor: 'pointer' }}>
                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: r.color, flex: 'none' }} />
                   <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: WC.ink4, flex: 'none', minWidth: 52 }}>{miniTime(r.at)}</span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: WC.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</span>
@@ -141,6 +148,7 @@ interface GridProps {
   dayKey: (d: Date) => string;
   onSelect: (id: string) => void;
   openDayPop: OpenDayPop;
+  onContextWorkflow: ContextWorkflow;
 }
 
 const moreStyle = (WC: WCPalette): CSSProperties => ({
@@ -148,7 +156,7 @@ const moreStyle = (WC: WCPalette): CSSProperties => ({
   cursor: 'pointer', alignSelf: 'flex-start', border: 'none', background: 'transparent',
 });
 
-const MonthGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect, openDayPop }) => {
+const MonthGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect, openDayPop, onContextWorkflow }) => {
   const WC = useWC();
   const start = startOfMonthGrid(ref0);
   // Only as many weeks as the month actually spans (5 or 6), like the design, so rows aren't squashed by a dangling extra week of next-month days.
@@ -212,7 +220,7 @@ const MonthGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect,
               </div>
               <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
                 {shown.map((r, ri) => (
-                  <div key={ri} onClick={() => onSelect(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', borderRadius: 4, padding: '1px 3px' }}>
+                  <div key={ri} onClick={() => onSelect(r.wfId)} onContextMenu={(e) => onContextWorkflow(r.wfId, e)} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', borderRadius: 4, padding: '1px 3px' }}>
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flex: 'none' }} />
                     <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: WC.ink4, flex: 'none' }}>{miniTime(r.at)}</span>
                     <span style={{ fontSize: 11, color: WC.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</span>
@@ -233,7 +241,7 @@ const MonthGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect,
   );
 };
 
-const WeekGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect, openDayPop }) => {
+const WeekGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect, openDayPop, onContextWorkflow }) => {
   const WC = useWC();
   const start = startOfWeek(ref0);
   const startMs = start.getTime();
@@ -279,7 +287,7 @@ const WeekGrid: React.FC<GridProps> = ({ ref0, now, occByDay, dayKey, onSelect, 
                     <div style={{ position: 'absolute', left: 0, right: 0, top: nowFrac * ROW_H, height: 2, background: WC.accent, zIndex: 3 }} />
                   </>}
                   {runs.slice(0, 3).map((r, ri) => (
-                    <div key={ri} onClick={() => onSelect(r.wfId)} style={{ display: 'flex', alignItems: 'center', background: r.color, color: '#fff', borderRadius: 999, padding: '1px 7px', fontSize: 10, fontWeight: 600, cursor: 'pointer', lineHeight: 1.2, overflow: 'hidden' }}>
+                    <div key={ri} onClick={() => onSelect(r.wfId)} onContextMenu={(e) => onContextWorkflow(r.wfId, e)} style={{ display: 'flex', alignItems: 'center', background: r.color, color: '#fff', borderRadius: 999, padding: '1px 7px', fontSize: 10, fontWeight: 600, cursor: 'pointer', lineHeight: 1.2, overflow: 'hidden' }}>
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</span>
                       <span style={{ marginLeft: 'auto', paddingLeft: 6, opacity: 0.85, flex: 'none' }}>{miniTime(r.at)}</span>
                     </div>

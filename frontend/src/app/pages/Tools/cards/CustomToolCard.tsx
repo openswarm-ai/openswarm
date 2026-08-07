@@ -100,93 +100,109 @@ const CustomToolCard: React.FC<CustomToolCardProps> = ({
   return (
                   <Card
                     key={tool.id}
-                    sx={{ bgcolor: c.bg.surface, border: `1px solid ${isExpanded ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: isDisabled ? c.border.subtle : c.accent.primary, boxShadow: isDisabled ? undefined : '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}
+                    sx={{ bgcolor: isExpanded ? c.bg.elevated : 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none', borderBottom: `1px solid ${c.border.subtle}`, '&:last-of-type': { borderBottom: 'none' }, '&:hover': { bgcolor: c.bg.elevated }, transition: 'background-color 0.12s' }}
                   >
-                    <CardContent sx={{ py: 1.1, px: 1.75, '&:last-child': { pb: 1.5 } }}>
+                    <CardContent sx={{ py: 1.4, px: 2, '&:last-child': { pb: 1.4 } }}>
                       <Box
-                        sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: isDisabled ? 'default' : 'pointer' }}
+                        sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 200px', alignItems: 'center', gap: 2, cursor: isDisabled ? 'default' : 'pointer' }}
                         data-onboarding={isYoutube ? 'actions-youtube-chevron' : isReddit ? 'actions-reddit-chevron' : undefined}
                         onClick={() => !isDisabled && onToggleExpand(tool.id, isExpanded)}
                       >
-                        {ig && (
-                          <Box sx={{
-                            width: 30, height: 30, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            bgcolor: `${ig.color}18`, fontSize: '1.125rem', fontWeight: 700, color: ig.color, flexShrink: 0,
-                            opacity: isDisabled ? 0.4 : 1, transition: 'opacity 0.2s',
-                          }}>
-                            {ig.icon}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+                          {ig && (
+                            <Box sx={{
+                              width: 34, height: 34, borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface, fontSize: '1.125rem', fontWeight: 700, color: ig.color, flexShrink: 0,
+                              opacity: isDisabled ? 0.55 : 1, transition: 'opacity 0.2s',
+                            }}>
+                              {ig.icon}
+                            </Box>
+                          )}
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+                              <Typography sx={{ color: isDisabled ? c.text.tertiary : c.text.primary, fontWeight: 600, fontSize: '0.9375rem' }}>{tool.name}</Typography>
+                              {tool.command && <Chip icon={<TerminalIcon sx={{ fontSize: 12 }} />} label={`/${tool.command}`} size="small" sx={{ bgcolor: 'rgba(174,86,48,0.12)', color: c.accent.hover, fontSize: '0.6875rem', height: 20 }} />}
+                            </Box>
+                            {tool.description && (
+                              <Typography noWrap sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>{tool.description}</Typography>
+                            )}
+                            <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', mt: 0.25 }}>
+                              {totalToolCount > 0 ? `${totalToolCount} tools` : ''}
+                              {ig && (
+                                <Box component="a" href={ig.website} target="_blank" rel="noreferrer" onClick={(e: React.MouseEvent) => e.stopPropagation()} sx={{ color: c.text.ghost, ml: totalToolCount > 0 ? 1 : 0, textDecoration: 'none', '&:hover': { color: c.text.secondary, textDecoration: 'underline' } }}>
+                                  docs<OpenInNewIcon sx={{ fontSize: 10, ml: 0.25, verticalAlign: 'middle' }} />
+                                </Box>
+                              )}
+                            </Typography>
                           </Box>
-                        )}
-                        <Box sx={{ flex: 1, minWidth: 0, opacity: isDisabled ? 0.4 : 1, transition: 'opacity 0.2s' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-                            <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '0.9375rem' }}>{tool.name}</Typography>
-                            {isMcp && <Chip icon={<ExtensionIcon sx={{ fontSize: 12 }} />} label={isStdio ? 'MCP · stdio' : 'MCP'} size="small" sx={{ bgcolor: `${c.status.warning}20`, color: c.status.warning, fontSize: '0.75rem', height: 24 }} />}
-                            {tool.command && <Chip icon={<TerminalIcon sx={{ fontSize: 12 }} />} label={`/${tool.command}`} size="small" sx={{ bgcolor: 'rgba(174,86,48,0.12)', color: c.accent.hover, fontSize: '0.75rem', height: 22 }} />}
-                            {tool.auth_status === 'connected' && !ig && (
-                              <Chip icon={<CheckCircleIcon sx={{ fontSize: 12 }} />} label={tool.connected_account_email ? `Connected · ${tool.connected_account_email}` : 'Connected'} size="small" sx={{ bgcolor: c.status.successBg, color: c.status.success, fontSize: '0.6875rem', height: 20, '& .MuiChip-icon': { color: c.status.success } }} />
-                            )}
-                            {tool.auth_status === 'configured' && !ig?.credentialFields && (
-                              <Chip icon={<SettingsIcon sx={{ fontSize: 12 }} />} label="Configured" size="small" sx={{ bgcolor: c.status.warningBg, color: c.status.warning, fontSize: '0.6875rem', height: 20, '& .MuiChip-icon': { color: c.status.warning } }} />
-                            )}
-                            {ig && totalToolCount > 0 && (
-                              <Chip label={`${totalToolCount} tools`} size="small" sx={{ bgcolor: `${ig.color}15`, color: ig.color, fontSize: '0.6875rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
-                            )}
-                            {ig && (
-                              <Chip component="a" href={ig.website} clickable icon={<OpenInNewIcon sx={{ fontSize: 10 }} />} label="docs" size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.ghost, fontSize: '0.625rem', height: 18, '& .MuiChip-label': { px: 0.4 }, '& .MuiChip-icon': { ml: 0.4, fontSize: 10 } }} />
-                            )}
-                          </Box>
-                          {tool.description && <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>{tool.description}</Typography>}
                         </Box>
-                        <CustomToolConnect
-                          tool={tool}
-                          ig={ig}
-                          isDisabled={isDisabled}
-                          onOAuthConnect={handleOAuthConnect}
-                          onDeviceCodeConnect={handleDeviceCodeConnect}
-                          onOpenCredentialsDialog={openCredentialsDialog}
-                          onM365Disconnect={handleM365Disconnect}
-                          onDisconnectIntegration={handleDisconnectIntegration}
-                        />
-                        {ig && (
-                          <Box
-                            data-onboarding={
-                              isYoutube
-                                ? 'actions-youtube-toggle'
-                                : isReddit
-                                  ? 'actions-reddit-toggle'
-                                  : undefined
-                            }
-                            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {!!integrationLoading[ig.id] && <CircularProgress size={16} sx={{ color: ig.color }} />}
-                            <Switch
-                              checked={tool.enabled !== false}
-                              onChange={() => handleIntegrationToggle(ig)}
-                              disabled={!!integrationLoading[ig.id]}
-                              sx={{
-                                '& .MuiSwitch-switchBase.Mui-checked': { color: ig.color },
-                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: ig.color },
-                              }}
-                            />
-                          </Box>
-                        )}
-                        {!isDisabled && (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                            <KeyboardArrowDownIcon sx={{ fontSize: 18, color: c.text.ghost, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-                            {!ig && (
+                        <Typography sx={{ color: c.text.secondary, fontSize: '0.8125rem' }}>{isMcp ? (isStdio ? 'MCP · stdio' : 'MCP') : 'Custom'}</Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.25, minWidth: 0, overflow: 'hidden', '& .MuiChip-root': { maxWidth: '100%' }, '& .MuiButton-root': { whiteSpace: 'nowrap' } }}>
+                          {tool.auth_status === 'connected' && (
+                            <Typography sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, color: c.status.success, fontSize: '0.75rem', fontWeight: 600 }}>
+                              <CheckCircleIcon sx={{ fontSize: 13 }} /> Connected
+                            </Typography>
+                          )}
+                          {tool.auth_status === 'configured' && !ig?.credentialFields && (
+                            <Typography sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, color: c.status.warning, fontSize: '0.75rem', fontWeight: 600 }}>
+                              <SettingsIcon sx={{ fontSize: 13 }} /> Configured
+                            </Typography>
+                          )}
+                          {ig && tool.auth_status !== 'connected' && tool.auth_status !== 'configured' && (
+                            <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem' }}>Not connected</Typography>
+                          )}
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.25, minWidth: 0, maxWidth: '100%' }}>
+                            {ig && (
+                              <Box
+                                data-onboarding={
+                                  isYoutube
+                                    ? 'actions-youtube-toggle'
+                                    : isReddit
+                                      ? 'actions-reddit-toggle'
+                                      : undefined
+                                }
+                                sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {!!integrationLoading[ig.id] && <CircularProgress size={16} sx={{ color: ig.color }} />}
+                                <Switch
+                                  size="small"
+                                  checked={tool.enabled !== false}
+                                  onChange={() => handleIntegrationToggle(ig)}
+                                  disabled={!!integrationLoading[ig.id]}
+                                />
+                              </Box>
+                            )}
+                            {!isDisabled && (
                               <>
-                                <Tooltip title="Edit" placement="left"><IconButton size="small" onClick={(e) => { e.stopPropagation(); openEdit(tool); }} sx={{ color: c.text.ghost, '&:hover': { color: c.accent.primary } }}><EditIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
-                                <Tooltip title="Delete" placement="left"><IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDelete(tool.id); }} sx={{ color: c.text.ghost, '&:hover': { color: c.status.error } }}><DeleteIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                                <KeyboardArrowDownIcon sx={{ fontSize: 18, color: c.text.ghost, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+                                {!ig && (
+                                  <>
+                                    <Tooltip title="Edit" placement="left"><IconButton size="small" onClick={(e) => { e.stopPropagation(); openEdit(tool); }} sx={{ color: c.text.ghost, '&:hover': { color: c.accent.primary } }}><EditIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                                    <Tooltip title="Delete" placement="left"><IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDelete(tool.id); }} sx={{ color: c.text.ghost, '&:hover': { color: c.status.error } }}><DeleteIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>
+                                  </>
+                                )}
                               </>
                             )}
                           </Box>
-                        )}
+                        </Box>
                       </Box>
                     </CardContent>
 
                     <Collapse in={isExpanded && !isDisabled} timeout={0} unmountOnExit>
                         <Box sx={{ px: 2, pb: 2, pt: 0, borderTop: `1px solid ${c.border.subtle}` }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 1.5 }}>
+                            <CustomToolConnect
+                              tool={tool}
+                              ig={ig}
+                              isDisabled={isDisabled}
+                              onOAuthConnect={handleOAuthConnect}
+                              onDeviceCodeConnect={handleDeviceCodeConnect}
+                              onOpenCredentialsDialog={openCredentialsDialog}
+                              onM365Disconnect={handleM365Disconnect}
+                              onDisconnectIntegration={handleDisconnectIntegration}
+                            />
+                          </Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5, mb: 1 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <SecurityIcon sx={{ fontSize: 14, color: c.text.muted }} />

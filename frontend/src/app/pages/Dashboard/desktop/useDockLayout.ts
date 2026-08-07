@@ -83,8 +83,23 @@ export function useDockLayout({ cardCount, actionCount, dividerCount }: DockLayo
     (budget - ROOT_PAD * 2 - dividerCount) /
       (tileCount + GAP_RATIO * Math.max(0, tileCount + dividerCount - 1)),
   );
-  let tile = Math.min(TILE_MAX, Math.max(TILE_MIN, Number.isFinite(guess) ? guess : TILE_MAX));
-  while (tile > TILE_MIN && columnHeight(tile, tileCount, dividerCount) > budget) tile -= 1;
+  let fitted = Math.min(TILE_MAX, Math.max(TILE_MIN, Number.isFinite(guess) ? guess : TILE_MAX));
+  while (fitted > TILE_MIN && columnHeight(fitted, tileCount, dividerCount) > budget) fitted -= 1;
+
+  // Size hysteresis: minimize/restore changes the count, and resizing EVERY tile on each change was
+  // the dock's layout-shift cluster. The current size holds while it still fits; shrink fires only
+  // on true overflow, and growth waits for a settle beat so rapid-fire toggles never pump the rail.
+  const [stableTile, setStableTile] = useState(fitted);
+  const mustShrink = columnHeight(stableTile, tileCount, dividerCount) > budget;
+  useEffect(() => {
+    if (mustShrink) { setStableTile(fitted); return undefined; }
+    if (fitted !== stableTile) {
+      const t = window.setTimeout(() => setStableTile(fitted), 300);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [fitted, stableTile, mustShrink]);
+  const tile = mustShrink ? fitted : stableTile;
   const gap = gapFor(tile);
   const scrolls = columnHeight(tile, tileCount, dividerCount) > budget;
   // Slack inside the scroll box so a magnified tile grows past the column without the scroll clip cutting it.

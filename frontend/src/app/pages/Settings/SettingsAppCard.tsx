@@ -1,5 +1,4 @@
 import React, { useCallback } from 'react';
-import SettingsIcon from '@mui/icons-material/Settings';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   closeSettingsCard,
@@ -12,6 +11,7 @@ import type { CardType } from '@/shared/state/dashboardLayoutSlice';
 import CanvasWindowCard from '@/app/pages/Dashboard/cards/CanvasWindowCard';
 import WindowControls from '@/app/pages/Dashboard/cards/WindowControls';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { onboardingBus } from '@/app/components/Onboarding/eventBus';
 import SettingsBody from './SettingsBody';
 
 const MIN_W = 640;
@@ -26,7 +26,7 @@ interface Props {
   getCanvasState: () => { panX: number; panY: number; zoom: number };
   isSelected?: boolean;
   isHighlighted?: boolean;
-  multiDragDelta?: { dx: number; dy: number } | null;
+  multiDragActive?: boolean;
   onCardSelect?: (id: string, type: CardType, shiftKey: boolean) => void;
   onDragStart?: (id: string, type: CardType) => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
@@ -38,7 +38,7 @@ interface Props {
 const SettingsAppCard: React.FC<Props> = ({
   cardX, cardY, cardWidth, cardHeight, cardZOrder = 0,
   getCanvasState,
-  isSelected = false, isHighlighted = false, multiDragDelta = null,
+  isSelected = false, isHighlighted = false, multiDragActive = false,
   onCardSelect, onDragStart, onDragMove, onDragEnd, onBringToFront,
 }) => {
   const c = useClaudeTokens();
@@ -51,7 +51,8 @@ const SettingsAppCard: React.FC<Props> = ({
   const commitSize = useCallback((width: number, height: number) => {
     dispatch(setSettingsCardSize({ width, height }));
   }, [dispatch]);
-  const close = useCallback(() => { dispatch(closeSettingsCard()); }, [dispatch]);
+  // The one close point for every path (X, traffic light, context menu), so onboarding's settings:closed always fires.
+  const close = useCallback(() => { onboardingBus.emit('settings:closed'); dispatch(closeSettingsCard()); }, [dispatch]);
   const minimize = useCallback(() => { dispatch(toggleMinimizeCard({ cardId: SETTINGS_CARD_ID })); }, [dispatch]);
 
   return (
@@ -68,12 +69,12 @@ const SettingsAppCard: React.FC<Props> = ({
       minimized={isMinimized}
       minWidth={MIN_W}
       minHeight={MIN_H}
-      background={c.bg.page}
+      background={c.bg.surface}
       highlightColor={c.accent.primary}
       getCanvasState={getCanvasState}
       isSelected={isSelected}
       isHighlighted={isHighlighted}
-      multiDragDelta={multiDragDelta}
+      multiDragActive={multiDragActive}
       onCardSelect={onCardSelect}
       onDragStart={onDragStart}
       onDragMove={onDragMove}
@@ -81,6 +82,8 @@ const SettingsAppCard: React.FC<Props> = ({
       onBringToFront={onBringToFront}
       onCommitPosition={commitPosition}
       onCommitSize={commitSize}
+      onMinimize={minimize}
+      onClose={close}
     >
       {({ header, tileZone, onTileZone }) => (
         <>
@@ -92,7 +95,7 @@ const SettingsAppCard: React.FC<Props> = ({
             onLostPointerCapture={header.onLostPointerCapture}
             style={{
               height: 42, flex: 'none', display: 'flex', alignItems: 'center', gap: 14,
-              padding: '0 16px', borderBottom: `1px solid ${c.border.subtle}`, background: c.bg.surface,
+              padding: '0 16px', background: c.bg.surface,
               cursor: header.dragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none',
             }}
           >
@@ -105,12 +108,8 @@ const SettingsAppCard: React.FC<Props> = ({
             >
               <WindowControls onClose={close} onMinimize={minimize} onTile={onTileZone} tiled={!!tileZone} />
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <SettingsIcon sx={{ fontSize: 18, color: c.text.secondary, display: 'block' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: c.text.primary, lineHeight: 1 }}>Settings</span>
-            </div>
           </div>
-          <SettingsBody active requestedTab={null} onRequestClose={close} />
+          <SettingsBody active onRequestClose={close} />
         </>
       )}
     </CanvasWindowCard>

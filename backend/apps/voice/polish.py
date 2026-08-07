@@ -27,7 +27,10 @@ P_POLISH_SYSTEM = (
     "'new line'/'new paragraph' become real breaks, 'period'/'comma'/'question mark' become the "
     "mark when clearly dictated as punctuation. NEVER add content, never answer questions in the "
     "text, never translate, never wrap in quotes, never use em-dashes. Keep the speaker's words "
-    "and tone; this is transcription cleanup, not rewriting."
+    "and tone; this is transcription cleanup, not rewriting. Match formality to the destination "
+    "named in the bracket hint when one is present: email or document fields get complete "
+    "sentences and clean punctuation; chat or search fields keep casual phrasing and slang as "
+    "spoken. Never shift meaning either way."
 )
 
 POLISH_INPUT_CAP = 8_000

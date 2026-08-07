@@ -79,18 +79,31 @@ const formatSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-export const serializableColumnSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  abbr: z.string().optional(),
-  sortable: z.boolean().optional(),
-  align: AlignEnum.optional(),
-  width: z.string().optional(),
-  truncate: z.boolean().optional(),
-  priority: PriorityEnum.optional(),
-  hideOnMobile: z.boolean().optional(),
-  format: formatSchema.optional(),
-});
+// Models routinely send columns as bare strings or as {key}-only / {label}-only objects; rejecting those threw away perfectly renderable tables, so coerce instead of failing.
+export const serializableColumnSchema = z.preprocess(
+  (raw) => {
+    if (typeof raw === "string") return { key: raw, label: raw };
+    if (raw && typeof raw === "object") {
+      const o = raw as Record<string, unknown>;
+      const key = typeof o.key === "string" ? o.key : typeof o.label === "string" ? o.label : undefined;
+      const label = typeof o.label === "string" ? o.label : typeof o.key === "string" ? o.key : undefined;
+      if (key !== undefined || label !== undefined) return { ...o, key, label };
+    }
+    return raw;
+  },
+  z.object({
+    key: z.string(),
+    label: z.string(),
+    abbr: z.string().optional(),
+    sortable: z.boolean().optional(),
+    align: AlignEnum.optional(),
+    width: z.string().optional(),
+    truncate: z.boolean().optional(),
+    priority: PriorityEnum.optional(),
+    hideOnMobile: z.boolean().optional(),
+    format: formatSchema.optional(),
+  }),
+);
 
 const JsonPrimitiveSchema = z.union([
   z.string(),

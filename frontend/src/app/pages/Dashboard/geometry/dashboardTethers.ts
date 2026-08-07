@@ -29,7 +29,7 @@ interface GlowingBrowserCard {
   label?: string;
 }
 
-interface LiveDragInfo {
+export interface LiveDragInfo {
   cardId: string;
   dx: number;
   dy: number;
@@ -73,7 +73,7 @@ function rectCenter(r: CanvasRect): { x: number; y: number } {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 }
 
-interface UseTethersArgs {
+export interface TetherInputs {
   glowingAgentCards: Record<string, GlowingAgentCard>;
   glowingBrowserCards: Record<string, GlowingBrowserCard>;
   cards: Record<string, CardPosition>;
@@ -84,7 +84,6 @@ interface UseTethersArgs {
   viewCards: Record<string, ViewCardPosition>;
   outputs: Record<string, Output>;
   expandedSessionIds: string[];
-  liveDragInfo: LiveDragInfo | null;
   measuredHeightsRef: RefObject<Record<string, number>>;
   measuredHeightsTick: number;
   sessionList: AgentSession[];
@@ -106,7 +105,6 @@ export function useTethers({
   viewCards,
   outputs,
   expandedSessionIds,
-  liveDragInfo,
   measuredHeightsRef,
   measuredHeightsTick,
   sessionList,
@@ -114,7 +112,7 @@ export function useTethers({
   workflowsMonitorCard,
   workflowsMonitorLabel,
   monitorRunSessionId,
-}: UseTethersArgs): Tether[] {
+}: TetherInputs, liveDragInfo: LiveDragInfo | null): Tether[] {
   return useMemo(() => {
     const sessionById = new Map(sessionList.map((s) => [s.id, s]));
     const expandedSet = new Set(expandedSessionIds);

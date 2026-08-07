@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAppSelector } from '@/shared/hooks';
-import { sortModelsForPicker } from '../model-picker/modelPicker';
+import { sortModelsForPicker, isDeprecatedModel } from '../model-picker/modelPicker';
 
 const FALLBACK_MODELS = [
   { value: 'opus-5', label: 'Claude Opus 5', context_window: 1_000_000, reasoning: true },
@@ -22,7 +22,9 @@ export function useChatInputModel(model: string) {
     const flat: Array<any> = [];
     const grouped: Record<string, any[]> = {};
     for (const [prov, models] of Object.entries(modelsByProvider)) {
-      const enriched = models.map((m: any) => ({
+      // Superseded generations are hidden, but the user's CURRENT model always stays visible so a saved default can't vanish from under them.
+      const current = models.filter((m: any) => m.value === model || !isDeprecatedModel(m.label ?? '', m.value ?? ''));
+      const enriched = current.map((m: any) => ({
         value: m.value,
         label: m.label,
         context_window: m.context_window ?? 200_000,
@@ -33,14 +35,15 @@ export function useChatInputModel(model: string) {
         max_completion_tokens: m.max_completion_tokens ?? null,
         tiers: Array.isArray(m.tiers) && m.tiers.length === 3 ? m.tiers : undefined,
         billing_kind: m.billing_kind,
+        api: m.api,
       }));
-      grouped[prov] = sortModelsForPicker(enriched);
+      if (enriched.length) grouped[prov] = sortModelsForPicker(enriched);
       for (const m of enriched) {
         flat.push({ ...m, provider: prov });
       }
     }
     return { flat, grouped };
-  }, [modelsByProvider, modelsLoaded, connectionMode]);
+  }, [modelsByProvider, modelsLoaded, connectionMode, model]);
 
   const currentModelCtx = useMemo(() => {
     const m = allModelOptions.flat.find((x: any) => x.value === model) as any;

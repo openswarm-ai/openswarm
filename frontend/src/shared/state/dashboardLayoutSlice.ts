@@ -25,10 +25,13 @@ export const DEFAULT_WORKFLOW_CARD_H = 520;
 // Open at the same default footprint as a browser/view card so it lands at a comfortable size automatically.
 export const DEFAULT_WORKFLOWS_HUB_W = DEFAULT_BROWSER_CARD_W;
 export const DEFAULT_WORKFLOWS_HUB_H = DEFAULT_BROWSER_CARD_H;
-export const DEFAULT_SETTINGS_CARD_W = 900;
-export const DEFAULT_SETTINGS_CARD_H = 640;
+export const DEFAULT_SETTINGS_CARD_W = DEFAULT_BROWSER_CARD_W;
+export const DEFAULT_SETTINGS_CARD_H = DEFAULT_BROWSER_CARD_H;
 // The two singleton windows have no card map to key off, so they own these fixed ids everywhere (selection, minimize, z-order).
 export const SETTINGS_CARD_ID = 'settings';
+export const MARKETPLACE_CARD_ID = 'marketplace';
+export const DEFAULT_MARKETPLACE_CARD_W = DEFAULT_BROWSER_CARD_W;
+export const DEFAULT_MARKETPLACE_CARD_H = DEFAULT_BROWSER_CARD_H;
 export const WORKFLOWS_HUB_ID = 'workflows-hub';
 export const EXPANDED_CARD_MIN_H = 620;
 export const GRID_GAP = 24;
@@ -37,7 +40,7 @@ export const WORKFLOW_CARD_GAP = 140;
 const GRID_ORIGIN = { x: 40, y: 100 };
 const GRID_COLS_FALLBACK = 4;
 
-export type CardType = 'agent' | 'view' | 'browser' | 'workflow' | 'workflows-hub' | 'workflows-monitor' | 'settings';
+export type CardType = 'agent' | 'view' | 'browser' | 'workflow' | 'workflows-hub' | 'workflows-monitor' | 'settings' | 'marketplace';
 
 export interface CardPosition {
   session_id: string;
@@ -175,6 +178,18 @@ export interface DashboardLayoutState {
   settingsCard: WorkflowsHubPosition | null;
   /** Transient: signals Dashboard to pan/zoom to the Settings window on open. */
   pendingFocusSettingsCard: boolean;
+  /** Transient deep-link: which settings tab to land on; SettingsBody consumes and clears it. */
+  settingsRequestedTab: string | null;
+  /** Marketplace as an on-canvas window (singleton), same lifecycle as the Settings window. */
+  marketplaceCard: WorkflowsHubPosition | null;
+  /** Transient: signals Dashboard to pan/zoom to the Marketplace window on open. */
+  pendingFocusMarketplaceCard: boolean;
+  /** Transient deep-link: which marketplace view to land on; the card consumes and clears it. */
+  marketplaceRequestedTab: string | null;
+  /** Focus-order overrides, keyed by card id (singletons use their literal ids). bringToFront writes ONLY here, so a click never churns card-object identities; effective z = zOrders[id] ?? the base stamped at creation. */
+  zOrders: Record<string, number>;
+  /** Creation-order ledger, oldest first, across all content card types; the trash's no-selection press pops the newest. Persisted with the layout (zOrder can't stand in, it re-bumps on every focus). */
+  creationOrder: string[];
 }
 
 export interface WorkflowsRunContext {
@@ -216,6 +231,12 @@ const initialState: DashboardLayoutState = {
   workflowsRunContext: null,
   settingsCard: null,
   pendingFocusSettingsCard: false,
+  settingsRequestedTab: null,
+  marketplaceCard: null,
+  pendingFocusMarketplaceCard: false,
+  marketplaceRequestedTab: null,
+  creationOrder: [],
+  zOrders: {},
 };
 
 interface LayoutPayload {
@@ -225,6 +246,24 @@ interface LayoutPayload {
   workflowCards: Record<string, WorkflowCardPosition>;
   workflowsHub: WorkflowsHubPosition | null;
   expandedSessionIds: string[];
+  creationOrder: string[];
+  // Optional because savers omit it: the save thunk reads the live map from state itself.
+  zOrders?: Record<string, number>;
+}
+
+function ledgerAdd(ledger: string[], id: string): void {
+  if (!ledger.includes(id)) ledger.push(id);
+}
+
+function ledgerRemove(ledger: string[], id: string): void {
+  const i = ledger.indexOf(id);
+  if (i !== -1) ledger.splice(i, 1);
+}
+
+function ledgerRekey(ledger: string[], oldId: string, newId: string): void {
+  const i = ledger.indexOf(oldId);
+  if (i !== -1) ledger[i] = newId;
+  else ledgerAdd(ledger, newId);
 }
 
 function generateTabId(): string {
@@ -261,6 +300,8 @@ export const fetchLayout = createAsyncThunk(
       workflowCards: (layout.workflow_cards ?? {}) as Record<string, WorkflowCardPosition>,
       workflowsHub: (layout.workflows_hub ?? null) as WorkflowsHubPosition | null,
       expandedSessionIds: (layout.expanded_session_ids ?? []) as string[],
+      creationOrder: (layout.creation_order ?? []) as string[],
+      zOrders: (layout.z_orders ?? {}) as Record<string, number>,
     } satisfies LayoutPayload;
   },
 );
@@ -273,8 +314,14 @@ export const saveLayout = createAsyncThunk(
   'dashboardLayout/save',
   async (payload: SaveLayoutPayload, { getState }) => {
     // Never persist a layout this client never successfully loaded; a failed boot fetch otherwise saves the pristine empty store over the server's real layout (the wipe class).
-    const armed = (getState() as { dashboardLayout: { saveArmed: boolean } }).dashboardLayout.saveArmed;
-    if (!armed) return payload;
+    const dl = (getState() as { dashboardLayout: { saveArmed: boolean; zOrders: Record<string, number> } }).dashboardLayout;
+    if (!dl.saveArmed) return payload;
+    // Prune focus overrides to ids that still exist, so removed cards can't grow the map forever.
+    const liveZ: Record<string, number> = {};
+    for (const [zid, z] of Object.entries(dl.zOrders)) {
+      if (payload.cards[zid] || payload.viewCards[zid] || payload.browserCards[zid] || payload.workflowCards[zid]
+        || zid === 'settings' || zid === 'marketplace' || zid === 'workflows-hub' || zid === 'workflows-monitor') liveZ[zid] = z;
+    }
     await fetch(`${DASHBOARDS_API}/${payload.dashboardId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -286,6 +333,8 @@ export const saveLayout = createAsyncThunk(
           workflow_cards: payload.workflowCards,
           workflows_hub: payload.workflowsHub,
           expanded_session_ids: payload.expandedSessionIds,
+          creation_order: payload.creationOrder,
+          z_orders: liveZ,
         },
       }),
     });
@@ -337,6 +386,9 @@ function collectOccupiedRects(
   }
   if (state.settingsCard) {
     rects.push({ x: state.settingsCard.x, y: state.settingsCard.y, w: state.settingsCard.width, h: state.settingsCard.height });
+  }
+  if (state.marketplaceCard) {
+    rects.push({ x: state.marketplaceCard.x, y: state.marketplaceCard.y, w: state.marketplaceCard.width, h: state.marketplaceCard.height });
   }
   return rects;
 }
@@ -586,9 +638,13 @@ function addMissingCards<T extends { x: number; y: number; width: number; height
 
 // One docked surface per chat: the slot is a single rect, so docking a new browser/app releases
 // whatever was previously docked there (it falls back to its stored free position).
-function clearOtherDocks(state: { browserCards: Record<string, BrowserCardPosition>; viewCards: Record<string, ViewCardPosition> }, sessionId: string): void {
+function clearOtherDocks(state: { browserCards: Record<string, BrowserCardPosition>; viewCards: Record<string, ViewCardPosition> }, sessionId: string, keepBrowserId?: string): void {
   for (const bc of Object.values(state.browserCards)) {
-    if (bc.docked_to === sessionId) bc.docked_to = null;
+    if (bc.docked_to !== sessionId) continue;
+    // The card being (re-)docked must survive its own clear: layout sync re-asserts docks.
+    if (bc.browser_id === keepBrowserId) continue;
+    // Corpse cleanup happens in WebSocketManager via removeBrowserCardCleanly, NOT here: a bare store delete gets resurrected by the backend layout sync as a free card.
+    bc.docked_to = null;
   }
   for (const vc of Object.values(state.viewCards)) {
     if (vc.docked_to === sessionId) vc.docked_to = null;
@@ -676,6 +732,7 @@ const dashboardLayoutSlice = createSlice({
         height,
         zOrder: state.nextZOrder++,
       };
+      ledgerAdd(state.creationOrder, sessionId);
     },
 
     bringToFront(
@@ -683,52 +740,30 @@ const dashboardLayoutSlice = createSlice({
       action: PayloadAction<{ id: string; type: CardType }>,
     ) {
       const { id, type } = action.payload;
-      // Compute the current top zOrder across ALL card types so we can short-circuit when the target is already on top. Without this guard, every click on a card (which fires onPointerDownCapture + onClick + onDoubleClick) bumps zOrder and triggers a Redux mutation. That mutation cascades into a re-render that unmounts inputs mid-keystroke, causing the workflow card's title / description / step textareas to lose focus on every click.
-      let maxZ = 0;
-      let currentZ = 0;
-      const tally = (z: number | undefined) => { if (typeof z === 'number' && z > maxZ) maxZ = z; };
-      for (const c of Object.values(state.cards)) tally(c.zOrder);
-      for (const c of Object.values(state.viewCards)) tally(c.zOrder);
-      for (const c of Object.values(state.browserCards)) tally(c.zOrder);
-      for (const c of Object.values(state.workflowCards)) tally(c.zOrder);
-      if (state.workflowsHub) tally(state.workflowsHub.zOrder);
-      if (state.workflowsMonitorCard) tally(state.workflowsMonitorCard.zOrder);
-      if (state.settingsCard) tally(state.settingsCard.zOrder);
-      if (type === 'agent') currentZ = state.cards[id]?.zOrder ?? 0;
-      else if (type === 'view') currentZ = state.viewCards[id]?.zOrder ?? 0;
-      else if (type === 'workflow') currentZ = state.workflowCards[id]?.zOrder ?? 0;
-      else if (type === 'workflows-hub') currentZ = state.workflowsHub?.zOrder ?? 0;
-      else if (type === 'workflows-monitor') currentZ = state.workflowsMonitorCard?.zOrder ?? 0;
-      else if (type === 'settings') currentZ = state.settingsCard?.zOrder ?? 0;
-      else currentZ = state.browserCards[id]?.zOrder ?? 0;
-      if (currentZ >= maxZ) return;  // Already on top: no-op.
-
-      const z = state.nextZOrder++;
-      if (type === 'agent') {
-        const card = state.cards[id];
-        if (card) card.zOrder = z;
-      } else if (type === 'view') {
-        const card = state.viewCards[id];
-        if (card) card.zOrder = z;
-      } else if (type === 'workflow') {
-        const card = state.workflowCards[id];
-        if (card) card.zOrder = z;
-      } else if (type === 'workflows-hub') {
-        if (state.workflowsHub) state.workflowsHub.zOrder = z;
-      } else if (type === 'workflows-monitor') {
-        if (state.workflowsMonitorCard) state.workflowsMonitorCard.zOrder = z;
-      } else if (type === 'settings') {
-        if (state.settingsCard) state.settingsCard.zOrder = z;
-      } else {
-        const card = state.browserCards[id];
-        if (card) card.zOrder = z;
-      }
+      // Focus writes ONLY the override map: the old form mutated the card object, which replaced its
+      // dict, re-rendered the controller + tethers + dock + minimap, and armed a layout PUT +
+      // thumbnail capture on every press (CANVAS_LAG_NOTES item 33). The nextZOrder-1 holder is
+      // always the top card, so the already-on-top guard (workflow textarea focus-loss) is one compare.
+      let base = 0;
+      if (type === 'agent') base = state.cards[id]?.zOrder ?? 0;
+      else if (type === 'view') base = state.viewCards[id]?.zOrder ?? 0;
+      else if (type === 'workflow') base = state.workflowCards[id]?.zOrder ?? 0;
+      else if (type === 'workflows-hub') base = state.workflowsHub?.zOrder ?? 0;
+      else if (type === 'workflows-monitor') base = state.workflowsMonitorCard?.zOrder ?? 0;
+      else if (type === 'settings') base = state.settingsCard?.zOrder ?? 0;
+      else if (type === 'marketplace') base = state.marketplaceCard?.zOrder ?? 0;
+      else base = state.browserCards[id]?.zOrder ?? 0;
+      const effective = state.zOrders[id] ?? base;
+      // Zero is the legacy every-card tie (backend-synced cards arrive without z); never short-circuit on it.
+      if (effective > 0 && effective === state.nextZOrder - 1) return;
+      state.zOrders[id] = state.nextZOrder++;
     },
 
     removeCard(state, action: PayloadAction<string>) {
       delete state.cards[action.payload];
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      ledgerRemove(state.creationOrder, action.payload);
     },
 
     reconcileSessions(
@@ -745,6 +780,7 @@ const dashboardLayoutSlice = createSlice({
           // A dead card must never keep owning a tile: an orphaned 'fullscreen' entry hides ALL chrome until reload.
           delete state.tiledCards[id];
           delete state.minimizedCards[id];
+          ledgerRemove(state.creationOrder, id);
         }
       }
 
@@ -768,6 +804,7 @@ const dashboardLayoutSlice = createSlice({
             zOrder: state.nextZOrder++,
           };
         }
+        ledgerAdd(state.creationOrder, id);
       }
     },
 
@@ -783,7 +820,8 @@ const dashboardLayoutSlice = createSlice({
       const hub = state.workflowsHub;
       const mon = state.workflowsMonitorCard;
       const settings = state.settingsCard;
-      const total = agentCards.length + viewCards.length + bCards.length + wCards.length + (hub ? 1 : 0) + (mon ? 1 : 0) + (settings ? 1 : 0);
+      const market = state.marketplaceCard;
+      const total = agentCards.length + viewCards.length + bCards.length + wCards.length + (hub ? 1 : 0) + (mon ? 1 : 0) + (settings ? 1 : 0) + (market ? 1 : 0);
       if (total === 0) return;
 
       const allItems = [
@@ -794,6 +832,7 @@ const dashboardLayoutSlice = createSlice({
         ...(hub ? [{ kind: 'workflows-hub' as const, id: 'workflows-hub', x: hub.x, y: hub.y, storedW: hub.width, storedH: hub.height }] : []),
         ...(mon ? [{ kind: 'workflows-monitor' as const, id: 'workflows-monitor', x: mon.x, y: mon.y, storedW: mon.width, storedH: mon.height }] : []),
         ...(settings ? [{ kind: 'settings' as const, id: SETTINGS_CARD_ID, x: settings.x, y: settings.y, storedW: settings.width, storedH: settings.height }] : []),
+        ...(market ? [{ kind: 'marketplace' as const, id: MARKETPLACE_CARD_ID, x: market.x, y: market.y, storedW: market.width, storedH: market.height }] : []),
       ];
       allItems.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -827,6 +866,8 @@ const dashboardLayoutSlice = createSlice({
           if (state.workflowsMonitorCard) { state.workflowsMonitorCard.x = pos.x; state.workflowsMonitorCard.y = pos.y; }
         } else if (item.kind === 'settings') {
           if (state.settingsCard) { state.settingsCard.x = pos.x; state.settingsCard.y = pos.y; }
+        } else if (item.kind === 'marketplace') {
+          if (state.marketplaceCard) { state.marketplaceCard.x = pos.x; state.marketplaceCard.y = pos.y; }
         } else {
           const card = state.browserCards[item.id];
           if (card) { card.x = pos.x; card.y = pos.y; }
@@ -883,6 +924,7 @@ const dashboardLayoutSlice = createSlice({
         docked_to: (parentSessionId && (clearOtherDocks(state, parentSessionId), parentSessionId)) || null,
         preview_deferred: previewDeferred || undefined,
       };
+      ledgerAdd(state.creationOrder, cardKey);
       state.pendingFocusViewCardId = cardKey;
     },
 
@@ -921,6 +963,7 @@ const dashboardLayoutSlice = createSlice({
       delete state.viewCards[action.payload];
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      ledgerRemove(state.creationOrder, action.payload);
       if (state.activeViewCardId === action.payload) state.activeViewCardId = null;
     },
 
@@ -948,6 +991,7 @@ const dashboardLayoutSlice = createSlice({
         // Born onto the current dashboard so it shows there and only there, never bleeding onto every dashboard while it waits for the first layout save to tag it.
         dashboard_id: getLastDashboardId() ?? undefined,
       };
+      ledgerAdd(state.creationOrder, id);
       state.pendingFocusBrowserId = id;
     },
 
@@ -973,7 +1017,7 @@ const dashboardLayoutSlice = createSlice({
     setBrowserDocked(state, action: PayloadAction<{ browserId: string; dockedTo: string | null }>) {
       const bc = state.browserCards[action.payload.browserId];
       if (!bc) return;
-      if (action.payload.dockedTo) clearOtherDocks(state, action.payload.dockedTo);
+      if (action.payload.dockedTo) clearOtherDocks(state, action.payload.dockedTo, action.payload.browserId);
       bc.docked_to = action.payload.dockedTo;
     },
     addBrowserCardFromBackend(state, action: PayloadAction<BrowserCardPosition>) {
@@ -994,6 +1038,7 @@ const dashboardLayoutSlice = createSlice({
         // An agent-spawned card must carry its home dashboard or it renders on EVERY dashboard; trust the backend's tag, fall back to the current dashboard so an old/untagged payload can't bleed.
         dashboard_id: card.dashboard_id ?? getLastDashboardId() ?? undefined,
       };
+      ledgerAdd(state.creationOrder, card.browser_id);
     },
 
     setBrowserCardPosition(
@@ -1023,6 +1068,7 @@ const dashboardLayoutSlice = createSlice({
       delete state.endingBrowserCards[action.payload];
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      ledgerRemove(state.creationOrder, action.payload);
     },
 
     markBrowserCardEnding(
@@ -1098,6 +1144,7 @@ const dashboardLayoutSlice = createSlice({
         zOrder: state.nextZOrder++,
         source_session_id: sourceSessionId || null,
       };
+      ledgerAdd(state.creationOrder, workflowId);
       state.pendingFocusWorkflowId = workflowId;
     },
 
@@ -1127,6 +1174,7 @@ const dashboardLayoutSlice = createSlice({
       // Rule 7: a dead card must never keep owning a tile; a stale entry poisons every reader of it.
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      ledgerRemove(state.creationOrder, action.payload);
     },
 
     // Rekey draft- id to the server-assigned id without visually hopping the card.
@@ -1139,6 +1187,7 @@ const dashboardLayoutSlice = createSlice({
       if (!card) return;
       delete state.workflowCards[oldId];
       state.workflowCards[newId] = { ...card, workflow_id: newId };
+      ledgerRekey(state.creationOrder, oldId, newId);
       if (state.pendingFocusWorkflowId === oldId) state.pendingFocusWorkflowId = newId;
     },
 
@@ -1263,7 +1312,8 @@ const dashboardLayoutSlice = createSlice({
     },
 
     // Settings is an on-canvas window like the Workflows app, not a modal: opening it creates or raises that card and pans to it.
-    openSettingsCard(state, action: PayloadAction<{ expandedSessionIds?: string[] } | undefined>) {
+    openSettingsCard(state, action: PayloadAction<{ tab?: string; expandedSessionIds?: string[] } | undefined>) {
+      state.settingsRequestedTab = action.payload?.tab ?? null;
       if (state.settingsCard) {
         state.settingsCard.zOrder = state.nextZOrder++;
         delete state.minimizedCards[SETTINGS_CARD_ID];
@@ -1284,6 +1334,7 @@ const dashboardLayoutSlice = createSlice({
 
     closeSettingsCard(state) {
       state.settingsCard = null;
+      state.settingsRequestedTab = null;
       delete state.minimizedCards[SETTINGS_CARD_ID];
       delete state.tiledCards[SETTINGS_CARD_ID];
       state.pendingFocusSettingsCard = false;
@@ -1291,6 +1342,10 @@ const dashboardLayoutSlice = createSlice({
 
     clearPendingFocusSettingsCard(state) {
       state.pendingFocusSettingsCard = false;
+    },
+
+    clearSettingsRequestedTab(state) {
+      state.settingsRequestedTab = null;
     },
 
     setSettingsCardPosition(state, action: PayloadAction<{ x: number; y: number }>) {
@@ -1303,6 +1358,55 @@ const dashboardLayoutSlice = createSlice({
       if (!state.settingsCard) return;
       state.settingsCard.width = Math.max(640, action.payload.width);
       state.settingsCard.height = Math.max(460, action.payload.height);
+    },
+
+    // Marketplace mirrors the Settings window: an on-canvas singleton, opened or raised in place.
+    openMarketplaceCard(state, action: PayloadAction<{ tab?: string; expandedSessionIds?: string[] } | undefined>) {
+      state.marketplaceRequestedTab = action.payload?.tab ?? null;
+      if (state.marketplaceCard) {
+        state.marketplaceCard.zOrder = state.nextZOrder++;
+        delete state.minimizedCards[MARKETPLACE_CARD_ID];
+        state.pendingFocusMarketplaceCard = true;
+        return;
+      }
+      const rects = collectOccupiedRects(state, action.payload?.expandedSessionIds);
+      const pos = findOpenGridCell(rects, DEFAULT_MARKETPLACE_CARD_W, DEFAULT_MARKETPLACE_CARD_H);
+      state.marketplaceCard = {
+        x: pos.x,
+        y: pos.y,
+        width: DEFAULT_MARKETPLACE_CARD_W,
+        height: DEFAULT_MARKETPLACE_CARD_H,
+        zOrder: state.nextZOrder++,
+      };
+      state.pendingFocusMarketplaceCard = true;
+    },
+
+    closeMarketplaceCard(state) {
+      state.marketplaceCard = null;
+      state.marketplaceRequestedTab = null;
+      delete state.minimizedCards[MARKETPLACE_CARD_ID];
+      delete state.tiledCards[MARKETPLACE_CARD_ID];
+      state.pendingFocusMarketplaceCard = false;
+    },
+
+    clearPendingFocusMarketplaceCard(state) {
+      state.pendingFocusMarketplaceCard = false;
+    },
+
+    clearMarketplaceRequestedTab(state) {
+      state.marketplaceRequestedTab = null;
+    },
+
+    setMarketplaceCardPosition(state, action: PayloadAction<{ x: number; y: number }>) {
+      if (!state.marketplaceCard) return;
+      state.marketplaceCard.x = action.payload.x;
+      state.marketplaceCard.y = action.payload.y;
+    },
+
+    setMarketplaceCardSize(state, action: PayloadAction<{ width: number; height: number }>) {
+      if (!state.marketplaceCard) return;
+      state.marketplaceCard.width = Math.max(760, action.payload.width);
+      state.marketplaceCard.height = Math.max(520, action.payload.height);
     },
 
     pasteBrowserCard(
@@ -1563,6 +1667,11 @@ const dashboardLayoutSlice = createSlice({
             state.settingsCard.x += dx;
             state.settingsCard.y += dy;
           }
+        } else if (item.type === 'marketplace') {
+          if (state.marketplaceCard) {
+            state.marketplaceCard.x += dx;
+            state.marketplaceCard.y += dy;
+          }
         } else {
           const card = state.browserCards[item.id];
           if (card) {
@@ -1710,6 +1819,10 @@ const dashboardLayoutSlice = createSlice({
       state.workflowsHub = null;
       state.settingsCard = null;
       state.pendingFocusSettingsCard = false;
+      state.settingsRequestedTab = null;
+      state.marketplaceCard = null;
+      state.pendingFocusMarketplaceCard = false;
+      state.marketplaceRequestedTab = null;
       state.closedCardPositions = {};
       state.glowingBrowserCards = {};
       state.glowingAgentCards = {};
@@ -1720,6 +1833,8 @@ const dashboardLayoutSlice = createSlice({
       state.suspendedBrowserCards = keptSuspended;
       state.endingBrowserCards = {};
       state.pendingFocusWorkflowId = null;
+      // Per-dashboard, same as the cards it tracks; fetchLayout.fulfilled rebuilds it for the new dashboard.
+      state.creationOrder = [];
     },
 
   },
@@ -1782,7 +1897,25 @@ const dashboardLayoutSlice = createSlice({
           if (!w.zOrder) w.zOrder = 0;
           if (w.zOrder > maxZ) maxZ = w.zOrder;
         }
+        state.zOrders = { ...state.zOrders, ...(action.payload.zOrders ?? {}) };
+        for (const z of Object.values(state.zOrders)) { if (z > maxZ) maxZ = z; }
         state.nextZOrder = maxZ + 1;
+
+        // Ledger rebuild: persisted order filtered to live ids, then unledgered survivors by zOrder (legacy layouts, drift). Keep-alive browsers homed on OTHER dashboards stay out: the trash must never delete a card the user can't see.
+        const zOf = (id: string): number =>
+          state.zOrders[id] ?? state.cards[id]?.zOrder ?? state.viewCards[id]?.zOrder ?? state.browserCards[id]?.zOrder ?? state.workflowCards[id]?.zOrder ?? 0;
+        const live = new Set<string>([
+          ...Object.keys(state.cards),
+          ...Object.keys(state.viewCards),
+          ...Object.keys(state.workflowCards),
+          ...Object.entries(state.browserCards)
+            .filter(([, bc]) => !bc.dashboard_id || bc.dashboard_id === ownerDashboardId)
+            .map(([id]) => id),
+        ]);
+        const persisted = action.payload.creationOrder.filter((id) => live.has(id));
+        const ledgered = new Set(persisted);
+        const rest = [...live].filter((id) => !ledgered.has(id)).sort((a, b) => zOf(a) - zOf(b));
+        state.creationOrder = [...persisted, ...rest];
       })
       .addCase(fetchLayout.rejected, (state) => {
         state.loading = false;
@@ -1808,10 +1941,12 @@ const dashboardLayoutSlice = createSlice({
         const id = payload.sessionId;
         if (state.cards[id]) delete state.cards[id];
         if (state.closedCardPositions[id]) delete state.closedCardPositions[id];
+        ledgerRemove(state.creationOrder, id);
       })
       .addCase(deleteWorkflowFulfilledAction, (state, action) => {
         const id = action.payload;
         if (id && state.workflowCards[id]) delete state.workflowCards[id];
+        if (id) ledgerRemove(state.creationOrder, id);
       })
       .addCase(launchAndSendFirstMessage.fulfilled, (state, action) => {
         const { draftId, session } = action.payload;
@@ -1819,6 +1954,7 @@ const dashboardLayoutSlice = createSlice({
         if (card) {
           delete state.cards[draftId];
           state.cards[session.id] = { ...card, session_id: session.id, zOrder: state.nextZOrder++ };
+          ledgerRekey(state.creationOrder, draftId, session.id);
         }
         // The zone rides the re-key too: left behind, a tiled draft pops out of its tile AND strands an
         // entry no reader can ever clear (a stranded 'fullscreen' hides the whole shell until reload).
@@ -1925,7 +2061,14 @@ export const {
   clearPendingFocusWorkflowsHub,
   openSettingsCard,
   closeSettingsCard,
+  openMarketplaceCard,
+  closeMarketplaceCard,
+  clearPendingFocusMarketplaceCard,
+  clearMarketplaceRequestedTab,
+  setMarketplaceCardPosition,
+  setMarketplaceCardSize,
   clearPendingFocusSettingsCard,
+  clearSettingsRequestedTab,
   setSettingsCardPosition,
   setSettingsCardSize,
   recordClosedCard,
@@ -1961,7 +2104,8 @@ export const selectFullscreenCardId = (state: { dashboardLayout: DashboardLayout
   const id = entry[0];
   // Belt over the reducer hygiene: an entry whose card is gone (any removal path) must not hold the app in fullscreen.
   const exists = id in s.cards || id in s.viewCards || id in s.browserCards || id in s.workflowCards
-    || (id === WORKFLOWS_HUB_ID && !!s.workflowsHub) || (id === SETTINGS_CARD_ID && !!s.settingsCard);
+    || (id === WORKFLOWS_HUB_ID && !!s.workflowsHub) || (id === SETTINGS_CARD_ID && !!s.settingsCard)
+    || (id === MARKETPLACE_CARD_ID && !!s.marketplaceCard);
   return exists && !s.minimizedCards[id] ? id : null;
 };
 

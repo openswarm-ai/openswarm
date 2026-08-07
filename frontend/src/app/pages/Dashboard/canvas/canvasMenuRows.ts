@@ -23,7 +23,8 @@ export function canvasMenuRows({
     { kind: 'header', label: 'New' },
     { label: 'New chat', onClick: onNewAgent },
     { label: 'New browser', shortcut: chord('mod', 'N'), onClick: onAddBrowser },
-    { label: 'Add app', shortcut: chord('mod', 'M'), onClick: onApplications },
+    // No shortcut chip: the real Cmd+M opens the toolbar view picker, not this Applications window; a lying chip is worse than none.
+    { label: 'Add app', onClick: onApplications },
     { kind: 'separator' },
     { label: 'Paste', shortcut: chord('mod', 'V'), disabled: getClipboardCards().length === 0, onClick: onPaste },
     { label: 'Reopen last closed', shortcut: chord('mod', 'shift', 'T'), onClick: () => { void dispatch(reopenLastClosed()); } },

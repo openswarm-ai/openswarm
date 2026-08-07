@@ -54,6 +54,9 @@ def p_drive(monkeypatch, messages, prompt="hi"):
     mgr = AgentManager()
     from backend.apps.agents.core.models import AgentSession
     session = AgentSession(name="t", model="sonnet", dashboard_id="d")
+    # Several harness turns deliberately end tool-only; spend the whole silent-quit nudge budget so the seal (tested in test_empty_finish.py) doesn't auto-continue them here.
+    from backend.apps.agents.manager.run.empty_finish import NUDGE_HARD_CAP
+    session.empty_finish_nudges = NUDGE_HARD_CAP
     mgr.sessions[session.id] = session
     asyncio.run(mgr.run_agent_loop(session.id, prompt))
     return session, events
@@ -259,7 +262,9 @@ def test_full_streaming_turn_drives_the_complete_ws_contract(monkeypatch):
     assert any(m.role == "assistant" and "Hello!" in str(m.content) for m in session.messages)
     assert session.status == "completed"
     assert session.tokens.get("output") == 550              # ResultMessage's authoritative token count landed
-    assert session.tokens.get("input") == 1100
+    # Context input = the last STEP's request size (real context), never the result's cross-step billing sum; the sum lives in input_fresh.
+    assert session.tokens.get("input") == 100
+    assert session.tokens.get("input_fresh") == 1100
 
 
 def test_loop_wires_all_four_hooks_to_a_live_hook_context(monkeypatch):

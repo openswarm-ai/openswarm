@@ -117,6 +117,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const tokens = useMemo(() => withAccent(mode === 'dark' ? darkTokens : lightTokens, accent, mode), [mode, accent]);
 
+  // The native window was created boot-dark; keep it on the theme's page color so live-resize filler never flashes dark under a light UI.
+  useEffect(() => { void window.openswarm?.setWindowBackground?.(tokens.bg.page); }, [tokens.bg.page]);
+
   // Stable identities: SettingsLoader's "apply settings.theme" effect lists setMode in its deps, so a setter that changed every render made that effect re-fire on each toggle and re-assert the OLD persisted theme until the debounced save caught up: live theme snapped back for ~900ms = the switch flicker.
   const toggleMode = useCallback(() => setModeState((m) => (m === 'light' ? 'dark' : 'light')), []);
   const setMode = useCallback((m: ThemeMode) => setModeState(m), []);

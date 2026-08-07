@@ -2,10 +2,12 @@ import React from 'react';
 import WorkflowsAppCard from '@/app/pages/Workflows/app/WorkflowsAppCard';
 import RunMonitor from '@/app/pages/Workflows/app/RunMonitor';
 import SettingsAppCard from '@/app/pages/Settings/SettingsAppCard';
+import MarketplaceAppCard from '@/app/pages/Directory/MarketplaceAppCard';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   closeWorkflowMonitor,
   SETTINGS_CARD_ID,
+  MARKETPLACE_CARD_ID,
   type WorkflowsHubPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import type { CardType, useDashboardSelection } from '../hooks/state/useDashboardSelection';
@@ -14,7 +16,7 @@ interface DashboardWindowCardsProps {
   workflowsHub: WorkflowsHubPosition | null;
   selection: ReturnType<typeof useDashboardSelection>;
   highlightedCardId: string | null;
-  multiDragDelta: { dx: number; dy: number } | null;
+  multiDragActive: boolean;
   getCanvasState: () => { panX: number; panY: number; zoom: number };
   onCardSelect: (id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => void;
   onDragStart: (id: string, type: CardType) => void;
@@ -28,7 +30,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
   workflowsHub,
   selection,
   highlightedCardId,
-  multiDragDelta,
+  multiDragActive,
   getCanvasState,
   onCardSelect,
   onDragStart,
@@ -38,6 +40,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const settingsCard = useAppSelector((s) => s.dashboardLayout.settingsCard);
+  const marketplaceCard = useAppSelector((s) => s.dashboardLayout.marketplaceCard);
   const monitorCard = useAppSelector((s) => s.dashboardLayout.workflowsMonitorCard);
   const monitorWorkflowId = useAppSelector((s) => s.dashboardLayout.workflowsMonitorId);
   const monitorWorkflow = useAppSelector((s) => (monitorWorkflowId ? s.workflows.items[monitorWorkflowId] : undefined));
@@ -58,7 +61,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
           getCanvasState={getCanvasState}
           isSelected={selection.isSelected('workflows-hub')}
           isHighlighted={highlightedCardId === 'workflows-hub'}
-          multiDragDelta={selection.isSelected('workflows-hub') ? multiDragDelta : null}
+          multiDragActive={selection.isSelected('workflows-hub') && multiDragActive}
           onCardSelect={onCardSelect}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
@@ -76,7 +79,25 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
           getCanvasState={getCanvasState}
           isSelected={selection.isSelected(SETTINGS_CARD_ID)}
           isHighlighted={highlightedCardId === SETTINGS_CARD_ID}
-          multiDragDelta={selection.isSelected(SETTINGS_CARD_ID) ? multiDragDelta : null}
+          multiDragActive={selection.isSelected(SETTINGS_CARD_ID) && multiDragActive}
+          onCardSelect={onCardSelect}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+          onBringToFront={onBringToFront}
+        />
+      )}
+      {marketplaceCard && (
+        <MarketplaceAppCard
+          cardX={marketplaceCard.x}
+          cardY={marketplaceCard.y}
+          cardWidth={marketplaceCard.width}
+          cardHeight={marketplaceCard.height}
+          cardZOrder={marketplaceCard.zOrder ?? 0}
+          getCanvasState={getCanvasState}
+          isSelected={selection.isSelected(MARKETPLACE_CARD_ID)}
+          isHighlighted={highlightedCardId === MARKETPLACE_CARD_ID}
+          multiDragActive={selection.isSelected(MARKETPLACE_CARD_ID) && multiDragActive}
           onCardSelect={onCardSelect}
           onDragStart={onDragStart}
           onDragMove={onDragMove}

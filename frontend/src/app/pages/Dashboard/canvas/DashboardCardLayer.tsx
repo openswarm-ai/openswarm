@@ -1,5 +1,6 @@
 import React, { type RefObject } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import MarqueeRect from './MarqueeRect';
 import AgentCard from '../cards/AgentCard';
 import DashboardViewCard from '../cards/DashboardViewCard';
 import BrowserCard from '../cards/BrowserCard';
@@ -38,7 +39,7 @@ interface DashboardCardLayerProps {
   highlightedCardId: string | null;
   autoFocusSessionId: string | null;
   focusedCardId: string | null;
-  multiDragDelta: { dx: number; dy: number } | null;
+  multiDragActive: boolean;
   shakeDirection: Direction | null;
   spawnOriginsRef: RefObject<Record<string, SpawnOrigin>>;
   revealSpawnedRef: RefObject<Set<string>>;
@@ -70,7 +71,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
   highlightedCardId,
   autoFocusSessionId,
   focusedCardId,
-  multiDragDelta,
+  multiDragActive,
   shakeDirection,
   spawnOriginsRef,
   revealSpawnedRef,
@@ -152,7 +153,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
             isSelected={isSel}
             isHighlighted={highlightedCardId === sid}
             // Only selected cards need the live drag delta; passing it to everyone broke memo equality for unselected cards on every mouse-move during multi-drag.
-            multiDragDelta={isSel ? multiDragDelta : null}
+            multiDragActive={isSel && multiDragActive}
             onCardSelect={onCardSelect}
             onDragStart={onDragStart}
             onDragMove={onDragMove}
@@ -186,7 +187,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
             cmdHeld={cmdHeld}
             isSelected={selection.isSelected(cardKey)}
             isHighlighted={highlightedCardId === cardKey}
-            multiDragDelta={multiDragDelta}
+            multiDragActive={multiDragActive}
             onCardSelect={onCardSelect}
             onDragStart={onDragStart}
             onDragMove={onDragMove}
@@ -213,7 +214,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           cmdHeld={cmdHeld}
           isSelected={selection.isSelected(bc.browser_id)}
           isHighlighted={highlightedCardId === bc.browser_id}
-          multiDragDelta={multiDragDelta}
+          multiDragActive={selection.isSelected(bc.browser_id) && multiDragActive}
           onCardSelect={onCardSelect}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
@@ -226,7 +227,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
         workflowsHub={workflowsHub}
         selection={selection}
         highlightedCardId={highlightedCardId}
-        multiDragDelta={multiDragDelta}
+        multiDragActive={multiDragActive}
         getCanvasState={getCanvasState}
         onCardSelect={onCardSelect}
         onDragStart={onDragStart}
@@ -234,25 +235,10 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
         onDragEnd={onDragEnd}
         onBringToFront={onBringToFront}
       />
-      {/* Marquee selection rectangle */}
-      {selection.marquee && (
-        <div
-          style={{
-            position: 'absolute',
-            left: selection.marquee.x,
-            top: selection.marquee.y,
-            width: selection.marquee.width,
-            height: selection.marquee.height,
-            border: '1.5px dashed rgba(59, 130, 246, 0.6)',
-            background: 'rgba(59, 130, 246, 0.08)',
-            borderRadius: 2,
-            pointerEvents: 'none',
-            zIndex: 9999,
-          }}
-        />
-      )}
+      {/* Marquee selection rectangle: mounted once per sweep, moved imperatively off the channel */}
+      {selection.marquee && <MarqueeRect initial={selection.marquee} />}
     </>
   );
 };
 
-export default DashboardCardLayer;
+export default React.memo(DashboardCardLayer);

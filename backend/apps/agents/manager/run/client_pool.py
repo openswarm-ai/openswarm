@@ -125,6 +125,11 @@ async def trim_pool_to_cap(pool: Dict[str, "ClientHandle"]) -> None:
         await dispose_client(pool, sid)
 
 
+# One connect per session at a time: a pre-warm and a racing first turn must SHARE a spawn, or the
+# second spawn silently leaks the first (two CLI processes, one pooled).
+p_inflight_connects: Dict[str, "asyncio.Task[ClientHandle]"] = {}
+
+
 @typechecked
 async def acquire_client(
     pool: Dict[str, ClientHandle],
@@ -145,15 +150,32 @@ async def acquire_client(
         reason = "force_respawn" if force_respawn else "fingerprint_changed"
         logger.info(f"[client-pool] {session_id}: respawn ({reason})")
         await dispose_client(pool, session_id)
-    client = await connect_fn()
-    now = time.monotonic()
-    handle = ClientHandle(
-        fingerprint=fingerprint, client=client, lock=asyncio.Lock(), connected_at=now, last_used=now,
-    )
-    pool[session_id] = handle
-    logger.info(f"[client-pool] {session_id}: connected fresh client")
-    await trim_pool_to_cap(pool)
-    return handle
+
+    inflight = p_inflight_connects.get(session_id)
+    if inflight is not None and not inflight.done():
+        # Shielded so a cancelled waiter (user stops the turn) never kills the shared spawn.
+        handle = await asyncio.shield(inflight)
+        if not force_respawn and handle.fingerprint == fingerprint:
+            handle.last_used = time.monotonic()
+            return handle
+        await dispose_client(pool, session_id)
+
+    async def p_connect_and_pool() -> ClientHandle:
+        client = await connect_fn()
+        now = time.monotonic()
+        handle = ClientHandle(
+            fingerprint=fingerprint, client=client, lock=asyncio.Lock(), connected_at=now, last_used=now,
+        )
+        pool[session_id] = handle
+        logger.info(f"[client-pool] {session_id}: connected fresh client")
+        await trim_pool_to_cap(pool)
+        return handle
+
+    task = asyncio.ensure_future(p_connect_and_pool())
+    p_inflight_connects[session_id] = task
+    # Popped when the SPAWN finishes, not when this caller returns: a cancelled owner must not strand the entry.
+    task.add_done_callback(lambda t: p_inflight_connects.pop(session_id, None) if p_inflight_connects.get(session_id) is t else None)
+    return await asyncio.shield(task)
 
 
 @typechecked

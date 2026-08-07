@@ -259,4 +259,7 @@ export interface DataTableContextValue<T extends object = RowData> {
   toggleSort?: (key: ColumnKey<T>) => void;
   id?: string;
   locale?: string;
+  colWidths?: Record<string, number>;
+  setColWidth?: (key: string, px: number) => void;
+  moveColumn?: (fromKey: string, toKey: string) => void;
 }

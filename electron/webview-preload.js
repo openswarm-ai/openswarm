@@ -163,6 +163,14 @@ try {
     });
   } catch (_) {}
 
+  // Browser cards tag themselves so pinch/ctrl+wheel stays with the PAGE (Figma's canvas zoom, Chrome parity); app previews keep forwarding it to the dashboard canvas zoom.
+  let surfaceKind = 'app';
+  try {
+    ipcRenderer.on('openswarm:set-surface', (_event, payload) => {
+      surfaceKind = (payload && payload.kind) || 'app';
+    });
+  } catch (_) {}
+
   // First in-guest mousedown tells the host to activate interact mode. Never
   // preventDefault so the click still reaches the app (Minecraft etc).
   const onMouseDownNotify = (e) => {
@@ -209,8 +217,9 @@ try {
   };
 
   const onWheelCapture = (e) => {
-    // Canvas zoom is a dashboard-level gesture: forward cmd/ctrl+wheel even in interact mode, matching browser cards (which never set interactive and always zoom the canvas).
+    // Canvas zoom is a dashboard-level gesture for APP previews; a browser page owns its own pinch/ctrl+wheel (Figma, Maps) like real Chrome, so a tagged browser surface never forwards it.
     if (e.ctrlKey || e.metaKey) {
+      if (surfaceKind === 'browser') return;
       e.preventDefault();
       e.stopPropagation();
       const iw = window.innerWidth || 1;

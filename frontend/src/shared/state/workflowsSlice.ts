@@ -208,9 +208,11 @@ interface State {
   runControlPending: Record<string, WorkflowRunControlAction>;
   deleted: Workflow[];
   deletedLoading: boolean;
+  /** Bumped when a workflow WRITE settles server-side. The optimistic pending update changes the schedule fingerprint BEFORE the PATCH commits, so an occurrences fetch keyed only on the fingerprint reads pre-commit truth and never re-asks; this seq forces one authoritative refetch per settled write. */
+  settleSeq: number;
 }
 
-const initialState: State = { items: {}, runs: {}, openCards: {}, loaded: false, loading: false, paused: false, active: [], cloudSmsEnabled: false, allRuns: [], allRunsLoading: false, runningToast: null, noticeToast: null, runControlPending: {}, deleted: [], deletedLoading: false };
+const initialState: State = { items: {}, runs: {}, openCards: {}, loaded: false, loading: false, paused: false, active: [], cloudSmsEnabled: false, allRuns: [], allRunsLoading: false, runningToast: null, noticeToast: null, runControlPending: {}, deleted: [], deletedLoading: false, settleSeq: 0 };
 
 function mergeRunIntoState(state: State, r: WorkflowRun) {
   const arr = state.runs[r.workflow_id] || [];
@@ -601,9 +603,9 @@ const slice = createSlice({
         const cur = state.items[id];
         if (cur) state.items[id] = { ...cur, ...patch };
       })
-      .addCase(updateWorkflow.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(commitDraft.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      .addCase(discardDraft.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
+      .addCase(updateWorkflow.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; state.settleSeq += 1; })
+      .addCase(commitDraft.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; state.settleSeq += 1; })
+      .addCase(discardDraft.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; state.settleSeq += 1; })
       .addCase(deleteWorkflow.rejected, (state, action) => {
         state.noticeToast = typeof action.payload === 'string' ? action.payload : "Couldn't delete this workflow. Try again in a moment.";
       })

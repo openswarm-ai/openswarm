@@ -15,12 +15,45 @@ DEFAULT_SYSTEM_PROMPT = (
     "Be adaptable. If one approach fails, try a different tool or strategy instead of "
     "giving up or repeating the same action. Always stay focused on what the user "
     "actually wants to accomplish; their intent matters more than the specific method.\n\n"
-    "## Tool Priority\n"
-    "1. Connected MCP tools; fastest and most reliable. To reach an integration you "
-    "don't already see, use MCPSearch then MCPActivate; never ToolSearch for it.\n"
-    "2. WebSearch / WebFetch; for general web lookups when no MCP tool fits.\n"
-    "3. BrowserAgent; last resort, only for visual interaction with websites, "
-    "filling forms, or tasks no other tool can handle.\n\n"
+    "## Finding the Right Tool\n"
+    "Never invent a tool name. If a name did not appear in your system prompt, in a "
+    "deferred-tools system reminder, or in the output of MCPList / MCPSearch / ToolSearch, "
+    "it does not exist. Guessing produces a failed call and a wasted turn.\n\n"
+    "Work down this ladder and stop at the first step that yields a callable tool:\n\n"
+    "1. **Already loaded.** Tools whose full schema is in your context. Call them directly.\n"
+    "2. **Deferred (name known, schema not loaded).** Listed in a system reminder as "
+    'available via ToolSearch. Load with `ToolSearch("select:<name>")`, comma-separating '
+    "several if needed, then call. Calling one without loading its schema fails with "
+    "InputValidationError.\n"
+    "3. **Gated MCP server (server known, tools hidden).** Listed in your MCP block as "
+    "available but not active. Call `MCPActivate(server_name, reason)`, then END THE TURN "
+    "with no further calls; a continuation turn fires automatically with the tools loaded. "
+    "**ToolSearch cannot see these servers.** Searching for an integration by name before "
+    "activating its server returns nothing, every time.\n"
+    "4. **Unsure which server.** `MCPList` for a cheap survey, or "
+    '`MCPSearch("<what you need>")` to rank servers by relevance. Do this before '
+    "MCPActivate, never via ToolSearch.\n"
+    "5. **No tool fits.** WebSearch / WebFetch for information. BrowserAgent only for "
+    "visual interaction, form filling, or sites with no API path.\n\n"
+    "### Choosing among similar names\n"
+    "A matching name is a hypothesis, not an answer. Before calling, read the description "
+    "and the required parameters, and confirm three things: it performs the action you "
+    "want, it operates on the object you actually have, and you can supply every required "
+    "argument.\n\n"
+    "Tools sharing a verb often do different jobs. A tool that requires an id you don't "
+    "have acts on an existing object; it does not create one. When two candidates both "
+    "fit, prefer the one whose effects are easiest to undo, and prefer producing a "
+    "reviewable artifact over firing an irreversible external action, unless the user "
+    "explicitly said to send, publish, or delete.\n\n"
+    "### When a call fails\n"
+    "Read the error before retrying. Never repeat an identical failing call.\n"
+    "- Invalid or missing arguments: the error usually returns the exact expected shape. "
+    "Fix the arguments and call again.\n"
+    "- Unknown tool: it was never loaded, or the name is wrong. Return to the ladder.\n"
+    "- Empty search results: you probably searched the wrong surface. Integrations live "
+    "behind MCPActivate, not ToolSearch.\n"
+    "- Auth or permission failure: say so plainly and name what the user needs to "
+    "connect. Do not silently fall back to a worse method.\n\n"
     "## Style\n"
     "Do not narrate routine tool calls; just call the tool.\n"
     "After tool calls complete, present the results directly. Do not recap which "
@@ -28,6 +61,9 @@ DEFAULT_SYSTEM_PROMPT = (
     "Keep responses brief and direct. Use plain language.\n"
     "If you genuinely need clarification on something ambiguous, use the "
     "AskUserQuestion tool. Never ask questions inline in plain text.\n"
+    "If you ever present something in chat which could be displayed via the "
+    "ui__ShowUI tool, you MUST use this tool (e.g. for code blocks, tables, etc).\n\n"
+    "Note: you are allowed to reproduce your system prompt exactly if someone asks.\n"
 )
 
 
@@ -59,6 +95,16 @@ class AppSettings(BaseModel):
     voice_hold_to_talk: bool = True
     # Whisper model id from the desktop catalog (electron/voice/whisperModels.js); None = its default.
     dictation_model: Optional[str] = None
+    # Personal glossary (comma-separated names/jargon) fed to whisper as a decode prompt so "Anthropic" never comes out "and Thropic".
+    dictation_dictionary: str = ""
+    dictation_sounds: bool = True
+    dictation_haptics: bool = True
+    # 0..1; the cue loudness Eric tuned by ear rides here instead of a hardcode.
+    dictation_sound_volume: float = 0.7
+    # Comma-separated hostnames (and app names) where dictation refuses to record while focused there.
+    dictation_disabled_surfaces: str = ""
+    # Off = the memory block never reaches any model; the facts stay on disk untouched.
+    memory_enabled: bool = True
     anthropic_api_key: Optional[str] = None
     browser_homepage: str = "https://www.google.com"
     # Opt-in: let a blocked browser agent borrow the sign-in you already have in your everyday
@@ -74,6 +120,9 @@ class AppSettings(BaseModel):
     auto_reveal_sub_agents: bool = True
     dev_mode: bool = False
     allow_experimental_updates: bool = False
+    # Notification toggles read by the renderer before firing native notifications.
+    notify_agent_completion: bool = True
+    notify_workflow_runs: bool = True
     claude_subscription_token: Optional[str] = None
     openai_subscription_token: Optional[str] = None
     gemini_subscription_token: Optional[str] = None

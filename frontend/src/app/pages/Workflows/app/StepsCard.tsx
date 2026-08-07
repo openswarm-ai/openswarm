@@ -4,6 +4,7 @@ import { useAppDispatch } from '@/shared/hooks';
 import { commitDraft } from '@/shared/state/workflowsSlice';
 import type { Workflow, WorkflowStep } from '@/shared/state/workflowsSlice';
 import { stepsSignature } from '@/app/pages/Workflows/scheduleUtils';
+import { openCardContextMenu, isNativeMenuTarget } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
 import { useWC, FONT_SERIF, FONT_SANS, track, knob } from './uiKit';
 import { useWorkflowPatch } from './useWorkflowPatch';
 
@@ -100,7 +101,21 @@ const StepsCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
         {local.map((s, i) => (
-          <div key={s.id} style={{ border: `1px solid ${s.open ? `rgba(${WC.inkRGB},0.16)` : `rgba(${WC.inkRGB},0.10)`}`, borderRadius: WC.radius.md, background: s.open ? WC.raised : WC.paper, overflow: 'hidden' }}>
+          <div
+            key={s.id}
+            onContextMenu={(e) => {
+              if (isNativeMenuTarget(e)) return;
+              openCardContextMenu(e, {
+                items: [
+                  { label: s.open ? 'Collapse' : 'Edit prompt', onClick: () => update(s.id, { open: !s.open }) },
+                  { label: s.enabled ? 'Disable step' : 'Enable step', onClick: () => toggleEnabled(s.id) },
+                  { kind: 'separator' },
+                  { label: 'Remove step', danger: true, onClick: () => onDelete(s.id) },
+                ],
+              });
+            }}
+            style={{ border: `1px solid ${s.open ? `rgba(${WC.inkRGB},0.16)` : `rgba(${WC.inkRGB},0.10)`}`, borderRadius: WC.radius.md, background: s.open ? WC.raised : WC.paper, overflow: 'hidden' }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 9px 9px 11px', opacity: s.enabled ? 1 : 0.5 }}>
               <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: WC.faint, width: 13, flex: 'none' }}>{i + 1}</span>
               <input

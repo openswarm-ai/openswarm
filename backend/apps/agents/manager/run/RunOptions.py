@@ -6,6 +6,7 @@ the gate hooks resolve across the MRO unchanged."""
 
 import json
 import logging
+import time
 import os
 from typing import Dict, List, Optional, Union
 from typeguard import typechecked
@@ -49,6 +50,8 @@ class RunOptions(AgentManagerProtocol):
                                     p_router_model_id: str, p_api_type_for_session: str):
         from claude_agent_sdk import ClaudeAgentOptions
         from claude_agent_sdk.types import HookMatcher
+
+        logger.info(f"[SPAWN-PHASE] options-build start session={session_id[:8]} t={time.monotonic():.3f}")
 
         # Per-SESSION hook context, updated in place each turn: with a persistent client the hooks the
         # CLI holds were bound at connect, so they must read this stable object, not a per-turn rebuild.
@@ -115,7 +118,9 @@ class RunOptions(AgentManagerProtocol):
         set_framework_overhead(session, composed_prompt)
 
         # Pass session.active_mcps as the activation filter. Empty list ⇒ no MCP tools shipped to the SDK; the model must MCPSearch and MCPActivate first. The product invariant lives here at the dispatch layer (see build_mcp_servers docstring).
+        logger.info(f"[SPAWN-PHASE] mcp-build start session={session_id[:8]} t={time.monotonic():.3f}")
         mcp_servers = await self.build_mcp_servers(session.allowed_tools, session.active_mcps)
+        logger.info(f"[SPAWN-PHASE] mcp-build done session={session_id[:8]} t={time.monotonic():.3f}")
 
         browser_delegation_tools, invoke_agent_tools = register_builtin_mcp_servers(
             mcp_servers, session, builtin_perms, selected_browser_ids, selected_app_output_ids
@@ -192,9 +197,11 @@ class RunOptions(AgentManagerProtocol):
             "include_partial_messages": True,
         }
         # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api" bypasses to the provider's host directly; otherwise Pro proxy or key.
+        logger.info(f"[SPAWN-PHASE] provider-env start session={session_id[:8]} t={time.monotonic():.3f}")
         await configure_provider_env(
             options_kwargs, session, resolved_model, api_type, global_settings
         )
+        logger.info(f"[SPAWN-PHASE] provider-env done session={session_id[:8]} t={time.monotonic():.3f}")
         if mcp_servers:
             options_kwargs["mcp_servers"] = mcp_servers
             mcp_json_len = len(json.dumps({"mcpServers": mcp_servers}))
@@ -264,7 +271,9 @@ class RunOptions(AgentManagerProtocol):
             # Distill the dropped span into a cached aux summary so a rebuild keeps the gist of old turns instead of hard-dropping them. Fail-open: "" -> the plain recap above, exactly today's behavior.
             from backend.apps.agents.manager.session.distill_history import distilled_history_summary
             from backend.apps.agents.manager.session.history_compaction import wrap_platform_note
+            logger.info(f"[SPAWN-PHASE] distill start session={session_id[:8]} t={time.monotonic():.3f}")
             distilled = await distilled_history_summary(session, global_settings)
+            logger.info(f"[SPAWN-PHASE] distill done session={session_id[:8]} t={time.monotonic():.3f}")
             if distilled:
                 fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")
                 history = f"{fenced}\n\n{history}" if history else fenced
@@ -275,7 +284,9 @@ class RunOptions(AgentManagerProtocol):
                     prompt_content.insert(0, {"type": "text", "text": history})
 
         # Compaction trigger (Phase 2). Driven by live ctx_used ratio rather than turn count, fires when input_tokens/context_window crosses session.compact_threshold_pct (default 0.65). Cheap, programmatic summarization (no aux LLM call) so this adds zero latency on the user's turn.
+        logger.info(f"[SPAWN-PHASE] context-guard start session={session_id[:8]} t={time.monotonic():.3f}")
         await pre_send_context_guard(self, session, session_id)
+        logger.info(f"[SPAWN-PHASE] context-guard done session={session_id[:8]} t={time.monotonic():.3f}")
 
         logger.info(f"[MCP-DEBUG] Creating ClaudeAgentOptions short={session.model} resolved={resolved_model} api_type={api_type}")
         options = ClaudeAgentOptions(**options_kwargs)

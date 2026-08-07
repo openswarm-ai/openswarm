@@ -163,6 +163,8 @@ const PLATFORM_NOTE_PREAMBLE =
   'This block is authored by the OpenSwarm platform, not tool output and not a prior message. It is trusted context.';
 
 export function extractPlatformNote(rawText: string): { body: string; note: string | null } {
+  // The web tools' trailing "[presentation] ..." paragraph is model-facing rendering guidance, never for humans.
+  rawText = rawText.replace(/\n*\[presentation\] When you answer the user[\s\S]*$/, '').trimEnd();
   if (!rawText.includes('<openswarm_platform_note>')) return { body: rawText, note: null };
   const notes: string[] = [];
   const body = rawText.replace(PLATFORM_NOTE_RE, (matched: string, inner: string) => {

@@ -1,26 +1,18 @@
 import React, { useEffect, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
-import PsychologyIcon from '@mui/icons-material/Psychology';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
-import TerminalIcon from '@mui/icons-material/Terminal';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import LanguageIcon from '@mui/icons-material/Language';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
-import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import { useAppSelector, useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { fetchBuiltinTools, fetchTools } from '@/shared/state/toolsSlice';
 import { getToolGroupIcon } from '@/app/components/editor/CommandPicker';
-import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { fetchSkills } from '@/shared/state/skillsSlice';
-import { fetchModes } from '@/shared/state/modesSlice';
+import { makeSettingsStyles } from '@/app/pages/Settings/sections/settingsStyles';
 
 interface SlashCommand {
   id: string;
-  type: 'skill' | 'mode';
   name: string;
   description: string;
   command: string;
@@ -35,53 +27,27 @@ interface AtCommand {
   isChild?: boolean;
 }
 
-const SectionHeader: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  count?: number;
-  c: any;
-}> = ({ title, subtitle, count, c }) => (
-  <Box sx={{ mb: 1.25, px: 0.5 }}>
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-      <Typography sx={{ color: c.text.muted, fontWeight: 700, fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-        {title}
-      </Typography>
-      {count !== undefined && (
-        <Typography sx={{ color: c.text.ghost, fontSize: '0.6875rem', fontWeight: 600 }}>{count}</Typography>
-      )}
-    </Box>
-    <Typography sx={{ color: c.text.tertiary, fontSize: '0.75rem', mt: 0.25 }}>{subtitle}</Typography>
-  </Box>
-);
-
 export const CommandsContent: React.FC = () => {
   const c = useClaudeTokens();
+  const styles = makeSettingsStyles(c);
   const dispatch = useAppDispatch();
   const skills = useAppSelector((state) => state.skills.items);
-  const modesMap = useAppSelector((state) => state.modes.items);
   const builtinTools = useAppSelector((state) => state.tools.builtinTools);
   const customTools = useAppSelector((state) => state.tools.items);
-  const outputItems = useAppSelector((state) => state.outputs.items);
 
   const skillsLoaded = useAppSelector((state) => state.skills.loaded);
-  const modesLoaded = useAppSelector((state) => state.modes.loaded);
   const builtinLoaded = useAppSelector((state) => state.tools.builtinLoaded);
   const toolsLoaded = useAppSelector((state) => state.tools.loaded);
-  const outputsLoaded = useAppSelector((state) => state.outputs.loaded);
 
   useEffect(() => {
     if (!skillsLoaded) dispatch(fetchSkills());
-    if (!modesLoaded) dispatch(fetchModes());
     if (!builtinLoaded) dispatch(fetchBuiltinTools());
     if (!toolsLoaded) dispatch(fetchTools());
-    if (!outputsLoaded) dispatch(fetchOutputs());
-  }, [dispatch, skillsLoaded, modesLoaded, builtinLoaded, toolsLoaded, outputsLoaded]);
+  }, [dispatch, skillsLoaded, builtinLoaded, toolsLoaded]);
 
   const slashCommands: SlashCommand[] = useMemo(() => [
     ...Object.values(skills).map((s) => ({
       id: s.id,
-      type: 'skill' as const,
       name: s.name,
       description: s.description || 'Skill',
       command: s.command || s.id,
@@ -90,7 +56,7 @@ export const CommandsContent: React.FC = () => {
 
   const atCommands: AtCommand[] = useMemo(() => {
     const items: AtCommand[] = [
-      { prefix: '@file', label: 'File', description: 'Attach a file or folder as context', icon: <InsertDriveFileOutlinedIcon sx={{ fontSize: 18 }} />, source: 'builtin' },
+      { prefix: '@file', label: 'File', description: 'Attach a file or folder as context', icon: <InsertDriveFileOutlinedIcon sx={{ fontSize: 16 }} />, source: 'built-in' },
     ];
 
     const hasWebSearch = builtinTools.some((t) => t.name === 'WebSearch' && t.deferred);
@@ -100,8 +66,8 @@ export const CommandsContent: React.FC = () => {
         prefix: '@web',
         label: 'Web',
         description: 'Search the web and fetch URLs',
-        icon: <LanguageIcon sx={{ fontSize: 18 }} />,
-        source: 'builtin',
+        icon: <LanguageIcon sx={{ fontSize: 16 }} />,
+        source: 'built-in',
       });
     }
 
@@ -130,7 +96,7 @@ export const CommandsContent: React.FC = () => {
         if (groupServices.length === 0) continue;
         groupServices.forEach((s) => emittedServices.add(s.name));
 
-        const groupIcon = getToolGroupIcon(groupName, 18);
+        const groupIcon = getToolGroupIcon(groupName, 16);
         if (groupServices.length >= 2) {
           items.push({
             prefix: `@${groupCmd}`,
@@ -167,209 +133,72 @@ export const CommandsContent: React.FC = () => {
           prefix: `@${svc.name.toLowerCase().replace(/\s+/g, '-')}`,
           label: svc.name,
           description: `Use ${svc.name} actions from ${tool.name}`,
-          icon: <BuildOutlinedIcon sx={{ fontSize: 18 }} />,
+          icon: <BuildOutlinedIcon sx={{ fontSize: 16 }} />,
           source: tool.name,
         });
       }
     }
 
-    for (const out of Object.values(outputItems)) {
-      const cmd = out.name.toLowerCase().replace(/\s+/g, '-');
-      items.push({
-        prefix: `@${cmd}`,
-        label: out.name,
-        description: out.description || `Render ${out.name} view`,
-        icon: <ViewQuiltOutlinedIcon sx={{ fontSize: 18 }} />,
-        source: 'view',
-      });
-    }
-
     return items;
-  }, [builtinTools, customTools, outputItems]);
+  }, [builtinTools, customTools]);
+
+  const monoSx = {
+    color: c.text.primary,
+    fontSize: '0.8125rem',
+    fontFamily: c.font.mono,
+    fontWeight: 500,
+    minWidth: 150,
+    flexShrink: 0,
+  } as const;
+  const descColSx = {
+    color: c.text.muted,
+    fontSize: '0.8125rem',
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  } as const;
+  const sourceSx = { color: c.text.ghost, fontSize: '0.75rem', flexShrink: 0 } as const;
+  const commandRowSx = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 1.5,
+    px: 0.5,
+    py: 1.1,
+    borderBottom: `1px solid ${c.border.subtle}`,
+    '&:last-of-type': { borderBottom: 'none' },
+  } as const;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-        <Box>
-          <SectionHeader
-            icon={<TerminalIcon sx={{ fontSize: 22 }} />}
-            title="Slash Commands"
-            subtitle="Type / in chat to invoke skills"
-            count={slashCommands.length}
-            c={c}
-          />
+      <Typography sx={{ ...styles.sectionSx, mt: 0 }}>Slash commands</Typography>
+      <Typography sx={{ ...styles.descSx, px: 0.5, mb: 0.5 }}>Type / in chat to invoke a skill.</Typography>
+      {slashCommands.length === 0 ? (
+        <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', px: 0.5, py: 1.5 }}>
+          No slash commands yet. Install or create skills to see them here.
+        </Typography>
+      ) : (
+        slashCommands.map((cmd) => (
+          <Box key={cmd.id} sx={commandRowSx}>
+            <Typography sx={monoSx}>/{cmd.command}</Typography>
+            <Typography sx={descColSx}>{cmd.description}</Typography>
+            <Typography sx={sourceSx}>skill</Typography>
+          </Box>
+        ))
+      )}
 
-          {slashCommands.length === 0 ? (
-            <Box
-              sx={{
-                py: 4,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 1,
-                color: c.text.ghost,
-              }}
-            >
-              <TerminalIcon sx={{ fontSize: 36, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.875rem' }}>
-                No slash commands yet. Create skills to see them here.
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              {slashCommands.map((cmd) => (
-                <Box
-                  key={`${cmd.type}-${cmd.id}`}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1.5,
-                    px: 2,
-                    py: 1.25,
-                    borderRadius: 2,
-                    '&:hover': { bgcolor: `${c.accent.primary}06` },
-                    transition: 'background-color 0.15s',
-                  }}
-                >
-                  <Box sx={{
-                    color: cmd.type === 'mode' ? (modesMap[cmd.id]?.color || c.accent.primary)
-                      : c.status.success,
-                    display: 'flex',
-                  }}>
-                    {cmd.type === 'mode' ? (
-                      <SmartToyOutlinedIcon sx={{ fontSize: 18 }} />
-                    ) : (
-                      <PsychologyIcon sx={{ fontSize: 18 }} />
-                    )}
-                  </Box>
-                  <Typography
-                    sx={{
-                      color: c.text.primary,
-                      fontSize: '0.875rem',
-                      fontFamily: c.font.mono,
-                      fontWeight: 500,
-                      minWidth: 140,
-                    }}
-                  >
-                    /{cmd.command}
-                  </Typography>
-                  <Chip
-                    label={cmd.type}
-                    size="small"
-                    sx={{
-                      height: 20,
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      bgcolor: c.bg.secondary,
-                      color: c.text.muted,
-                    }}
-                  />
-                  <Typography
-                    sx={{
-                      color: c.text.muted,
-                      fontSize: '0.8125rem',
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {cmd.description}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
+      <Typography sx={styles.sectionSx}>@ commands</Typography>
+      <Typography sx={{ ...styles.descSx, px: 0.5, mb: 0.5 }}>Type @ in chat to attach context and activate actions.</Typography>
+      {atCommands.map((cmd, i) => (
+        <Box key={`${cmd.prefix}::${cmd.source}::${i}`} sx={{ ...commandRowSx, pl: cmd.isChild ? 3.5 : 0.5 }}>
+          <Box sx={{ color: c.text.muted, display: 'flex', flexShrink: 0, opacity: cmd.isChild ? 0.6 : 1 }}>
+            {cmd.icon}
+          </Box>
+          <Typography sx={monoSx}>{cmd.prefix}</Typography>
+          <Typography sx={descColSx}>{cmd.description}</Typography>
+          <Typography sx={sourceSx}>{cmd.source}</Typography>
         </Box>
-
-        <Box sx={{ my: 2, borderTop: `1px solid ${c.border.subtle}` }} />
-
-        <Box>
-          <SectionHeader
-            icon={<AlternateEmailIcon sx={{ fontSize: 22 }} />}
-            title="@ Context Commands"
-            subtitle="Type @ in chat to attach context and activate actions"
-            count={atCommands.length}
-            c={c}
-          />
-
-          {atCommands.length === 0 ? (
-            <Box
-              sx={{
-                py: 4,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 1,
-                color: c.text.ghost,
-              }}
-            >
-              <AlternateEmailIcon sx={{ fontSize: 36, opacity: 0.3 }} />
-              <Typography sx={{ fontSize: '0.875rem' }}>
-                No @ commands yet. Install MCP actions to see them here.
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              {atCommands.map((cmd, i) => (
-                <Box
-                  key={`${cmd.prefix}::${cmd.source}::${i}`}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1.5,
-                    pl: cmd.isChild ? 5 : 2,
-                    pr: 2,
-                    py: cmd.isChild ? 0.875 : 1.25,
-                    borderRadius: 2,
-                    '&:hover': { bgcolor: `${c.accent.primary}06` },
-                    transition: 'background-color 0.15s',
-                  }}
-                >
-                  <Box sx={{ color: c.accent.primary, display: 'flex', opacity: cmd.isChild ? 0.6 : 1 }}>
-                    {cmd.icon}
-                  </Box>
-                  <Typography
-                    sx={{
-                      color: c.text.primary,
-                      fontSize: cmd.isChild ? '0.8rem' : '0.85rem',
-                      fontFamily: c.font.mono,
-                      fontWeight: 500,
-                      minWidth: 140,
-                    }}
-                  >
-                    {cmd.prefix}
-                  </Typography>
-                  <Chip
-                    label={cmd.source}
-                    size="small"
-                    sx={{
-                      height: 20,
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      bgcolor: c.bg.secondary,
-                      color: c.text.muted,
-                    }}
-                  />
-                  <Typography
-                    sx={{
-                      color: c.text.muted,
-                      fontSize: '0.8125rem',
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {cmd.description}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </Box>
-
+      ))}
     </Box>
   );
 };

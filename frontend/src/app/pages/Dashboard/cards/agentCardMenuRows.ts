@@ -1,6 +1,9 @@
 import { clearSessionMessages, deleteSession, duplicateSession, expandSession, collapseSession, stopAgent, fetchSession, type AgentSession } from '@/shared/state/agentsSlice';
 import { placeCard, bringToFront } from '@/shared/state/dashboardLayoutSlice';
 import { setClipboardCards } from '@/shared/dashboardClipboard';
+import { copySessionResponse } from '@/shared/copySessionResponse';
+import { requestShare } from '@/app/components/share/ShareRequestHost';
+import { displaySessionName } from '@/shared/state/sessionDisplay';
 import { handleSlashCommand } from '@/app/pages/AgentChat/ChatInput/hooks/slashCommands';
 import type { AppDispatch } from '@/shared/state/store';
 import type { CardMenuRow } from '../desktop/openCardContextMenu';
@@ -46,6 +49,8 @@ export function agentCardMenuRows({ session, dispatch, expanded, tileZone, expan
         x: card.x, y: card.y, width: card.width, height: card.height, expanded,
       }]),
     },
+    { label: 'Copy response', onClick: () => { copySessionResponse(session.id); } },
+    { label: 'Share as .swarm…', onClick: () => requestShare({ kind: 'session', id: session.id, name: displaySessionName(session.name) }) },
     { kind: 'separator' },
     { kind: 'header', label: 'Session' },
     { label: 'Stop turn', disabled: !running, onClick: () => { void dispatch(stopAgent({ sessionId: session.id })); } },

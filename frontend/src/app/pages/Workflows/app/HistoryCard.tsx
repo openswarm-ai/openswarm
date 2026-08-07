@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchRuns } from '@/shared/state/workflowsSlice';
 import { openWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
+import { openCardContextMenu } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
 import { useWC, FONT_SERIF, statusChip, statusDot, statusLabel } from './uiKit';
 import type { WCPalette } from './uiKit';
 import { toRunRow, whenText } from './model';
@@ -18,6 +19,12 @@ const Row: React.FC<{ entry: Entry; wc: WCPalette; now: Date }> = ({ entry, wc, 
   <div
     onClick={entry.open}
     title={entry.open ? 'Open this run' : undefined}
+    onContextMenu={(e) => openCardContextMenu(e, {
+      items: [
+        { label: 'Open run', disabled: !entry.open, onClick: () => entry.open?.() },
+        { label: 'Copy summary', onClick: () => { navigator.clipboard.writeText(entry.summary); } },
+      ],
+    })}
     style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: `1px solid rgba(${wc.inkRGB},0.05)`, cursor: entry.open ? 'pointer' : 'default' }}
   >
     <div style={statusDot(entry.tone, wc)} />

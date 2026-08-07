@@ -235,3 +235,62 @@ async def signout():
     p_sync_identity_to_service(settings_obj)
     await p_sync_pro_routing(settings_obj)
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- /api/auth/email-prefs ---------------------------------------------------------------------------
+
+class EmailPrefsUpdate(BaseModel):
+    run_emails: bool
+
+
+def p_email_prefs_unavailable() -> dict:
+    return {"available": False, "run_emails": None}
+
+
+@auth.router.get("/email-prefs")
+async def get_email_prefs():
+    """Proxy the cloud's signed-in run-email preference for the Settings toggle.
+
+    Degrades to available:false (the Settings row falls back to its honest
+    ghost label) when signed out, when the cloud is unreachable, or when prod
+    predates the prefs endpoint. Never 500s the Settings page.
+    """
+    from backend.apps.settings.credentials import account_auth
+
+    token, base = account_auth(load_settings())
+    if not token:
+        return p_email_prefs_unavailable()
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            r = await client.get(
+                f"{base}/api/email-prefs/mine",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError:
+        return p_email_prefs_unavailable()
+    if r.status_code != 200:
+        return p_email_prefs_unavailable()
+    data = r.json()
+    return {"available": True, "run_emails": bool(data.get("run_emails"))}
+
+
+@auth.router.put("/email-prefs")
+async def put_email_prefs(body: EmailPrefsUpdate):
+    from backend.apps.settings.credentials import account_auth
+
+    token, base = account_auth(load_settings())
+    if not token:
+        return p_email_prefs_unavailable()
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            r = await client.put(
+                f"{base}/api/email-prefs/mine",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"run_emails": body.run_emails},
+            )
+    except httpx.HTTPError:
+        return p_email_prefs_unavailable()
+    if r.status_code != 200:
+        return p_email_prefs_unavailable()
+    data = r.json()
+    return {"available": True, "run_emails": bool(data.get("run_emails"))}

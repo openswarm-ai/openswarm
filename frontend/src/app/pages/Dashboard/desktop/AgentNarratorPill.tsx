@@ -10,11 +10,15 @@ import PillArtifactFrame from './PillArtifactFrame';
 import type { ToolPair } from '@/app/pages/AgentChat/tool-bubbles/ToolCallBubble';
 import { artifactName, type ShowUiPayload } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
 import type { AgentTodoItem } from './agentTodos';
+import type { AgentLiveStep } from './agentLiveSteps';
+import { shimmerTextSx } from '@/app/pages/AgentChat/tool-bubbles/toolRowMotion';
 
 interface AgentNarratorPillProps {
   label: string;
   running: boolean;
   todos: AgentTodoItem[] | null;
+  /** Tool activity of the live turn, the transition phase between "Thinking" and the answer. */
+  liveSteps: AgentLiveStep[] | null;
   artifact: ShowUiPayload | null;
   askPair?: ToolPair | null;
   sessionId?: string;
@@ -29,14 +33,18 @@ const GLASS = GLASS_SURFACE;
 const GLASS_BLUR = GLASS_SURFACE_BLUR;
 const MAX_VISIBLE_TODOS = 4;
 
-/** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: live question > widget > browser shot > plan > Thinking. */
-function AgentNarratorPill({ label, running, todos, artifact, askPair, sessionId, browserShot, finalText, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
+/** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: live question > widget > browser shot > plan > live steps > Thinking. */
+function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, finalText, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
   const visibleTodos = (todos || []).slice(0, MAX_VISIBLE_TODOS);
   const hiddenCount = (todos?.length || 0) - visibleTodos.length;
+  // Live tool steps window to the most recent, since earlier ones are history, not plan.
+  const visibleSteps = running && !visibleTodos.length ? (liveSteps || []).slice(-MAX_VISIBLE_TODOS) : [];
+  const earlierSteps = running && !visibleTodos.length ? Math.max(0, (liveSteps?.length || 0) - visibleSteps.length) : 0;
+  const shownArtifact = artifact;
   const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
   const liveAsk = askPair && sessionId ? askPair : null;
   // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
-  const artifactKey = liveAsk ? `ask-${liveAsk.id}` : artifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : running ? 'thinking' : finalText ? 'final' : 'none';
+  const artifactKey = liveAsk ? `ask-${liveAsk.id}` : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : finalText ? 'final' : 'none';
 
   return (
     <Box
@@ -82,11 +90,14 @@ function AgentNarratorPill({ label, running, todos, artifact, askPair, sessionId
 
       {liveAsk ? (
         <PillArtifactFrame key={artifactKey} name="question">
-          <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
+          {/* One glass surface holds the whole ask (options + Confirm + the type-your-own field); without it the widget's footer floated bare on the canvas. */}
+          <Box sx={{ borderRadius: '16px', background: GLASS, backdropFilter: GLASS_BLUR, WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 8px 24px rgba(0,0,0,0.32)', px: 1.25, py: 1.25 }}>
+            <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
+          </Box>
         </PillArtifactFrame>
-      ) : artifact ? (
-        <PillArtifactFrame key={artifactKey} name={artifactName(artifact)}>
-          <ShowUiWidgetView payload={artifact} ambient />
+      ) : shownArtifact ? (
+        <PillArtifactFrame key={artifactKey} name={artifactName(shownArtifact)}>
+          <ShowUiWidgetView payload={shownArtifact} ambient />
         </PillArtifactFrame>
       ) : browserShot ? (
         <Box
@@ -158,6 +169,66 @@ function AgentNarratorPill({ label, running, todos, artifact, askPair, sessionId
               ... {hiddenCount} more
             </Typography>
           )}
+        </Box>
+      ) : visibleSteps.length > 0 ? (
+        // The transition phase: real tool activity as a simple checklist while the turn works.
+        <Box
+          key={artifactKey}
+          className="osw-artifact"
+          sx={{
+            borderRadius: '16px',
+            background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
+            px: 1.75,
+            py: 1.5,
+            minWidth: 200,
+          }}
+        >
+          {earlierSteps > 0 && (
+            <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', pl: '2px', pb: 0.5 }}>
+              {earlierSteps} earlier step{earlierSteps === 1 ? '' : 's'}
+            </Typography>
+          )}
+          <Box sx={{ position: 'relative' }}>
+            {visibleSteps.length > 1 && (
+              <Box sx={{ position: 'absolute', left: 10, top: 12, bottom: 12, width: '2px', background: 'rgba(255,255,255,0.18)' }} />
+            )}
+            {visibleSteps.map((step, i) => (
+              <Box key={`${i}-${step.label.slice(0, 24)}`} sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.75 }}>
+                <Box
+                  sx={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    zIndex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: step.done ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.28)',
+                  }}
+                >
+                  {step.done && <CheckIcon sx={{ fontSize: 14, color: '#2a2a2a' }} />}
+                </Box>
+                <Typography
+                  sx={{
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    color: 'rgba(255,255,255,0.92)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: 260,
+                    ...(step.done ? {} : shimmerTextSx('rgba(255,255,255,0.92)')),
+                  }}
+                >
+                  {step.label}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
         </Box>
       ) : running ? (
         <Box

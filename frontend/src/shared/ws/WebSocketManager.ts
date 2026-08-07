@@ -121,6 +121,9 @@ class WebSocketManager {
     WebSocketManager._flushTimer = setTimeout(WebSocketManager._flushMessages, 250);
   }
 
+  // First moment a flush was deferred for a live drag; bounds the damming so a stuck drag class can't buffer forever.
+  private static _dragDeferredAt = 0;
+
   private static _flushMessages = () => {
     if (!WebSocketManager._flushScheduled) return; // the other trigger already drained this batch
     WebSocketManager._flushScheduled = false;
@@ -129,6 +132,18 @@ class WebSocketManager {
       WebSocketManager._flushTimer = null;
     }
     if (WebSocketManager._messageQueue.length === 0) return;
+    // A live card drag owns the main thread: WS-driven renders mid-drag are what made dragging a
+    // working agent feel laggy, and nobody reads streaming tokens while holding a card. Buffer until
+    // the pointer settles, hard-capped by time and queue depth.
+    if (document.body.classList.contains('dashboard-marquee-active')) {
+      if (!WebSocketManager._dragDeferredAt) WebSocketManager._dragDeferredAt = Date.now();
+      if (Date.now() - WebSocketManager._dragDeferredAt < 2000 && WebSocketManager._messageQueue.length < 500) {
+        WebSocketManager._flushScheduled = true;
+        WebSocketManager._flushTimer = setTimeout(WebSocketManager._flushMessages, 100);
+        return;
+      }
+    }
+    WebSocketManager._dragDeferredAt = 0;
     const batch = WebSocketManager._messageQueue;
     WebSocketManager._messageQueue = [];
     // unstable_batchedUpdates collapses all dispatches inside the callback into a single React render. Available in React 17; React 18's automatic batching covers this too, but explicit wrap remains correct in both and protects against future batching-context changes.
@@ -408,6 +423,17 @@ class WebSocketManager {
           }
           if (data.status === 'running' && session_id) {
             store.dispatch(trackAgentNotification(session_id));
+          }
+          // Native OS notification when an agent finishes while the user is elsewhere: workflows already had this; long chat tasks deserve the same "it's done" tap on both platforms. Sub-agents stay silent (their parent's finish is the story).
+          if (data.status === 'completed' && session_id && document.hidden) {
+            const p_sess2 = data.session ?? store.getState().agents.sessions[session_id];
+            if (p_sess2 && !p_sess2.parent_session_id && p_sess2.mode !== 'browser-agent') {
+              void (window as any).openswarm?.notify?.({
+                title: 'Agent finished',
+                body: (p_sess2.name && p_sess2.name !== 'Untitled' ? p_sess2.name : 'Your task is done.').slice(0, 200),
+                deepLink: `openswarm://session/${session_id}`,
+              });
+            }
           }
 
           // An AppAgent driving an app card announces itself only via this status event (no card_added like browsers), so light the app card here. Keyed by the parent chat like browser glows, so the same terminal fade below clears it.
@@ -817,6 +843,12 @@ class WebSocketManager {
               let glowLabel = 'Use Browser';
               if (parentCard) {
                 pos = placeBrowserBesideChat(layoutState, parentCard, parentId, browserCard.width, browserCard.height, browserCard.browser_id);
+                // A replacement browser buries its predecessor: the agent spins a fresh card when a tab dies, and the displaced spawned sibling must be torn down through the FULL path (a bare store delete gets resurrected by the backend layout sync as a free stacked window).
+                for (const old of Object.values(layoutState.browserCards)) {
+                  if (old.browser_id !== browserCard.browser_id && old.spawned_by === parentId && !old.keep_open) {
+                    void import('@/shared/browserTeardown').then(({ removeBrowserCardCleanly }) => removeBrowserCardCleanly(old.browser_id, store.dispatch));
+                  }
+                }
                 // Default home is INSIDE the chat: the card overlays the chat's dock slot while the
                 // chat is expanded; the beside-chat spot stays the undock/collapse fallback.
                 store.dispatch(setBrowserDocked({ browserId: browserCard.browser_id, dockedTo: parentId }));

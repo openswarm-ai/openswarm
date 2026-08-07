@@ -1,12 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import Box from '@mui/material/Box';
 import Fade from '@mui/material/Fade';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
@@ -95,7 +93,7 @@ interface Props {
   cmdHeld?: boolean;
   isSelected?: boolean;
   isHighlighted?: boolean;
-  multiDragDelta?: { dx: number; dy: number } | null;
+  multiDragActive?: boolean;
   onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
@@ -142,7 +140,7 @@ const BootingBody: React.FC = () => {
 
 const DashboardViewCard: React.FC<Props> = ({
   output, cardKey: cardKeyProp, instance = 1, cardX, cardY, cardWidth, cardHeight, getCanvasState, cmdHeld = false,
-  isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  isSelected = false, isHighlighted = false, multiDragActive = false, onCardSelect, onDragStart, onDragMove, onDragEnd,
   cardZOrder = 0, onDoubleClick, onBringToFront,
 }) => {
   const cardKey = cardKeyProp ?? output.id;
@@ -207,7 +205,9 @@ const DashboardViewCard: React.FC<Props> = ({
       timers.forEach((tm) => window.clearTimeout(tm));
     };
   }, [dockedTo, dockParentExpanded, dockParentTiled, dockParentCard?.x, dockParentCard?.y, dockParentCard?.width, dockParentCard?.height, getCanvasState, dockParentCard]);
-  const dockParentZ = dockParentCard?.zOrder ?? 0;
+  const dockParentZOverride = useAppSelector((state) => (dockedTo ? state.dashboardLayout.zOrders[dockedTo] : undefined));
+  const dockParentZ = dockParentZOverride ?? dockParentCard?.zOrder ?? 0;
+  const zOverride = useAppSelector((state) => state.dashboardLayout.zOrders[cardKey]);
 
   // Keep the live preview mounted only when the user can actually see/use this app card. Always live
   // when it's being interacted with, driven by an agent, tiled, or selected; otherwise gated on being
@@ -583,21 +583,28 @@ const DashboardViewCard: React.FC<Props> = ({
     dispatch(addViewCard({ outputId: output.id, newInstance: true }));
   };
 
-  const [reloadMenuRect, setReloadMenuRect] = useState<DOMRect | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const handleHardReload = useCallback(async (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setReloadMenuRect(null);
     const wsId = output.workspace_id;
     if (wsId) {
       try {
         const tok = getAuthToken();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (tok) headers.Authorization = `Bearer ${tok}`;
-        await fetch(`${API_BASE}/outputs/workspace/${wsId}/runtime/restart?instance=${instance}`, {
+        const res = await fetch(`${API_BASE}/outputs/workspace/${wsId}/runtime/restart?instance=${instance}`, {
           method: 'POST',
           headers,
         });
+        // Restart no-ops when the registry lost the runtime (backend bounced); the user is asking
+        // for a working app, so fall through to a fresh start instead of reloading a dead port.
+        const status = (await res.json().catch(() => null)) as { running?: boolean } | null;
+        if (status && status.running === false) {
+          await fetch(`${API_BASE}/outputs/workspace/${wsId}/runtime/start?instance=${instance}`, {
+            method: 'POST',
+            headers,
+          });
+        }
       } catch { /* failures surface via the runtime log WS */ }
     }
     previewRef.current?.reload();
@@ -613,13 +620,11 @@ const DashboardViewCard: React.FC<Props> = ({
     previewRef.current?.reload();
   };
 
-  const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
-  const mdDy = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
-  const displayX = localResize?.x ?? localDragPos?.x ?? (cardX + mdDx);
-  const displayY = localResize?.y ?? localDragPos?.y ?? (cardY + mdDy);
+  const displayX = localResize?.x ?? localDragPos?.x ?? cardX;
+  const displayY = localResize?.y ?? localDragPos?.y ?? cardY;
   const displayW = localResize?.w ?? cardWidth;
   const displayH = localResize?.h ?? cardHeight;
-  const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
+  const noTransition = isDragging || isResizing || (isSelected && multiDragActive);
   // Drag via a compositor transform, not left/top: an app card's webview surface shimmers back and forth while edge-panning otherwise (the transform and the late left/top relayout desync a frame). Same fix as BrowserCard.
   const dragging = isDragging && !!localDragPos && !localResize;
   const dragTx = dragging ? displayX - cardX : 0;
@@ -693,7 +698,7 @@ const DashboardViewCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: isTiled ? 999990 : (isDragging || isResizing) ? 999999 : dockActive ? (dockParentTiled ? 999991 : dockParentZ + 1) : cardZOrder,
+        zIndex: isTiled ? 999990 : (isDragging || isResizing) ? 999999 : dockActive ? (dockParentTiled ? 999991 : dockParentZ + 1) : (zOverride ?? cardZOrder),
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {
@@ -837,10 +842,10 @@ const DashboardViewCard: React.FC<Props> = ({
                 size="small"
                 onClick={handleRefresh}
                 onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!output.workspace_id) return;
-                  setReloadMenuRect((e.currentTarget as HTMLElement).getBoundingClientRect());
+                  if (!output.workspace_id) { e.preventDefault(); e.stopPropagation(); return; }
+                  openCardContextMenu(e, {
+                    items: [{ label: 'Reset and hard reload', onClick: () => { void handleHardReload(); } }],
+                  });
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 sx={{ color: c.text.muted, p: 0.5, '&:hover': { color: c.text.primary } }}
@@ -892,7 +897,7 @@ const DashboardViewCard: React.FC<Props> = ({
           previewLive={previewLive}
           previewDeferred={previewDeferred}
           suspendSnapshot={suspendSnapshot}
-          onAppClicked={() => dispatch(setActiveViewCardId(cardKey))}
+          onAppClicked={() => { dispatch(setActiveViewCardId(cardKey)); onBringToFront?.(cardKey, 'view'); }}
           onRuntimeLog={handleRuntimeLog}
         />
         {/* Code/Terminal overlay the always-mounted preview instead of replacing it: unmounting the webview kills the app's live state and forces a reload on switch-back. */}
@@ -933,55 +938,6 @@ const DashboardViewCard: React.FC<Props> = ({
           }}
         />
       ))}
-
-      {/* Custom popover: MUI Menu's Popover machinery fought the canvas transform + Electron webview compositor, so this is plain position:fixed JSX. Floats above the icon into empty canvas, never overlaps the webview. */}
-      {reloadMenuRect && createPortal(
-        <>
-          <Box
-            onClick={() => setReloadMenuRect(null)}
-            onContextMenu={(e) => { e.preventDefault(); setReloadMenuRect(null); }}
-            sx={{ position: 'fixed', inset: 0, zIndex: 2147483646 }}
-          />
-          <Box
-            sx={{
-              position: 'fixed',
-              bottom: window.innerHeight - reloadMenuRect.top + 6,
-              right: window.innerWidth - reloadMenuRect.right,
-              zIndex: 2147483647,
-              bgcolor: c.bg.elevated,
-              border: `1px solid ${c.border.subtle}`,
-              borderRadius: `${c.radius.md}px`,
-              boxShadow: c.shadow.lg,
-              minWidth: 260,
-              py: 0.5,
-            }}
-          >
-            <Box
-              onClick={handleHardReload}
-              sx={{
-                px: 1.5, py: 1,
-                display: 'flex',
-                gap: 1.25,
-                alignItems: 'center',
-                cursor: 'pointer',
-                transition: 'background-color 0.12s',
-                '&:hover': { bgcolor: c.bg.surface },
-              }}
-            >
-              <RestartAltIcon sx={{ fontSize: 18, color: c.text.muted, flexShrink: 0 }} />
-              <Box>
-                <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: c.text.primary, lineHeight: 1.2 }}>
-                  Reset & Hard Reload
-                </Typography>
-                <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, mt: 0.25 }}>
-                  Restart backend.py + reload preview
-                </Typography>
-              </Box>
-            </Box>
-          </Box>
-        </>,
-        document.body,
-      )}
 
       {shareOpen && <ShareModal target={{ kind: 'app', id: output.id, name: output.name }} open onClose={() => setShareOpen(false)} />}
     </Box>

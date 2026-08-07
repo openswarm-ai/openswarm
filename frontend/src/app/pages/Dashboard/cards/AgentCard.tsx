@@ -32,7 +32,10 @@ import {
   clearGlowingAgentCard,
   removeCard,
   recordClosedCard,
+  setBrowserDocked,
+  keepBrowserCardOpen,
 } from '@/shared/state/dashboardLayoutSlice';
+import { store } from '@/shared/state/store';
 import WindowControls, { ARC_CHIP_SX } from './WindowControls';
 import { useTiledCard } from './useTiledCard';
 import { useCardTiling } from './useCardTiling';
@@ -40,7 +43,8 @@ import AgentNarratorPill from '../desktop/AgentNarratorPill';
 import { openCardContextMenu, isNativeMenuTarget } from '../desktop/openCardContextMenu';
 import { agentCardMenuRows } from './agentCardMenuRows';
 import { extractLatestTodos } from '../desktop/agentTodos';
-import { extractLatestShowUi, extractPendingAskUi, freezeIfDone } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
+import { extractLiveSteps } from '../desktop/agentLiveSteps';
+import { extractLatestShowUi, extractPendingAskUi, freezeIfDone, artifactName } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
 import { useDragEndBackstops } from '../hooks/interaction/useDragEndBackstops';
 import { useBrowserPillShot } from '../desktop/useBrowserPillShot';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -264,7 +268,7 @@ interface OuterProps {
   exitTarget?: { x: number; y: number };
   isSelected?: boolean;
   isHighlighted?: boolean;
-  multiDragDelta?: { dx: number; dy: number } | null;
+  multiDragActive?: boolean;
   onCardSelect?: (id: string, type: 'agent' | 'view', shiftKey: boolean) => void;
   onDragStart?: (id: string, type: 'agent' | 'view') => void;
   onDragMove?: (dx: number, dy: number, mouseX?: number, mouseY?: number) => void;
@@ -301,7 +305,7 @@ const SNAP_THRESHOLD = 60;
 
 const AgentCard: React.FC<Props> = ({
   session, expanded: expandedInStore, cardX, cardY, cardWidth, cardHeight, getCanvasState, spawnFrom, exitTarget,
-  isSelected = false, isHighlighted = false, multiDragDelta, onCardSelect, onDragStart, onDragMove, onDragEnd,
+  isSelected = false, isHighlighted = false, multiDragActive = false, onCardSelect, onDragStart, onDragMove, onDragEnd,
   onBranch, onMeasuredHeight, snapColumn, autoFocusInput, cardZOrder = 0, onDoubleClick, onBringToFront,
   shakeDirection,
 }) => {
@@ -457,6 +461,10 @@ const AgentCard: React.FC<Props> = ({
 
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // A fullscreen window has no drag (macOS rule); arming the machinery here let a title wiggle
+    // untile the card mid-click and a plain click wipe tiledGeometry's camera transform, which is
+    // the "fullscreen shifted left with the traffic lights cut off" bug.
+    if (tiling.zone === 'fullscreen') return;
     e.preventDefault();
     e.stopPropagation();
     const cs = getCanvasState();
@@ -486,7 +494,9 @@ const AgentCard: React.FC<Props> = ({
     const panDy = (cs.panY - ds.startPanY) / z;
     const dx = rawDx / z - panDx;
     const dy = rawDy / z - panDy;
-    setLocalDragPos({ x: ds.origX + dx, y: ds.origY + dy });
+    // Imperative compositor move, ZERO React work per frame: a setState here re-rendered the whole card (an expanded chat re-runs its full transcript) on every pointermove and every edge-pan tick, which is the drag lag. The motion.div stays parked at its start position; this transform carries the delta; React commits once, at drag end.
+    const el = cardBoxRef.current as HTMLElement | null;
+    if (el) el.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
     onDragMove?.(dx, dy, clientX, clientY);
   }, [onDragMove, getCanvasState]);
 
@@ -536,6 +546,9 @@ const AgentCard: React.FC<Props> = ({
       dispatch(setCardPosition({ sessionId: session.id, x: finalX, y: finalY }));
       justDraggedRef.current = true;
       requestAnimationFrame(() => { justDraggedRef.current = false; });
+      // Drop the imperative drag transform in the SAME frame the committed position lands, or the card paints double-offset for a beat. Only when this drag actually wrote it: on a tiled card the transform belongs to tiledGeometry, and clearing it on a plain click shifted the tile by the camera offset.
+      const el = cardBoxRef.current as HTMLElement | null;
+      if (el) el.style.transform = '';
     }
     onDragEnd?.(dx, dy, didDrag.current);
     dragState.current = null;
@@ -650,6 +663,14 @@ const AgentCard: React.FC<Props> = ({
     if (linkedWorkflowSidecarId) {
       dispatch(setCardSidecar({ workflowId: linkedWorkflowSidecarId, sessionId: null, kind: null }));
     }
+    // Closing the CHAT must not take the browser with it: its browser undocks to the canvas and is pinned open (keep_open exempts it from the finished-agent auto-reap). The user closes it separately.
+    if (!glowEntry) {
+      for (const bc of Object.values(store.getState().dashboardLayout.browserCards)) {
+        if (bc.docked_to !== session.id && bc.spawned_by !== session.id) continue;
+        if (bc.docked_to === session.id) dispatch(setBrowserDocked({ browserId: bc.browser_id, dockedTo: null }));
+        dispatch(keepBrowserCardOpen(bc.browser_id));
+      }
+    }
     // Record for Cmd+Shift+T BEFORE removeCard wipes the position, but only on a real close (the glow branch just clears a tether, it doesn't close the session).
     if (!glowEntry) dispatch(recordClosedCard({ kind: 'agent', id: session.id }));
     dispatch(collapseSession(session.id));
@@ -688,9 +709,17 @@ const AgentCard: React.FC<Props> = ({
   // Desktop-shell narrator pill: a collapsed card with nothing to ask renders as the minimal pill
   // (live turn label + plan checklist); approvals and drafts keep the full card so their UI has a home.
   const todos = useMemo(() => extractLatestTodos(session.messages || []), [session.messages]);
+  const liveSteps = useMemo(
+    () => (session.status === 'running' ? extractLiveSteps(session.messages || []) : null),
+    [session.messages, session.status],
+  );
   const pillArtifact = useMemo(() => {
     const artifact = extractLatestShowUi(session.messages || []);
-    return artifact ? freezeIfDone(artifact, session.status === 'running') : null;
+    if (!artifact) return null;
+    // A plan/progress widget posted mid-turn goes stale the moment work continues; while running the
+    // pill prefers living surfaces (browser shot, live steps, todos). Answer widgets still win.
+    if (session.status === 'running' && /plan|progress/i.test(artifactName(artifact))) return null;
+    return freezeIfDone(artifact, session.status === 'running');
   }, [session.messages, session.status]);
   const pillAskPair = useMemo(
     () => (session.status === 'running' ? extractPendingAskUi(session.messages || []) : null),
@@ -698,6 +727,15 @@ const AgentCard: React.FC<Props> = ({
   );
   // Drafts collapse to the pill like everything else; only a pending approval keeps the full card, since you have to see what you are approving.
   const pillMode = !expanded && !hasPending && !tileZone;
+
+  // Two-phase expand: mounting a long transcript synchronously inside the expand click blocked its paint for ~630ms (the measured INP worst case), so the click paints the expanded shell first and the chat mounts on the next frame.
+  // Keep-alive: once mounted, the chat STAYS mounted across collapse (hidden, not unmounted). The transcript windowing bounds its kept DOM to ~a screen of bubbles, and re-expand becomes a display toggle instead of a full subtree rebuild + WS reconnect.
+  const [chatMounted, setChatMounted] = useState(false);
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const raf = requestAnimationFrame(() => setChatMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, [expanded]);
   // Glass bubble + fullscreen scrim are both dark in either theme, so the title goes light on them.
   const titleColor = expanded ? GLASS_SURFACE_TEXT : c.text.primary;
   // The answer a finished turn actually spoke, for pills with no widget/plan to show. Only the last assistant say, never a tool line.
@@ -727,12 +765,11 @@ const AgentCard: React.FC<Props> = ({
   // f7's collapsed state: a session's browser (spawned by it or docked into it) shows under the pill.
   const browserShot = useBrowserPillShot(session.id, pillMode && !pillArtifact);
 
-  const noTransition = isDragging || isResizing || (isSelected && !!multiDragDelta);
+  // justDraggedRef: the motion.div parks at the START position for the whole imperative drag, so the end-of-drag commit must snap (not spring) to the final spot or the card visibly re-glides from where the drag began.
+  const noTransition = isDragging || isResizing || (isSelected && multiDragActive) || justDraggedRef.current;
 
-  const mdDx = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dx : 0;
-  const mdDy = (!isDragging && isSelected && multiDragDelta) ? multiDragDelta.dy : 0;
-  const activeX = localResize?.x ?? localDragPos?.x ?? (cardX + mdDx);
-  const activeY = localResize?.y ?? localDragPos?.y ?? (cardY + mdDy);
+  const activeX = localResize?.x ?? localDragPos?.x ?? cardX;
+  const activeY = localResize?.y ?? localDragPos?.y ?? cardY;
   const activeW = localResize?.w ?? cardWidth;
   const activeH = localResize?.h ?? cardHeight;
   const tiledSize = useTiledCard({ cardId: session.id, zone: tileZone, active: true, originX: activeX, originY: activeY, getCamera: getCanvasState });
@@ -793,7 +830,7 @@ const AgentCard: React.FC<Props> = ({
         e.stopPropagation();
         onDoubleClick?.(session.id, 'agent');
       }}
-      onContextMenu={(e: React.MouseEvent) => { if (isNativeMenuTarget(e)) return; openCardContextMenu(e, {
+      onContextMenu={(e: React.MouseEvent) => { if (isNativeMenuTarget(e)) return; if ((e.target as HTMLElement).closest?.('[data-chat-transcript]')) return; openCardContextMenu(e, {
         rename: { value: displayChatTitle(session), onCommit: (name) => dispatch(renameSession({ sessionId: session.id, name })) },
         items: agentCardMenuRows({
           session, dispatch, expanded, tileZone, expandedSessionIds,
@@ -1018,6 +1055,7 @@ const AgentCard: React.FC<Props> = ({
             label={pillLabel}
             running={pillRunning}
             todos={todos}
+            liveSteps={liveSteps}
             artifact={pillArtifact}
             askPair={pillAskPair}
             sessionId={session.id}
@@ -1218,7 +1256,7 @@ const AgentCard: React.FC<Props> = ({
       </Box>
       )}
 
-      {expanded && (
+      {(expanded || chatMounted) && (
         <Box
           onClick={(e) => e.stopPropagation()}
           sx={{
@@ -1227,24 +1265,28 @@ const AgentCard: React.FC<Props> = ({
             mt: -2,
             flex: 1,
             minHeight: 0,
-            display: 'flex',
+            display: expanded ? 'flex' : 'none',
             flexDirection: 'column',
             overflow: 'hidden',
             borderRadius: isTiled ? undefined : '20px',
           }}
         >
           <DarkTokensScope>
-            <AgentChat
-              key={session.id}
-              sessionId={session.id}
-              onClose={() => dispatch(collapseSession(session.id))}
-              embedded
-              fullscreenChat={isFullscreen}
-              autoFocus={autoFocusInput}
-              isGlowing={isGlowingRedux && !glowFading}
-              onDismissGlow={dismissGlow}
-              onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
-            />
+            {chatMounted ? (
+              <AgentChat
+                key={session.id}
+                sessionId={session.id}
+                onClose={() => dispatch(collapseSession(session.id))}
+                embedded
+                fullscreenChat={isFullscreen}
+                autoFocus={autoFocusInput}
+                isGlowing={isGlowingRedux && !glowFading}
+                onDismissGlow={dismissGlow}
+                onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
+              />
+            ) : (
+              <Box sx={{ flex: 1 }} />
+            )}
           </DarkTokensScope>
         </Box>
       )}
@@ -1442,6 +1484,7 @@ const MemoAgentCard = React.memo(AgentCard);
 const AgentCardOuter: React.FC<OuterProps> = (props) => {
   const session = useAppSelector((s) => s.agents.sessions[props.sessionId]);
   const cardEntry = useAppSelector((s) => s.dashboardLayout.cards[props.sessionId]);
+  const zOverride = useAppSelector((s) => s.dashboardLayout.zOrders[props.sessionId]);
   if (!session || !cardEntry) return null;
   return (
     <MemoAgentCard
@@ -1451,7 +1494,7 @@ const AgentCardOuter: React.FC<OuterProps> = (props) => {
       cardY={cardEntry.y}
       cardWidth={cardEntry.width}
       cardHeight={cardEntry.height}
-      cardZOrder={cardEntry.zOrder ?? 0}
+      cardZOrder={zOverride ?? cardEntry.zOrder ?? 0}
     />
   );
 };

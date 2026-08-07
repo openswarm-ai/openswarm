@@ -349,7 +349,7 @@ def p_report_start_failure(reason: str, *, detail: str = "", **fields: Any) -> N
     every other telemetry string. Never raises."""
     logger.warning("9Router start failed (%s)", reason)
     try:
-        from backend.apps.agents.core.error_classify import redact_for_telemetry
+        from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
         from backend.apps.service.client import submit_diagnostic
         payload: dict[str, Any] = {
             "kind": "9router_start_failed",

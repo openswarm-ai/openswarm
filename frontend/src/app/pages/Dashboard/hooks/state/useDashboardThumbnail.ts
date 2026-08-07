@@ -3,6 +3,7 @@ import { store } from '@/shared/state/store';
 import { useAppSelector } from '@/shared/hooks';
 import { updateDashboardThumbnail } from '@/shared/state/dashboardsSlice';
 import { anyWebviewLoading } from '@/shared/browserRegistry';
+import { isCanvasInteractionActive } from '@/shared/canvasInteractionState';
 import { isAnyBrowserBusy } from '@/shared/browserCommandHandler';
 import { captureDashboardThumbnail } from '../../geometry/captureDashboardThumbnail';
 
@@ -67,8 +68,8 @@ export function useDashboardThumbnail({
       }
       return;
     }
-    // Capturing the dashboard composites live webview pixels; doing it while a browser webview is mid-navigation OR an agent is actively driving it (its GPU surface recycling) crashes the renderer (SharedImage 'non-existent mailbox' -> V8 ToLocalChecked). Wait for it to go quiet; after a few tries, skip this round and keep the old preview rather than risk the crash.
-    if (anyWebviewLoading() || isAnyBrowserBusy()) {
+    // Capturing the dashboard composites live webview pixels; doing it while a browser webview is mid-navigation OR an agent is actively driving it (its GPU surface recycling) crashes the renderer (SharedImage 'non-existent mailbox' -> V8 ToLocalChecked). Wait for it to go quiet; after a few tries, skip this round and keep the old preview rather than risk the crash. Mid-gesture captures also land inside the user's interaction frames (ENG-156's presentation delay), so those wait too.
+    if (anyWebviewLoading() || isAnyBrowserBusy() || isCanvasInteractionActive()) {
       if (captureRetriesRef.current < 6) {
         captureRetriesRef.current += 1;
         if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
@@ -83,14 +84,17 @@ export function useDashboardThumbnail({
       browserCards: layoutState.browserCards,
     };
     const capturingId = dashboardId;
-    captureDashboardThumbnail(viewportEl, contentEl, allCards)
-      .then((thumbnail) => {
-        if (!thumbnail) return;
-        if (sig === lastSavedSignatureRef.current) return;
-        store.dispatch(updateDashboardThumbnail({ id: capturingId, thumbnail, signature: sig }));
-        lastSavedSignatureRef.current = sig;
-      })
-      .catch(() => {});
+    // Idle-scheduled so the capturePage IPC + dataURL decode never ride the frames right after a click.
+    requestIdleCallback(() => {
+      captureDashboardThumbnail(viewportEl, contentEl, allCards)
+        .then((thumbnail) => {
+          if (!thumbnail) return;
+          if (sig === lastSavedSignatureRef.current) return;
+          store.dispatch(updateDashboardThumbnail({ id: capturingId, thumbnail, signature: sig }));
+          lastSavedSignatureRef.current = sig;
+        })
+        .catch(() => {});
+    }, { timeout: 3000 });
   }, [dashboardId, viewportRef, contentRef]);
 
   // While visible, (re)snapshot a beat after the card set changes. If it already matches the saved shot (or was reverted back to it), cancel any pending capture instead of committing stale pixels.

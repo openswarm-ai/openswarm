@@ -8,12 +8,15 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import HistoryIcon from '@mui/icons-material/History';
 import Tooltip from '@mui/material/Tooltip';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { useAppDispatch } from '@/shared/hooks';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import DashboardGlyph from './DashboardGlyph';
 import ShareButton from '@/app/components/share/ShareButton';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import { saveLayout, viewCardKey } from '@/shared/state/dashboardLayoutSlice';
 import type { CardPosition, ViewCardPosition, BrowserCardPosition, WorkflowCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
+import { useNavigate } from 'react-router-dom';
+import { renameDashboard, duplicateDashboard, deleteDashboard } from '@/shared/state/dashboardsSlice';
+import { openCardContextMenu } from '../desktop/openCardContextMenu';
 import type { Output } from '@/shared/state/outputsSlice';
 import type { CanvasActions } from '../hooks/interaction/useCanvasControls';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
@@ -61,6 +64,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const creationOrder = useAppSelector((s) => s.dashboardLayout.creationOrder);
   const [expanded, setExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -120,10 +124,44 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     if (hasItems) setExpanded((v) => !v);
   }, [hasItems]);
 
+  // ENG-148: the island name answers right-click with Rename (inline) / Duplicate / Delete, so dashboard management stops hiding behind the Spaces strip's hover hot zone.
+  const dashboards = useAppSelector((s) => s.dashboards.items);
+  const navigate = useNavigate();
+  const openNameMenu = useCallback((e: React.MouseEvent) => {
+    if (!dashboardId) return;
+    openCardContextMenu(e, {
+      rename: {
+        value: dashboardName || 'Dashboard',
+        onCommit: (next: string) => { void dispatch(renameDashboard({ id: dashboardId, name: next, previousName: dashboardName })); },
+      },
+      items: [
+        {
+          label: 'Duplicate dashboard',
+          onClick: () => {
+            void dispatch(duplicateDashboard(dashboardId)).then((result) => {
+              if (duplicateDashboard.fulfilled.match(result)) navigate(`/dashboard/${(result.payload as { id: string }).id}`);
+            });
+          },
+        },
+        { kind: 'separator' },
+        {
+          label: 'Delete dashboard',
+          danger: true,
+          onClick: () => {
+            void dispatch(deleteDashboard(dashboardId));
+            const next = Object.values(dashboards).find((d) => d.id !== dashboardId);
+            if (next) navigate(`/dashboard/${next.id}`);
+          },
+        },
+      ],
+    });
+  }, [dashboardId, dashboardName, dashboards, dispatch, navigate]);
+
   return (
     <Box ref={containerRef} sx={{ position: 'relative', display: 'inline-flex', flexDirection: 'column' }}>
       <Box
         onClick={toggle}
+        onContextMenu={openNameMenu}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -197,7 +235,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               onOpen={() => {
                 // Layout saves are debounced, so a just-added app/agent card may not be on disk yet. The export reads disk, flush the live layout now so Share captures the current board, not a stale one.
                 if (!dashboardId) return;
-                dispatch(saveLayout({ dashboardId, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds }));
+                dispatch(saveLayout({ dashboardId, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder }));
               }}
             />
           </Box>

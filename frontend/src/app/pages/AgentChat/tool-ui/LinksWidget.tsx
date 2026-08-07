@@ -16,7 +16,7 @@ function hostOf(url: string): string {
 function LinksWidget({ props }: { props: LinksProps }): React.ReactElement {
   const c = useClaudeTokens();
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, maxWidth: 420 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
       {props.links.map((l, i) => (
         <Box
           key={`${i}-${l.url.slice(0, 40)}`}

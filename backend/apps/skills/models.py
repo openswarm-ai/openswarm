@@ -19,6 +19,10 @@ class Skill(BaseModel):
     source: str = ""
     folder: str = ""
     version: str = ""
+    # The detail-page toggle: a disabled skill stays installed but leaves the agent's skill list, the Skill tool refuses to load it, and cloud runs skip it.
+    enabled: bool = True
+    # SKILL.md mtime (epoch seconds); feeds the settings table's Last updated column.
+    updated_at: float = 0
 
 
 class SkillCreate(BaseModel):
@@ -33,10 +37,16 @@ class SkillUpdate(BaseModel):
     description: Optional[str] = None
     content: Optional[str] = None
     command: Optional[str] = None
+    enabled: Optional[bool] = None
 
 
 class SkillLoadRequest(BaseModel):
     id: str
+
+
+class SkillUpload(BaseModel):
+    filename: str
+    content_b64: str
 
 
 class SkillWorkspaceSeedRequest(BaseModel):

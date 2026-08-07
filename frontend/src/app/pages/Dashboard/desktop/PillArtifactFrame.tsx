@@ -80,7 +80,8 @@ function PillArtifactFrame({ name, children }: Props): React.ReactElement {
 
   return (
     <Box
-      className="osw-artifact"
+      // The "dark" class scopes the vendored tool-ui theme: pill artifacts always sit on the dark glass surface, so a light widget card here read as a white slab.
+      className="osw-artifact dark"
       onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
       onClick={(e: React.MouseEvent) => e.stopPropagation()}
       onDoubleClick={(e: React.MouseEvent) => e.stopPropagation()}

@@ -11,7 +11,7 @@ from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
-from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, capacity_retry_wait
+from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, capacity_retry_wait, is_router_unreachable_error
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.handle_stream_event import handle_stream_event
 from backend.apps.agents.manager.streaming.handle_assistant_message import handle_assistant_message
@@ -131,10 +131,13 @@ class TurnRunner(AgentManagerProtocol):
 
             async def p_connect():
                 p_client = ClaudeSDKClient(options=options)
+                logger.info(f"[SPAWN-PHASE] cli-connect start session={session_id[:8]} t={time.monotonic():.3f}")
                 await p_client.connect()
+                logger.info(f"[SPAWN-PHASE] cli-connect done session={session_id[:8]} t={time.monotonic():.3f}")
                 return p_client
 
             fp = boot_fingerprint(options_kwargs, session)
+            logger.info(f"[SPAWN-PHASE] client-acquire start session={session_id[:8]} t={time.monotonic():.3f}")
             handle = await acquire_client(
                 self.client_pool, session_id, fp, p_connect, force_respawn=force_respawn,
             )
@@ -151,8 +154,28 @@ class TurnRunner(AgentManagerProtocol):
                     await dispose_client(self.client_pool, session_id)
                     raise
 
+        async def p_finalize_interrupted_stream():
+            # Finalize any in-flight stream messages so the UI doesn't leave them pinned as "still streaming" while we wait and restart. On resume the CLI re-runs the last turn from scratch (Anthropic doesn't persist in-progress responses), so the partial assistant text / tool call we emitted is now orphaned, cap it with stream_end and start the fresh turn under a new message id.
+            if turn.stream_text_msg_id:
+                await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                    "session_id": session_id,
+                    "message_id": turn.stream_text_msg_id,
+                })
+                turn.stream_text_msg_id = None
+            turn.stream_text_accum = ""
+            self.live_partial.pop(session_id, None)
+            for p_tool_msg_id in turn.stream_tool_msg_ids_ordered:
+                await ws_manager.send_to_session(session_id, "agent:stream_end", {
+                    "session_id": session_id,
+                    "message_id": p_tool_msg_id,
+                })
+            turn.stream_tool_msg_ids_ordered = []
+            turn.stream_block_index_map = {}
+            turn.current_turn_emitted = False
+
         p_use_persistent = persistent_client_enabled()
         capacity_retry_attempt = 0
+        p_router_retry_attempt = 0
         while True:
             try:
                 if p_use_persistent:
@@ -160,8 +183,31 @@ class TurnRunner(AgentManagerProtocol):
                 else:
                     await p_run_streaming_turn()
                 break
-            except TurnResultError:
-                # The CLI already ran the whole turn (tools executed) and then reported failure; a resume-retry would re-execute side effects, so this goes straight to the error card.
+            except TurnResultError as p_result_err:
+                # "Unable to connect" in a turn result is the CLI failing to reach our own localhost
+                # router, which a dev reload kills and the watchdog revives within seconds. The CLI
+                # transcript keeps the tools that already ran, so a resume continues the SAME
+                # conversation without re-executing side effects: re-ensure the router, resume, go.
+                if p_router_retry_attempt < 2 and is_router_unreachable_error(str(p_result_err)):
+                    p_router_retry_attempt += 1
+                    logger.warning(
+                        f"Router unreachable mid-turn on session {session_id} "
+                        f"(attempt {p_router_retry_attempt}/2); re-ensuring router and resuming. "
+                        f"err={p_result_err!s}"
+                    )
+                    try:
+                        from backend.apps.nine_router.process import ensure_running
+                        await ensure_running()
+                    except Exception:
+                        logger.exception("Router re-ensure failed; resuming anyway after the wait")
+                    await p_finalize_interrupted_stream()
+                    await asyncio.sleep(2.0 if p_router_retry_attempt == 1 else 5.0)
+                    p_stderr_buffer.clear()
+                    if session.sdk_session_id:
+                        options_kwargs["resume"] = session.sdk_session_id
+                        options = ClaudeAgentOptions(**options_kwargs)
+                    continue
+                # Any other error-shaped result: the CLI already ran the whole turn (tools executed) and then reported failure; a resume-retry would re-execute side effects, so this goes straight to the error card.
                 raise
             except Exception as e:
                 # Make sure the consolidated-thinking ticker doesn't outlive the turn on error/retry. Without this, an exception mid-stream leaves a dangling task that keeps re-emitting against a stale msg id.
@@ -189,23 +235,7 @@ class TurnRunner(AgentManagerProtocol):
                         f"mid_stream={mid_stream}); sleeping {wait}s before retry. "
                         f"exc={e!r} stderr_tail={stderr_snapshot[-400:]!r}"
                     )
-                    # Finalize any in-flight stream messages so the UI doesn't leave them pinned as "still streaming" while we wait and restart. On resume the CLI re-runs the last turn from scratch (Anthropic doesn't persist in-progress responses), so the partial assistant text / tool call we emitted is now orphaned, cap it with stream_end and start the fresh turn under a new message id.
-                    if turn.stream_text_msg_id:
-                        await ws_manager.send_to_session(session_id, "agent:stream_end", {
-                            "session_id": session_id,
-                            "message_id": turn.stream_text_msg_id,
-                        })
-                        turn.stream_text_msg_id = None
-                    turn.stream_text_accum = ""
-                    self.live_partial.pop(session_id, None)
-                    for p_tool_msg_id in turn.stream_tool_msg_ids_ordered:
-                        await ws_manager.send_to_session(session_id, "agent:stream_end", {
-                            "session_id": session_id,
-                            "message_id": p_tool_msg_id,
-                        })
-                    turn.stream_tool_msg_ids_ordered = []
-                    turn.stream_block_index_map = {}
-                    turn.current_turn_emitted = False
+                    await p_finalize_interrupted_stream()
                     await asyncio.sleep(wait)
                     p_stderr_buffer.clear()
                     if session.sdk_session_id:

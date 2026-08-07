@@ -6,6 +6,7 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
+import { getMinimizedShot } from '@/app/pages/Dashboard/desktop/minimizedShots';
 import Fade from '@mui/material/Fade';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -21,7 +22,8 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
 import { getScrollFocusedCard } from '@/shared/cardScrollFocus';
-import { openSettingsModal, dismissMcpSuggestion } from '@/shared/state/settingsSlice';
+import { dismissMcpSuggestion } from '@/shared/state/settingsSlice';
+import { openSettingsCard } from '@/shared/state/dashboardLayoutSlice';
 import { API_BASE, getAuthToken } from '@/shared/config';
 import {
   sendMessage as sendMessageThunk,
@@ -63,22 +65,26 @@ import ToolCallBubble, { ToolPair } from './tool-bubbles/ToolCallBubble';
 import ToolGroupBubble, { RenderItem, ToolGroup, ToolGroupEntry, isToolGroup, isToolPair } from './tool-bubbles/ToolGroupBubble';
 import ToolUiBubble from './tool-ui/ToolUiBubble';
 import AskUiBubble from './tool-ui/AskUiBubble';
-import { isShowUiPair, isAskUiPair } from './tool-ui/showUiPayload';
+import { isShowUiPair, isAskUiPair, extractPendingAskUi } from './tool-ui/showUiPayload';
+import { composerPlaceholder } from './composerPlaceholder';
 import ApprovalBar, { BatchApprovalBar } from './shell/ApprovalBar';
 import ForceStopAgentBar from './ForceStopAgentBar';
 import { RateLimitPill } from './shell/RateLimitPill';
 import { ContextRecoveredPill } from './shell/ContextRecoveredPill';
 import ChatInput, { ChatInputHandle } from './ChatInput';
+import FollowupChips from './FollowupChips';
 import ContextDrawer from './shell/ContextDrawer';
 import { ErrorSlime } from '@/app/components/feedback/ErrorSlime';
 import { ContextPath } from '@/app/components/editor/DirectoryBrowser';
 import { setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeCard } from '@/shared/state/dashboardLayoutSlice';
+import { openCardContextMenu, isNativeMenuTarget, type CardMenuRow } from '../Dashboard/desktop/openCardContextMenu';
 import type { WorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
 import { setCardSidecar, commitDraft, updateWorkflowCard, controlWorkflowRun } from '@/shared/state/workflowsSlice';
 import { shallowEqual } from 'react-redux';
-import { useClaudeTokens, useThemeAccent, useThemeMode } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { parseMcpToolName, getMcpInputSummary } from '@/shared/mcpToolMeta';
 import { isNarration } from './parsing/isNarration';
+import { openMarketplace } from '@/app/pages/Directory/openMarketplace';
 
 const CONTEXT_WINDOWS: Record<string, number> = {
   'opus-4-8': 1_000_000,
@@ -103,9 +109,9 @@ const WINDOW_MIN_ITEMS = 60;
 // Floor on the mounted item count so a single very tall item can't strand us with an effectively empty window.
 const MIN_WINDOW_BUFFER_ITEMS = 6;
 
-// Bootstrap count for the initial bottom-anchored slice (on open and on scroll-to-bottom): enough rows to cover the viewport + buffer using the same row-height estimate the solver uses, floored. It's only a seed — the pixel solver (computeDesiredWindow) refines the window to exact from measured heights on the next frame, so this never needs to be precise.
+// Bootstrap count for the initial bottom-anchored slice (on open and on scroll-to-bottom): ONE screen's worth, so first paint mounts the minimum that fills the viewport. The post-settle recompute (scheduleWindowRecompute after the pin) widens to the full pixel band, so the buffer arrives a few frames later instead of taxing open-to-paint.
 function initialSeedItems(viewportHeight: number): number {
-  const fillPx = (1 + WINDOW_BUFFER_SCREENS_PER_SIDE) * Math.max(1, viewportHeight);
+  const fillPx = 1.25 * Math.max(1, viewportHeight);
   return Math.max(MIN_WINDOW_BUFFER_ITEMS, Math.ceil(fillPx / RENDER_ITEM_ESTIMATED_HEIGHT));
 }
 
@@ -238,18 +244,10 @@ interface AgentChatProps {
 
 const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch, workflowEditId, readOnly, fullscreenChat, prefillPrompt, runContext, onClearRunContext, onSendRunQuestion }) => {
   const c = useClaudeTokens();
-  // Fullscreen reads as a place of its own: the user's onboarding accent washes down from the top and
-  // fades into the theme ground (dark or light), instead of a flat card color stretched to the window.
-  const { accent, gradient: accentStops } = useThemeAccent();
+  // Fullscreen is a flat theme ground, same as Claude's: the old accent wash from the top read as
+  // decoration and dated the whole surface.
   const { mode: themeMode } = useThemeMode();
-  const fullscreenWash = (() => {
-    if (!fullscreenChat) return undefined;
-    const stops = (accentStops && accentStops.length ? accentStops : [accent || '#6b62f0']);
-    const a = stops[0];
-    const b = stops[1] || stops[0];
-    const ground = themeMode === 'dark' ? '#1a1918' : '#F5F5F0';
-    return `linear-gradient(180deg, ${a}30 0%, ${b}18 22%, ${ground} 55%)`;
-  })();
+  const fullscreenWash = fullscreenChat ? (themeMode === 'dark' ? '#1a1918' : '#F5F5F0') : undefined;
   const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
     running: { color: c.status.success, bg: c.status.successBg },
     waiting_approval: { color: c.status.warning, bg: c.status.warningBg },
@@ -263,6 +261,42 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const hasDockedBrowser = useAppSelector((st) =>
     Object.values(st.dashboardLayout.browserCards).some((bc) => bc.docked_to === (sessionIdProp || routeId)) ||
     Object.values(st.dashboardLayout.viewCards).some((vc) => vc.docked_to === (sessionIdProp || routeId)));
+  // The docked surface's aspect ratio, so the inline slot hugs the browser's shape instead of reserving a fixed letterbox band (primitive selectors so no fresh-object rerenders). Highest z wins, mirroring BrowserCard's dock-owner election, so a dead rival's stale dock never feeds dims or shots.
+  const pickTopDocked = (st: { dashboardLayout: { zOrders: Record<string, number>; browserCards: Record<string, { browser_id: string; docked_to?: string | null; width: number; height: number; zOrder: number }> } }) => {
+    let best: { browser_id: string; width: number; height: number; zOrder: number } | null = null;
+    let bestZ = -1;
+    const zOf = (b: { browser_id: string; zOrder: number }): number => st.dashboardLayout.zOrders[b.browser_id] ?? b.zOrder ?? 0;
+    for (const b of Object.values(st.dashboardLayout.browserCards)) {
+      if (b.docked_to !== (sessionIdProp || routeId)) continue;
+      if (!best || zOf(b) > bestZ) { best = b; bestZ = zOf(b); }
+    }
+    return best;
+  };
+  const dockedSurfaceW = useAppSelector((st) => pickTopDocked(st)?.width ?? 0);
+  const dockedSurfaceH = useAppSelector((st) => pickTopDocked(st)?.height ?? 0);
+  const dockedSurfaceId = useAppSelector((st) => pickTopDocked(st)?.browser_id ?? null);
+  // Shared by the anchor slot and the fallback slot so both read as the same framed block.
+  const browserSlotSx = {
+    position: 'relative',
+    // When the height cap bites, the WIDTH shrinks to keep the slot at the page's exact aspect (a maxHeight that broke the ratio left the live overlay letterboxed inside its own frame).
+    width: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? `min(100%, calc(min(480px, 52vh) * ${dockedSurfaceW / dockedSurfaceH}))` : '100%',
+    aspectRatio: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? `${dockedSurfaceW} / ${dockedSurfaceH}` : undefined,
+    height: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? 'auto' : 'min(360px, 38vh)',
+    minHeight: 140,
+    mx: 'auto',
+    mt: 1,
+    mb: 0.5,
+    borderRadius: '12px',
+    overflow: 'hidden',
+    border: `1px solid ${c.border.medium}`,
+    // The live overlay stamps data-mini-live; while it paints, the frozen-shot backdrop must not (the clamped overlay leaves margins where a misaligned second copy of the page peeked through).
+    '&[data-mini-live="1"] img': { opacity: 0 },
+  } as const;
+  // A live webview cannot be clipped by the scroller, so the OVERLAY only shows while fully in view; this frozen shot is what scrolls and clips underneath it, ChatGPT-style.
+  const dockedShot = dockedSurfaceId ? getMinimizedShot(dockedSurfaceId) : undefined;
+  const browserSlotBody = dockedShot ? (
+    <Box component="img" src={dockedShot} alt="" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+  ) : null;
   // A card linked as a workflow sidecar (Test Agent, or a watched run) swaps its composer for a Force Stop button: continuing the chat is meaningless, but killing the run is the common need. Once a Test Agent finishes, the button flips to a green "close" (see workflow_test_state + ForceStopAgentBar).
   const linkedSidecar = useAppSelector((s) => {
     const found = Object.values(s.workflows.openCards).find(
@@ -769,6 +803,22 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     // Structural triggers only: a new message lands or a stream starts/ends. Streaming content updates trigger this via <StreamingBubble onStreamGrew={stickToBottomIfNeeded} /> instead so AgentChat stays dormant during the 30Hz delta storm.
   }, [session?.messages.length, streamingMessageId, stickToBottomIfNeeded]);
 
+  // While a stream is LIVE, pin every frame: smooth-text grows between onStreamGrew callbacks, and the callback's own rAF deferral let the bottom drift up to ~100px for several frames. Parks the moment the stream ends, so idle cost is zero.
+  useEffect(() => {
+    if (!streamingMessageId) return undefined;
+    let raf = 0;
+    const pin = () => {
+      const el = scrollContainerRef.current;
+      if (el && isAtBottomRef.current && el.scrollHeight !== lastScrollHeightRef.current) {
+        lastScrollHeightRef.current = el.scrollHeight;
+        el.scrollTop = el.scrollHeight;
+      }
+      raf = requestAnimationFrame(pin);
+    };
+    raf = requestAnimationFrame(pin);
+    return () => cancelAnimationFrame(raf);
+  }, [streamingMessageId]);
+
   // Stream-end re-stick. When a stream finishes, the live bubble (smooth-revealed text) is replaced by the committed bubble rendering FULL markdown with contentVisibility placeholders; as those resolve, Chromium's overflow-anchor re-anchors to an EARLIER element (the user message), yanking the view up to "the top of the user input". A single deferred scroll loses the race because that anchor shift fires an onScroll that flips isAtBottomRef false before we run. Fix: snapshot the "was following" intent the moment streaming stops (captured continuously during the stream, before any completion re-render), then pin to bottom across a short multi-frame window that OVERRIDES the layout-induced flip. A genuine user scroll-away (wheel/touch) during that window aborts the pin, honoring "unless the user scrolls up".
   const prevStreamingIdRef = useRef<string | null>(null);
   const wasFollowingRef = useRef(true);
@@ -1069,6 +1119,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [activeBranchMessages, session?.system_prompt, session?.tokens?.input, session?.context_window, streamingMessageId, model, modelsByProvider]);
 
   const sessionRunning = session?.status === 'running' || session?.status === 'waiting_approval';
+  const lastPendingAskCallId = useMemo(
+    () => extractPendingAskUi(session?.messages || [])?.call.id ?? null,
+    [session?.messages],
+  );
 
   const renderItems: RenderItem[] = useMemo(() => {
     const items: RenderItem[] = [];
@@ -1249,6 +1303,19 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     }
     return items;
   }, [activeBranchMessages, sessionRunning]);
+
+  // The docked browser anchors at the LAST browser-agent tool row (one live browser, latest work site wins); no row yet falls back to the end-of-transcript slot.
+  const browserAnchorItemId = useMemo((): string | null => {
+    const isBrowserCall = (m: AgentMessage): boolean =>
+      m.role === 'tool_call' && typeof m.content === 'object' && String((m.content as { tool?: string })?.tool || '').toLowerCase().endsWith('browseragent');
+    let anchor: string | null = null;
+    for (const item of renderItems) {
+      if (isToolGroup(item)) { if (item.pairs.some((p) => isBrowserCall(p.call))) anchor = item.id; }
+      else if (isToolPair(item)) { if (isBrowserCall(item.call)) anchor = item.id; }
+      else if (isBrowserCall(item as AgentMessage)) anchor = item.id;
+    }
+    return anchor;
+  }, [renderItems]);
 
   React.useLayoutEffect(() => {
     const total = renderItems.length;
@@ -1606,6 +1673,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
           <Box
             ref={scrollContainerRef}
             onScroll={handleScroll}
+            // Right-clicking transcript CONTENT gets the OS text menu (copy, spellcheck), never the card menu with Delete chat in it.
+            data-chat-transcript
             sx={{
               height: '100%',
               overflow: 'auto',
@@ -1613,6 +1682,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               // Top-aligned natural flow: messages start at the top and grow down (standard chat). The earlier flex-column + mt:auto bottom-anchor clustered short chats at the bottom under a big void, reading broken.
               px: 2,
               py: 1,
+              // Fullscreen: the scroller breaks OUT of the reading column so its scrollbar rides the window edge; matching padding keeps the content at the 760px measure.
+              ...(fullscreenChat && {
+                mr: `min(0px, calc((${FULLSCREEN_READING_MAX_W}px - 100vw) / 2))`,
+                pr: `max(16px, calc((100vw - ${FULLSCREEN_READING_MAX_W}px) / 2))`,
+              }),
               // Smoothness bundle (perf-only, no behavior change): 1. overflow-anchor: auto, Chromium's native scroll anchoring keeps the viewport pinned to the user's visible content as siblings above/below resize. Eliminates the "transcript snaps back" feel during streaming and parallel tool fan-outs. Runs on the compositor thread, free. 2. contain: layout, tells the browser layout shifts inside this scroll container don't affect siblings outside it. Prevents reflow from cascading up to the dashboard layout when bubbles grow. 3. overscroll-behavior: contain, keeps over-scroll gestures from leaking up to the dashboard pan/zoom when the user hits the chat top/bottom.
               overflowAnchor: 'auto',
               contain: 'layout',
@@ -1634,7 +1708,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             }}
           >
             {/* The welcome greeting is the FIRST thing and it's the agent talking, no user message above it, so give it real air under the header instead of sitting flush at the top. */}
-            <Box sx={{ pt: session.is_welcome_draft ? 4 : 0 }}>
+            {/* Non-welcome chats still need headroom: at pt 0 the first user bubble's top edge clipped under the header. */}
+            {/* Fullscreen carries the window title bar OVER the transcript, so the first message (and any attachment chips above it) needs to start below that chrome, not under it. */}
+            <Box sx={{ pt: fullscreenChat ? 7 : session.is_welcome_draft ? 4 : 2 }}>
             {session.context_overflow && (() => {
               const reason = session.context_overflow.reason;
               const isAuth = reason === 'openswarm_pro_auth_expired' || reason === 'anthropic_auth_invalid' || reason === 'auth_error';
@@ -1649,7 +1725,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 if (isOutOfTokens) {
                   if (id) dispatch(clearContextOverflow({ sessionId: id }));
                 } else if (isAuth) {
-                  dispatch(openSettingsModal('models'));
+                  dispatch(openSettingsCard({ tab: 'models' }));
                 } else {
                   const did = session?.dashboard_id;
                   window.location.hash = did ? `#/dashboard/${did}` : '#/';
@@ -1699,6 +1775,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               <Box aria-hidden data-window-spacer="top" sx={{ height: topSpacerHeight, flexShrink: 0, overflowAnchor: 'none' }} />
             )}
             {renderedVisibleItems.map((item, itemIdx) => {
+              const rendered = ((): React.ReactNode => {
               const isLastVisibleItem = itemIdx === renderedVisibleItems.length - 1;
               const isCompactionAnchor = !!session.compacted_through_msg_id && item.id === session.compacted_through_msg_id;
               const compactionChip = isCompactionAnchor ? (
@@ -1714,7 +1791,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 const groupMeta = session.tool_group_meta?.[item.id];
                 return (
                   <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
-                    <ToolGroupBubble group={item} isSessionRunning={sessionRunning} meta={groupMeta} sessionId={session.id} />
+                    <ToolGroupBubble group={item} isSessionRunning={sessionRunning && itemIdx === renderedVisibleItems.length - 1} meta={groupMeta} sessionId={session.id} />
                     {compactionChip}
                   </Box>
                 );
@@ -1722,6 +1799,16 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               if (isToolPair(item)) {
                 const isPending = item.result === null && sessionRunning;
                 if (isAskUiPair(item)) {
+                  // Only the LATEST unanswered question is live (the backend parks one component); an
+                  // older pending ask renders as a quiet row instead of a second clickable form.
+                  if (item.result === null && lastPendingAskCallId !== null && item.call.id !== lastPendingAskCallId) {
+                    return (
+                      <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
+                        <ToolCallBubble call={item.call} result={item.result} isPending={false} sessionId={session.id} suppressReveal />
+                        {compactionChip}
+                      </Box>
+                    );
+                  }
                   return (
                     <Box key={item.id} data-window-item-id={item.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
                       <AskUiBubble pair={item} sessionId={session.id} isPending={isPending} suppressReveal={item.call.id === justStreamedId} />
@@ -1768,6 +1855,21 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               return (
                 <Box key={msg.id} data-window-item-id={msg.id} ref={isLastVisibleItem ? lastVisibleItemRef : undefined}>
                   <Box
+                  onContextMenu={(e: React.MouseEvent) => {
+                    // ENG-148: the hover action bar's verbs, reachable by right-click on any message; typing surfaces (the edit box) keep the OS menu.
+                    if (isEditing || isNativeMenuTarget(e)) return;
+                    const selection = window.getSelection()?.toString() ?? '';
+                    const items: CardMenuRow[] = [];
+                    if (selection) items.push({ label: 'Copy selection', onClick: () => { void navigator.clipboard.writeText(selection); } });
+                    items.push({ label: 'Copy message', onClick: () => { void navigator.clipboard.writeText(rawText); } });
+                    if (msg.role === 'user') items.push({ label: 'Edit message', onClick: () => setEditingMessageId(msg.id) });
+                    if (msg.role === 'assistant' && lastAssistantIdsInTurn.has(msg.id)) {
+                      items.push({ kind: 'separator' });
+                      items.push({ label: 'Regenerate', onClick: () => handleRegenerate(msg) });
+                      items.push({ label: 'Branch chat', onClick: () => handleBranchChat(msg.id) });
+                    }
+                    openCardContextMenu(e, { items });
+                  }}
                   sx={{
                     '&:hover .msg-actions': { opacity: 1 },
                     // Cheap virtualization: tells the browser to skip paint + layout for bubbles outside the scroll viewport. `contain-intrinsic-size: auto N` reserves a placeholder height so the scrollbar doesn't jump, and `auto` lets the browser remember the actual height after first render. Works alongside the container's overflow-anchor. Chrome 85+ (Electron covers this).
@@ -1829,6 +1931,17 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 </Box>
                 </Box>
               );
+              })();
+              // The live browser anchors AT the browser tool row (ChatGPT-agent model): the view sits where the work happened, above the answer that follows it.
+              if (hasDockedBrowser && browserAnchorItemId && item.id === browserAnchorItemId) {
+                return (
+                  <React.Fragment key={`${item.id}-with-browser`}>
+                    {rendered}
+                    <Box data-browser-slot={id} sx={browserSlotSx}>{browserSlotBody}</Box>
+                  </React.Fragment>
+                );
+              }
+              return rendered;
             })}
             {/* Stand-in for items unmounted BELOW the window (newer items not yet
                 scrolled into view). Zero while following the live tail. */}
@@ -1888,7 +2001,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                             setActivateError(`Activation failed (${r.status})`);
                           } else if (body?.status === 'unknown_server') {
                             // Not yet connected; jump to Actions so the user can finish OAuth.
-                            dispatch(openSettingsModal('tools'));
+                            openMarketplace('my-connectors');
                           } else if (id) {
                             dispatch(clearMcpSuggestions({ sessionId: id }));
                           }
@@ -1974,6 +2087,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   </Typography>
                 </Box>
               </Box>
+            )}
+            {/* Fallback dock slot for a browser that docked before any browser tool row exists (or whose row was compacted away); once a row appears the slot anchors at it instead (see browserAnchorItemId). The real card overlays this rect geometrically, so the webview never remounts; the mini hides itself when its slot scrolls mostly out of view, since a live webview can't be clipped by the scroller. */}
+            {hasDockedBrowser && !browserAnchorItemId && (
+              <Box data-browser-slot={id} sx={browserSlotSx}>{browserSlotBody}</Box>
             )}
             </Box>
           </Box>
@@ -2368,7 +2485,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                                     setActivateError(`Activation failed (${r.status})`);
                                   } else if (body?.status === 'unknown_server') {
                                     // Not yet connected; jump straight to Actions so the user can finish OAuth. Nothing here can do it on their behalf.
-                                    dispatch(openSettingsModal('tools'));
+                                    openMarketplace('my-connectors');
                                   } else if (id) {
                                     // Activation succeeded; clear the banner so the user gets visual confirmation the click did something.
                                     dispatch(clearMcpSuggestions({ sessionId: id }));
@@ -2406,34 +2523,19 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   </Fade>
                 );
               })()}
-              {/* Dock slot: a browser this agent spawned lives HERE by default (the real card overlays
-                  this rect geometrically, so the webview never remounts). Pinned between transcript
-                  and composer, never inside the scroller, so it can't be clipped by chat scroll. */}
-              {hasDockedBrowser && (
-                <Box
-                  data-browser-slot={id}
-                  sx={{
-                    // Percentage heights resolve against a NESTED wrapper here, not the card, which
-                    // pushed the slot (and the docked browser riding it) clean out of the chat.
-                    // Viewport units are the only stable yardstick in this column; shrink allowed so
-                    // a short card squeezes the slot instead of overflowing.
-                    flex: '0 1 auto',
-                    height: 'min(360px, 38vh)',
-                    minHeight: 180,
-                    mx: 1.5,
-                    mb: 1,
-                    borderRadius: '10px',
-                    border: `1px dashed ${c.border.medium}`,
-                    background: c.bg.secondary,
-                  }}
-                />
-              )}
               {readOnly ? null : isStoppableSidecar ? (
                 <ForceStopAgentBar onStop={handleStop} onSaveWorkflow={onTestSaveWorkflow} onContinueEditing={onTestContinueEditing} testState={testState} />
               ) : (
                 <Box sx={{ position: 'relative' }}>
                   <WorkflowModelNotice c={c} label={workflowModelNotice} />
                   <FreeTrialModelNotice c={c} notice={freeTrialModelNotice} />
+                  <FollowupChips
+                    sessionId={id}
+                    busy={agentBusy}
+                    messageCount={session?.messages?.length ?? 0}
+                    enabled={!isDraft && !readOnly && !runContext}
+                    onPick={(p) => handleSend(p)}
+                  />
                   <ChatInput
                   ref={chatInputRef}
                   onSend={handleSend}
@@ -2449,7 +2551,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   sessionId={id}
                   autoFocus={autoFocus}
                   prefillPrompt={prefillPrompt}
-                  placeholderOverride={runContext ? 'Ask about this run...' : embedded ? 'Send a message...' : undefined}
+                  placeholderOverride={runContext ? 'Ask about this run...' : embedded ? composerPlaceholder(session.id, (session.messages || []).some((mm) => mm.role === 'assistant')) : undefined}
                   runContext={runContext}
                   onClearRunContext={onClearRunContext}
                   thinkingLevel={session?.thinking_level ?? 'auto'}

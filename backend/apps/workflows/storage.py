@@ -166,6 +166,21 @@ def save_workflow(wf: Workflow) -> Workflow:
     return wf
 
 
+def reload_workflow(wid: str) -> Optional[Workflow]:
+    """Re-read one workflow from disk, discarding in-memory mutations. The cache hands out SHARED
+    instances, so a handler that mutated one and then failed must roll back through here or the
+    unsaved change lingers until any later save persists it by accident."""
+    with _io_lock:
+        path = _wf_path(wid)
+        if not os.path.exists(path):
+            _workflow_cache.pop(wid, None)
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            wf = Workflow(**json.load(f))
+        _workflow_cache[wid] = wf
+        return wf
+
+
 def delete_workflow(wid: str) -> bool:
     with _io_lock:
         existed = wid in _workflow_cache

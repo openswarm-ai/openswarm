@@ -1,6 +1,6 @@
 // Shared types for the .swarm share/import UI. The *Response shapes mirror the backend pydantic models in backend/apps/swarm/models.py; keep them in sync.
 
-export type ShareKind = 'skill' | 'app' | 'workflow' | 'dashboard';
+export type ShareKind = 'skill' | 'app' | 'workflow' | 'dashboard' | 'session';
 
 export interface ShareTarget {
   kind: ShareKind;

@@ -1,46 +1,48 @@
-// WhisperFlow-grade start/stop chimes, synthesized in WebAudio so they ship weightless and always
-// match: a soft two-note rise on start ("I'm listening"), the mirrored fall on stop. Sine + gentle
-// lowpass + fast attack / exponential release = crisp but soothing, never a system beep.
+import { VOICE_CUE_START, VOICE_CUE_STOP, VOICE_CUE_LOCK } from './voiceCueSounds';
 
-let ctx: AudioContext | null = null;
+// Eric picked these from Google's Material product sound set after a bake-off against Wispr Flow's
+// real cues; the synth versions never survived an ear test. Files are embedded data URIs (see
+// voiceCueSounds.ts), pre-instantiated so playback is instant on the press. Start and stop taps plus the
+// hands-free lock mark; Eric explicitly cut the text-landed chime.
 
-function ensureCtx(): AudioContext | null {
+type CueKind = 'start' | 'stop' | 'lock';
+
+// Pushed from Settings (dictation_sounds / dictation_sound_volume); defaults match the shipped feel.
+let cueEnabled = true;
+let cueVolume = 0.7;
+
+export function configureVoiceCues(enabled: boolean, volume: number): void {
+  cueEnabled = enabled;
+  cueVolume = Math.min(1, Math.max(0, volume));
+  for (const kind of Object.keys(p_players) as CueKind[]) {
+    const a = p_players[kind];
+    if (a) a.volume = cueVolume;
+  }
+}
+
+const SOURCES: Record<CueKind, string> = {
+  start: VOICE_CUE_START,
+  stop: VOICE_CUE_STOP,
+  lock: VOICE_CUE_LOCK,
+};
+
+const p_players: Partial<Record<CueKind, HTMLAudioElement>> = {};
+
+function player(kind: CueKind): HTMLAudioElement {
+  let a = p_players[kind];
+  if (!a) {
+    a = new Audio(SOURCES[kind]);
+    a.volume = cueVolume;
+    p_players[kind] = a;
+  }
+  return a;
+}
+
+export function playVoiceCue(kind: CueKind): void {
+  if (!cueEnabled) return;
   try {
-    if (!ctx || ctx.state === 'closed') ctx = new AudioContext();
-    if (ctx.state === 'suspended') void ctx.resume();
-    return ctx;
-  } catch {
-    return null;
-  }
-}
-
-function blip(ac: AudioContext, freq: number, at: number, dur: number, peak: number): void {
-  const osc = ac.createOscillator();
-  const gain = ac.createGain();
-  const lp = ac.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 2400;
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(freq, at);
-  gain.gain.setValueAtTime(0, at);
-  gain.gain.linearRampToValueAtTime(peak, at + 0.012);
-  gain.gain.exponentialRampToValueAtTime(0.0004, at + dur);
-  osc.connect(lp);
-  lp.connect(gain);
-  gain.connect(ac.destination);
-  osc.start(at);
-  osc.stop(at + dur + 0.02);
-}
-
-export function playVoiceCue(kind: 'start' | 'stop'): void {
-  const ac = ensureCtx();
-  if (!ac) return;
-  const t = ac.currentTime + 0.01;
-  if (kind === 'start') {
-    blip(ac, 587, t, 0.16, 0.055);
-    blip(ac, 880, t + 0.085, 0.2, 0.05);
-  } else {
-    blip(ac, 880, t, 0.14, 0.045);
-    blip(ac, 587, t + 0.075, 0.22, 0.05);
-  }
+    const a = player(kind);
+    a.currentTime = 0;
+    void a.play();
+  } catch { /* a missing audio device must never break dictation */ }
 }

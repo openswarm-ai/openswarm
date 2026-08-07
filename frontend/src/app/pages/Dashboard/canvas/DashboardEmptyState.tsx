@@ -11,6 +11,10 @@ import {
   hasFreeTrialActive,
 } from '@/app/components/Onboarding/steps/skipPredicates';
 import { HERO_CATEGORIES, heroMenuFor, type HeroCategoryId } from './heroMenu';
+import type { PersonalizedStarter } from '@/shared/state/settingsSlice';
+
+// Identity-stable fallback so an absent settings field can't re-render this per store tick.
+const EMPTY_STARTERS: PersonalizedStarter[] = [];
 
 // Empty canvas, styled after ChatGPT / Claude / Manus: a short question, a centered composer as the
 // HERO, then a two-level menu: 4 GENERAL things OpenSwarm can do, each drilling into 4 SPECIFIC
@@ -70,7 +74,7 @@ const DashboardEmptyState: React.FC<{
   const mode = useAppSelector((s) => s.settings.data.default_mode);
   const canRun = useAppSelector((s) => hasFreeTrialActive(s) || hasModelConnected(s));
   const settingsKnown = useAppSelector((s) => s.settings.loaded);
-  const personalized = useAppSelector((s) => s.settings.data.personalized_starters ?? []);
+  const personalized = useAppSelector((s) => s.settings.data.personalized_starters) ?? EMPTY_STARTERS;
   const personalizedMenu = useAppSelector((s) => s.settings.data.personalized_menu ?? null);
   const userName = useAppSelector((s) => s.settings.data.user_name ?? null);
   const [text, setText] = React.useState('');

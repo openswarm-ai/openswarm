@@ -8,6 +8,8 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import { getToolGroupIcon } from '@/app/components/editor/CommandPicker';
+import { openCardContextMenu } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
+import { IS_MAC } from '@/app/pages/Dashboard/desktop/chord';
 import { SelectedElement } from '@/app/components/editor/ElementSelectionContext';
 import { ContextPath } from '@/app/components/editor/DirectoryBrowser';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
@@ -74,6 +76,13 @@ export const AttachmentChips: React.FC<Props> = ({
                 '&:hover': { opacity: 0.85, transform: 'scale(1.04)' },
               }}
               onClick={() => setLightboxSrc(img.preview)}
+              onContextMenu={(e) => openCardContextMenu(e, {
+                items: [
+                  { label: 'View', onClick: () => setLightboxSrc(img.preview) },
+                  { kind: 'separator' },
+                  { label: 'Remove', danger: true, onClick: () => removeImage(idx) },
+                ],
+              })}
             >
               <img
                 src={img.preview}
@@ -151,6 +160,21 @@ export const AttachmentChips: React.FC<Props> = ({
                     setTimeout(() => setCopiedPathIdx((cur) => cur === idx ? null : cur), 1200);
                   }}
                   onDelete={() => setContextPaths((prev) => prev.filter((_, i) => i !== idx))}
+                  onContextMenu={(e) => openCardContextMenu(e, {
+                    items: [
+                      {
+                        label: 'Copy path',
+                        onClick: () => {
+                          navigator.clipboard.writeText(cp.path);
+                          setCopiedPathIdx(idx);
+                          setTimeout(() => setCopiedPathIdx((cur) => cur === idx ? null : cur), 1200);
+                        },
+                      },
+                      { label: IS_MAC ? 'Reveal in Finder' : 'Show in Explorer', onClick: () => { void window.openswarm?.revealPath?.(cp.path); } },
+                      { kind: 'separator' },
+                      { label: 'Remove', danger: true, onClick: () => setContextPaths((prev) => prev.filter((_, i) => i !== idx)) },
+                    ],
+                  })}
                   sx={{
                     bgcolor: `${chipColor}12`,
                     color: chipColor,
@@ -184,6 +208,11 @@ export const AttachmentChips: React.FC<Props> = ({
               label={`@${ft.label.toLowerCase()}`}
               size="small"
               onDelete={() => setForcedTools((prev) => prev.filter((_, i) => i !== idx))}
+              onContextMenu={(e) => openCardContextMenu(e, {
+                items: [
+                  { label: 'Remove', danger: true, onClick: () => setForcedTools((prev) => prev.filter((_, i) => i !== idx)) },
+                ],
+              })}
               sx={{
                 bgcolor: `${c.status.info}15`,
                 color: c.status.info,
@@ -236,6 +265,13 @@ export const AttachmentChips: React.FC<Props> = ({
                   label={chipLabel}
                   size="small"
                   onDelete={() => elementSelection?.removeOwnerElement(ownerId, el.id)}
+                  onContextMenu={(e) => openCardContextMenu(e, {
+                    items: [
+                      { label: 'Copy selector', onClick: () => { navigator.clipboard.writeText(el.selectorPath); } },
+                      { kind: 'separator' },
+                      { label: 'Remove', danger: true, onClick: () => elementSelection?.removeOwnerElement(ownerId, el.id) },
+                    ],
+                  })}
                   sx={{
                     bgcolor: 'rgba(59, 130, 246, 0.1)',
                     color: '#3b82f6',

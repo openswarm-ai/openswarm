@@ -87,24 +87,26 @@ const InlineSurfaceEmbeds: React.FC<{ c: ClaudeTokens; sessionId: string; fullsc
   const dispatch = useAppDispatch();
   const browserCards = useAppSelector((s) => s.dashboardLayout.browserCards);
   const outputs = useAppSelector((s) => s.outputs.items);
-  const sessions = useAppSelector((s) => s.agents.sessions);
-  const sessionStatus = sessions[sessionId]?.status;
+  // Primitives, not the whole sessions map: this mounts per chat and was re-rendering per stream tick of EVERY session.
+  const sessionStatus = useAppSelector((s) => s.agents.sessions[sessionId]?.status);
+  const childBrowserKey = useAppSelector((s) => (fullscreen
+    ? Object.values(s.agents.sessions)
+        .filter((x) => x.parent_session_id === sessionId && x.browser_id)
+        .map((x) => x.browser_id as string)
+        .join('|')
+    : ''));
   const live = sessionStatus === 'running' || sessionStatus === 'waiting_approval';
 
   const linkedBrowsers = useMemo(() => {
     // A chat's browsers arrive two ways: cards this session spawned directly (spawned_by), and cards
     // driven by its browser sub-agents (child session's browser_id). Union both, keyed by card id.
-    const childBrowserIds = new Set(
-      Object.values(sessions)
-        .filter((s) => s.parent_session_id === sessionId && s.browser_id)
-        .map((s) => s.browser_id as string),
-    );
+    const childBrowserIds = new Set(childBrowserKey ? childBrowserKey.split('|') : []);
     // A docked browser renders its REAL card inside the chat (even in full size view), so the
     // snapshot embed would be a stale duplicate right next to the live thing.
     return Object.values(browserCards).filter(
       (bc) => !bc.docked_to && (bc.spawned_by === sessionId || childBrowserIds.has(bc.browser_id)),
     );
-  }, [browserCards, sessions, sessionId]);
+  }, [browserCards, childBrowserKey, sessionId]);
   const linkedApps = useMemo(
     () => Object.values(outputs).filter((o) => o.session_id === sessionId),
     [outputs, sessionId],

@@ -48,41 +48,43 @@ const BrowserPermissionCard: React.FC<BrowserPermissionCardProps> = ({
 }) => {
   const c = useClaudeTokens();
   return (
-        <Card sx={{ bgcolor: c.bg.surface, border: `1px solid ${browserSectionOpen && browserSectionEnabled ? c.accent.primary : c.border.subtle}`, borderRadius: 2, boxShadow: c.shadow.sm, '&:hover': { borderColor: c.accent.primary, boxShadow: '0 0 0 1px rgba(174,86,48,0.12)' }, transition: 'border-color 0.2s, box-shadow 0.2s' }}>
-          <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+        <Card sx={{ bgcolor: browserSectionOpen && browserSectionEnabled ? c.bg.elevated : 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none', borderBottom: `1px solid ${c.border.subtle}`, '&:last-of-type': { borderBottom: 'none' }, '&:hover': { bgcolor: c.bg.elevated }, transition: 'background-color 0.12s' }}>
+          <CardContent sx={{ py: 1.4, px: 2, '&:last-child': { pb: 1.4 } }}>
             <Box
               onClick={() => browserSectionEnabled && onToggleOpen()}
-              sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: browserSectionEnabled ? 'pointer' : 'default' }}
+              sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 200px', alignItems: 'center', gap: 2, cursor: browserSectionEnabled ? 'pointer' : 'default' }}
             >
-              <Box sx={{
-                width: 36, height: 36, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                bgcolor: c.bg.secondary, color: c.text.tertiary, flexShrink: 0,
-                opacity: browserSectionEnabled ? 1 : 0.4, transition: 'opacity 0.2s',
-              }}>
-                <PublicIcon sx={{ fontSize: 18 }} />
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 0, opacity: browserSectionEnabled ? 1 : 0.4, transition: 'opacity 0.2s' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-                  <Typography sx={{ color: c.text.primary, fontWeight: 600, fontSize: '1rem' }}>Browser</Typography>
-                  <Chip label={`${browserTools.length} tools`} size="small" sx={{ bgcolor: c.bg.secondary, color: c.text.muted, fontSize: '0.6875rem', height: 20, '& .MuiChip-label': { px: 0.6 } }} />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+                <Box sx={{
+                  width: 34, height: 34, borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: `1px solid ${c.border.subtle}`, bgcolor: c.bg.surface, color: c.text.tertiary, flexShrink: 0,
+                  opacity: browserSectionEnabled ? 1 : 0.55, transition: 'opacity 0.2s',
+                }}>
+                  <PublicIcon sx={{ fontSize: 18 }} />
                 </Box>
-                <Typography sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>Browser automation delegation and individual browser tools</Typography>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ color: browserSectionEnabled ? c.text.primary : c.text.tertiary, fontWeight: 600, fontSize: '0.9375rem', mb: 0.25 }}>Browser</Typography>
+                  <Typography noWrap sx={{ color: c.text.muted, fontSize: '0.8125rem' }}>Browser automation delegation and individual browser tools</Typography>
+                  <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', mt: 0.25 }}>{browserTools.length} tools</Typography>
+                </Box>
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-                <Switch
-                  checked={browserSectionEnabled}
-                  onChange={(_, checked) => handleSectionEnabledChange(browserTools, checked)}
-                  sx={{
-                    '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
-                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
-                  }}
-                />
-              </Box>
-              {browserSectionEnabled && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
+              <Typography sx={{ color: c.text.secondary, fontSize: '0.8125rem' }}>Built-in</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Switch
+                    size="small"
+                    checked={browserSectionEnabled}
+                    onChange={(_, checked) => handleSectionEnabledChange(browserTools, checked)}
+                    sx={{
+                      '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+                    }}
+                  />
+                </Box>
+                {browserSectionEnabled && (
                   <KeyboardArrowDownIcon sx={{ fontSize: 18, color: c.text.ghost, transition: 'transform 0.2s', transform: browserSectionOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-                </Box>
-              )}
+                )}
+              </Box>
             </Box>
           </CardContent>
           <Collapse in={browserSectionOpen && browserSectionEnabled} timeout={0} unmountOnExit>

@@ -304,3 +304,57 @@ async def test_a_workflow_the_cloud_still_holds_cannot_be_trashed_into_a_ghost(m
     assert caught.value.status_code == 409
     # Deleting it locally would leave a hosted copy running on its own schedule, billing a user who cannot see it.
     assert storage.get_workflow(wf.id).deleted_at is None
+
+
+@pytest.mark.asyncio
+async def test_toggling_a_cloud_schedule_off_pauses_the_cloud_copy(monkeypatch):
+    """The live report this seals: schedule toggled off, the workflow still ran. The cloud held the
+    timer and the PATCH edited only the local copy, which pauses nothing."""
+    from backend.apps.workflows.models import WorkflowUpdate
+    from backend.apps.workflows.workflows import update_workflow
+
+    wf = p_wf(execution_target="cloud", cloud_workflow_id="cloud-1")
+    seen = p_answer(
+        monkeypatch,
+        lambda method, path, body: p_hosted(enabled=False, next_run_at=None)
+        if path.endswith("/enable")
+        else p_hosted(),
+    )
+    await update_workflow(wf.id, WorkflowUpdate(schedule=p_sched(enabled=False)), if_match=None)
+    enable_calls = [(p, b) for _, p, b in seen if p.endswith("/enable")]
+    assert enable_calls, f"the cloud row was never paused; calls: {[p for _, p, _ in seen]}"
+    assert enable_calls[-1][1] == {"enabled": False}
+    fresh = storage.get_workflow(wf.id)
+    assert fresh.schedule.enabled is False
+    assert fresh.next_run_at is None
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_cloud_fails_the_toggle_instead_of_lying(monkeypatch):
+    """A toggle the cloud never heard must not render as Off while the cloud keeps firing."""
+    from backend.apps.workflows.models import WorkflowUpdate
+    from backend.apps.workflows.workflows import update_workflow
+
+    wf = p_wf(execution_target="cloud", cloud_workflow_id="cloud-1")
+
+    def boom(method, path, body):
+        raise cloud.CloudUnreachable("no route")
+
+    p_answer(monkeypatch, boom)
+    with pytest.raises(HTTPException) as exc:
+        await update_workflow(wf.id, WorkflowUpdate(schedule=p_sched(enabled=False)), if_match=None)
+    assert exc.value.status_code == 502
+    # The shared cached instance was mutated before the push; disk truth must win back.
+    assert storage.get_workflow(wf.id).schedule.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_a_device_schedule_patch_never_talks_to_the_cloud(monkeypatch):
+    from backend.apps.workflows.models import WorkflowUpdate
+    from backend.apps.workflows.workflows import update_workflow
+
+    wf = p_wf()
+    seen = p_answer(monkeypatch, lambda method, path, body: p_hosted())
+    await update_workflow(wf.id, WorkflowUpdate(schedule=p_sched(enabled=False)), if_match=None)
+    assert seen == []
+    assert storage.get_workflow(wf.id).schedule.enabled is False

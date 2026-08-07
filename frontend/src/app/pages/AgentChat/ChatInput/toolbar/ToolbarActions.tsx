@@ -14,11 +14,15 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSkills } from '@/shared/state/skillsSlice';
-import { openSettingsModal } from '@/shared/state/settingsSlice';
+
 import { useVoice } from '@/shared/voice/voiceContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { ComposerPlusMenu, ActiveTogglePills, PlusMenuItem } from './ComposerPlusMenu';
+import { openMarketplace } from '@/app/pages/Directory/openMarketplace';
+
+// Stable empty: minting [] inside the selector re-rendered the toolbar on every store commit.
+const EMPTY_MCPS: string[] = [];
 
 interface Props {
   c: ClaudeTokens;
@@ -48,7 +52,7 @@ export const ToolbarActions: React.FC<Props> = ({
   // Lazy-load the skills list the first time the menu could need it; cheap and cached in the slice.
   const skills = useAppSelector((s) => s.skills.items);
   const skillsLoaded = useAppSelector((s) => s.skills.loaded);
-  const activeMcps = useAppSelector((s) => (sessionId ? s.agents.sessions[sessionId]?.active_mcps : undefined) ?? []);
+  const activeMcps = useAppSelector((s) => (sessionId ? s.agents.sessions[sessionId]?.active_mcps : undefined) ?? EMPTY_MCPS);
   React.useEffect(() => { if (!skillsLoaded) dispatch(fetchSkills()); }, [skillsLoaded, dispatch]);
   // Every composer action collapses into one "+" so the bar reads empty at rest; active toggles
   // (web search, selecting) still surface as a pill so their state stays visible. New capabilities
@@ -133,13 +137,13 @@ export const ToolbarActions: React.FC<Props> = ({
         label: name,
         icon: <ExtensionOutlinedIcon sx={{ fontSize: 15 }} />,
         hint: 'active',
-        onSelect: () => dispatch(openSettingsModal('tools')),
+        onSelect: () => openMarketplace('my-connectors'),
       })),
       {
         key: 'manage-tools',
         label: 'Manage tools',
         icon: <TuneRoundedIcon sx={{ fontSize: 15 }} />,
-        onSelect: () => dispatch(openSettingsModal('tools')),
+        onSelect: () => openMarketplace('my-connectors'),
       },
     ],
   });

@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { createDashboard, deleteDashboard, duplicateDashboard, renameDashboard } from '@/shared/state/dashboardsSlice';
+import { openCardContextMenu } from './openCardContextMenu';
 import { ACTIVE_TILE_ATTR, useStripScroll } from './useStripScroll';
 
 // macOS Spaces, one for one: rest the cursor on the top edge and the spaces bar slides down,
@@ -17,13 +18,6 @@ const TILE_W = 176;
 const TILE_H = 104;
 const DISMISS_BELOW_PX = 72;
 const EDGE_W = 76;
-
-interface TileMenu {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-}
 
 interface StripEdgeProps {
   side: 'left' | 'right';
@@ -66,7 +60,6 @@ const SpacesStrip: React.FC = () => {
   const location = useLocation();
   const dashboards = useAppSelector((s) => s.dashboards.items);
   const [open, setOpen] = React.useState(false);
-  const [menu, setMenu] = React.useState<TileMenu | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState('');
   const barRef = React.useRef<HTMLDivElement | null>(null);
@@ -87,24 +80,16 @@ const SpacesStrip: React.FC = () => {
   // moved a comfortable distance BELOW the bar; hovering within or near the bar never flickers.
   // The watcher pauses while a context menu, rename or drag-pan is live, so those can wander below the bar.
   React.useEffect(() => {
-    if (!open || menu || renamingId || strip.dragging) return undefined;
+    if (!open || renamingId || strip.dragging) return undefined;
     const onMove = (e: MouseEvent): void => {
+      // The shared menu stamps this class while up; the strip must not slide away under an open menu.
+      if (document.body.classList.contains('osw-card-menu-open')) return;
       const barBottom = barRef.current?.getBoundingClientRect().bottom ?? 0;
       if (e.clientY > barBottom + DISMISS_BELOW_PX) setOpen(false);
     };
     window.addEventListener('mousemove', onMove);
     return () => window.removeEventListener('mousemove', onMove);
-  }, [open, menu, renamingId, strip.dragging]);
-
-  // The context menu closes on any outside press or Esc, like a native menu.
-  React.useEffect(() => {
-    if (!menu) return undefined;
-    const onDown = (): void => setMenu(null);
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setMenu(null); };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
-  }, [menu]);
+  }, [open, renamingId, strip.dragging]);
 
   const addSpace = (): void => {
     void dispatch(createDashboard('Untitled Dashboard')).then((result) => {
@@ -138,14 +123,6 @@ const SpacesStrip: React.FC = () => {
     }
   };
 
-  const menuItemSx = {
-    display: 'flex', alignItems: 'center', width: '100%', px: 1.5, py: 0.75,
-    border: 'none', background: 'transparent', borderRadius: '7px',
-    color: 'rgba(255,255,255,0.9)', fontFamily: 'inherit', fontSize: '0.8125rem',
-    cursor: 'pointer', textAlign: 'left' as const,
-    '&:hover': { background: 'rgba(255,255,255,0.1)' },
-  };
-
   return (
     <>
       <Box onMouseEnter={() => setOpen(true)} sx={{ position: 'fixed', top: 0, left: 0, right: 0, height: HOT_ZONE_PX, zIndex: 99998 }} />
@@ -169,6 +146,8 @@ const SpacesStrip: React.FC = () => {
           sx={{
             position: 'relative',
             display: 'flex', alignItems: 'flex-start', gap: 2.25, px: 3,
+            // The active/hover ring is a box-shadow OUTSIDE the tile, so the clipping scroll box needs breathing room or the ring's top edge gets sheared off (the "Dashboard 1 looks cut off" report).
+            py: '4px',
             // "safe center" centers a short row but falls back to start-aligned once it overflows, so tile one is never clipped out of reach.
             justifyContent: 'safe center',
             overflowX: 'auto', overflowY: 'hidden', userSelect: 'none',
@@ -185,7 +164,14 @@ const SpacesStrip: React.FC = () => {
                 component="button"
                 {...{ [ACTIVE_TILE_ATTR]: active ? 'true' : 'false' }}
                 onClick={() => { if (!renaming) { navigate(`/dashboard/${d.id}`); setOpen(false); } }}
-                onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setMenu({ id: d.id, name: d.name || 'Untitled', x: e.clientX, y: e.clientY }); }}
+                onContextMenu={(e: React.MouseEvent) => openCardContextMenu(e, {
+                  items: [
+                    { label: 'Rename', onClick: () => { setRenameValue(d.name || 'Untitled'); setRenamingId(d.id); } },
+                    { label: 'Duplicate', onClick: () => duplicateSpace(d.id) },
+                    { kind: 'separator' },
+                    { label: 'Delete', danger: true, disabled: list.length <= 1, onClick: () => deleteSpace(d.id) },
+                  ],
+                })}
                 sx={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, flexShrink: 0,
                   p: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
@@ -255,34 +241,6 @@ const SpacesStrip: React.FC = () => {
         <StripEdge side="left" visible={strip.overflowing && !strip.atStart} onNudge={() => strip.scrollByPage(-1)} />
         <StripEdge side="right" visible={strip.overflowing && !strip.atEnd} onNudge={() => strip.scrollByPage(1)} />
       </Box>
-      {menu && (
-        <Box
-          onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
-          sx={{
-            position: 'fixed', top: menu.y + 4, left: Math.min(menu.x, window.innerWidth - 180), zIndex: 100001,
-            width: 168, p: 0.5, borderRadius: '10px',
-            background: 'rgba(28,25,33,0.96)',
-            backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            boxShadow: '0 18px 44px rgba(0,0,0,0.5)',
-          }}
-        >
-          <Box component="button" sx={menuItemSx} onClick={() => { setRenameValue(menu.name); setRenamingId(menu.id); setMenu(null); }}>
-            Rename
-          </Box>
-          <Box component="button" sx={menuItemSx} onClick={() => { duplicateSpace(menu.id); setMenu(null); }}>
-            Duplicate
-          </Box>
-          <Box
-            component="button"
-            disabled={list.length <= 1}
-            sx={{ ...menuItemSx, color: list.length <= 1 ? 'rgba(255,255,255,0.3)' : '#ff7b72', cursor: list.length <= 1 ? 'default' : 'pointer', '&:hover': list.length <= 1 ? {} : { background: 'rgba(255,123,114,0.12)' } }}
-            onClick={() => { if (list.length > 1) { deleteSpace(menu.id); setMenu(null); } }}
-          >
-            Delete
-          </Box>
-        </Box>
-      )}
     </>
   );
 };

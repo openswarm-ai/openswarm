@@ -8,13 +8,15 @@ export const IS_MAC = /Mac/.test(navigator.platform);
 
 /** Platform default for the dictation hotkey; F5 is deliberately absent (macOS routes it to Siri before apps ever see it). */
 export function dictationDefaultCombo(): string {
-  return IS_MAC ? 'Meta+Shift+d' : 'Ctrl+Shift+d';
+  // fn/Globe on mac (native watcher), Ctrl+Win on windows: the same physical bottom-corner key.
+  return IS_MAC ? 'Fn' : 'Ctrl+Meta';
 }
 
 export function comboDisplay(combo: string): string {
   return combo
     .split('+')
     .map((p) => {
+      if (p === 'Fn') return 'fn';
       if (p === 'Meta') return IS_MAC ? '⌘' : 'Win';
       if (p === 'Ctrl') return IS_MAC ? '⌃' : 'Ctrl';
       if (p === 'Alt') return IS_MAC ? '⌥' : 'Alt';

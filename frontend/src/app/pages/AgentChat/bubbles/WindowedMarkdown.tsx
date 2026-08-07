@@ -1,7 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { renderMarkdownCached } from './markdownCache';
 import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './markdownMeasure';
 
 // Intra-message virtualization for very long assistant messages. The text is split into FIXED blocks (each block always covers the same character range), so unlike the old growing-tail chunking nothing shifts as you scroll, and no scroll correction is needed. Only blocks within a screen of the viewport actually render their markdown; the rest are height-reserved placeholders, so an extremely long message never parses or mounts more than the on-screen portion plus a buffer.
@@ -33,15 +32,8 @@ function splitMarkdownIntoBlocks(text: string, targetChars: number): string[] {
   return blocks.length ? blocks : [text];
 }
 
-const MD_COMPONENTS = {
-  a: ({ children, ...props }: any) => (
-    <a {...props} style={{ cursor: 'pointer' }}>{children}</a>
-  ),
-};
-
-const renderBlock = (text: string) => (
-  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</ReactMarkdown>
-);
+// Blocks only exist for finished oversized messages, so every block render goes through the LRU: scrolling a block out and back in reuses the parsed tree instead of re-paying the ~5-10ms parse.
+const renderBlock = (text: string) => <>{renderMarkdownCached(text)}</>;
 
 const MarkdownBlock: React.FC<{
   blockId: string;

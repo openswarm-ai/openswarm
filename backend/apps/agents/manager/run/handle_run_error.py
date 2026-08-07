@@ -12,17 +12,18 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.agents.manager.streaming.state import TurnState
 from backend.apps.agents.core.error_classify import (
+    is_context_overflow_error,
     is_long_context_error,
     is_transient_capacity_error,
     is_free_trial_exhausted,
     is_out_of_tokens,
-    extract_reset_hint,
     is_auth_error,
     is_cli_binary_missing,
     is_unknown_model_error,
     parse_retry_after,
-    redact_for_telemetry,
 )
+from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
+from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -37,32 +38,25 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         p_stderr_tail = "\n".join(p_stderr_buffer[-50:])
     except Exception:
         p_stderr_tail = ""
-    # If we already streamed a substantive assistant response this turn, the user got their answer; the error fired on a subsequent step (title gen, follow-up tool turn, etc.). Don't blast a "context exceeded" card over a completed reply.
-    p_streamed_substantive = bool(turn.stream_text_msg_id) and turn.current_turn_emitted
-    if p_streamed_substantive and is_long_context_error(e, extra_text=p_stderr_tail):
-        # Mark the session completed (not error), keep the assistant reply visible, and skip the overflow card. The next user turn will properly hit the pre-send guard if the chat is still over cap.
-        session.status = "completed"
-        if turn.stream_text_msg_id:
-            try:
-                await ws_manager.send_to_session(session_id, "agent:stream_end", {
-                    "session_id": session_id,
-                    "message_id": turn.stream_text_msg_id,
-                })
-            except Exception:
-                pass
-        return
-    if is_long_context_error(e, extra_text=p_stderr_tail):
+    # No completed-mask here anymore: current_turn_emitted stays True until a ResultMessage lands, so the old "already answered" early-return fired on every MID-TASK death (models narrate between tool calls) and converted a dead run into a fake "completed". Reaching this handler with an overflow means the valve's compact-and-retry already failed once; the user must see the card.
+    if is_context_overflow_error(e, extra_text=p_stderr_tail):
+        p_tier_gate = is_long_context_error(e, extra_text=p_stderr_tail)
         friendly_msg = (
             "This conversation has grown too large for your account's "
             "standard context window. Long-context requests require an "
             "upgraded tier, switch to Chat mode or start a fresh chat "
             "to continue."
+        ) if p_tier_gate else (
+            "This conversation outgrew the model's context window, and "
+            "automatic compaction couldn't shrink it enough. Start a fresh "
+            "chat (your recent context carries over) or switch to a model "
+            "with a larger window."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         session.messages.append(error_msg)
         p_ovf_payload = {
             "session_id": session_id,
-            "reason": "long_context_required",
+            "reason": "long_context_required" if p_tier_gate else "context_overflow",
             "message": friendly_msg,
             "model": session.model,
             "provider": session.provider,

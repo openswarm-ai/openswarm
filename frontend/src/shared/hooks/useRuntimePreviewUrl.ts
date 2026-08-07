@@ -41,6 +41,7 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
     }
     let cancelled = false;
     let ws: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     setFrontendUrl(null);
     setIsNewMode(false);
     setIsHydrating(true);
@@ -53,7 +54,8 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (auth) headers.Authorization = `Bearer ${auth}`;
 
-    (async () => {
+    const connect = async (): Promise<void> => {
+      if (cancelled) return;
       try {
         await fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/start?instance=${instance}`, {
           method: 'POST',
@@ -85,14 +87,23 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
             // Malformed frame; safe to drop.
           }
         };
+        // A backend restart kills the runtime AND this socket; without re-attaching the card sits
+        // on a dead port forever, so drop the stale URL (placeholder over a dead webview) and retry.
+        ws.onclose = () => {
+          if (cancelled) return;
+          setFrontendUrl(null);
+          retryTimer = setTimeout(() => { void connect(); }, 2000);
+        };
       } catch (_) {
-        // WS construction failed; caller stays in "no preview yet" state.
+        retryTimer = setTimeout(() => { void connect(); }, 2000);
       }
-    })();
+    };
+    void connect();
 
     return () => {
       cancelled = true;
       clearTimeout(hydrationTimer);
+      if (retryTimer) clearTimeout(retryTimer);
       try { ws?.close(); } catch (_) {}
       setFrontendUrl(null);
       setIsNewMode(false);

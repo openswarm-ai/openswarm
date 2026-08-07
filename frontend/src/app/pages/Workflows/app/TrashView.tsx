@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchDeletedWorkflows, restoreWorkflow, purgeWorkflow } from '@/shared/state/workflowsSlice';
+import { openCardContextMenu } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
 import { colorForWorkflow, useWC } from './uiKit';
 import { whenText } from './model';
 
@@ -30,7 +31,17 @@ const TrashView: React.FC = () => {
         {deleted.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {deleted.map((w) => (
-              <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '13px 16px' }}>
+              <div
+                key={w.id}
+                onContextMenu={(e) => openCardContextMenu(e, {
+                  items: [
+                    { label: 'Restore', onClick: () => dispatch(restoreWorkflow(w.id)) },
+                    { kind: 'separator' },
+                    { label: 'Delete forever', danger: true, onClick: () => onPurge(w.id, w.title || 'this workflow') },
+                  ],
+                })}
+                style={{ display: 'flex', alignItems: 'center', gap: 14, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '13px 16px' }}
+              >
                 <div style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: colorForWorkflow(w) }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: WC.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.title || 'Untitled workflow'}</div>

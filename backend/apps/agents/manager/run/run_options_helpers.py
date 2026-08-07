@@ -27,6 +27,8 @@ def merge_hard_blocked_tools(effective_disallowed: List[str]) -> List[str]:
 async def pre_send_context_guard(manager, session: AgentSession, session_id: str) -> None:
     try:
         if manager.maybe_compact(session):
+            # A mark alone never applies on the resume path (the CLI replays its own untrimmed transcript), so pay for the rebuild too: next turn drops the SDK convo and rebuilds with the cutoff + distilled summary. One respawn per compaction epoch is the price of never reaching the wall.
+            session.needs_fresh_session = True
             new_input = estimate_post_compact_input(session)
             await ws_manager.send_to_session(session_id, "agent:context_status", {
                 "session_id": session_id,

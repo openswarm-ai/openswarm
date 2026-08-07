@@ -133,6 +133,10 @@ class Messaging(AgentManagerProtocol):
             "message": user_msg.model_dump(mode="json"),
         })
 
+        # A real user message opens a fresh silent-quit budget; the cap only guards within one ask.
+        if not hidden:
+            session.empty_finish_nudges = 0
+            session.empty_finish_progress_mark = 0
         # Fire a background aux LLM call to generate a 3-6 word verb-phrase describing this turn ("Auditing the pull request", "Drafting your email"). The narrator pill swaps from its heuristic verb to this label as soon as it lands, usually ~500ms-1s into the turn, which is exactly when "Thinking…" starts feeling generic. Provider-agnostic via resolve_aux_model. Non-blocking; failure is silent and the heuristic stays.
         if not hidden and prompt:
             try:

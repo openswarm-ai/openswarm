@@ -6,7 +6,9 @@ the exact broadcast payload."""
 import asyncio
 
 import backend.apps.agents.manager.context_budget as cb
+import backend.apps.agents.manager.run.run_options_helpers as roh
 from backend.apps.agents.core.models import AgentSession, Message
+from backend.apps.agents.manager.session.history_compaction import SPILL_HEAD_CHARS, SPILL_TAIL_CHARS, build_history_prefix, clamp_recap_text
 
 
 def p_session_with(messages: int, input_tokens: int, context_window: int = 100, threshold: float = 0.65) -> AgentSession:
@@ -129,3 +131,104 @@ def test_emit_zero_input_yields_zero_ctx_pct(monkeypatch):
     asyncio.run(cb.emit_context_update("sid", s, input_tokens=0))
     _, data = sent[0]
     assert data["ctx_used_pct"] == 0.0
+
+# ---- pre_send_context_guard: the threshold now pays for the rebuild ---------
+
+class P_GuardManager:
+    def maybe_compact(self, session, force=False):
+        return cb.maybe_compact(session, force)
+
+    async def emit_context_update(self, session_id, session, **kwargs):
+        return None
+
+
+def p_run_guard(monkeypatch, session):
+    async def fake_send(session_id, event, data):
+        return None
+    monkeypatch.setattr(roh.ws_manager, "send_to_session", fake_send, raising=True)
+    asyncio.run(roh.pre_send_context_guard(P_GuardManager(), session, session.id))
+
+
+def test_threshold_compaction_forces_the_rebuild(monkeypatch):
+    # Marking alone never applied on the resume path (the CLI replays its own untrimmed transcript), so crossing the threshold must also drop the SDK convo.
+    s = p_session_with(messages=10, input_tokens=80)
+    p_run_guard(monkeypatch, s)
+    assert s.compacted_through_msg_id is not None
+    assert s.needs_fresh_session is True
+
+
+def test_below_threshold_keeps_the_resume_session(monkeypatch):
+    s = p_session_with(messages=10, input_tokens=10)
+    p_run_guard(monkeypatch, s)
+    assert s.compacted_through_msg_id is None
+    assert s.needs_fresh_session is False
+
+
+# ---- recap clamp: a pasted log can't ride through compaction verbatim ------
+
+def test_recap_clamps_giant_messages_and_keeps_both_ends():
+    giant = "HEAD" + ("x" * (SPILL_HEAD_CHARS + SPILL_TAIL_CHARS + 10_000)) + "TAIL"
+    msgs = [Message(role="user", content=giant), Message(role="assistant", content="ok")]
+    recap = build_history_prefix(msgs)
+    assert "HEAD" in recap and "TAIL" in recap
+    assert "chars elided from recap" in recap
+    assert len(recap) < len(giant)
+
+
+def test_recap_leaves_normal_messages_verbatim():
+    text = "a perfectly ordinary message"
+    assert clamp_recap_text(text) == text
+    recap = build_history_prefix([Message(role="user", content=text)])
+    assert text in recap and "elided" not in recap
+
+# ---- mid-turn breaker: one giant turn can't blow past every wall ------------
+
+from backend.apps.agents.manager.streaming.state import TurnState
+
+def p_usage(total: int) -> dict:
+    return {"input_tokens": total - 200, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 100, "output_tokens": 5}
+
+
+def test_midturn_break_fires_on_crossing_and_arms_the_continuation():
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    t = TurnState()
+    assert cb.maybe_break_midturn(s, t, p_usage(50_000)) is False
+    assert t.saw_input_below_trigger is True
+    assert cb.maybe_break_midturn(s, t, p_usage(200_000)) is True
+    assert t.context_break_fired is True
+    assert s.needs_fresh_session is True
+    assert s.pending_continuation is True
+    assert s.compacted_through_msg_id is not None
+    assert s.tokens["input"] == 200_000
+
+
+def test_midturn_break_fires_once_per_turn():
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    t = TurnState()
+    cb.maybe_break_midturn(s, t, p_usage(50_000))
+    assert cb.maybe_break_midturn(s, t, p_usage(200_000)) is True
+    assert cb.maybe_break_midturn(s, t, p_usage(300_000)) is False
+
+
+def test_turn_already_over_trigger_at_start_never_breaks():
+    # A rebuild that failed to shrink must RUN, not break-loop forever.
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    t = TurnState()
+    assert cb.maybe_break_midturn(s, t, p_usage(500_000)) is False
+    assert cb.maybe_break_midturn(s, t, p_usage(600_000)) is False
+    assert t.context_break_fired is False
+
+
+def test_midturn_break_zero_or_garbage_usage_is_inert():
+    s = p_session_with(messages=10, input_tokens=7, context_window=1_000_000)
+    t = TurnState()
+    assert cb.maybe_break_midturn(s, t, {}) is False
+    assert cb.maybe_break_midturn(s, t, {"input_tokens": "nope"}) is False
+    assert s.tokens["input"] == 7
+
+
+def test_trigger_formula_matches_maybe_compact():
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    assert cb.compact_trigger_tokens(s) == 180_000
+    s2 = p_session_with(messages=10, input_tokens=0, context_window=200_000)
+    assert cb.compact_trigger_tokens(s2) == 130_000

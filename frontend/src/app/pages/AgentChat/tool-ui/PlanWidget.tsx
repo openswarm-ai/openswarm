@@ -19,7 +19,7 @@ function PlanWidget({ props }: { props: PlanProps }): React.ReactElement {
   return (
     <Box
       sx={{
-        width: 320,
+        width: '100%',
         borderRadius: '14px',
         border: `1px solid ${c.border.subtle}`,
         bgcolor: c.bg.elevated,

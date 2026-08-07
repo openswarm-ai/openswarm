@@ -1,6 +1,6 @@
 {
   "name": "openswarm",
-  "version": "1.7.0",
+  "version": "1.7.4",
   "license": "AGPL-3.0-only",
   "description": "OpenSwarm — AI Agent Orchestrator",
   "author": "openswarm-ai",
@@ -15,7 +15,7 @@
     "dist:win": "electron-builder --win --x64 --publish never",
     "dist:win:publish": "electron-builder --win --x64 --publish always",
     "dist:all": "electron-builder --mac --win --linux",
-    "test": "node --test affiliateTracking.test.js updateErrorMessage.test.js",
+    "test": "node --test affiliateTracking.test.js updateErrorMessage.test.js voice/streamingVoice.test.js",
     "test:mouseclamp": "bash native/mouseclamp/run-tests.sh"
   },
   "dependencies": {
@@ -62,7 +62,8 @@
       "hardenedRuntime": true,
       "notarize": false,
       "extendInfo": {
-        "NSFaceIDUsageDescription": "OpenSwarm uses Touch ID to sign you in to websites with passkeys."
+        "NSFaceIDUsageDescription": "OpenSwarm uses Touch ID to sign you in to websites with passkeys.",
+        "NSMicrophoneUsageDescription": "OpenSwarm uses the microphone for voice dictation."
       },
       "provisioningProfile": "build/embedded.provisionprofile",
       "entitlements": "build/entitlements.mac.plist",
@@ -71,6 +72,13 @@
         {
           "from": "build-staging/mouseclamp/${arch}",
           "to": "mouseclamp",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "build-staging/fn-watcher/${arch}",
+          "to": "fn-watcher",
           "filter": [
             "**/*"
           ]

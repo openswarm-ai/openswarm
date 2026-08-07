@@ -114,3 +114,34 @@ async def test_resets_per_turn_state_at_completion():
     assert turn.tool_count == 0
     assert thinking.total_ms == 0
     assert thinking.block_starts == {}
+
+
+@pytest.mark.asyncio
+async def test_context_meter_prefers_last_step_over_cumulative_billing():
+    # A 9-step turn's result usage sums input across steps (billing); the meter must show the last step's request size (real context). The 925K/1M incident read the sum.
+    session, turn, thinking = p_fixt()
+    turn.last_step_input = 70_454
+    payloads = []
+
+    async def fake_send(sid, ev, data):
+        if ev == "agent:context_update":
+            payloads.append(data)
+
+    with patch.object(result_message.ws_manager, "send_to_session", AsyncMock(side_effect=fake_send)):
+        await result_message.handle_result_message(
+            p_result(usage={"input_tokens": 2_023, "cache_read_input_tokens": 500_000, "cache_creation_input_tokens": 86_972, "output_tokens": 1_210}),
+            session, "sid", turn, thinking, {}, "cc/claude-opus-5", "anthropic", load_settings(),
+        )
+    assert session.tokens["input"] == 70_454
+    assert payloads and payloads[0]["input_tokens"] == 70_454
+
+
+@pytest.mark.asyncio
+async def test_context_meter_falls_back_to_result_usage_without_step_readings():
+    session, turn, thinking = p_fixt()
+    with patch.object(result_message.ws_manager, "send_to_session", AsyncMock()):
+        await result_message.handle_result_message(
+            p_result(usage={"input_tokens": 1_000, "cache_read_input_tokens": 2_000, "output_tokens": 10}),
+            session, "sid", turn, thinking, {}, "sonnet", "anthropic", load_settings(),
+        )
+    assert session.tokens["input"] == 3_000

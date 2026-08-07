@@ -6,6 +6,7 @@ import { isScheduleActive, describeSchedule } from '@/app/pages/Workflows/schedu
 import ShareButton from '@/app/components/share/ShareButton';
 import { colorForWorkflow, useWC } from './uiKit';
 import WorkflowTitle from './WorkflowTitle';
+import { useWorkflowMenu } from './useWorkflowMenu';
 import type { AppNav } from './types';
 
 const navBase: CSSProperties = {
@@ -20,6 +21,7 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const trashCount = useAppSelector((s) => s.workflows.deleted.length);
   const [query, setQuery] = useState('');
   const [hovered, setHovered] = useState<string | null>(null);
+  const openWorkflowMenu = useWorkflowMenu();
 
   const workflows = useMemo(() => Object.values(items)
     .filter((w) => !w.unsaved)
@@ -94,6 +96,10 @@ const LeftRail: React.FC<{ nav: AppNav }> = ({ nav }) => {
             <div
               key={w.id}
               onClick={() => nav.selectWorkflow(w.id)}
+              onContextMenu={(e) => openWorkflowMenu(e, w, {
+                onEdit: () => nav.selectWorkflow(w.id),
+                afterTrash: () => { if (nav.selectedId === w.id) nav.goHome(); },
+              })}
               onMouseEnter={() => setHovered(w.id)}
               onMouseLeave={() => setHovered((h) => (h === w.id ? null : h))}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: isSel ? WC.selBg : 'transparent' }}

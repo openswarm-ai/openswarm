@@ -1,15 +1,14 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
-import LanguageIcon from '@mui/icons-material/Language';
-import EventRepeatIcon from '@mui/icons-material/EventRepeat';
-import SettingsIcon from '@mui/icons-material/Settings';
-import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
+import { Globe, CalendarClock, Settings, LayoutGrid, Store } from 'lucide-react';
 import { useAppDispatch } from '@/shared/hooks';
 import { openSettingsCard, openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
+import { openMarketplace } from '@/app/pages/Directory/openMarketplace';
+import UpdateReadyDot from '@/app/components/UpdateReadyDot';
 
 // The dock reserves room for these before it knows what they are, so the count lives with the list.
-export const DOCK_ACTION_COUNT = 4;
+export const DOCK_ACTION_COUNT = 5;
 
 interface DockActionTilesProps {
   tile: number;
@@ -18,39 +17,45 @@ interface DockActionTilesProps {
   onHoverAway: () => void;
 }
 
-/** The dock's fixed group: browser, workflows, then settings + applications under their own divider. */
+/** The dock's fixed group: browser, workflows, then settings + applications under their own divider. Action buttons are flat hairline glyphs resting on the rail material (running dock tiles above keep their colored tiles), so actions and running things read as different species. */
 function DockActionTiles({ tile, onAddBrowser, onApplications, onHoverAway }: DockActionTilesProps): React.ReactElement {
   const dispatch = useAppDispatch();
-  const actions: { label: string; icon: React.ReactNode; act: () => void; divider?: boolean; bg?: string }[] = [
-    { label: 'New browser', icon: <LanguageIcon sx={{ color: '#e8e8ee' }} />, act: onAddBrowser },
-    { label: 'Workflows', icon: <EventRepeatIcon sx={{ color: '#e8e8ee' }} />, act: () => dispatch(openWorkflowsApp()) },
-    { label: 'Settings', icon: <SettingsIcon sx={{ color: '#e8e8ee' }} />, act: () => dispatch(openSettingsCard()), divider: true },
-    { label: 'Applications', icon: <AppsRoundedIcon sx={{ color: '#e8e8ee' }} />, act: onApplications, bg: 'linear-gradient(135deg, #3d3d46, #232329)' },
+  const actions: { label: string; Icon: typeof Globe; act: () => void; divider?: boolean; updateDot?: boolean }[] = [
+    { label: 'Browsers', Icon: Globe, act: onAddBrowser },
+    { label: 'Workflows', Icon: CalendarClock, act: () => dispatch(openWorkflowsApp()) },
+    { label: 'Marketplace', Icon: Store, act: () => openMarketplace() },
+    { label: 'Settings', Icon: Settings, act: () => dispatch(openSettingsCard()), divider: true, updateDot: true },
+    { label: 'Applications', Icon: LayoutGrid, act: onApplications },
   ];
 
   return (
     <>
       {actions.map((a) => (
         <React.Fragment key={a.label}>
-          {a.divider && <Box sx={{ width: tile - 8, height: '1px', background: 'rgba(255,255,255,0.14)' }} />}
+          {a.divider && <Box sx={{ width: tile - 16, height: '1px', background: 'rgba(255,255,255,0.10)', alignSelf: 'center', flexShrink: 0 }} />}
           <Tooltip title={a.label} placement="right">
             <Box
               className="osw-dock-tile"
               onClick={a.act}
               onMouseEnter={onHoverAway}
               sx={{
+                position: 'relative',
                 width: tile,
                 height: tile,
-                borderRadius: '12px',
-                background: a.bg ?? 'linear-gradient(135deg, #5a5a62, #34343c)',
+                borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
                 flexShrink: 0,
+                color: 'rgba(235, 235, 240, 0.72)',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.10)', color: '#ffffff' },
+                '&:active': { backgroundColor: 'rgba(255,255,255,0.16)' },
               }}
             >
-              {a.icon}
+              <a.Icon size={19} strokeWidth={1.5} />
+              {a.updateDot && <UpdateReadyDot sx={{ position: 'absolute', top: 6, right: 6 }} />}
             </Box>
           </Tooltip>
         </React.Fragment>

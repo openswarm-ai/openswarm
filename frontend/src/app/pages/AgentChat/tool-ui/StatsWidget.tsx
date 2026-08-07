@@ -10,7 +10,7 @@ import type { StatsProps } from './showUiPayload';
 function StatsWidget({ props }: { props: StatsProps }): React.ReactElement {
   const c = useClaudeTokens();
   return (
-    <Box sx={{ maxWidth: 460 }}>
+    <Box sx={{ width: '100%' }}>
       {props.title && (
         <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary, mb: 1 }}>
           {props.title}

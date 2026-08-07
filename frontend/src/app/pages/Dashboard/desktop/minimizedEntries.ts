@@ -1,4 +1,4 @@
-import { SETTINGS_CARD_ID, WORKFLOWS_HUB_ID } from '@/shared/state/dashboardLayoutSlice';
+import { MARKETPLACE_CARD_ID, SETTINGS_CARD_ID, WORKFLOWS_HUB_ID } from '@/shared/state/dashboardLayoutSlice';
 import type { BrowserCardPosition, ViewCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 
@@ -9,7 +9,7 @@ export interface MinimizedRect {
   height: number;
 }
 
-export type MinimizedKind = 'browser' | 'view' | 'workflows' | 'settings';
+export type MinimizedKind = 'browser' | 'view' | 'workflows' | 'settings' | 'marketplace';
 
 export interface MinimizedEntry {
   id: string;
@@ -28,6 +28,7 @@ export interface MinimizedSlices {
   outputs: Record<string, Output>;
   workflowsHub: WorkflowsHubPosition | null;
   settingsCard: WorkflowsHubPosition | null;
+  marketplaceCard: WorkflowsHubPosition | null;
   minimizedCards: Record<string, boolean>;
 }
 
@@ -38,6 +39,7 @@ export function buildMinimizedEntries({
   outputs,
   workflowsHub,
   settingsCard,
+  marketplaceCard,
   minimizedCards,
 }: MinimizedSlices): MinimizedEntry[] {
   const list: MinimizedEntry[] = [];
@@ -69,6 +71,9 @@ export function buildMinimizedEntries({
   }
   if (settingsCard && minimizedCards[SETTINGS_CARD_ID]) {
     list.push({ id: SETTINGS_CARD_ID, kind: 'settings', label: 'Settings', rect: settingsCard });
+  }
+  if (marketplaceCard && minimizedCards[MARKETPLACE_CARD_ID]) {
+    list.push({ id: MARKETPLACE_CARD_ID, kind: 'marketplace', label: 'Marketplace', rect: marketplaceCard });
   }
   return list;
 }

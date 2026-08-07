@@ -118,7 +118,7 @@ def register_builtin_mcp_servers(
     if not skill_denied:
         try:
             from backend.apps.skills.skills import sync_skills
-            has_loadable_skill = any(not s.built_in for s in sync_skills())
+            has_loadable_skill = any(not s.built_in and s.enabled for s in sync_skills())
         except Exception:
             has_loadable_skill = False
         if has_loadable_skill:

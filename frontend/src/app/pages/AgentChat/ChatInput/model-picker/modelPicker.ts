@@ -92,23 +92,38 @@ function modelFamilyKey(label: string): string {
     .trim();
 }
 
-/** Sort: intelligence desc, version desc (newest first within a tier), family asc, label asc. */
+/** Sort: version desc FIRST (the newest release always tops its provider group), then intelligence desc, family asc, label asc. */
 export function sortModelsForPicker<T extends { label: string }>(models: T[]): T[] {
   const intelOf = (opt: any): number => {
     if (Array.isArray(opt.tiers) && opt.tiers.length === 3) return opt.tiers[0];
     return tierIntelligence(opt);
   };
   return [...models].sort((a: any, b: any) => {
-    const intelA = intelOf(a);
-    const intelB = intelOf(b);
-    if (intelA !== intelB) return intelB - intelA;
-    // Version before family: among models of similar capability, the NEWEST goes on top (Sonnet 5 above Opus 4.6, not buried under the alphabetically-earlier "opus" family).
     const verA = modelVersion(a.label);
     const verB = modelVersion(b.label);
     if (verA !== verB) return verB - verA;
+    const intelA = intelOf(a);
+    const intelB = intelOf(b);
+    if (intelA !== intelB) return intelB - intelA;
     const famA = modelFamilyKey(a.label);
     const famB = modelFamilyKey(b.label);
     if (famA !== famB) return famA.localeCompare(famB);
     return a.label.localeCompare(b.label);
   });
+}
+
+// Superseded generations we no longer surface in the picker; the ids still work if saved as a default.
+const DEPRECATED_PATTERNS: RegExp[] = [
+  /\bgpt[-_ ]?[34](\b|o|\.|-)/,
+  /\bo[134](?:[-_ ]?(mini|pro|preview))?\b/,
+  /claude[-_ ]?(1|2|3)(\b|\.|-)/,
+  /claude[-_ ]?instant/,
+  /gemini[-_ ]?1\./,
+  /\bllama[-_ ]?[23]\b/,
+  /\b(davinci|curie|babbage|palm|bison)\b/,
+];
+
+export function isDeprecatedModel(label: string, value: string): boolean {
+  const hay = `${label} ${value}`.toLowerCase();
+  return DEPRECATED_PATTERNS.some((re) => re.test(hay));
 }

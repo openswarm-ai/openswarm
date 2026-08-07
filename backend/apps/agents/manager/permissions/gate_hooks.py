@@ -11,7 +11,13 @@ import time
 from typing import Dict, Optional, Union
 
 from typeguard import typechecked
-from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+# Runtime aliases stay `object` so the 350ms claude_agent_sdk+mcp chain stays off the boot graph; the hook body re-imports the real classes at call time, when the SDK is already resident.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+else:
+    PermissionResultAllow = PermissionResultDeny = object
 
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
@@ -36,6 +42,8 @@ logger = logging.getLogger(__name__)
 async def can_use_tool(
     ctx: HookContext, tool_name: str, input_data: object, context: object
 ) -> Union[PermissionResultAllow, PermissionResultDeny]:
+    from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+
     if is_claude_schedule_skill(tool_name, input_data):
         note_tool_used(ctx.session_id, tool_name, False)
         return PermissionResultDeny(

@@ -89,6 +89,12 @@ function CardContextMenu(): React.ReactElement | null {
     return () => window.removeEventListener(CARD_MENU_EVENT, onOpen);
   }, []);
 
+  // Body stamp so hover-dismiss surfaces (the Spaces strip) can hold still while a menu is up.
+  useEffect(() => {
+    document.body.classList.toggle('osw-card-menu-open', !!menu);
+    return () => document.body.classList.remove('osw-card-menu-open');
+  }, [menu]);
+
   // Measured, never guessed: rows render ~30px, so a hardcoded row height over-corrects long menus.
   useLayoutEffect(() => {
     if (!menu || !rootRef.current) return;

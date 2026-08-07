@@ -1,4 +1,11 @@
 // Native notifications for agent completion; fires only when document is hidden (user switched away).
+import { store } from '@/shared/state/store';
+
+function notificationsEnabled(kind: 'agent' | 'workflow'): boolean {
+  const d = store.getState().settings.data as { notify_agent_completion?: boolean; notify_workflow_runs?: boolean };
+  return kind === 'agent' ? d.notify_agent_completion !== false : d.notify_workflow_runs !== false;
+}
+
 const FIRED_RECENTLY = new Set<string>();
 const COOLDOWN_MS = 30_000;
 
@@ -25,6 +32,7 @@ export interface AgentCompletionPayload {
 
 export function notifyAgentCompletion(p: AgentCompletionPayload): void {
   if (typeof document === 'undefined') return;
+  if (!notificationsEnabled('agent')) return;
   // Same-window: skip noise (hidden = tab-switched, minimized, or another BrowserWindow in front).
   if (!document.hidden) return;
   if (typeof Notification === 'undefined') return;
@@ -100,6 +108,7 @@ function workflowBodyFor(p: WorkflowRunNotification): string {
 
 /** Native OS notification for a finished workflow run. Prefers the Electron main process, which reaches Notification Center even with the window hidden or the renderer backgrounded; the renderer's own Notification API is the browser-only fallback and it only fires when the tab is hidden. */
 export function notifyWorkflowRun(p: WorkflowRunNotification): void {
+  if (!notificationsEnabled('workflow')) return;
   const bridge = typeof window !== 'undefined' ? window.openswarm : undefined;
   if (!bridge?.notify) {
     notifyAgentCompletion({

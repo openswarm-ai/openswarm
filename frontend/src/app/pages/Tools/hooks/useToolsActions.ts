@@ -12,6 +12,7 @@ import {
 import { McpServer } from '@/shared/state/mcpRegistrySlice';
 import { ToolForm, emptyForm } from '../toolsHelpers';
 import { Integration } from '../integrations';
+import { installIntegration } from '../installIntegration';
 import { useToolConnections } from './useToolConnections';
 import { useRegistryBrowser } from './useRegistryBrowser';
 
@@ -68,31 +69,9 @@ export function useToolsActions({ items, allTools, regServersRaw, closeMenu }: T
           }
         }
       } else {
-        const result = await dispatch(createTool({
-          name: integration.name,
-          description: integration.description,
-          command: '',
-          mcp_config: integration.mcp_config,
-          credentials: {},
-          auth_type: integration.authType || 'none',
-          auth_status: 'configured',
-        }));
-        if (createTool.fulfilled.match(result)) {
-          const newTool = result.payload;
-          if (integration.authType === 'oauth2' || integration.authType === 'device_code') {
-            setSnackbar({ open: true, message: `Enabled ${integration.name}, connect your account to discover tools` });
-          } else {
-            setSnackbar({ open: true, message: `Enabled ${integration.name}, discovering tools…` });
-            const discoverResult = await dispatch(discoverTools(newTool.id));
-            if (discoverTools.fulfilled.match(discoverResult)) {
-              setSnackbar({ open: true, message: `${integration.name} ready, tools discovered` });
-            } else {
-              const detail = (discoverResult as any).error?.message
-                || `discovery failed; is ${integration.mcp_config.command || 'the server'} installed?`;
-              setSnackbar({ open: true, message: `${integration.name}: ${detail}`, severity: 'error' });
-            }
-          }
-        }
+        setSnackbar({ open: true, message: `Enabled ${integration.name}, discovering tools…` });
+        const res = await installIntegration(dispatch, integration);
+        setSnackbar({ open: true, message: res.message, severity: res.severity === 'error' ? 'error' : undefined });
       }
     } finally {
       setIntegrationLoading((p) => ({ ...p, [integration.id]: false }));
