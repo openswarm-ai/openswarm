@@ -247,19 +247,21 @@ def preflight():
     backend's startup kills the one it does not own, so a second stack anywhere on the machine turns
     this sweep into a coin flip. Better to print why than to publish a number that means nothing."""
     import subprocess
-    # Count the real interpreters only. `pgrep -f "uvicorn backend.main"` also matches the
-    # supervising shell (its command line quotes the whole uvicorn line), so with a supervisor in
-    # place this refused to run every single time, on a box holding exactly one backend.
-    # The "/bin/python" half of this test did not work either: stack.sh's supervisor is a `bash -c`
-    # whose command line QUOTES the whole uvicorn line, so it carries "-m uvicorn backend.main" AND
-    # "./backend/.venv/bin/python" and got counted as a second backend. That refused every sweep on
-    # a box holding exactly one. Discriminate on POSITION instead of substring: the interpreter's
-    # command line STARTS with the python binary, the supervisor's starts with bash.
+    # Count real interpreters only. stack.sh's supervisor is a `bash -c` QUOTING the whole uvicorn line, so it carries both "-m uvicorn backend.main" and "./backend/.venv/bin/python": neither substring can exclude it, and it refused every sweep on a box holding exactly one backend. Discriminate on POSITION -- the interpreter's line STARTS with the python binary, the supervisor's with bash.
     ps = subprocess.run(["ps", "-Ao", "command"], capture_output=True, text=True).stdout
     n = sum(1 for ln in ps.splitlines()
             if "-m uvicorn backend.main" in ln and ln.split()[:1]
             and os.path.basename(ln.split()[0]).startswith("python"))
     router = urllib.request.urlopen("http://127.0.0.1:20128/v1/models", timeout=5).status
+    # A loaded HOST is the same failure as a second stack and had no guard: measured 2026-08-07 at load 9.24, trials that take 11-16s on a quiet box took 228s, 913s and 1081s, and the slow ones graded product_no_composer. The sweep was measuring contention, not the product.
+    # Refuse above ~2x the core count: loaded enough to distort, while still letting a normally busy dev box through. OSW_SKIP_PREFLIGHT=1 overrides, as for every check here.
+    # Calibrated against the incident, not taste: 9.24 on 10 cores is 0.92 runnable per core, and a 2x-cores cap would sit at 20 and never fire -- a guard that exists to look reassuring. 0.75x fires at 7.5 and catches it. This workload waits on settles and polls, so it distorts well before the box is "full" by classic load standards.
+    p_load = os.getloadavg()[0]
+    p_cap = 0.75 * (os.cpu_count() or 4)
+    if p_load > p_cap:
+        print(f"REFUSING: host load {p_load:.1f} is over {p_cap:.0f} ({os.cpu_count()} cores).")
+        print("Timings taken now measure the box, not the write path. Wait for it to settle.")
+        sys.exit(2)
     if n > 1 or router != 200:
         print(f"REFUSING: {n} backends on this box (want 1), 9router HTTP {router} (want 200).")
         print("Another session's stack is fighting yours for the router. Wait it out.")

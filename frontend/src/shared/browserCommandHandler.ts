@@ -544,10 +544,19 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
     // Never clickable by reveal, even if the label also looks like an opener.
     const HARDBLOCK = /\\b(send|submit|pay|buy|purchase|checkout|order|delete|remove|unfollow|unsubscribe|log ?out|sign ?out|report|block|confirm|deactivate|save)\\b/i;
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // CSS-only visibility, no size floor. Taken from browser-use's own visibility test (dom/service.py
+    // is_element_visible_according_to_all_parents), which checks display/visibility/opacity and bounds
+    // EXISTENCE and nothing else. Our 80x16 floor was the single reason ACE/CodeMirror-5/Monaco
+    // composers were unreachable: their real input is a ~1x1 offscreen textarea that paints into a
+    // sibling div, so it fails a size gate by construction while being the correct fill target.
+    // A floor is also the wrong tool for the job it was doing -- junk is excluded below by requiring
+    // a rich role or a nearby submit AND score >= 2, and a honeypot is display:none/opacity:0, which
+    // still fails here. Keeping bounds!=0 area out entirely would re-break exactly what this fixes.
     const vis = (el) => {
-      const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
-      return r.width >= 80 && r.height >= 16 && s.visibility !== 'hidden'
-        && s.display !== 'none' && s.opacity !== '0';
+      const s = getComputedStyle(el);
+      if (s.visibility === 'hidden' || s.display === 'none') return false;
+      const o = parseFloat(s.opacity); if (!isNaN(o) && o <= 0) return false;
+      return !!el.getBoundingClientRect();
     };
     // Pierce shadow DOM: Reddit (shreddit), Telegram, WhatsApp, Slack build their composer
     // inside web-component shadow roots that a light-DOM querySelectorAll can't see. Collect
@@ -562,22 +571,6 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       for (const el of all) { if (el.shadowRoot) deepMatch(el.shadowRoot, sel, out, depth + 1); }
       return out;
     };
-    // The visible editing surface a hidden proxy input belongs to, or null. Kept deliberately tight,
-    // because loosening a size gate is how a scraper starts filling honeypots: the input itself must
-    // NOT be display:none / visibility:hidden / opacity:0 (which is exactly what a spam trap uses),
-    // and a real editor-sized ancestor must exist within a few levels. An offscreen input floating in
-    // no visible container still gets skipped, same as before.
-    const HIDDEN = (s) => s.visibility === 'hidden' || s.display === 'none' || s.opacity === '0';
-    const proxyHost = (el) => {
-      if (HIDDEN(getComputedStyle(el))) return null;
-      let p = el.parentElement, depth = 0;
-      while (p && depth++ < 4) {
-        const pr = p.getBoundingClientRect();
-        if (pr.width >= 200 && pr.height >= 60 && !HIDDEN(getComputedStyle(p))) return p;
-        p = p.parentElement;
-      }
-      return null;
-    };
     const EDIT = 'textarea, [contenteditable="true"], [role="textbox"], input[type="text"]';
     const labelOf = (el) => ((el.getAttribute('aria-label')||'') + ' ' + (el.getAttribute('placeholder')||'')
       + ' ' + (el.getAttribute('data-placeholder')||'') + ' ' + (el.getAttribute('name')||'')).trim();
@@ -586,19 +579,8 @@ async function handleFindComposer(wv: BrowserWebview, params: Record<string, any
       const all = deepMatch(document, EDIT, [], 0);
       let best = null, bestScore = 0, bestNear = false;
       for (const el of all) {
-        if (el.readOnly || el.disabled) continue;
-        // Code editors (ACE, CodeMirror 5, Monaco) take keystrokes through a ~1x1 offscreen textarea
-        // and paint the text in a sibling div, so their real input can NEVER pass a size gate.
-        // Measured 2026-08-06: w3schools and onlinegdb scored 0/3 as "no composer" while every
-        // contenteditable-based editor (CodeMirror 6, Quill, TinyMCE, CKEditor) passed, which is the
-        // input MECHANISM splitting the suite, not the site. Accept the proxy when a visible ancestor
-        // is composer-sized, and score it on that ancestor's geometry.
-        let rect = el.getBoundingClientRect();
-        if (!vis(el)) {
-          const host = proxyHost(el);
-          if (!host) continue;
-          rect = host.getBoundingClientRect();
-        }
+        if (!vis(el) || el.readOnly || el.disabled) continue;
+        const rect = el.getBoundingClientRect();
         const label = labelOf(el);
         if (el.type === 'search' || SEARCH.test(label)) continue;
         const rich = el.tagName === 'TEXTAREA' || el.isContentEditable || el.getAttribute('role') === 'textbox';
