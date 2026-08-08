@@ -1,0 +1,4 @@
+{"arm": "openswarm", "site": "regex101", "reached": true, "claimed": true, "wall_s": 9.8, "infra": "", "why": "payload+host in card browser-3df6", "iter": 1, "ts": 1786173595.2}
+{"arm": "browser-use", "site": "regex101", "reached": true, "claimed": true, "wall_s": 32.0, "infra": "", "why": "gex101    reach=Y claimed=Y steps= 3   31.1s  payload in editable on https://regex101.com/", "iter": 1, "ts": 1786173627.2}
+{"arm": "openswarm", "site": "w3schools", "reached": true, "claimed": true, "wall_s": 10.1, "infra": "", "why": "payload+host in card browser-a3ae", "iter": 1, "ts": 1786173637.3}
+{"arm": "browser-use", "site": "w3schools", "reached": true, "claimed": true, "wall_s": 31.6, "infra": "", "why": "30.5s  payload in editable on https://www.w3schools.com/html/tryit.asp?filename=tryhtml_de", "iter": 1, "ts": 1786173668.9}
