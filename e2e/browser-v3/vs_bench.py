@@ -186,6 +186,10 @@ def run_openswarm(site: str, task: str, host: str) -> dict:
         # Verified from the CARD, never from the agent's reply: same bar as the other arm.
         cards = [c for c in ((req("GET", f"{base}/dashboards/{ds[0]['id']}").get("layout") or {})
                              .get("browser_cards") or {}) if c not in p_before]
+        # No new card at all means the run never opened one, which is NOT the same event as "opened a
+        # page and failed to fill it" -- and the harness could not tell them apart, so 9 rows landed
+        # in a false-success bucket that measured my own read timing. Recorded explicitly.
+        p_ncards = len(cards)
         found = False
         for bid in cards:
             try:
@@ -210,7 +214,29 @@ def run_openswarm(site: str, task: str, host: str) -> dict:
                 req("DELETE", f"{base}/agents/sessions/{sid}", timeout=60)
             except Exception:
                 pass
+    # A trial with no readable card is graded from the BACKEND's own dryrun-report instead of being
+    # excluded. Excluding them was too charitable and flipped the whole result (openswarm 60.9% ->
+    # 100%, McNemar p=0.02 -> 1.0) purely on my read timing, and the log shows those rows are real
+    # misses: deepl reports composer=0 textboxes=0 and onlinegdb composer=0 textboxes=2, both on the
+    # correct URL. `filled=1` in that line is the product asserting it committed the payload, which
+    # is the same bar the card readback applies, so it can stand in when the card is already reaped.
+    if not infra and not reached and locals().get("p_ncards", 1) == 0:
+        p_log = os.environ.get("OSW_LOG", "")
+        p_saw = ""
+        try:
+            with open(p_log, errors="ignore") as fh:
+                for ln in fh:
+                    if "[dryrun-report]" in ln and host in ln:
+                        p_saw = ln
+        except OSError:
+            p_saw = ""
+        if p_saw:
+            reached = " filled=1" in p_saw
+            why = "from dryrun-report: " + p_saw.split("[dryrun-report]")[-1].strip()[:70]
+        else:
+            infra = "no card and no dryrun-report; unverifiable"
     return {"arm": "openswarm", "site": site, "reached": bool(reached), "claimed": bool(claimed),
+            "cards": locals().get("p_ncards", -1),
             "wall_s": round(time.time() - t0, 1), "infra": infra, "why": why}
 
 
