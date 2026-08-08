@@ -120,6 +120,11 @@ class ConnectionManager:
         if self.active_dashboard_id not in self.global_dashboard_ids.values():
             self.active_dashboard_id = next(iter(self.global_dashboard_ids.values()), None)
 
+    def has_listener(self, session_id: str) -> bool:
+        """Whether ANY socket would receive this session's events, i.e. whether a human could answer.
+        Same two lists send_to_session broadcasts to, so it cannot drift from where messages go."""
+        return bool(self.connections.get(session_id) or self.global_connections)
+
     async def send_to_session(self, session_id: str, event: str, data: dict):
         """Broadcast a session event with monotonic sequencing; terminal statuses also persist to disk."""
         data = slim_status_data(event, data)

@@ -1957,3 +1957,43 @@ def test_a_plain_click_task_still_learns(monkeypatch):
     ))
     assert SK.find_skill("docs.google.com", "click the Search button") is not None, (
         "a non-publishing action task must still be learnable")
+
+
+def test_has_listener_tracks_exactly_where_events_are_broadcast():
+    """A request nobody can answer must not hold a turn open for five minutes.
+
+    Measured 2026-08-08: deepl bot-detected the browser profile, the agent correctly refused to solve
+    the challenge and asked for a human, and a headless run then burned 306s per occurrence before
+    denying anyway -- the identical verdict, five minutes later. Cron runs, scheduled agents and
+    benchmarks all hit this.
+    """
+    from backend.apps.agents.core.ws_manager import ws_manager
+    p_conns, p_global = ws_manager.connections, ws_manager.global_connections
+    try:
+        ws_manager.connections, ws_manager.global_connections = {}, []
+        assert ws_manager.has_listener("s1") is False, "no sockets at all means nobody can answer"
+        # A session-scoped socket counts, and so does a global one: send_to_session broadcasts to
+        # BOTH, so has_listener must read both or it can claim nobody is there while events arrive.
+        ws_manager.connections = {"s1": [object()]}
+        assert ws_manager.has_listener("s1") is True
+        assert ws_manager.has_listener("other") is False
+        ws_manager.connections = {}
+        ws_manager.global_connections = [object()]
+        assert ws_manager.has_listener("any") is True, "a global window can answer for any session"
+    finally:
+        ws_manager.connections, ws_manager.global_connections = p_conns, p_global
+
+
+def test_the_approval_wait_is_a_named_constant_not_a_literal():
+    """It was a bare 300.0 at the call site: invisible, unchangeable, and longer than WALL_BUDGET_S
+    itself, so one prompt could outlive the entire run's budget."""
+    import inspect
+    from backend.apps.agents.browser import browser_agent as BA
+    src = inspect.getsource(BA)
+    assert "timeout=300.0" not in src, "the literal is back; make it configurable"
+    assert "P_APPROVAL_TIMEOUT_S" in src
+    i = src.index("async def p_request_browser_approval")
+    head = src[i:i + 1400]
+    assert "has_listener" in head, "must check for a listener BEFORE building a request nobody gets"
+    assert head.index("has_listener") < head.index("request_id = uuid4()"), \
+        "the fast decline has to come first, or the wait still happens"

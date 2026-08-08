@@ -68,6 +68,12 @@ P_BATCHABLE_ACTION_TOOLS = {
 # that produced an empty answer. It nudges rather than kills, so the answer still comes from Done.
 WALL_BUDGET_S = 180.0
 
+# How long to hold a turn open for a human to answer an approval or intervention request. Was a bare
+# 300.0 at the call site, which made it invisible and unchangeable: an operator running headless had
+# no way to shorten it, and it is longer than WALL_BUDGET_S itself, so one prompt could outlive the
+# whole run's budget. Overridable for automation contexts; 0 or less declines immediately.
+P_APPROVAL_TIMEOUT_S = float(os.environ.get("OSW_APPROVAL_TIMEOUT_S", "300") or 300)
+
 P_WRAPUP_NUDGE = (
     "You've spent several turns looking without finishing. Wrap up NOW: call Done with the "
     "best answer you can give from what you've ALREADY gathered. For a find/list ask, put the "
@@ -955,6 +961,16 @@ async def p_request_browser_approval(
     session: AgentSession, tool_name: str, tool_input: dict,
 ) -> dict:
     """Send an approval request for a browser sub-agent tool and wait for the decision."""
+    # Nobody attached means nobody can answer, and waiting the full 300s for a human who does not
+    # exist is dead time, not safety. Measured 2026-08-08: deepl bot-detected the profile, the agent
+    # correctly refused to solve the challenge and asked for help, and a headless run then burned
+    # 306s per occurrence (the whole 420s task budget) before denying anyway -- the same verdict it
+    # reaches instantly here. Cron runs, scheduled agents and benchmarks all hit this. The decision
+    # is unchanged (deny); only the five minutes of waiting for it are removed.
+    if not ws_manager.has_listener(session.id):
+        logger.info(f"[browser-agent {session.id}] {tool_name} needs a human and no UI is attached; "
+                    f"declining now instead of waiting {P_APPROVAL_TIMEOUT_S:.0f}s for one")
+        return {"behavior": "deny", "message": "No user is attached to answer this request"}
     request_id = uuid4().hex
     approval_req = ApprovalRequest(
         id=request_id,
@@ -975,7 +991,7 @@ async def p_request_browser_approval(
             ws_manager.send_approval_request(
                 session.id, request_id, tool_name, tool_input,
             ),
-            timeout=300.0,
+            timeout=P_APPROVAL_TIMEOUT_S,
         )
     except asyncio.TimeoutError:
         decision = {"behavior": "deny", "message": "Approval timed out"}
