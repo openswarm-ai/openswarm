@@ -10,6 +10,29 @@
  */
 export const MAX_LIVE_APP_WEBVIEWS = 6;
 
+// The GLOBAL ceiling across every guest renderer, browsers and apps together. Each side already had
+// its own cap (browsers 8, apps 6) but neither knew the other existed, so a busy canvas could still
+// stack 14 live renderers, and renderer memory pressure is exactly what evicts the wash (the
+// background band) and, at the limit, what OOMs the app. Pinned/working cards stay exempt: a
+// throttle must never blind an agent mid-task.
+export const MAX_LIVE_GUESTS = 10;
+
+// Browsers live in redux, not in this map; the suspend hook wires in a counter so this module stays
+// store-free (and its tests stay pure).
+let p_browserLiveCount: () => number = () => 0;
+
+export function wireBrowserLiveCounter(fn: () => number): void {
+  p_browserLiveCount = fn;
+}
+
+export function totalLiveGuests(): number {
+  return live.size + p_browserLiveCount();
+}
+
+export function guestBudgetHasRoom(): boolean {
+  return totalLiveGuests() < MAX_LIVE_GUESTS;
+}
+
 interface Slot {
   priority: number; // squared distance from viewport center; smaller = closer = kept when slots are scarce
   pinned: boolean; // actively used: never counted against the cap, never evicted
@@ -43,7 +66,7 @@ export function requestAppSlot(key: string, priority: number, pinned: boolean): 
     existing.pinned = pinned;
     return true;
   }
-  if (pinned || evictableLiveCount() < MAX_LIVE_APP_WEBVIEWS) {
+  if (pinned || (evictableLiveCount() < MAX_LIVE_APP_WEBVIEWS && guestBudgetHasRoom())) {
     live.set(key, { priority, pinned });
     return true;
   }

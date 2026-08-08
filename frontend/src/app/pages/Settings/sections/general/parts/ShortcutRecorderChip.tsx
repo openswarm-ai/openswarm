@@ -48,7 +48,9 @@ const ShortcutRecorderChip: React.FC<{ value: string; onChange: (combo: string) 
         setRecording(false);
       }}
       onBlur={() => setRecording(false)}
-      onClick={() => setRecording(true)}
+      // Arming without taking focus meant the next blur disarmed it before any key could land, so
+      // the chip snapped back to its old value and looked like it refused to be rebound.
+      onClick={(e) => { (e.currentTarget as HTMLElement).focus(); setRecording(true); }}
       sx={{
         display: 'inline-flex',
         alignItems: 'center',

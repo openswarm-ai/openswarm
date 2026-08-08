@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Union
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
+from backend.apps.agents.core import flight_recorder
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import load_all_tools, sanitize_server_name
@@ -52,6 +53,7 @@ class RunOptions(AgentManagerProtocol):
         from claude_agent_sdk.types import HookMatcher
 
         logger.info(f"[SPAWN-PHASE] options-build start session={session_id[:8]} t={time.monotonic():.3f}")
+        flight_recorder.crumb(session_id, "options-build")
 
         # Per-SESSION hook context, updated in place each turn: with a persistent client the hooks the
         # CLI holds were bound at connect, so they must read this stable object, not a per-turn rebuild.
@@ -119,6 +121,7 @@ class RunOptions(AgentManagerProtocol):
 
         # Pass session.active_mcps as the activation filter. Empty list ⇒ no MCP tools shipped to the SDK; the model must MCPSearch and MCPActivate first. The product invariant lives here at the dispatch layer (see build_mcp_servers docstring).
         logger.info(f"[SPAWN-PHASE] mcp-build start session={session_id[:8]} t={time.monotonic():.3f}")
+        flight_recorder.crumb(session_id, "mcp-build")
         mcp_servers = await self.build_mcp_servers(session.allowed_tools, session.active_mcps)
         logger.info(f"[SPAWN-PHASE] mcp-build done session={session_id[:8]} t={time.monotonic():.3f}")
 
@@ -198,6 +201,7 @@ class RunOptions(AgentManagerProtocol):
         }
         # cc/cx/gc/ag/gemini/openrouter prefixes force 9Router; route="api" bypasses to the provider's host directly; otherwise Pro proxy or key.
         logger.info(f"[SPAWN-PHASE] provider-env start session={session_id[:8]} t={time.monotonic():.3f}")
+        flight_recorder.crumb(session_id, "provider-env")
         await configure_provider_env(
             options_kwargs, session, resolved_model, api_type, global_settings
         )
@@ -285,6 +289,7 @@ class RunOptions(AgentManagerProtocol):
 
         # Compaction trigger (Phase 2). Driven by live ctx_used ratio rather than turn count, fires when input_tokens/context_window crosses session.compact_threshold_pct (default 0.65). Cheap, programmatic summarization (no aux LLM call) so this adds zero latency on the user's turn.
         logger.info(f"[SPAWN-PHASE] context-guard start session={session_id[:8]} t={time.monotonic():.3f}")
+        flight_recorder.crumb(session_id, "context-guard")
         await pre_send_context_guard(self, session, session_id)
         logger.info(f"[SPAWN-PHASE] context-guard done session={session_id[:8]} t={time.monotonic():.3f}")
 

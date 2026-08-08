@@ -1,7 +1,7 @@
 // Run: cd frontend && npx tsx --test src/app/pages/Dashboard/canvas/revealZoom.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { revealZoom, REVEAL_MIN_ZOOM } from './revealZoom.js';
+import { revealZoom, REVEAL_MIN_ZOOM } from './revealZoom.ts';
 
 const MIN = 0.15, MAX = 3.0;
 

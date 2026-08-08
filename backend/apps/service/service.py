@@ -304,8 +304,13 @@ async def usage_summary(window: str = "30d"):
     from backend.apps.agents.agent_manager import agent_manager
 
     sessions = p_load_all_sessions()
+    # A live session is usually already on disk, so appending it blind counted the same chat twice.
+    seen_ids = {s.get("id") for s in sessions if s.get("id")}
     for s in agent_manager.get_all_sessions():
-        sessions.append(s.model_dump(mode="json"))
+        live = s.model_dump(mode="json")
+        if live.get("id") and live["id"] in seen_ids:
+            sessions = [d for d in sessions if d.get("id") != live["id"]]
+        sessions.append(live)
 
     days = P_WINDOW_DAYS.get(window, 30)
     if days:
@@ -332,6 +337,9 @@ async def usage_summary(window: str = "30d"):
     provider_counts: Counter = Counter()
     tool_counts: Counter = Counter()
     status_counts: Counter = Counter()
+    day_counts: Counter = Counter()
+    hour_counts: Counter = Counter()
+    longest_run_seconds = 0.0
 
     excluded_automation = 0
     kept = []
@@ -359,6 +367,13 @@ async def usage_summary(window: str = "30d"):
         model_counts[p_friendly_model(s.get("model", "unknown"))] += 1
         provider_counts[s.get("provider", "anthropic")] += 1
         status_counts[s.get("status", "unknown")] += 1
+        created = s.get("created_at") or ""
+        if len(created) >= 13:
+            day_counts[created[:10]] += 1
+            try:
+                hour_counts[int(created[11:13])] += 1
+            except ValueError:
+                pass
 
         # Tool calls: tool_latencies carries authoritative per-tool counts; older sessions only have the sparse tool_call messages. Per session take whichever source recorded more so we never undercount what's on record (and so the total never drops below the old message-only count).
         lat_counts: Counter = Counter()
@@ -376,18 +391,14 @@ async def usage_summary(window: str = "30d"):
         total_tool_calls += sum(chosen.values())
         tool_counts.update(chosen)
 
-        # Run time: real agent-active time when tracked, else session wall-clock as a rough proxy.
+        # Measured agent-active time only. The old wall-clock fallback billed a card you left open all
+        # day as work: one "Open browser" session claimed 11 hours, and 45% of the headline came from
+        # 4% of sessions that way.
         run_s = (s.get("agent_active_ms") or 0) / 1000.0
-        if run_s <= 0:
-            created, closed = s.get("created_at"), s.get("closed_at")
-            if created and closed:
-                try:
-                    run_s = (datetime.fromisoformat(closed[:19]) - datetime.fromisoformat(created[:19])).total_seconds()
-                except Exception:
-                    run_s = 0
         if run_s > 0:
             total_run_seconds += run_s
             timed_sessions += 1
+            longest_run_seconds = max(longest_run_seconds, run_s)
 
     avg_duration = total_run_seconds / timed_sessions if timed_sessions > 0 else 0
     completed = status_counts.get("completed", 0)
@@ -437,7 +448,12 @@ async def usage_summary(window: str = "30d"):
         "total_messages": total_messages,
         "total_tool_calls": total_tool_calls,
         "total_run_seconds": round(total_run_seconds, 1),
+        "timed_sessions": timed_sessions,
+        "longest_run_seconds": round(longest_run_seconds, 1),
         "avg_duration_seconds": round(avg_duration, 1),
+        "status_breakdown": dict(status_counts),
+        "daily_activity": [{"day": d, "chats": n} for d, n in sorted(day_counts.items())],
+        "hourly_activity": [hour_counts.get(h, 0) for h in range(24)],
         "avg_cost_per_session": round(avg_cost, 4),
         "completion_rate": round(completion_rate, 3),
         "models_used": dict(model_counts.most_common(10)),

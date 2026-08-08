@@ -33,8 +33,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "4. **Unsure which server.** `MCPList` for a cheap survey, or "
     '`MCPSearch("<what you need>")` to rank servers by relevance. Do this before '
     "MCPActivate, never via ToolSearch.\n"
-    "5. **No tool fits.** WebSearch / WebFetch for information. BrowserAgent only for "
-    "visual interaction, form filling, or sites with no API path.\n\n"
+    "5. **Reading the web.** WebSearch / WebFetch first, always: they are far faster than "
+    "driving a browser and they cover ordinary pages. Escalate to BrowserAgent only once "
+    "they have actually come back thin or blocked (login wall, paywall, JS-only page), or "
+    "when the task needs visual interaction or form filling.\n\n"
     "### Choosing among similar names\n"
     "A matching name is a hypothesis, not an answer. Before calling, read the description "
     "and the required parameters, and confirm three things: it performs the action you "

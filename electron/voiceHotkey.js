@@ -133,6 +133,7 @@ function installVoiceHotkey(getMainWindow) {
 
   // ---- fn/Globe primary tier (macOS): the native watcher, since no JS tap can see keycode 63 ----
   let fnProc = null;
+  let quitReaperWired = false;
   const startFnWatcher = () => {
     if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) return;
     resolveFnWatcherBinary((bin) => {
@@ -141,7 +142,21 @@ function installVoiceHotkey(getMainWindow) {
       startFnWatcherWith(bin);
     });
   };
+  // Kill fn-watchers left by a previous OpenSwarm that died badly. will-quit is the ONLY thing that
+  // reaps ours, and it never runs on a crash or a force-quit, so each bad exit strands a process
+  // holding a GLOBAL keyboard tap forever (one was found alive after 2h35m). They accumulate, and
+  // every extra one re-sends fn, so dictation double-toggles. We are a single-instance app about to
+  // spawn our own, which makes this the one moment any other fn-watcher is provably not ours.
+  const sweepStrayFnWatchers = (bin) => {
+    try {
+      const out = spawnSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8', timeout: 4000 });
+      for (const pid of strayFnWatcherPids(String((out && out.stdout) || ''), bin, process.pid)) {
+        try { process.kill(pid, 'SIGKILL'); console.log('[voice] reaped stray fn watcher', pid); } catch (_) {}
+      }
+    } catch (_) { /* a machine where ps is restricted must still arm the watcher */ }
+  };
   const startFnWatcherWith = (bin) => {
+    sweepStrayFnWatchers(bin);
     try {
       fnProc = spawn(bin, [], { stdio: ['ignore', 'pipe', 'ignore'] });
     } catch (e) {
@@ -174,7 +189,10 @@ function installVoiceHotkey(getMainWindow) {
       fnProven = false;
       registerVoiceShortcut();
     });
-    app.on('will-quit', () => { try { fnProc && fnProc.kill('SIGKILL'); } catch (_) {} });
+    if (!quitReaperWired) {
+      quitReaperWired = true;
+      app.on('will-quit', () => { try { fnProc && fnProc.kill('SIGKILL'); } catch (_) {} });
+    }
     console.log('[voice] fn watcher armed (awaiting first event to prove Input Monitoring)');
     // macOS's own Globe-key action (emoji picker by default) fires on a quick fn tap alongside us;
     // tell the renderer once so it can point the user at "Press Globe key to: Do Nothing".
@@ -330,4 +348,22 @@ function installVoiceHotkey(getMainWindow) {
   });
 }
 
-module.exports = { installVoiceHotkey };
+/**
+ * PIDs of fn-watcher processes that are NOT this app's, given `ps -eo pid=,args=` output.
+ *
+ * Matched on the absolute binary path so an unrelated program never matches, and our own pid is
+ * excluded. Pure so the selection can be tested; the killing stays at the call site.
+ */
+function strayFnWatcherPids(psOutput, binPath, selfPid) {
+  const pids = [];
+  if (!binPath) return pids;
+  for (const line of String(psOutput || '').split('\n')) {
+    if (line.indexOf(binPath) < 0) continue;
+    const pid = parseInt(line.trim().split(/\s+/)[0], 10);
+    if (!Number.isInteger(pid) || pid <= 1 || pid === selfPid) continue;
+    pids.push(pid);
+  }
+  return pids;
+}
+
+module.exports = { installVoiceHotkey, strayFnWatcherPids };

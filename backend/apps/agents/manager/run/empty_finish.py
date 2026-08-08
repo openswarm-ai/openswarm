@@ -43,7 +43,19 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     logger.warning(f"Agent {session_id}: turn finished with no answer after tool work; one hidden continue nudge")
     try:
         from backend.apps.service.client import submit_diagnostic
-        submit_diagnostic({"kind": "empty_finish_nudge", "session_id": session_id, "model": session.model})
+        from backend.apps.agents.core import flight_recorder as p_fr
+        # A silent quit is the hardest class to diagnose after the fact, so it gets the same envelope
+        # as a hard error: without breadcrumbs you cannot see what the turn was doing when it gave up.
+        submit_diagnostic({
+            "kind": "empty_finish_nudge",
+            "session_id": session_id,
+            "model": session.model,
+            "tool_calls": p_tool_calls,
+            "nudge": session.empty_finish_nudges,
+            "flight": p_fr.build_envelope(
+                session_id, "empty_finish_nudge", "silent_quit", session.model, "stream", session.empty_finish_nudges,
+            ),
+        })
     except Exception:
         pass
     return True

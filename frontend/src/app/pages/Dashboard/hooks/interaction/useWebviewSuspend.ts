@@ -11,10 +11,17 @@ import { getActivity, isAnyBrowserBusy } from '@/shared/browserCommandHandler';
 import { isKeepAliveBrowser } from '@/shared/browserFocus';
 import { captureTabCapsule } from '@/shared/browserStateCapsule';
 import { getMinimizedShot } from '../../desktop/minimizedShots';
+import { guestBudgetHasRoom, wireBrowserLiveCounter } from '@/shared/appWebviewBudget';
 import { useAppHidden } from './useAppHidden';
 import { cardIntersectsViewport, distFromCenter, type Viewport } from './suspendGeometry';
 
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+
+// Feed the global guest budget the live-browser count, so apps and browsers share ONE ceiling.
+wireBrowserLiveCounter(() => {
+  const dl = store.getState().dashboardLayout;
+  return Object.keys(dl.browserCards).filter((id) => !dl.suspendedBrowserCards[id]).length;
+});
 
 const SETTLE_MS = 800;
 // Hysteresis: suspend only well past the edge, resume just past it, so a card sitting on the boundary never flaps between webview and snapshot.
@@ -23,6 +30,13 @@ const RESUME_MARGIN_PX = 96;
 const SNAPSHOT_MAX_W = 1024;
 // Below this on-screen width a live page is indistinguishable from its placeholder, so booted-parked cards on a zoomed-out canvas stay parked until zoomed into.
 const RESUME_MIN_CARD_PX = 220;
+// ...and the same rule on the way OUT. This used to be one-directional: a card too small to read was
+// never woken, but one already awake stayed awake however far you zoomed out, so eight webviews kept
+// rendering full pages into ~100px boxes on a zoomed-out canvas. That is the app's biggest GPU cost
+// paid for pixels nobody can read, and it is the pressure that makes Chromium evict the wash tiles
+// (the two-tone background band). Lower than the resume bar on purpose, so a card sitting near the
+// threshold cannot flap between live and snapshot.
+const SUSPEND_MAX_CARD_PX = 150;
 // Hard ceiling on simultaneous live webviews; past it the farthest-from-center non-agent card gets parked, so heavy pages degrade gracefully instead of OOMing.
 const MAX_LIVE_WEBVIEWS = 8;
 
@@ -161,12 +175,25 @@ export function useWebviewSuspend(
       // Un-minimizing is an explicit "give it back", so it wakes the card wherever the camera happens to be pointing.
       if (wasMinimized[id]) {
         restoredAt.set(id, Date.now());
-        dispatch(resumeBrowserCard(id));
+        // Straight into a tile (rail -> fullscreen): attaching the guest is a SYNCHRONOUS 60-290ms
+        // main-thread IPC, and firing it inside the landing + camera glide is the browser-only jank
+        // (DOM windows never pay it). The snapshot is pixel-identical, so let it do the landing and
+        // attach once the motion is over; re-minimized in the gap means never attach at all.
+        if (store.getState().dashboardLayout.tiledCards[id]) {
+          window.setTimeout(() => {
+            const dl = store.getState().dashboardLayout;
+            if (!dl.minimizedCards[id] && dl.suspendedBrowserCards[id]) dispatch(resumeBrowserCard(id));
+          }, 600);
+        } else {
+          dispatch(resumeBrowserCard(id));
+        }
         budget--;
         continue;
       }
       const bigEnough = card.width * zoom >= RESUME_MIN_CARD_PX;
-      if (bigEnough && cardIntersectsViewport(card, vpRef.current, RESUME_MARGIN_PX)) {
+      // Passive wake also asks the GLOBAL budget: a free browser slot means nothing if apps already
+      // hold the machine at its ceiling. Explicit restores and working agents above never ask.
+      if (bigEnough && cardIntersectsViewport(card, vpRef.current, RESUME_MARGIN_PX) && guestBudgetHasRoom()) {
         dispatch(resumeBrowserCard(id));
         budget--;
       }
@@ -178,6 +205,9 @@ export function useWebviewSuspend(
       const wantsPark = (id: string, card: BrowserCardPosition): boolean =>
         appHidden
         || isMinimized(id)
+        // Read zoom off the ref, never the closure: this fires 800ms after the effect ran, and
+        // zooming out is exactly the gesture that should be parking these.
+        || (!withinRestoreGrace(id) && card.width * vpRef.current.zoom < SUSPEND_MAX_CARD_PX)
         || (!withinRestoreGrace(id) && !cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX));
       await refreshVisibleFrames(browserCards, isSuspended, vpRef.current);
       for (const [id, card] of Object.entries(browserCards)) {

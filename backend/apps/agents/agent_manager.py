@@ -46,6 +46,8 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
     @typechecked
     def __init__(self):
         self.sessions: Dict[str, AgentSession] = {}
+        from backend.apps.agents.core.flight_recorder import set_sessions_provider
+        set_sessions_provider(lambda: self.sessions)
         self.tasks: Dict[str, asyncio.Task] = {}
         # Live mirror of the in-flight streamed assistant text per session, so a stop can persist the partial reply instantly instead of waiting out the multi-second SDK teardown the cancel handler sits behind.
         self.live_partial: Dict[str, PartialReply] = {}
@@ -125,7 +127,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             # off), so an empty prewarm prompt would boot a different thinking config than a typical
             # first message and fingerprint-miss into a respawn. 50+ chars matches the common case.
             p_representative = "prewarm placeholder prompt of representative length for boot"
-            (options, options_kwargs, _pc, _stderr, _gs) = await self.build_agent_options(
+            (options, options_kwargs, _, _, _) = await self.build_agent_options(
                 session, session_id, p_representative, "", builtin_perms,
                 None, None, None, False, p_router_model_id, p_api_type)
             from claude_agent_sdk import ClaudeSDKClient
@@ -273,9 +275,11 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                 try:
                     from backend.apps.service.client import submit_diagnostic
                     from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
+                    from backend.apps.agents.core import flight_recorder as p_fr
                     submit_diagnostic({
                         "kind": "context_pressure_valve",
                         "trigger": "overflow" if p_overflow else "pressure_death",
+                        "flight": p_fr.build_envelope(session_id, "context_pressure_valve", "overflow" if p_overflow else "pressure_death", session.model, "stream", turn.compact_boundaries),
                         "session_id": session_id,
                         "model": session.model,
                         "compact_boundaries": turn.compact_boundaries,

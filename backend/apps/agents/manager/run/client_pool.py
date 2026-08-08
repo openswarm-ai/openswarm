@@ -84,10 +84,16 @@ class ClientHandle(BaseModel):
 
 
 # A pooled CLI holds ~100MB+ per session; evict clients idle past this so parked chats don't accumulate subprocesses (respawn on the next message is the normal cold path).
-IDLE_EVICT_SECONDS = float(os.environ.get("OSW_CLIENT_IDLE_EVICT_SECONDS", "1800"))
+# 10 minutes, down from 30: the packaged stress run measured ~108MB per parked CLI, and prewarm puts
+# the respawn cost on the next message at ~0.5-1.6s, so half an hour of held RAM per finished chat
+# bought almost nothing. Overridable for machines with RAM to burn.
+IDLE_EVICT_SECONDS = float(os.environ.get("OSW_CLIENT_IDLE_EVICT_SECONDS", "600"))
 
 # Hard ceiling on warm CLIs regardless of idle age: past this, the least-recently-used IDLE sessions are disposed (they respawn ~0.5s on their next message), bounding the "30 chats open" resident-memory case. Kept a SOFT cap: a mid-turn or just-acquired client is never evicted, so a burst of live turns may exceed it rather than kill work.
-MAX_LIVE_CLIENTS = int(os.environ.get("OSW_CLIENT_MAX_LIVE", "12"))
+# 8, down from 12: the measured ceiling at 12 was ~1.3GB of CLIs alone, which is brutal on the 8GB
+# machines we explicitly support. Still a SOFT cap: live turns are never evicted, so real concurrent
+# work can exceed it; only parked chats pay.
+MAX_LIVE_CLIENTS = int(os.environ.get("OSW_CLIENT_MAX_LIVE", "8"))
 # Never cap-evict a client used this recently; far larger than the acquire->lock window, so a just-acquired client can't be reaped before its turn takes the lock.
 LRU_GUARD_SECONDS = float(os.environ.get("OSW_CLIENT_LRU_GUARD_SECONDS", "5"))
 # Timer cadence for the background reclaim; the acquire-time sweep is lazy (fires only when some session takes a turn), this one catches an all-quiet pool.

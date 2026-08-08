@@ -22,6 +22,7 @@ from backend.apps.workflows.models import (
 from backend.apps.workflows import storage, scheduler, executor, audit, escalation
 from backend.apps.workflows.cloud.handover import release_before_removing
 from backend.apps.settings.models import DEFAULT_MODEL
+from backend.apps.workflows.default_model import provider_for_model, user_default_model
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,14 @@ async def p_sync_cloud_copy(wf: Workflow, data: dict) -> None:
         raise HTTPException(status_code=502, detail=outcome.message or "The cloud copy could not be updated; try again.")
 
 
+def p_drop_pending_missed(workflow_id: str) -> None:
+    """Forget queued missed fires for a workflow. Switching one off has to clear the queue the same
+    way trashing does, or the launch review card still offers to run it and the run is then refused."""
+    stale = [m.id for m in storage.list_missed() if m.workflow_id == workflow_id]
+    if stale:
+        storage.remove_missed(stale)
+
+
 def _normalize_schedule_state(wf: Workflow, source_allowed_tools: Optional[list[str]] = None) -> None:
     if wf.schedule.timezone == "local" and wf.schedule.enabled:
         wf.schedule.timezone = scheduler.host_timezone_name()
@@ -284,9 +293,9 @@ async def create_workflow(body: WorkflowCreate):
         permissions=body.permissions or [],
         source_session_id=body.source_session_id,
         dashboard_id=body.dashboard_id,
-        model=body.model or DEFAULT_MODEL,
+        model=body.model or user_default_model(),
         mode=body.mode or "agent",
-        provider=body.provider or "anthropic",
+        provider=body.provider or provider_for_model(body.model or user_default_model()),
         cost_cap_usd_monthly=body.cost_cap_usd_monthly,
         auto_named=body.auto_named,
         unsaved=body.unsaved,
@@ -448,6 +457,10 @@ async def p_generate_metadata_for_steps(
 
 _PLACEHOLDER_TITLES = {"", "New workflow", "Untitled workflow", "Scheduled workflow"}
 
+# Ceiling on the cosmetic label/title aux call, which runs INSIDE the step-edit request. The SDK's own
+# stream timeout is minutes, long enough that a stalled lane reads as the editor being dead.
+AUX_LABEL_TIMEOUT_S = 20.0
+
 
 def p_fallback_title_for_steps(steps: list[WorkflowStep]) -> str:
     """Deterministic title derived from the steps, used when the aux model is
@@ -510,9 +523,16 @@ async def p_relabel_steps(
     if not regen_idxs and not need_autoname:
         return
     try:
-        title, description, labels = await p_generate_metadata_for_steps(steps, model)
+        title, description, labels = await asyncio.wait_for(
+            p_generate_metadata_for_steps(steps, model), timeout=AUX_LABEL_TIMEOUT_S,
+        )
     except Exception:
-        return
+        # Every caller awaits this INSIDE the PATCH request, so an aux lane that stalls used to hold
+        # the whole edit open and the editor just span: an agent editing a step bricked the app. This
+        # is decoration with deterministic fallbacks right below, so failing here must cost a nicer
+        # label, never the edit itself.
+        logger.info("workflow meta gen unavailable; using deterministic labels", exc_info=True)
+        title, description, labels = "", "", []
     # One aux call covers labels AND auto-naming. A manual rename sets auto_named=False, so the title/description below are left untouched then.
     if need_autoname:
         if title:
@@ -674,7 +694,9 @@ async def list_missed_runs(limit: int = 50):
     out: list[dict] = []
     for m in missed[:limit]:
         wf = storage.get_workflow(m.workflow_id)
-        if not wf:
+        # Paused counts as gone here, same as trashed: offering to run a switched-off workflow is an
+        # action we would then refuse, and the card is the one place a stale entry is visible.
+        if not wf or wf.deleted_at is not None or not wf.schedule.enabled:
             continue
         out.append({
             "id": m.id,
@@ -702,7 +724,7 @@ async def run_missed_runs(body: MissedRunAction):
     started = 0
     for wid, fors in by_wf.items():
         wf = storage.get_workflow(wid)
-        if not wf:
+        if not wf or wf.deleted_at is not None or not wf.schedule.enabled:
             continue
         started += len(fors)
         asyncio.create_task(scheduler.run_missed_sequence(wf, fors))
@@ -837,6 +859,8 @@ async def update_workflow(
     if not wf.icon:
         wf.icon = _derive_icon(wf)
     _normalize_schedule_state(wf)
+    if not wf.schedule.enabled:
+        p_drop_pending_missed(wf.id)
     await p_sync_cloud_copy(wf, data)
     storage.save_workflow(wf)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))
@@ -886,9 +910,7 @@ async def delete_workflow(workflow_id: str):
     # A trashed workflow's in-flight run was previously un-stoppable even by hand (the manual Stop path filters deleted); halt it now, with the executor's per-step deleted-recheck as backstop.
     await _stop_in_flight_run(workflow_id)
     # Drop any pending missed fires so a trashed workflow can't haunt the card.
-    stale = [m.id for m in storage.list_missed() if m.workflow_id == workflow_id]
-    if stale:
-        storage.remove_missed(stale)
+    p_drop_pending_missed(workflow_id)
     scheduler.kick()
     try:
         from backend.apps.agents.core.ws_manager import ws_manager
@@ -906,7 +928,7 @@ async def restore_workflow(workflow_id: str):
     if not wf or wf.deleted_at is None:
         raise HTTPException(status_code=404, detail="Workflow not in trash")
     wf.deleted_at = None
-    storage.save_workflow(wf)
+    storage.save_workflow(wf, untrash=True)
     enriched = _enriched(wf)
     try:
         from backend.apps.agents.core.ws_manager import ws_manager
@@ -1453,6 +1475,10 @@ async def run_workflow_now(workflow_id: str, body: Optional[dict] = None):
     wf = storage.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # The executor refuses a trashed workflow but writes no history for it, so without this the caller
+    # got run_id "" with a null status and no idea why nothing happened.
+    if wf.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="This workflow is in Trash. Restore it to run it.")
     # executor.execute() owns the run record. Don't pre-create a stub here or we end up with two rows per manual fire (one orphan "running" row from this handler plus the real one from the executor).
     pre_ids = {r.id for r in storage.list_runs(wf.id, limit=10)}
     tested_signature = body.get("signature") if isinstance(body, dict) else None

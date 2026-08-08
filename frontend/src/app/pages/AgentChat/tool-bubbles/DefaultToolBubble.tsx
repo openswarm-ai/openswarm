@@ -222,6 +222,10 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
           ) : (
           <Box
             sx={{
+              // While a browser agent is live the mini browser below carries the SAME action feed on
+              // its own overlay; showing the black log too is the same story twice, so it collapses
+              // to zero height for the duration and returns as the normal record once the run ends.
+              display: isBrowserAgent && (isPending || isStreaming) ? 'none' : undefined,
               bgcolor: tc.TERM_BG,
               borderRadius: 1.5,
               maxHeight: 'min(40vh, 320px)',

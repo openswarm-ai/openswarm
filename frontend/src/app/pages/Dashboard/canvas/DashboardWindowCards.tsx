@@ -42,6 +42,10 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
   const settingsCard = useAppSelector((s) => s.dashboardLayout.settingsCard);
   const marketplaceCard = useAppSelector((s) => s.dashboardLayout.marketplaceCard);
   const monitorCard = useAppSelector((s) => s.dashboardLayout.workflowsMonitorCard);
+  // bringToFront writes the raise into the zOrders map, but these windows render from their own
+  // stored zOrder, so a click on Marketplace/Settings raised nothing at all. Prefer the live map.
+  const zOrders = useAppSelector((s) => s.dashboardLayout.zOrders);
+  const zOf = (id: string, stored: number | undefined): number => zOrders[id] ?? stored ?? 0;
   const monitorWorkflowId = useAppSelector((s) => s.dashboardLayout.workflowsMonitorId);
   const monitorWorkflow = useAppSelector((s) => (monitorWorkflowId ? s.workflows.items[monitorWorkflowId] : undefined));
   // The monitor's workflow vanished (trashed/deleted) while open: tear the card + its tether down instead of leaving an orange line pointing at nothing.
@@ -57,7 +61,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
           cardY={workflowsHub.y}
           cardWidth={workflowsHub.width}
           cardHeight={workflowsHub.height}
-          cardZOrder={workflowsHub.zOrder ?? 0}
+          cardZOrder={zOf('workflows-hub', workflowsHub.zOrder)}
           getCanvasState={getCanvasState}
           isSelected={selection.isSelected('workflows-hub')}
           isHighlighted={highlightedCardId === 'workflows-hub'}
@@ -75,7 +79,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
           cardY={settingsCard.y}
           cardWidth={settingsCard.width}
           cardHeight={settingsCard.height}
-          cardZOrder={settingsCard.zOrder ?? 0}
+          cardZOrder={zOf(SETTINGS_CARD_ID, settingsCard.zOrder)}
           getCanvasState={getCanvasState}
           isSelected={selection.isSelected(SETTINGS_CARD_ID)}
           isHighlighted={highlightedCardId === SETTINGS_CARD_ID}
@@ -93,7 +97,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
           cardY={marketplaceCard.y}
           cardWidth={marketplaceCard.width}
           cardHeight={marketplaceCard.height}
-          cardZOrder={marketplaceCard.zOrder ?? 0}
+          cardZOrder={zOf(MARKETPLACE_CARD_ID, marketplaceCard.zOrder)}
           getCanvasState={getCanvasState}
           isSelected={selection.isSelected(MARKETPLACE_CARD_ID)}
           isHighlighted={highlightedCardId === MARKETPLACE_CARD_ID}
@@ -112,7 +116,7 @@ const DashboardWindowCards: React.FC<DashboardWindowCardsProps> = ({
           cardY={monitorCard.y}
           cardWidth={monitorCard.width}
           cardHeight={monitorCard.height}
-          cardZOrder={monitorCard.zOrder ?? 0}
+          cardZOrder={zOf('workflows-monitor', monitorCard.zOrder)}
           getCanvasState={getCanvasState}
           onDragStart={onDragStart}
           onDragMove={onDragMove}

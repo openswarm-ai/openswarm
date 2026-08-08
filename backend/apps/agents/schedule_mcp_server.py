@@ -12,6 +12,7 @@ ScheduleWorkflow for exact, user-specified live schedules.
 import json
 import sys
 import os
+import time
 import uuid
 import urllib.request
 import urllib.error
@@ -212,13 +213,14 @@ TOOLS = [
     {
         "name": "TestWorkflow",
         "description": (
-            "Spawn a sibling Test Agent that runs the workflow end-to-end "
-            "(the current draft if one is being edited, else the live steps) "
-            "so the user can watch it work. Use after editing a step to "
-            "verify the change. The Test Agent renders as a sibling card on "
-            "the dashboard with a 'Testing' arrow chip linking back to this "
-            "workflow. After it finishes, call ReadTestTranscript to see what "
-            "it did."
+            "Run the workflow end-to-end (the current draft if one is being "
+            "edited, else the live steps) and WAIT for the result, which is "
+            "returned to you in this same turn. Use after editing a step to "
+            "verify the change, then keep going: fix what the transcript "
+            "shows and test again, without stopping to ask the user. The Test "
+            "Agent renders as a sibling card on the dashboard with a 'Testing' "
+            "arrow chip so they can watch. Only if it runs unusually long does "
+            "this return early, telling you to call ReadTestTranscript."
         ),
         "inputSchema": {
             "type": "object",
@@ -438,6 +440,19 @@ def handle_run_now(args: dict) -> dict:
     wid = args.get("workflow_id") or ""
     if not wid:
         return _err("workflow_id is required.")
+    # A human clicking Run Now on a paused workflow can see it is paused and chose anyway, so the
+    # route ignores `enabled` on purpose. An agent reaching the same route is NOT the same act: the
+    # user never asked, and a workflow they deliberately switched off starting itself is the field
+    # report ("a workflow that had been toggled off just started running again").
+    info = _call("GET", f"/{wid}")
+    if "_error" not in info:
+        sched = info.get("schedule") or {}
+        if isinstance(sched, dict) and sched.get("enabled") is False:
+            title = info.get("title") or wid
+            return _err(
+                f"'{title}' is paused, so I did not run it. Tell the user it is switched off and ask "
+                "them to turn it back on (or to confirm they want a one-off run) before trying again."
+            )
     r = _call("POST", f"/{wid}/run")
     if "_error" in r:
         return _err(r["_error"])
@@ -529,6 +544,18 @@ def handle_delete_step(args: dict) -> dict:
     return _ok(f"Step {idx + 1} deleted ({len(steps)} remaining).")
 
 
+# How long a synchronous test may hold the turn. Long enough for a real multi-step workflow, short
+# enough that a wedged test returns an honest "still running" instead of hanging the conversation.
+# Wait on PROGRESS, not on a clock. A fixed budget answers the wrong question: a run doing real work
+# should never be cut off (the first budget was 240s and a live digest took 243, missing by three
+# seconds), while a run that is genuinely wedged should not be waited on for ten minutes either. So
+# the deadline resets every time the transcript grows, and only silence ends the wait.
+TEST_IDLE_S = 180.0
+# Absolute backstop for the pathological case where a run reports progress forever.
+TEST_MAX_S = 3600.0
+TEST_POLL_S = 3
+
+
 def handle_test_workflow(args: dict) -> dict:
     wid = args.get("workflow_id") or ""
     if not wid:
@@ -537,7 +564,43 @@ def handle_test_workflow(args: dict) -> dict:
     if "_error" in r:
         return _err(r["_error"])
     sid = r.get("session_id", "")
-    return _ok(f"Test Agent spawned (session {sid[:8]}...). It runs the latest workflow on the dashboard with a Testing arrow chip. Call ReadTestTranscript once it finishes to see what it did.")
+    # Blocking on purpose. This used to return the moment the Test Agent spawned and tell the model
+    # to "call ReadTestTranscript once it finishes", but a model has no way to know when that is, so
+    # it ended its turn and the HUMAN had to keep re-pinging it. A test whose result the caller
+    # cannot observe is not a tool, it is homework for the user.
+    started = time.time()
+    last_progress_at = started
+    last_len = -1
+    last_status = "running"
+    partial = ""
+    while True:
+        now = time.time()
+        if now - last_progress_at >= TEST_IDLE_S or now - started >= TEST_MAX_S:
+            break
+        time.sleep(TEST_POLL_S)
+        t = _call("GET", f"/{wid}/test-transcript")
+        if "_error" in t:
+            continue
+        last_status = t.get("status") or "running"
+        transcript = t.get("transcript") or ""
+        # Any growth in the transcript is the run telling us it is alive, so the clock starts over.
+        if len(transcript) != last_len:
+            last_len = len(transcript)
+            last_progress_at = time.time()
+            partial = transcript
+        if last_status in ("running", "none"):
+            continue
+        return _ok(f"Test finished (status: {last_status}). Transcript:\n\n{transcript or '(empty transcript)'}")
+    # Hand back whatever the run has actually produced. Returning only "call ReadTestTranscript" made
+    # the model guess when to poll, which is the same dead end as not waiting at all; a partial
+    # transcript is something it can reason about right now.
+    waited = int(time.time() - started)
+    head = (
+        f"Test Agent (session {sid[:8]}) went quiet: no new output for {int(TEST_IDLE_S)}s "
+        f"(status: {last_status}, waited {waited}s total). Everything it produced follows; "
+        "call ReadTestTranscript if it lands later."
+    )
+    return _ok(f"{head}\n\n{partial.strip()}" if partial.strip() else head)
 
 
 def handle_read_test_transcript(args: dict) -> dict:

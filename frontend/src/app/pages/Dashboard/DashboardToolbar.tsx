@@ -42,6 +42,7 @@ interface Props {
     selectedAppIds?: string[],
   ) => void;
   onAddView: (outputId: string, opts?: { newInstance?: boolean }) => void;
+  onOpenApplications: () => void;
   onHistoryResume: (sessionId: string) => void;
   onAddBrowser: () => void;
   dashboardId?: string;
@@ -73,7 +74,7 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
-  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onHistoryResume, onAddBrowser, dashboardId, newAgentBounce, canvasEmpty, onNewAgentBounceEnd, prefillPrompt, prefillMode }, ref) => {
+  ({ inputOpen, onNewAgent, onCancel, onSend, onAddView, onOpenApplications, onHistoryResume, onAddBrowser, dashboardId, newAgentBounce, canvasEmpty, onNewAgentBounceEnd, prefillPrompt, prefillMode }, ref) => {
     const c = useClaudeTokens();
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
@@ -628,7 +629,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onNewAgent();
             }}
             onAddBrowser={onAddBrowser}
-            onAddApp={handleOpenViewPicker}
+            onAddApp={onOpenApplications}
             onWorkflows={() => dispatch(workflowsHubOpen ? closeWorkflowsApp() : openWorkflowsApp())}
             onHistory={handleOpenHistory}
           />

@@ -170,6 +170,22 @@ async def get_help_knowledge() -> HelpKnowledgeResponse:
     return build_knowledge_response()
 
 
+@help_app.router.get("/whats-new")
+def whats_new() -> dict:
+    """The release story for the in-app What's New card. Same words the Help agent and the GitHub
+    body get, so a user never reads two different accounts of the same release."""
+    from backend.apps.help.changelog import as_markdown, latest_release, release_notes
+    from backend.apps.service.version import APP_VERSION
+    note = release_notes(APP_VERSION) or latest_release()
+    return {
+        "version": note.version,
+        "headline": note.headline,
+        "highlights": note.highlights,
+        "fixes": note.fixes,
+        "markdown": as_markdown(note),
+    }
+
+
 @help_app.router.post("/bundle")
 @typechecked
 async def build_bundle(body: BundleRequest) -> dict:

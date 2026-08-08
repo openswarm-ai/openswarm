@@ -51,7 +51,7 @@
         var g = null;
         try { g = JSON.parse(localStorage.getItem('self-swarm-theme-gradient') || 'null'); } catch (e) {}
         var accent = localStorage.getItem('self-swarm-theme-accent');
-        var stops = Array.isArray(g) && g.length > 1 ? g : (accent ? [accent, accent] : ['#B7CDEA', '#EFE0D2', '#E7BDD1']);
+        var stops = Array.isArray(g) && g.length > 1 ? g : (accent ? [accent, accent] : ['#DACEDA']);
         if (stops.length === 1) stops = [stops[0], stops[0]];
         var alpha = parseFloat(localStorage.getItem('self-swarm-theme-wash-opacity') || '');
         if (!isFinite(alpha) || alpha < 0 || alpha > 1) alpha = 0.17;

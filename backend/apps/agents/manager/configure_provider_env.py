@@ -232,6 +232,8 @@ async def configure_provider_env(
         logger.info(f"[MCP-DEBUG] Using 9Router (api_type={api_type})")
     else:
         # router_available() above already attempted a revival; reaching here means it truly can't start.
+        from backend.apps.agents.core import flight_recorder
+        flight_recorder.crumb(session.id, "router-unavailable", model=session.model, api=api_type)
         if api_type != "anthropic" or resolved_is_9router:
             raise ValueError(
                 f"9Router is not running; cannot use {session.model}. "

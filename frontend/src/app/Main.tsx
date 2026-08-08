@@ -66,6 +66,7 @@ if (typeof window !== 'undefined') {
   else window.setTimeout(prefetchAll, 500);
 }
 import { report, reportAppOpened, getSessionTraceState, getRecentActions } from '@/shared/serviceClient';
+import { installUxSignals } from '@/shared/uxSignals';
 import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
 import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
@@ -277,6 +278,7 @@ const SettingsLoader: React.FC<{ children: React.ReactNode }> = ({ children }) =
     if (!loaded) return;
     (window as any).openswarm?.setAllowPrerelease?.(allowExperimentalUpdates);
   }, [loaded, allowExperimentalUpdates]);
+  useEffect(() => installUxSignals(), []);
   // Hold paint until the settings fetch SETTLES so the user's theme renders first; Electron's ready-to-show relies on this. Settling, not succeeding: a backend that never answers used to leave a blank window forever.
   if (!settled) return null;
   return <>{children}</>;
@@ -416,7 +418,17 @@ const CrashRecoveryChip: React.FC = () => {
     const api = (window as any).openswarm as OpenSwarmAPI | undefined;
     if (!api?.getCrashRecoveryInfo) return;
     api.getCrashRecoveryInfo().then((info) => {
-      if (info) { setMounted(true); setShow(true); }
+      if (info) {
+        setMounted(true); setShow(true);
+        // The crash was captured locally but analytics never heard about it; a silent GPU/renderer
+        // death is exactly the failure class telemetry must count (flight-recorder family A).
+        const i = info as { kind?: string; details?: { reason?: string; exitCode?: number } };
+        report('process', 'crash_recovered', {
+          crash_kind: i.kind ?? 'unknown',
+          reason: i.details?.reason ?? null,
+          exit_code: i.details?.exitCode ?? null,
+        });
+      }
     }).catch(() => {});
   }, []);
   React.useEffect(() => {

@@ -116,6 +116,8 @@ class SessionLifecycle(AgentManagerProtocol):
     async def delete_session(self, session_id: str) -> None:
         """Permanently delete a session: remove from memory and JSON file.
         Also stops browser-agent children first."""
+        from backend.apps.agents.core.flight_recorder import drop_session
+        drop_session(session_id)
         children = [
             s for s in self.sessions.values()
             if s.parent_session_id == session_id and s.mode == "browser-agent"

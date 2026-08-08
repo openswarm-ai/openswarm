@@ -29,6 +29,11 @@ export function getCardRect(id: string, type: CardType):
     const sc = layoutState.settingsCard;
     if (!sc) return undefined;
     return { x: sc.x, y: sc.y, width: sc.width, height: sc.height };
+  } else if (type === 'marketplace') {
+    // Marketplace was the one window the camera could not frame, so clicking it did nothing.
+    const mc = layoutState.marketplaceCard;
+    if (!mc) return undefined;
+    return { x: mc.x, y: mc.y, width: mc.width, height: mc.height };
   }
   return undefined;
 }

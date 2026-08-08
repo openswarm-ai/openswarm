@@ -152,6 +152,18 @@ contextBridge.exposeInMainWorld('openswarm', {
   openApplication: (name) => ipcRenderer.invoke('open-application', name),
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   getCrashRecoveryInfo: () => ipcRenderer.invoke('get-crash-recovery-info'),
+  // Threshold-crossing memory alerts (cap or leak-shaped growth); silent on a healthy session.
+  onMemoryAlert: (cb) => {
+    const listener = (_e, info) => cb(info);
+    ipcRenderer.on('diag:memory', listener);
+    return () => ipcRenderer.removeListener('diag:memory', listener);
+  },
+  // Fires after the renderer RECOVERS from a Chromium-detected freeze, with how long it was wedged.
+  onWedge: (cb) => {
+    const listener = (_e, info) => cb(info);
+    ipcRenderer.on('diag:wedge', listener);
+    return () => ipcRenderer.removeListener('diag:wedge', listener);
+  },
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   installUpdate: () => ipcRenderer.invoke('install-update'),

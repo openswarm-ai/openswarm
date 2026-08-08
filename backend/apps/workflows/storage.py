@@ -36,6 +36,13 @@ _missed_cache: list[MissedRun] = []
 _cache_loaded = False
 _paused = False
 
+# Ids deleted during this process's life. The cache hands out SHARED Workflow instances, so a run
+# already in flight when the user deletes still holds one and writes it back when it finishes, and
+# save_workflow used to recreate the file AND the cache entry, fully scheduled: the workflow rose
+# from the dead every time, which is exactly the "it never dies" field report. Only needs to live in
+# memory, because after a restart nothing holds a stale instance to write back.
+p_deleted_ids: set[str] = set()
+
 
 def _resolve_host_tz_name() -> str:
     """Best-effort IANA name for the host. Mirrors apps/service/client.py."""
@@ -158,8 +165,18 @@ def get_workflow(wid: str) -> Optional[Workflow]:
     return _workflow_cache.get(wid)
 
 
-def save_workflow(wf: Workflow) -> Workflow:
+def save_workflow(wf: Workflow, untrash: bool = False) -> Workflow:
     with _io_lock:
+        if wf.id in p_deleted_ids:
+            logger.info("ignoring a write-back for deleted workflow %s", wf.id)
+            return wf
+        # Trash is one-way too: only /restore passes untrash. Any other save carrying an older copy
+        # (a run that started before the user hit delete) would otherwise clear deleted_at and put
+        # the workflow back on the page with its schedule re-armed.
+        prior = _workflow_cache.get(wf.id)
+        if not untrash and prior is not None and prior.deleted_at is not None and wf.deleted_at is None:
+            logger.info("ignoring a write-back that would untrash workflow %s", wf.id)
+            return wf
         _ensure_dirs()
         _workflow_cache[wf.id] = wf
         p_atomic_write_json(_wf_path(wf.id), wf.model_dump(mode="json"))
@@ -171,6 +188,9 @@ def reload_workflow(wid: str) -> Optional[Workflow]:
     instances, so a handler that mutated one and then failed must roll back through here or the
     unsaved change lingers until any later save persists it by accident."""
     with _io_lock:
+        if wid in p_deleted_ids:
+            _workflow_cache.pop(wid, None)
+            return None
         path = _wf_path(wid)
         if not os.path.exists(path):
             _workflow_cache.pop(wid, None)
@@ -184,6 +204,7 @@ def reload_workflow(wid: str) -> Optional[Workflow]:
 def delete_workflow(wid: str) -> bool:
     with _io_lock:
         existed = wid in _workflow_cache
+        p_deleted_ids.add(wid)
         _workflow_cache.pop(wid, None)
         _runs_cache.pop(wid, None)
         wf_file = _wf_path(wid)
@@ -217,6 +238,8 @@ def list_all_runs(limit: int = 200) -> list[WorkflowRun]:
 
 def record_run(run: WorkflowRun) -> WorkflowRun:
     with _io_lock:
+        if run.workflow_id in p_deleted_ids:
+            return run
         _ensure_dirs()
         arr = _runs_cache.setdefault(run.workflow_id, [])
         # Replace prior entry with same id if we're updating an in-flight run.

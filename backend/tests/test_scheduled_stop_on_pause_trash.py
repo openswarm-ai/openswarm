@@ -93,8 +93,13 @@ def test_paused_scheduled_run_halts_at_next_step(make_wf, fake_agent_manager, mo
     assert fake_agent_manager.sent_messages == ["step1"]
 
 
-def test_pause_does_not_halt_a_manual_run(make_wf, fake_agent_manager, monkeypatch):
-    """Pausing the SCHEDULE must not kill a manual Run Now that's in flight."""
+def test_pause_halts_even_a_manual_run(make_wf, fake_agent_manager, monkeypatch):
+    """Off means off on every path, including a manual Run Now already in flight.
+
+    This used to assert the opposite, that pausing the schedule left a manual run alone. Eric's call
+    is that a workflow switched off must not keep running by any route, so the switch now stops the
+    run at the next step boundary whatever started it.
+    """
     from backend.apps.workflows import storage, executor
     wf = p_three_step_wf(make_wf)
     storage.save_workflow(wf)
@@ -106,8 +111,8 @@ def test_pause_does_not_halt_a_manual_run(make_wf, fake_agent_manager, monkeypat
 
     p_mutate_after_first_step(monkeypatch, fake_agent_manager, pause)
     run = p_run(executor.execute(wf, triggered_by="manual"))
-    assert run.status == "success"
-    assert fake_agent_manager.sent_messages == ["step1", "step2", "step3"]  # all ran
+    assert run.status != "success"
+    assert fake_agent_manager.sent_messages == ["step1"]  # stopped at the boundary after the switch
 
 
 def test_stop_active_run_signals_and_returns_session(make_wf, fake_agent_manager, monkeypatch):

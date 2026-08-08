@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
 from backend.apps.help.help_topics import HELP_TOPICS, HelpTopic
+from backend.apps.help.changelog import help_context_block
 from backend.apps.help.known_issues import KNOWN_ISSUES, HelpKnownIssue
 from backend.apps.help.prompt_rules import GROUNDING_RULES, ROLE
 
@@ -157,6 +158,11 @@ def build_system_prompt(shortcuts: List[HelpShortcut], app_version: str) -> str:
             "This user's real shortcuts, already written for their platform. Quote them exactly.",
             shortcut_lines,
             "</shortcuts>",
+            "",
+            "<whats_new>",
+            "What actually changed in this build. Answer \"what's new\" from THIS, never from memory.",
+            help_context_block(app_version),
+            "</whats_new>",
             "",
             "<known_issues>",
             "The complete list of issues shipped with this build. You cannot see live bug reports.",

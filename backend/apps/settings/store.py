@@ -50,8 +50,19 @@ P_LEGACY_DEFAULT_SYSTEM_PROMPT = (
     "If you genuinely need clarification on something ambiguous, use the "
     "AskUserQuestion tool. Never ask questions inline in plain text.\n"
 )
+# The 820cf578-era revision, which differs from the current default only in ladder step 5 (it framed
+# the web tools as "No tool fits" so agents reached for the browser first). Derived, not duplicated.
+P_LEGACY_LADDER_V1 = DEFAULT_SYSTEM_PROMPT.replace(
+    "5. **Reading the web.** WebSearch / WebFetch first, always: they are far faster than "
+    "driving a browser and they cover ordinary pages. Escalate to BrowserAgent only once "
+    "they have actually come back thin or blocked (login wall, paywall, JS-only page), or "
+    "when the task needs visual interaction or form filling.\n\n",
+    "5. **No tool fits.** WebSearch / WebFetch for information. BrowserAgent only for "
+    "visual interaction, form filling, or sites with no API path.\n\n",
+)
 P_LEGACY_DEFAULT_SYSTEM_PROMPTS = (
     P_LEGACY_DEFAULT_SYSTEM_PROMPT,
+    P_LEGACY_LADDER_V1,
     P_LEGACY_DEFAULT_SYSTEM_PROMPT.replace(
         "1. Connected MCP tools; fastest and most reliable. To reach an integration you "
         "don't already see, use MCPSearch then MCPActivate; never ToolSearch for it.\n",

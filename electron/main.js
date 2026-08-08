@@ -312,6 +312,22 @@ function countCrashDumps() {
   } catch (_) { return -1; }
 }
 
+// A native main-process crash runs none of our JS, so the app just vanishes and leaves a .dmp
+// nobody reads. On the next boot we read the CAUSE out of any dump written since last time.
+function newCrashDumps() {
+  try {
+    const scan = require('./crashDumpScan');
+    const base = path.join(app.getPath('userData'), 'Crashpad');
+    const markFile = path.join(app.getPath('userData'), 'crash-scan.json');
+    let since = 0;
+    try { since = JSON.parse(fs.readFileSync(markFile, 'utf8')).last_scan_ms || 0; } catch (_) { since = 0; }
+    // First run has no watermark; reporting the whole historical pile would look like a crash storm.
+    const rows = since ? scan.newDumpsSince(base, since, 5) : [];
+    try { fs.writeFileSync(markFile, JSON.stringify({ last_scan_ms: Date.now() })); } catch (_) {}
+    return rows;
+  } catch (_) { return []; }
+}
+
 // Fleet self-report: POST a compact boot outcome to the LOCAL backend, which forwards it via the existing service client (opt-out honored). No PII. Fire-and-forget, guarded.
 function sendBootBeacon() {
   try {
@@ -323,7 +339,7 @@ function sendBootBeacon() {
       props: {
         sha: bi.shortSha, channel: bi.channel, version: app.getVersion(),
         os: process.platform, arch: process.arch,
-        perf: _perfValues, preflight: _preflightInfo, preflight2: _preflightVerdict ? { verdict: _preflightVerdict.verdict, totalMs: _preflightVerdict.totalMs, names: (_preflightVerdict.results || []).map((r) => `${r.name}:${r.status}`) } : null, crash_dumps: countCrashDumps(),
+        perf: _perfValues, preflight: _preflightInfo, preflight2: _preflightVerdict ? { verdict: _preflightVerdict.verdict, totalMs: _preflightVerdict.totalMs, names: (_preflightVerdict.results || []).map((r) => `${r.name}:${r.status}`) } : null, crash_dumps: countCrashDumps(), new_crashes: newCrashDumps(),
       },
     });
     const req = http.request({
@@ -485,6 +501,8 @@ app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
 
 let mainWindow = null;
 let backendProcess = null;
+let backendRespawns = 0;
+const MAX_BACKEND_RESPAWNS = 5;
 let backendPort = null;
 let cachedUpdateStatus = { status: 'idle', info: null, error: null };
 let isInstallingUpdate = false;
@@ -1183,10 +1201,25 @@ async function startBackend() {
         `document.title = "OpenSwarm (backend crashed)";`
       );
     }
+    // Respawn a backend that died UNEXPECTEDLY. Without this a crash or SIGKILL left the app a dead
+    // shell whose only recovery was a full relaunch, and every app-runtime it had spawned became a
+    // permanent orphan (the boot reaper only runs at launch, which never came). Skip during an
+    // orderly quit, and back off so a backend that instantly dies can't spin a respawn loop.
+    backendProcess = null;
+    if (quitInitiated || isInstallingUpdate) return;
+    backendRespawns = (backendRespawns || 0) + 1;
+    if (backendRespawns > MAX_BACKEND_RESPAWNS) {
+      console.error(`[electron] backend died ${backendRespawns} times; giving up respawn`);
+      return;
+    }
+    const delay = Math.min(1000 * backendRespawns, 8000);
+    console.warn(`[electron] backend died unexpectedly; respawning in ${delay}ms (attempt ${backendRespawns})`);
+    setTimeout(() => { startBackend().catch((e) => console.error('[electron] backend respawn failed', e)); }, delay);
   });
 
   emitSplashStatus('Starting backend…');
   await waitForBackend(backendPort, { process: backendProcess });
+  backendRespawns = 0;  // healthy boot resets the budget
   perfMark('backend-http-ready');
   console.log(`Backend ready on port ${backendPort}`);
   maybeCommitPreflightCache();
@@ -1475,6 +1508,24 @@ function createWindow() {
   mainWindow.webContents.on('preload-error', (_event, preloadPath, err) => {
     console.error('[diag][main:preload-error]', preloadPath, err && err.stack || err);
   });
+  // Frozen-but-not-crashed is the silent class no crash log sees; Chromium's own unresponsive
+  // signal costs nothing and the report fires from the renderer AFTER it recovers.
+  let wedgeStartedAt = 0;
+  try {
+    const { startMemorySensor } = require('./memorySensor');
+    startMemorySensor(app, () => mainWindow);
+  } catch (e) { console.warn('[diag] memory sensor unavailable:', e && e.message); }
+  mainWindow.webContents.on('unresponsive', () => {
+    wedgeStartedAt = Date.now();
+    console.error('[diag][main] renderer unresponsive');
+  });
+  mainWindow.webContents.on('responsive', () => {
+    if (!wedgeStartedAt) return;
+    const ms = Date.now() - wedgeStartedAt;
+    wedgeStartedAt = 0;
+    console.error('[diag][main] renderer responsive again after', ms, 'ms');
+    try { mainWindow.webContents.send('diag:wedge', { ms }); } catch (_) { /* window mid-teardown */ }
+  });
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     const reason = details && details.reason;
     if (reason === 'clean-exit') return;
@@ -1713,6 +1764,13 @@ async function clearStaleFrontendCache() {
 
 function setupAutoUpdater() {
   if (!autoUpdater) return;
+  // Escape hatch for locally-built packaged smokes: an unpublished build otherwise downloads the
+  // published release and silently DOWNGRADES on quit (the draft self-revert footgun, seen live on
+  // 1.7.0), which both ruins the test and pollutes its memory numbers with ShipIt churn.
+  if (process.env.OPENSWARM_NO_UPDATE === '1') {
+    console.log('[updater] disabled via OPENSWARM_NO_UPDATE=1 (local packaged smoke)');
+    return;
+  }
   // Proactive, not post-mortem: an app running off the DMG or a Gatekeeper-translocated copy can NEVER self-update (Squirrel.Mac refuses read-only volumes, proven in the packaged smoke). Tell that cohort what to do at boot instead of after a failed check they may never click.
   if (process.platform === 'darwin' && isPackaged) {
     const exe = process.execPath || '';
@@ -2536,6 +2594,12 @@ app.on('web-contents-created', (_event, contents) => {
   // popups are 'window' contents created with the flag OFF, so they keep the OS default.
   if (isCreatingMainWindow) {
     contents.on('context-menu', (_e, params) => buildAppContextMenu(contents, params));
+    // The dashboard IS a Figma-style canvas listening for ctrl+wheel, so it needs the very fix the
+    // webview branch below spells out: at the default (1,1) limits Electron drops macOS pinch instead
+    // of delivering it, which is the "pinch-to-zoom just stopped working" report. Widening them here
+    // is safe because the canvas wheel handler is passive:false and preventDefaults the zoom path, so
+    // Chromium never also magnifies the UI.
+    try { contents.setVisualZoomLevelLimits(1, 3); } catch (_) { /* older Electron */ }
   }
   if (contents.getType() === 'webview') {
     const wcId = contents.id;

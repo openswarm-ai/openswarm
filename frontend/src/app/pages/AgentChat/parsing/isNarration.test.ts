@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isNarration } from './isNarration.js';
+import { isNarration } from './isNarration.ts';
 
 test('short passing remarks are narration', () => {
   for (const s of [

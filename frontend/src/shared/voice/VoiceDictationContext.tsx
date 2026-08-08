@@ -4,6 +4,7 @@ import { useVoiceDictation } from './useVoiceDictation';
 import { playVoiceCue, configureVoiceCues } from './voiceCues';
 import { setManualDictionary } from './voiceDictionary';
 import { VoiceContext } from './voiceContext';
+import { injectAtFocus, snapshotInjectTarget } from './injectAtFocus';
 import VoiceOverlay from './VoiceOverlay';
 
 // One recorder for the whole app. Both mics (the Help pill and the spawn composer) plus the global
@@ -102,6 +103,20 @@ export function VoiceDictationProvider({ children }: { children: React.ReactNode
     const offHold = bridge.openswarm?.onVoiceHold?.(pressStart, pressEnd);
     return () => { offHold?.(); };
   }, [pressStart, pressEnd]);
+
+  // Dev-only seam so the focus-drift guarantee (ENG-176) can be proven against the REAL module in
+  // the running app, not a unit stand-in. Compiled out of production builds.
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return undefined;
+    const onSnap = (): void => snapshotInjectTarget();
+    const onInject = (e: Event): void => { injectAtFocus(((e as CustomEvent<{ text?: string }>).detail?.text) ?? ''); };
+    window.addEventListener('osw-test:snapshot', onSnap);
+    window.addEventListener('osw-test:inject', onInject as EventListener);
+    return () => {
+      window.removeEventListener('osw-test:snapshot', onSnap);
+      window.removeEventListener('osw-test:inject', onInject as EventListener);
+    };
+  }, []);
 
   // Wispr grammar: Esc while the mic is hot throws the take away.
   useEffect(() => {

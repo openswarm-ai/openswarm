@@ -351,9 +351,12 @@ def p_report_start_failure(reason: str, *, detail: str = "", **fields: Any) -> N
     try:
         from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
         from backend.apps.service.client import submit_diagnostic
+        from backend.apps.agents.core.flight_recorder import journey_auth_context
         payload: dict[str, Any] = {
             "kind": "9router_start_failed",
             "reason": reason,
+            # No session owns this failure, but WHO it happened to still decides the fix.
+            "journey": journey_auth_context(),
             "packaged": os.environ.get("OPENSWARM_PACKAGED") == "1",
             **fields,
         }
@@ -463,6 +466,19 @@ async def death_watch(proc_handle: "subprocess.Popen[Any]") -> None:
         logger.warning("9Router died 3x in 60s; leaving revival to the backed-off watchdog")
         return
     logger.warning("9Router process died; instant revive")
+    # The revive IS a safety net firing; the near-miss ledger counts it so router flap rates are queryable.
+    try:
+        from backend.apps.service.client import submit_diagnostic
+        from backend.apps.agents.core.flight_recorder import journey_auth_context
+        # scope says WHY there is no session or lane here: the watchdog outlives any one turn.
+        submit_diagnostic({
+            "kind": "recovered",
+            "subkind": "router-revive",
+            "scope": "watchdog",
+            "journey": journey_auth_context(),
+        })
+    except Exception:
+        pass
     p_is_running_last_ok = 0.0
     await ensure_running()
 

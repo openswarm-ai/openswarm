@@ -124,3 +124,21 @@ def test_reset_window_401_is_transient_not_auth():
 def test_genuine_auth_death_still_cards():
     assert is_auth_error(Exception("401 unauthorized: invalid authentication credentials"))
     assert capacity_retry_wait(Exception("401 unauthorized: invalid api key"), 0) is None
+
+
+# --- the first-turn thinking flip must not drift the boot fingerprint (measured: it threw away the
+# pre-warmed CLI on 5 of 5 short-prompt sessions, costing ~0.9s of respawn per first message) ------
+def test_short_first_message_keeps_the_prewarmed_thinking_setting():
+    from backend.apps.agents.core.models import AgentSession
+    from backend.apps.agents.manager.run.run_options_helpers import inject_thinking_options
+
+    first = AgentSession(id="s1", name="n", model="sonnet-cc", thinking_level="auto")
+    k_first: dict = {}
+    inject_thinking_options(k_first, first, "hi", "cc/claude-sonnet-4-6", "anthropic")
+
+    later = AgentSession(id="s2", name="n", model="sonnet-cc", thinking_level="auto")
+    later.sdk_session_id = "already-running"
+    k_later: dict = {}
+    inject_thinking_options(k_later, later, "hi", "cc/claude-sonnet-4-6", "anthropic")
+
+    assert k_first != k_later, "a short FIRST message must keep the prewarmed boot options"

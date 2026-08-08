@@ -9,13 +9,18 @@ import { applyBrowserZoom } from '@/shared/browserZoom';
 import { syncTiledGeometry } from '../../canvas/tiledGeometry';
 import { revealZoom, REVEAL_MIN_ZOOM } from '../../canvas/revealZoom';
 
+// Surfaces that are WINDOWS, not canvas cards: they behave like an OS window, so a wheel inside one
+// belongs to it whether or not you clicked in first. Canvas cards (agent, browser, view) keep the
+// Google Maps model instead, where a plain scroll over an unfocused card drives the canvas.
+const APP_WINDOW_SELECT_TYPES = new Set(['settings-card', 'marketplace-card', 'workflows-hub-card']);
+
 const MIN_ZOOM = 0.15;
 // The floor for AUTOMATIC reveals only. revealCards takes min(current, fit), which can only ever go
 // down, so every spawn that did not fit ratcheted the camera out and nothing ever brought it back:
 // measured 100% -> 88% -> 79% -> 61% -> 36% -> 18% over one ordinary session, at which point no word
 // on the canvas is readable. A hand-driven zoom can still go all the way to MIN_ZOOM.
 
-const MAX_ZOOM = 3.0;
+export const MAX_ZOOM = 3.0;
 const ZOOM_IN_FACTOR = 1.1;
 const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR;
 const FIT_PADDING = 200;
@@ -24,7 +29,7 @@ const FIT_PADDING = 200;
 const TIDY_PADDING = { x: 120, y: 56 };
 const TIDY_MIN_ZOOM = REVEAL_MIN_ZOOM;
 // Card-framing (spawn, click-to-focus, arrow-nav) snaps as fast as the zoom buttons so a new card lands under you now, not after a lazy glide.
-const FIT_DURATION = 150;
+const FIT_DURATION = 340;
 // Must outlast FIT_DURATION so the drift re-snap lands after the glide, never mid-flight.
 const FIT_SETTLE_DELAY = FIT_DURATION + 60;
 // A mouse notch lands as deltaY 100 where a trackpad sends ~1-10, so cap the per-event zoom delta: uncapped, one notch is a ~24% jump and macOS wheel acceleration stacks them. No-op for trackpads.
@@ -235,7 +240,9 @@ export function useCanvasControls(
 
     const step = (now: number) => {
       const t = Math.min((now - startTime) / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 3); // cubic ease-out
+      // Quintic ease-out: leaves fast, lands soft. The old cubic at 150ms read as a snap; the eye
+      // reads the long tail as "the camera settled" rather than "the world jumped".
+      const ease = 1 - Math.pow(1 - t, 5);
       applyLive({
         panX: start.panX + (target.panX - start.panX) * ease,
         panY: start.panY + (target.panY - start.panY) * ease,
@@ -323,13 +330,49 @@ export function useCanvasControls(
 
     // Cache "is this element a scrollable child" decision per node. The Cache getComputedStyle ancestor walks; uncached was the dominant cost of trackpad two-finger nav. ResizeObserver below invalidates on scroll-capacity change.
     const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
+    // Scroll containment: once a wheel GESTURE is being served by a scrollable surface, the rest of
+    // that gesture stays there even after it hits the surface's end. Without this, reaching the
+    // bottom of Settings (or any list) chains into a canvas pan, which reads as the whole world
+    // sliding out from under you. A new gesture (a pause, or a different surface) starts fresh.
+    const GESTURE_GAP_MS = 220;
+    let containedEl: HTMLElement | null = null;
+    let containedAt = 0;
 
     const onWheel = (e: WheelEvent) => {
       // Full size view owns the whole surface: any wheel that escapes the chat's scroll container
       // (side gutters, header) must NOT zoom/pan the hidden canvas underneath, that read as a
       // glitchy zoom while scrolling the chat. Fullscreen has no canvas nav, period. The selector's
       // existence check matters: a stale tile entry for a removed card would wedge the wheel forever.
-      if (selectFullscreenCardId(store.getState())) return;
+      // Swallow it rather than just ignoring it: the host window now allows visual zoom (so macOS
+      // delivers pinch at all), which means an un-prevented pinch here would magnify the whole UI
+      // instead of doing nothing.
+      if (selectFullscreenCardId(store.getState())) {
+        if (e.ctrlKey || e.metaKey) e.preventDefault();
+        return;
+      }
+      // Same gesture, still over the surface that owns it: let it scroll (or hit its end) natively.
+      if (containedEl && Date.now() - containedAt < GESTURE_GAP_MS && containedEl.isConnected
+          && (e.target instanceof Node) && containedEl.contains(e.target as Node) && !(e.ctrlKey || e.metaKey)) {
+        containedAt = Date.now();
+        return;
+      }
+      // App windows (Settings, Marketplace, app previews) own every wheel inside them. Their inner
+      // panels are often scroll containers whose exact hit target isn't itself scrollable, and the
+      // old walk-up handed those to the canvas: reaching the end of Settings zoomed the world out.
+      const windowEl = (e.target as HTMLElement | null)?.closest?.('[data-select-type]') as HTMLElement | null;
+      if (windowEl && !(e.ctrlKey || e.metaKey)) {
+        // An app WINDOW always owns its wheel; a canvas CARD only owns it once you have clicked in.
+        // That split is the whole rule. Requiring click-focus for windows too meant hovering over
+        // Settings and scrolling leaked straight to the canvas, because nothing had focused it yet,
+        // and windows do carry a select-id so a "no id means a window" test silently never fired.
+        const windowId = windowEl.getAttribute('data-select-id');
+        const isAppWindow = APP_WINDOW_SELECT_TYPES.has(windowEl.getAttribute('data-select-type') || '');
+        if (isAppWindow || !windowId || windowId === getScrollFocusedCard()) {
+          containedEl = windowEl;
+          containedAt = Date.now();
+          return;
+        }
+      }
       // ctrl/cmd wheel is the zoom gesture on every surface: a physically held key or a trackpad pinch (which also sets ctrlKey). It bypasses scrollable children so zoom is always reachable, even over a chat you're typing in.
       const isModifierWheel = e.ctrlKey || e.metaKey;
       // The setting swaps which of the two a bare mouse notch does. A PINCH must keep zooming
@@ -372,31 +415,17 @@ export function useCanvasControls(
             target = target.parentElement;
             continue;
           }
-          // Re-read scrollHeight/clientHeight; cached decision is structural, scroll position is dynamic.
-          const canScrollY = target.scrollHeight > target.clientHeight;
-          const canScrollX = target.scrollWidth > target.clientWidth;
-
-          // Horizontal-dominant gestures over a container that only scrolls vertically (e.g., chat) should pan the canvas instead of being silently absorbed by the child's no-op horizontal handling.
-          if (Math.abs(dx) > Math.abs(dy) && !canScrollX) {
-            target = target.parentElement;
-            continue;
-          }
-
-          const atYBoundary = !canScrollY ||
-            (dy > 0 && target.scrollTop + target.clientHeight >= target.scrollHeight - 1) ||
-            (dy < 0 && target.scrollTop <= 1);
-          const atXBoundary = !canScrollX ||
-            (dx > 0 && target.scrollLeft + target.clientWidth >= target.scrollWidth - 1) ||
-            (dx < 0 && target.scrollLeft <= 1);
-
-          if (atYBoundary && atXBoundary) {
-            target = target.parentElement;
-            continue;
-          }
+          // Past this point the gesture belongs to THIS surface for its whole life. Reaching the end
+          // of a chat, or swiping sideways in a list that only scrolls down, used to fall through to
+          // the canvas and drag the world out from under you; a scroll that starts inside a card now
+          // ends inside it. Zoom still gets through, because isModifierWheel never reaches here.
+          containedEl = target;
+          containedAt = Date.now();
           return;
         }
         target = target.parentElement;
       }
+      containedEl = null;
 
       e.preventDefault();
       if (inertiaFrameRef.current) {

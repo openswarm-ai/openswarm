@@ -1,5 +1,6 @@
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { getWebview } from '@/shared/browserRegistry';
+import { takeInjectSnapshot, setInjectSnapshot, isUsableTarget } from './injectTargetSnapshot';
 
 // Dictation lands where the user's cursor actually is, like every real dictation tool: a focused
 // in-app field gets the text typed in (undo-friendly, fires React input events), a focused browser
@@ -7,7 +8,14 @@ import { getWebview } from '@/shared/browserRegistry';
 export type InjectTarget = 'field' | 'webview' | 'composer' | null;
 
 export function injectAtFocus(text: string): InjectTarget {
-  const active = document.activeElement as HTMLElement | null;
+  const snap = takeInjectSnapshot();
+  // The cursor wins, not where you started. Wispr's grammar, and Eric's call: you dictate, you click
+  // where you want it, it lands there. This deliberately reverts the snapshot-first version, which
+  // pinned the text to the origin field and dropped it outright when that field went away.
+  // The snapshot is still the fallback for the case it was really built for: focus drifting to
+  // nothing typeable (a button, the body) while you were talking.
+  const live = document.activeElement as HTMLElement | null;
+  const active = isUsableTarget(live) ? live : snap.el;
   if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
     try {
       active.focus();
@@ -33,7 +41,7 @@ export function injectAtFocus(text: string): InjectTarget {
     try { void focusedTag.insertText(text); return 'webview'; } catch { /* fall through */ }
   }
   // Last-interacted browser card: the user clicked a page field, then hit the hotkey.
-  const browserId = getLastInteractedBrowser();
+  const browserId = snap.browserId || getLastInteractedBrowser();
   if (browserId) {
     const wv = getWebview(browserId) as unknown as { insertText?: (t: string) => Promise<void>; focus?: () => void } | undefined;
     if (wv?.insertText) {
@@ -43,4 +51,15 @@ export function injectAtFocus(text: string): InjectTarget {
   // No cursor anywhere: open the dashboard composer with the transcript typed in. Words are never dropped.
   window.dispatchEvent(new CustomEvent('openswarm:dictation-fallback', { detail: { text } }));
   return 'composer';
+}
+
+/** Called at press-start so the words land where the user was looking, not where focus drifted. */
+export function snapshotInjectTarget(): void {
+  // Only a typeable element counts as "aimed at". document.activeElement is <body> when nothing is
+  // focused, and storing that would read as a lost target later and swallow the composer fallback.
+  const active = document.activeElement as HTMLElement | null;
+  setInjectSnapshot({
+    el: isUsableTarget(active) ? active : null,
+    browserId: getLastInteractedBrowser(),
+  });
 }

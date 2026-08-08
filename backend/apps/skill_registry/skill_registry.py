@@ -115,6 +115,20 @@ class p_InstallRequest(BaseModel):
     confirm: bool = False
 
 
+class p_ParseCommandRequest(BaseModel):
+    # What the user pasted: "npx skills add pdf-filler", a skills.sh URL, or a bare name.
+    command: str
+
+
+@skill_registry.router.post("/parse-command")
+def registry_parse_command(req: p_ParseCommandRequest) -> dict:
+    """Resolve a pasted install command to a skill id so the Marketplace's Add box accepts the
+    grammar people already copy out of READMEs. Resolution only; nothing is installed here, and an
+    unreadable paste returns null rather than a guess."""
+    from backend.apps.skill_registry.parse_install_command import parse_install_command
+    return {"skill_id": parse_install_command(req.command)}
+
+
 @skill_registry.router.post("/install")
 async def registry_install(req: p_InstallRequest):
     """Install a community (skills.sh) skill, in two honest steps.

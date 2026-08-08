@@ -42,6 +42,7 @@ interface DashboardOverlaysProps {
   onToolbarCancel: () => void;
   onToolbarSend: (...args: any[]) => void;
   onAddView: (outputId: string, opts?: { newInstance?: boolean }) => void;
+  onOpenApplications: () => void;
   onHistoryResume: (sessionId: string) => void;
   onAddBrowser: () => void;
   onNewAgentBounceEnd: () => void;
@@ -74,6 +75,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
   onToolbarCancel,
   onToolbarSend,
   onAddView,
+  onOpenApplications,
   onHistoryResume,
   onAddBrowser,
   onNewAgentBounceEnd,
@@ -97,6 +99,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
           onCancel={onToolbarCancel}
           onSend={onToolbarSend}
           onAddView={onAddView}
+          onOpenApplications={onOpenApplications}
           onHistoryResume={onHistoryResume}
           onAddBrowser={onAddBrowser}
           dashboardId={dashboardId}

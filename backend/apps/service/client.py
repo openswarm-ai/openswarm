@@ -399,6 +399,18 @@ def submit_diagnostic(diagnostic: dict) -> None:
         diagnostic["recent_log"] = snapshot()
     except Exception:
         pass
+    # The local flight file: every diagnostic also lands in a rotating NDJSON when the sink is set,
+    # so support is "send me one file" and forced-failure tests can verify envelopes offline.
+    sink = os.environ.get("OPENSWARM_DIAG_SINK")
+    if sink:
+        try:
+            import json as p_json
+            if os.path.exists(sink) and os.path.getsize(sink) > 1_000_000:
+                os.replace(sink, sink + ".0")
+            with open(sink, "a", encoding="utf-8") as f:
+                f.write(p_json.dumps({"t": time.time(), **diagnostic}, default=str) + "\n")
+        except OSError:
+            pass
     submit("diagnostic", {"diagnostic": diagnostic})
 
 

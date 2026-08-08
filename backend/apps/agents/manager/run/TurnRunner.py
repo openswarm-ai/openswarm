@@ -12,10 +12,12 @@ from typeguard import typechecked
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, capacity_retry_wait, is_router_unreachable_error
+from backend.apps.agents.core import flight_recorder
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.handle_stream_event import handle_stream_event
 from backend.apps.agents.manager.streaming.handle_assistant_message import handle_assistant_message
 from backend.apps.agents.manager.streaming.handle_result_message import TurnResultError, handle_result_message
+from backend.apps.agents.manager.streaming.note_provider_retry import note_provider_retry, settle_provider_retries
 from backend.apps.agents.manager.run.client_pool import (
     SdkClientLike,
     acquire_client,
@@ -102,14 +104,18 @@ class TurnRunner(AgentManagerProtocol):
 
                 if turn.first_event:
                     logger.info(f"[MCP-DEBUG] First event received: {type(message).__name__}")
+                    flight_recorder.crumb(session_id, "first-event", kind=type(message).__name__)
                     turn.first_event = False
 
                 # Log system messages (MCP server status, errors, etc.)
                 if isinstance(message, SystemMessage):
                     raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
                     logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
-                    if getattr(message, "subtype", "") == "compact_boundary":
+                    p_subtype = getattr(message, "subtype", "")
+                    if p_subtype == "compact_boundary":
                         turn.compact_boundaries += 1
+                    elif p_subtype == "api_retry":
+                        note_provider_retry(session_id, raw, turn)
 
                 if isinstance(message, StreamEvent):
                     await handle_stream_event(
@@ -117,10 +123,12 @@ class TurnRunner(AgentManagerProtocol):
                     )
 
                 elif isinstance(message, AssistantMessage):
+                    flight_recorder.crumb(session_id, "assistant-msg")
                     await handle_assistant_message(
                         message, session, session_id, turn, thinking, self.live_partial, self.sessions
                     )
                 elif isinstance(message, ResultMessage):
+                    flight_recorder.crumb(session_id, "result-msg", subtype=str(getattr(message, "subtype", "")))
                     await handle_result_message(
                         message, session, session_id, turn, thinking, self.sessions,
                         resolved_model, api_type, global_settings,
@@ -132,12 +140,15 @@ class TurnRunner(AgentManagerProtocol):
             async def p_connect():
                 p_client = ClaudeSDKClient(options=options)
                 logger.info(f"[SPAWN-PHASE] cli-connect start session={session_id[:8]} t={time.monotonic():.3f}")
+                flight_recorder.crumb(session_id, "cli-connect-start")
                 await p_client.connect()
                 logger.info(f"[SPAWN-PHASE] cli-connect done session={session_id[:8]} t={time.monotonic():.3f}")
+                flight_recorder.crumb(session_id, "cli-connect-done")
                 return p_client
 
             fp = boot_fingerprint(options_kwargs, session)
             logger.info(f"[SPAWN-PHASE] client-acquire start session={session_id[:8]} t={time.monotonic():.3f}")
+            flight_recorder.crumb(session_id, "client-acquire")
             handle = await acquire_client(
                 self.client_pool, session_id, fp, p_connect, force_respawn=force_respawn,
             )
@@ -176,12 +187,25 @@ class TurnRunner(AgentManagerProtocol):
         p_use_persistent = persistent_client_enabled()
         capacity_retry_attempt = 0
         p_router_retry_attempt = 0
+        # Baseline crumb so even a first-call failure's envelope names the turn it died in.
+        flight_recorder.crumb(session_id, "turn-start", model=resolved_model, api=api_type)
         while True:
             try:
                 if p_use_persistent:
                     await p_run_streaming_turn_persistent()
                 else:
                     await p_run_streaming_turn()
+                # The near-miss ledger: a turn that needed retries and still finished is a net that
+                # FIRED, and "how often do the nets fire" needs a denominator in analytics.
+                if p_router_retry_attempt or capacity_retry_attempt:
+                    flight_recorder.record_recovery(
+                        session_id,
+                        net="router-resume" if p_router_retry_attempt else "transient-backoff",
+                        model=resolved_model,
+                        attempts=p_router_retry_attempt + capacity_retry_attempt,
+                        sessions=self.sessions,
+                    )
+                settle_provider_retries(session_id, turn, resolved_model, self.sessions)
                 break
             except TurnResultError as p_result_err:
                 # "Unable to connect" in a turn result is the CLI failing to reach our own localhost
@@ -190,6 +214,7 @@ class TurnRunner(AgentManagerProtocol):
                 # conversation without re-executing side effects: re-ensure the router, resume, go.
                 if p_router_retry_attempt < 2 and is_router_unreachable_error(str(p_result_err)):
                     p_router_retry_attempt += 1
+                    flight_recorder.crumb(session_id, "router-retry", attempt=p_router_retry_attempt, err=str(p_result_err)[:160])
                     logger.warning(
                         f"Router unreachable mid-turn on session {session_id} "
                         f"(attempt {p_router_retry_attempt}/2); re-ensuring router and resuming. "
@@ -228,6 +253,7 @@ class TurnRunner(AgentManagerProtocol):
                         wait = 0.0
                 if wait is not None:
                     capacity_retry_attempt += 1
+                    flight_recorder.crumb(session_id, "transient-retry", attempt=capacity_retry_attempt, wait=wait, err=str(e)[:160])
                     mid_stream = turn.current_turn_emitted
                     logger.warning(
                         f"Transient upstream error on session {session_id} "

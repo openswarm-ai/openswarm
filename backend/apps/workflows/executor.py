@@ -7,6 +7,7 @@ routing, retries, and history all aligned with the rest of the app.
 """
 
 import asyncio
+import time
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -14,13 +15,20 @@ from typing import Optional
 from backend.apps.agents.core.models import AgentConfig
 from backend.apps.workflows.models import Workflow, WorkflowRun
 from backend.apps.workflows import storage
-from backend.apps.settings.models import DEFAULT_MODEL
+from backend.apps.workflows.default_model import provider_for_model, user_default_model
 
 logger = logging.getLogger(__name__)
 
 
 # In-process map: workflow_id -> currently running run id. Prevents two overlapping fires for the same workflow (e.g. cron tick races a manual Run button) without serializing across the whole executor.
 _running: dict[str, str] = {}
+# Global admission on top of the per-workflow guard: every run is a full agent, and an agent's
+# browsers and apps are exempt from the renderer budget by design (sleeping a working agent's browser
+# blinds it), so the ONLY thing bounding total pressure is how many runs exist at once. A library of
+# 30 workflows whose schedules drift into alignment must queue, not stampede.
+MAX_CONCURRENT_RUNS = 3
+ADMISSION_WAIT_S = 600.0
+ADMISSION_POLL_S = 2.0
 _running_lock = asyncio.Lock()
 
 
@@ -207,6 +215,58 @@ async def execute(
         set_workflow_approval_step,
     )
 
+    # Off means off. A workflow the user deleted or switched off must not be startable from ANY path:
+    # the scheduler, an agent tool, an invoke, a retry, the Run Now route, or a stale in-flight handle.
+    # Guarding this per call site left every unguarded caller able to fire it, which is the field report
+    # of a toggled-off workflow running itself. Turn it back on to run it.
+    # Wait for a global slot BEFORE the off-means-off guard, so the guard runs on fresh state after
+    # a possibly long wait (a workflow paused while queueing still gets refused, not run).
+    p_admit_start = time.monotonic()
+    while len(_running) >= MAX_CONCURRENT_RUNS:
+        if time.monotonic() - p_admit_start >= ADMISSION_WAIT_S:
+            p_busy = WorkflowRun(
+                workflow_id=wf.id, status="skipped",
+                error=f"{MAX_CONCURRENT_RUNS} workflows already running; gave up after {int(ADMISSION_WAIT_S)}s",
+                scheduled_for=scheduled_for, started_at=datetime.now(),
+                finished_at=datetime.now(), triggered_by=triggered_by,
+            )
+            p_wf_now = storage.get_workflow(wf.id)
+            if p_wf_now is not None and p_wf_now.deleted_at is None:
+                try:
+                    storage.record_run(p_busy)
+                except Exception:
+                    logger.debug("could not record the admission-skip row", exc_info=True)
+            return p_busy
+        await asyncio.sleep(ADMISSION_POLL_S)
+    p_live = storage.get_workflow(wf.id)
+    p_refusal = None
+    if p_live is None:
+        # A hard delete leaves nothing to look up, and reading that as "no objection" is how a
+        # deleted workflow still ran to the end and then wrote itself back to life.
+        p_refusal = "Workflow deleted"
+    elif p_live.deleted_at is not None:
+        p_refusal = "Workflow deleted"
+    elif not p_live.schedule.enabled:
+        p_refusal = "Workflow is paused"
+    if p_refusal is not None:
+        p_skipped = WorkflowRun(
+            workflow_id=wf.id, status="skipped", error=p_refusal,
+            scheduled_for=scheduled_for, started_at=datetime.now(),
+            finished_at=datetime.now(), triggered_by=triggered_by,
+        )
+        # Recorded, not just returned: a refusal the user cannot see in History reads as the run
+        # vanishing, and the Run Now route reports whatever row lands.
+        if p_live is not None and p_live.deleted_at is None:
+            try:
+                storage.record_run(p_skipped)
+            except Exception:
+                logger.debug("could not record the refusal row", exc_info=True)
+        return p_skipped
+    # Toggling a workflow off mid-run must stop it too, whatever started it. Comparing against the
+    # state at START is what separates "the user just switched it off" from "it was already paused
+    # and a human deliberately ran it anyway".
+    p_started_enabled = bool(p_live.schedule.enabled) if p_live is not None else bool(wf.schedule.enabled)
+
     run = WorkflowRun(
         workflow_id=wf.id,
         status="running",
@@ -269,9 +329,9 @@ async def execute(
         resolved_allowed_tools = _resolve_allowed_tools(wf)
         config = AgentConfig(
             name=wf.title or "Workflow",
-            model=wf.model or DEFAULT_MODEL,
+            model=wf.model or user_default_model(),
             mode=wf.mode or "agent",
-            provider=wf.provider or "anthropic",
+            provider=wf.provider or provider_for_model(wf.model or user_default_model()),
             system_prompt=_resolve_system_prompt(wf),
             # None when the user has not frozen the Actions set, which means the workflow runs with the mode's full surface exactly like a chat does.
             allowed_tools=resolved_allowed_tools,
@@ -362,7 +422,7 @@ async def execute(
             if fresh_wf is None or fresh_wf.deleted_at is not None:
                 step_error = "Workflow deleted"
                 break
-            if triggered_by == "schedule" and not fresh_wf.schedule.enabled:
+            if p_started_enabled and not fresh_wf.schedule.enabled:
                 step_error = "Workflow paused"
                 break
             # Broadcast the step bump before sending so RunningView flips the disc immediately, not after the agent finishes the step. Advancing means we're not paused; keep the broadcast authoritative so it never races a stale paused=True from the watcher.

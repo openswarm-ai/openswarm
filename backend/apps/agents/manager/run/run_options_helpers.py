@@ -181,9 +181,14 @@ def inject_thinking_options(options_kwargs: Dict, session: AgentSession, prompt:
     reasoning_effort), with the short-prompt + gc/gemini-3 force-off overrides. Best-effort."""
     try:
         level = getattr(session, "thinking_level", "auto") or "auto"
-        # Trivially short prompts ("hi", "thanks") don't benefit from 5-30s of hidden reasoning.
+        # Trivially short prompts ("hi", "thanks") don't benefit from 5-30s of hidden reasoning, but
+        # this flip rides the BOOT fingerprint: a short first message drifted it and threw away the
+        # pre-warmed CLI, measured as a second spawn on 5 of 5 short-prompt sessions. A wasted 0.9s
+        # respawn costs more than the reasoning it saves, so the flip only applies once a session is
+        # already running on a live client (later turns), never on the first message.
         p_prompt_len = len((prompt or "").strip())
-        if 0 < p_prompt_len < 50 and level != "off":
+        p_first_turn = not getattr(session, "sdk_session_id", None)
+        if 0 < p_prompt_len < 50 and level != "off" and not p_first_turn:
             level = "off"
         # gc/gemini-3* without Antigravity 400s every multi-step turn on thoughtSignature continuity.
         if (

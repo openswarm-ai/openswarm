@@ -22,11 +22,32 @@ from backend.apps.agents.core.error_classify import (
     is_unknown_model_error,
     parse_retry_after,
 )
+from backend.apps.agents.core.is_router_unavailable_error import is_router_unavailable_error
 from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
 from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
+from backend.apps.agents.core import flight_recorder
 
 logger = logging.getLogger(__name__)
 
+
+@typechecked
+def p_report_model_error(subkind: str, session_id: str, session: AgentSession, turn: TurnState,
+                         e: BaseException, stderr_tail: str) -> None:
+    """The three terminal model_error rungs differ only by subkind, so they share one submitter."""
+    try:
+        from backend.apps.service.client import submit_diagnostic
+        submit_diagnostic({
+            "kind": "model_error",
+            "subkind": subkind,
+            "flight": flight_recorder.build_envelope(session_id, "model_error", subkind, session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
+            "model": session.model,
+            "provider": session.provider,
+            "connection_mode": getattr(load_settings(), "connection_mode", "own_key"),
+            "error_preview": redact_for_telemetry(str(e), limit=400),
+            "stderr_tail": redact_for_telemetry(stderr_tail),
+        })
+    except Exception:
+        logger.debug(f"submit_diagnostic {subkind} failed", exc_info=True)
 
 @typechecked
 async def handle_run_error(e: Exception, session: AgentSession, session_id: str, turn: TurnState, p_stderr_buffer: List[str]) -> None:
@@ -77,6 +98,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             submit_diagnostic({
                 "kind": "context_overflow",
                 "where": "manager.run.handle_run_error",
+                "flight": flight_recorder.build_envelope(session_id, "context_overflow", "overflow", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
                 "session_id": session_id,
                 "model": session.model,
                 "provider": session.provider,
@@ -109,6 +131,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             submit_diagnostic({
                 "kind": "cli_binary_missing",
                 "where": "manager.run.handle_run_error",
+                "flight": flight_recorder.build_envelope(session_id, "cli_binary_missing", "missing", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
                 "session_id": session_id,
                 "model": session.model,
                 "error_preview": redact_for_telemetry(str(e), limit=400),
@@ -220,6 +243,18 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             reason = "anthropic_auth_invalid"
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         session.messages.append(error_msg)
+        try:
+            from backend.apps.service.client import submit_diagnostic
+            submit_diagnostic({
+                "kind": "model_error",
+                "subkind": "auth",
+                "model": session.model,
+                "provider": session.provider,
+                "error_preview": redact_for_telemetry(str(e), limit=400),
+                "flight": flight_recorder.build_envelope(session_id, "model_error", reason, session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
+            })
+        except Exception:
+            logger.debug("submit_diagnostic auth failed", exc_info=True)
         await ws_manager.send_to_session(session_id, "agent:auth_error", {
             "session_id": session_id,
             "reason": reason,
@@ -232,19 +267,17 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         })
     elif is_unknown_model_error(e, extra_text=p_stderr_tail):
         # Upstream rejected the model code itself (e.g. Codex 1211 on a ChatGPT plan that lacks our GPT ids). Track it; the friendly "add an API key / pick another model" card is rendered frontend-side.
-        try:
-            from backend.apps.service.client import submit_diagnostic
-            submit_diagnostic({
-                "kind": "model_error",
-                "subkind": "unknown_model",
-                "model": session.model,
-                "provider": session.provider,
-                "connection_mode": getattr(load_settings(), "connection_mode", "own_key"),
-                "error_preview": redact_for_telemetry(str(e), limit=400),
-                "stderr_tail": redact_for_telemetry(p_stderr_tail),
-            })
-        except Exception:
-            logger.debug("submit_diagnostic model_error failed", exc_info=True)
+        p_report_model_error("unknown_model", session_id, session, turn, e, p_stderr_tail)
+        error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
+        session.messages.append(error_msg)
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": error_msg.model_dump(mode="json"),
+        })
+    elif is_router_unavailable_error(f"{e} {p_stderr_tail}"):
+        # Our own router is down. Naming it beats "unclassified": this is the one failure family
+        # where the fix is entirely on our side of the wire.
+        p_report_model_error("router_unavailable", session_id, session, turn, e, p_stderr_tail)
         error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
         session.messages.append(error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
@@ -253,19 +286,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         })
     else:
         # Track unclassified agent failures too so we stop flying blind on them.
-        try:
-            from backend.apps.service.client import submit_diagnostic
-            submit_diagnostic({
-                "kind": "model_error",
-                "subkind": "unclassified",
-                "model": session.model,
-                "provider": session.provider,
-                "connection_mode": getattr(load_settings(), "connection_mode", "own_key"),
-                "error_preview": redact_for_telemetry(str(e), limit=400),
-                "stderr_tail": redact_for_telemetry(p_stderr_tail),
-            })
-        except Exception:
-            logger.debug("submit_diagnostic model_error failed", exc_info=True)
+        p_report_model_error("unclassified", session_id, session, turn, e, p_stderr_tail)
         # The SDK's ProcessError masks the cause behind "Check stderr output for details"; append the scrubbed stderr tail so the card (and its analytics copy) names what actually broke instead of shipping a dead end.
         p_card_text = f"Error: {str(e)}"
         p_cause = redact_for_telemetry(p_stderr_tail, limit=400).strip()

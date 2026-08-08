@@ -274,6 +274,22 @@ and flips `BACKEND_PORT` in both `.env` and `.env.example`. Then run
 - Install your own venv or `pip install` manually.
 - Edit `backend/run.sh` or the SubApp framework.
 
+**Persist anything the user comes back to. Your process is disposable.**
+OpenSwarm freezes this app's process when its card closes and fully kills
+it after ~15 minutes idle, on quit, and on crash. A module-level list or
+dict is therefore data loss on a timer. The scaffold ships a durable
+store; use it (or your own files under `backend/data/`):
+
+```python
+from backend.apps.store.store import load_store, save_store
+
+data = load_store()              # {} on first run, never raises
+data["items"] = [*data.get("items", []), new_item]
+save_store(data)                 # atomic write; a kill mid-write keeps the old data
+```
+
+Holding state only in memory is a bug, not a style choice.
+
 Adding a new endpoint is just adding a new SubApp:
 
 ```python

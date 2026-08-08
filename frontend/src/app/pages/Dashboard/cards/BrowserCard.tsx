@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { requestWebviewAttachSlot, releaseWebviewAttachSlot } from './webviewAttachQueue';
 import { createPortal } from 'react-dom';
 import { subscribeLiveDrag } from '../hooks/interaction/liveDragChannel';
 import Box from '@mui/material/Box';
@@ -23,6 +24,7 @@ import AddIcon from '@mui/icons-material/Add';
 import LockIcon from '@mui/icons-material/Lock';
 import SearchIcon from '@mui/icons-material/Search';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import { report } from '@/shared/serviceClient';
 import RunInDesktopMessage from '@/app/components/RunInDesktopMessage';
 import {
   setBrowserCardPosition,
@@ -415,6 +417,15 @@ const BrowserCard: React.FC<Props> = ({
   }, [activeUrl, activeTabId]);
 
   const webviewMap = useRef<Map<string, WebviewElement>>(new Map());
+
+  // Electron attaches a guest with a SYNCHRONOUS renderer IPC, so a dashboard that mounts N cards
+  // puts N blocking round-trips in one frame (measured: 4755ms over 40 long tasks at 18 cards).
+  // Waiting for a slot spreads them one per frame; nothing unmounts, so sessions are untouched.
+  const [attachSlotReady, setAttachSlotReady] = useState(false);
+  useEffect(() => {
+    if (attachSlotReady) return undefined;
+    return requestWebviewAttachSlot(() => setAttachSlotReady(true));
+  }, [attachSlotReady]);
   const initializedTabs = useRef(new Set<string>());
   const tabBarRef = useRef<HTMLDivElement>(null);
   // Some pages (Zillow's map) rewrite their own URL many times a second, across did-navigate-in-page AND did-stop-loading; throttle the persisted URL mirror so each tick can't fan out to a full dashboard save + webview suspend re-eval. Leading edge keeps a real navigation's URL immediate.
@@ -510,6 +521,10 @@ const BrowserCard: React.FC<Props> = ({
         const onReady = () => {
           if (tabId === activeTabIdRef.current) doLoad();
           else registerPendingLoad(wv, targetUrl, doLoad);
+          // Release AFTER this card's own post-attach work (loadURL, capsule, zoom limits), not
+          // before: releasing first let that work run against the next card's attach and put six
+          // long tasks in one open where an isolated attach produces two.
+          releaseWebviewAttachSlot();
         };
         wv.addEventListener('dom-ready', onReady, { once: true });
         cleanups.push(() => wv.removeEventListener('dom-ready', onReady));
@@ -518,6 +533,18 @@ const BrowserCard: React.FC<Props> = ({
         tagSurface();
         wv.addEventListener('dom-ready', tagSurface);
         cleanups.push(() => wv.removeEventListener('dom-ready', tagSurface));
+        // A dead browser card used to report NOTHING: the guest process vanishes, the surface goes
+        // blank, and no crash log or telemetry ever mentions it (verified by forcing a crash).
+        const onGuestGone = (e: Event): void => {
+          const d = e as Event & { reason?: string; exitCode?: number };
+          report('process', 'webview_gone', { reason: d.reason ?? 'crashed', exit_code: d.exitCode ?? null });
+        };
+        wv.addEventListener('render-process-gone', onGuestGone);
+        wv.addEventListener('crashed', onGuestGone);
+        cleanups.push(() => {
+          wv.removeEventListener('render-process-gone', onGuestGone);
+          wv.removeEventListener('crashed', onGuestGone);
+        });
       }
 
       // Every guest sits at about:blank before its real load (lazy tabs never leave it); mirroring
@@ -661,7 +688,10 @@ const BrowserCard: React.FC<Props> = ({
 
     return () => cleanups.forEach((fn) => fn());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabIdKey, browserId, dispatch, updateTabLocal, suspendedSnap, throttleUrlMirror]);
+    // attachSlotReady is load-bearing: the <webview> elements do not exist until the attach queue
+    // releases this card, so without it this effect runs once against an empty map, registers no
+    // dom-ready listener, and every card after the first sits at about:blank forever.
+  }, [tabIdKey, browserId, dispatch, updateTabLocal, suspendedSnap, throttleUrlMirror, attachSlotReady]);
 
   const navigate = useCallback((targetUrl: string) => {
     const finalUrl = resolveInput(targetUrl);
@@ -1477,44 +1507,39 @@ const BrowserCard: React.FC<Props> = ({
           flexShrink: 0,
         }}
       >
-        <Tooltip title="Back" placement="top">
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleBack}
-              onPointerDown={(e) => e.stopPropagation()}
-              disabled={!activeLocal.canGoBack}
-              sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
-            >
-              <ArrowBackIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* No tooltips on back/forward/reload: every browser on earth uses these arrows, so the label
+            teaches nothing and the popup lands right on top of the page you are trying to read. */}
+        <IconButton
+          size="small"
+          aria-label="Back"
+          onClick={handleBack}
+          onPointerDown={(e) => e.stopPropagation()}
+          disabled={!activeLocal.canGoBack}
+          sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
+        >
+          <ArrowBackIcon sx={{ fontSize: 15 }} />
+        </IconButton>
 
-        <Tooltip title="Forward" placement="top">
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleForward}
-              onPointerDown={(e) => e.stopPropagation()}
-              disabled={!activeLocal.canGoForward}
-              sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
-            >
-              <ArrowForwardIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <IconButton
+          size="small"
+          aria-label="Forward"
+          onClick={handleForward}
+          onPointerDown={(e) => e.stopPropagation()}
+          disabled={!activeLocal.canGoForward}
+          sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
+        >
+          <ArrowForwardIcon sx={{ fontSize: 15 }} />
+        </IconButton>
 
-        <Tooltip title="Reload" placement="top">
-          <IconButton
-            size="small"
-            onClick={handleRefresh}
-            onPointerDown={(e) => e.stopPropagation()}
-            sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
-          >
-            <RefreshIcon sx={{ fontSize: 15 }} />
-          </IconButton>
-        </Tooltip>
+        <IconButton
+          size="small"
+          aria-label="Reload"
+          onClick={handleRefresh}
+          onPointerDown={(e) => e.stopPropagation()}
+          sx={{ color: CHROME_TEXT_MUTED, p: 0.4, '&:hover': { color: CHROME_TEXT } }}
+        >
+          <RefreshIcon sx={{ fontSize: 15 }} />
+        </IconButton>
 
         {/* URL bar */}
         <Box
@@ -1623,7 +1648,7 @@ const BrowserCard: React.FC<Props> = ({
             )
           ) : (
           <>
-            {tabs.map((tab) => (
+            {(attachSlotReady ? tabs : []).map((tab) => (
               <webview
                 key={tab.id}
                 ref={(el: any) => {

@@ -3,7 +3,8 @@ import { API_BASE } from '@/shared/config';
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { encodeWav, VOICE_SAMPLE_RATE } from './encodeWav';
 import { playVoiceCue } from './voiceCues';
-import { injectAtFocus } from './injectAtFocus';
+import { injectAtFocus, snapshotInjectTarget } from './injectAtFocus';
+import { clearInjectSnapshot } from './injectTargetSnapshot';
 import { createSilenceDetector } from './createSilenceDetector';
 import { pushDictation } from './voiceHistory';
 import { learnFromTranscript, isDictionaryEcho } from './voiceDictionary';
@@ -158,6 +159,8 @@ export function useVoiceDictation() {
       }
     }
     setError(null);
+    // Where the words belong is decided NOW, while the user is looking at it, not seconds later.
+    snapshotInjectTarget();
     // Warm on the DOWN edge, before the mic prompt, so the model load overlaps the user starting to speak.
     void window.openswarm?.voiceWarmup?.();
     setPartial(null);
@@ -328,6 +331,7 @@ export function useVoiceDictation() {
   // The capsule's X: throw the take away. No transcription, no cue, straight back to idle.
   const cancel = useCallback((): void => {
     if (stateRef.current !== 'recording') return;
+    clearInjectSnapshot();
     const rec = recRef.current;
     if (rec?.streaming) window.openswarm?.voiceStreamCancel?.();
     teardown();

@@ -26,11 +26,21 @@ export function useTiledCard({ cardId, zone, active, originX, originY, getCamera
   cameraRef.current = getCamera;
   const on = !!zone && active;
 
+  // Becoming ACTIVE while a zone is already set is the from-the-rail path: the card was hidden and
+  // is materialising straight into a tile, so the enter glide has no visible start point and must be
+  // skipped. Zone set while already active is the normal path and keeps its glide.
+  const prevActiveRef = useRef(active);
+  const instantRef = useRef(false);
+  if (active && !prevActiveRef.current && !!zone) instantRef.current = true;
+  prevActiveRef.current = active;
+
   useEffect(() => (on ? subscribeTiledWorkspace(bump) : undefined), [on]);
 
   useLayoutEffect(() => {
     if (!on || !zone) return undefined;
-    registerTiledCard(cardId, zone, { x: originX, y: originY }, cameraRef.current());
+    const instant = instantRef.current;
+    instantRef.current = false;
+    registerTiledCard(cardId, zone, { x: originX, y: originY }, cameraRef.current(), { instant });
     return () => unregisterTiledCard(cardId);
   }, [on, zone, cardId, originX, originY]);
 

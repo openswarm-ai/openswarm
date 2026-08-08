@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import logging
@@ -63,9 +64,37 @@ async def outputs_lifespan():
         recover_orphaned_apps()
     except Exception:
         logger.exception("orphaned-app recovery failed; apps stay hidden but nothing else breaks")
+    # Ghosts from a session that died badly keep running forever: stop_all only fires on a clean
+    # shutdown, and the port-collision path routes AROUND a squatter instead of killing it. Measured
+    # on a dev box: runtimes still alive after 2 days 19 hours. Boot is the one safe moment, since we
+    # have not spawned any of our own yet.
+    try:
+        from backend.apps.outputs.reap_ghost_runtimes import reap_ghost_runtimes
+        ghosts = reap_ghost_runtimes()
+        if ghosts:
+            logger.warning("outputs lifespan: reaped %d ghost runtime(s) from a previous session", ghosts)
+    except Exception:
+        logger.exception("ghost-runtime reap failed; stale processes stay but boot continues")
+    # The boot reap catches ghosts from a PREVIOUS session, but a session can live for days: this
+    # sweep keeps catching them while we run (another backend dying leaves orphans mid-session) and
+    # retires idle runtimes past their TTL, so "quit but still around" has a bounded lifetime.
+    async def p_periodic_sweep() -> None:
+        from backend.apps.outputs.reap_ghost_runtimes import reap_ghost_runtimes
+        from backend.apps.outputs.runtime import manager as p_sweep_manager
+        while True:
+            await asyncio.sleep(600)
+            try:
+                ghosts = await asyncio.to_thread(reap_ghost_runtimes)
+                stale = await p_sweep_manager.reap_stale_idle()
+                if ghosts or stale:
+                    logger.info("periodic sweep: %d ghost(s) reaped, %d stale idle runtime(s) stopped", ghosts, stale)
+            except Exception:
+                logger.exception("periodic sweep failed; will retry next interval")
+    p_sweep_task = asyncio.create_task(p_periodic_sweep())
     try:
         yield
     finally:
+        p_sweep_task.cancel()
         # Reap every per-app subprocess. Without this each `bash run.sh` (and its vite/uvicorn descendants) reparents to PID 1 when the main backend dies, leaving ghost listeners on the .env-pinned ports that block the next OpenSwarm launch's reload preview.
         try:
             from backend.apps.outputs.runtime import manager as runtime_manager

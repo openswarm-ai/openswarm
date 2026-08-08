@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from collections import deque, OrderedDict
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -30,6 +31,7 @@ from backend.apps.outputs.runtime_proc import (
     FRONTEND_BIND_POLL_INTERVAL,
     FRONTEND_BIND_TIMEOUT_SECONDS,
     LOG_BUFFER_LINES,
+    IDLE_RUNTIME_TTL_S,
     MAX_IDLE_RUNTIMES,
     RECENT_ERRORS_MAX,
     TERMINATE_GRACE_SECONDS,
@@ -582,6 +584,8 @@ class AppRuntimeManager:
         self.p_attached: dict[str, int] = {}
         # workspace_id → AppRuntime with no subscribers but still alive. OrderedDict gives O(1) move_to_end + popitem(last=False) for LRU semantics.
         self.idle_lru: "OrderedDict[str, AppRuntime]" = OrderedDict()
+        # workspace key -> monotonic seconds when it was parked; drives the idle TTL sweep.
+        self.p_idle_since: dict[str, float] = {}
         self.p_lock = asyncio.Lock()
         # Public: tests cancel it during teardown.
         self.restart_watch_task: Optional[asyncio.Task] = None
@@ -631,6 +635,7 @@ class AppRuntimeManager:
             if rt is None:
                 # Maybe the runtime is sitting idle in the LRU; revive it without paying the spawn cost again.
                 idle_rt = self.idle_lru.pop(key, None)
+                self.p_idle_since.pop(key, None)
                 if idle_rt is not None and idle_rt.running:
                     rt = idle_rt
                     rt.workspace_path = workspace_path
@@ -678,10 +683,12 @@ class AppRuntimeManager:
             else:
                 self.idle_lru[key] = rt
                 self.idle_lru.move_to_end(key)
+                self.p_idle_since[key] = time.monotonic()
                 suspend_process_tree(rt.process)
                 rt.p_suspended = True
                 while len(self.idle_lru) > MAX_IDLE_RUNTIMES:
-                    _, old_rt = self.idle_lru.popitem(last=False)
+                    old_key, old_rt = self.idle_lru.popitem(last=False)
+                    self.p_idle_since.pop(old_key, None)
                     # Reaping a stopped process: SIGCONT first so the SIGTERM in stop() can be delivered cleanly (a SIGSTOP'd process can't run its own shutdown).
                     resume_process_tree(old_rt.process)
                     to_reap.append(old_rt)
@@ -695,6 +702,27 @@ class AppRuntimeManager:
                 logger.exception("failed to reap idle runtime %s", key)
         if to_idle is not None:
             logger.debug("workspace %s idled (LRU size now %d)", key, len(self.idle_lru))
+
+    async def reap_stale_idle(self, ttl_s: float = IDLE_RUNTIME_TTL_S) -> int:
+        """Fully stop idle runtimes parked longer than ttl_s. Frozen is 0% CPU but never 0 cost:
+        each one holds its memory and its port for as long as it sits there, which is the "app is
+        quit but something of it is still around" complaint. Returns how many were stopped."""
+        now = time.monotonic()
+        stale: list[AppRuntime] = []
+        async with self.p_lock:
+            for key in [k for k, t in self.p_idle_since.items() if now - t >= ttl_s]:
+                rt = self.idle_lru.pop(key, None)
+                self.p_idle_since.pop(key, None)
+                if rt is None:
+                    continue
+                resume_process_tree(rt.process)
+                stale.append(rt)
+        for rt in stale:
+            try:
+                await rt.stop()
+            except Exception:
+                logger.exception("failed to stop stale idle runtime")
+        return len(stale)
 
     def get(self, workspace_id: str, instance: int = 1) -> Optional[AppRuntime]:
         key = runtime_key(workspace_id, instance)

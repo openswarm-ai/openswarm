@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   requestAppSlot,
   releaseAppSlot,
+  wireBrowserLiveCounter,
+  totalLiveGuests,
   MAX_LIVE_APP_WEBVIEWS as MAX,
 } from './appWebviewBudget.ts';
 
@@ -64,4 +66,26 @@ test('re-requesting an already-live card just updates it, no extra slot', () => 
   assert.equal(requestAppSlot(keys[0], 5, false), true, 'existing card re-request is idempotent');
   assert.equal(requestAppSlot('f-far', 9999, false), false, 'still full after a re-request');
   release([...keys, 'f-far']);
+});
+
+test('the global ceiling counts browsers and apps together', () => {
+  // 8 live browsers reported: only 2 of the 6 app slots may actually go live.
+  wireBrowserLiveCounter(() => 8);
+  const keys: string[] = [];
+  let granted = 0;
+  for (let i = 0; i < 6; i++) {
+    const k = `g${i}`;
+    if (requestAppSlot(k, i, false)) { granted++; keys.push(k); }
+  }
+  assert.equal(granted, 2, `apps must stop at the global ceiling, granted ${granted}`);
+  assert.equal(totalLiveGuests(), 10);
+  wireBrowserLiveCounter(() => 0);
+  keys.forEach(releaseAppSlot);
+});
+
+test('pinned cards ignore the global ceiling, a working agent is never throttled', () => {
+  wireBrowserLiveCounter(() => 99);
+  assert.equal(requestAppSlot('pinned-work', 0, true), true);
+  wireBrowserLiveCounter(() => 0);
+  releaseAppSlot('pinned-work');
 });
