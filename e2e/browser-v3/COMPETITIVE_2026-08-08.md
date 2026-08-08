@@ -58,6 +58,66 @@ Category matters and is easy to get wrong: **agent-browser is a primitive layer 
 browser-use is an **agent**, stagehand is an **SDK**. Benchmarking the first against the second is a
 category error; the comparison in s.1 is against our own deterministic finder, which is its true peer.
 
+
+---
+
+## 2b. Every tool actually installed and run, with what happened
+
+Nine were claimed; I installed and drove five, and three of those produced comparable numbers. What
+blocked the others is recorded because "we could not test it" is a result, not a gap to paper over.
+
+| tool | installed | benchmarked | outcome |
+| --- | --- | --- | --- |
+| **browser-use** 0.9.x | yes (uv, py3.13) | **yes, 43 trials** | full agent numbers, s.3 |
+| **agent-browser** 0.33.2 | yes (npm -g) | **yes, 5 sites** | fastest perception measured, s.1 |
+| **@playwright/mcp** 0.0.79 | yes (npm -g) | **yes, 5 sites** | 5/5 editables found, below |
+| **@browserbasehq/stagehand** 3.7.1 | yes (npm) | no | model-naming conflict, below |
+| **@jackwener/opencli** 1.8.6 | yes (npm -g) | no | needs a hand-installed Chrome extension |
+| **skyvern** 1.0.48 | no | no | 145 deps incl. Postgres/alembic/fastapi: a deployment |
+| **browsergym** 0.14.3 | no | no | greenlet 3.0.3 will not build on py3.13 (pins playwright 1.44) |
+| UI-TARS-desktop | no | no | desktop GUI app, no headless benchmark surface |
+| BrowserOS | no | no | full Chromium fork; a browser swap, not a library test |
+
+### playwright-mcp (n=5, headless, isolated profile)
+
+Driven over raw JSON-RPC on stdio, 24 tools exposed.
+
+| site | navigate | **snapshot** | editables | verified |
+| --- | --- | --- | --- | --- |
+| gtranslate | 1.18s | **0.13s** | 1 | yes |
+| deepl | 1.10s | **0.05s** | 2 | yes |
+| w3schools | 1.10s | **1.71s** | 1 | yes |
+| regex101 | 2.42s | **0.02s** | 3 | yes |
+| onlinegdb | 2.21s | **0.01s** | 4 | yes |
+
+**Snapshot median ~130ms**, and it finds editables on all five including both ACE sites and deepl.
+
+Honest limit: I filled via `browser_evaluate` (raw JS), so `verified` reflects my JS, not their
+element finder. The **snapshot times and editable counts are the real signal**; the fill column only
+shows the page was fillable. It also ran headless on a fresh profile, so deepl never challenged it --
+the same advantage browser-use had, not a property of the tool.
+
+### stagehand: a naming collision, not a defect
+
+It parses `modelName` as `provider/model` on the first `/`. Every model id our 9Router exposes
+contains a slash (`cc/claude-opus-4-8`, and **0 of 27 ids are slash-free**), so `anthropic/cc/...`
+resolves to the wrong provider and falls through to a real OpenAI client: "OpenAI API key is missing".
+Pointing it at 9Router's OpenAI-compatible endpoint instead got "No credentials for provider: openai"
+from the router. Its browser half worked fine (pages loaded, `observe` returned in 98-4,973ms), so
+this is a config incompatibility with OUR lane. A direct provider key would benchmark it in minutes.
+
+### OpenCLI: correct instincts, manual setup
+
+Could not run: `opencli browser` requires the OpenCLI Chrome extension loaded by hand, and every
+command timed out at ~45s with "Make sure Chrome/Chromium is open and the OpenCLI extension is
+enabled."
+
+Two design points visible without running it, and both are things we should copy:
+- `fill` returns `{filled, verified, text, actual}` -- **read-back verification built into the
+  primitive**, the same discipline as our send-script receipts, at the layer below the agent.
+- Shipped adapters state postconditions outright ("Fails if the row is already read **or the
+  postcondition cannot be verified**").
+
 ---
 
 ## 3. browser-use, measured as an agent (n=43 trials)
