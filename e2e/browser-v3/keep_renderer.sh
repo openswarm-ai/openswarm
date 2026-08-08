@@ -16,8 +16,13 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/electron" || exit 1
 
 while true; do
   until curl -s -o /dev/null --max-time 4 "http://localhost:${OPENSWARM_DEV_PORT:-3026}"; do sleep 5; done
+  # OSW_CDP_PORT exposes Electron's DevTools protocol so an EXTERNAL agent can be pointed at the very
+  # same browser our own agent drives. Without it a cross-agent comparison runs one side in Electron
+  # and the other in vanilla Chrome, and then every difference is confounded by the browser rather
+  # than the agent. Off unless asked for: an open debugging port is a local attack surface.
   ELECTRON_DEV=1 OPENSWARM_DEV_PORT="${OPENSWARM_DEV_PORT:-3026}" OPENSWARM_PORT="${OPENSWARM_PORT:-8326}" \
-    ./node_modules/.bin/electron . --user-data-dir="$SP/udd" >> "$SP/renderer.log" 2>&1
+    ./node_modules/.bin/electron . --user-data-dir="$SP/udd" \
+    ${OSW_CDP_PORT:+--remote-debugging-port=$OSW_CDP_PORT} >> "$SP/renderer.log" 2>&1
   echo "[keep_renderer] electron exited at $(date +%H:%M:%S), restarting" >> "$SP/renderer.log"
   sleep 5
 done
