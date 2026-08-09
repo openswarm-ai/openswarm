@@ -245,3 +245,54 @@ A CMU-adjacent paper is titled *"An Illusion of Progress? Assessing the Current 
 - The anon suite is one I built and then optimised against; the holdout is the guard, and it held.
 - agent-browser was measured on perception+fill only, not on end-to-end task completion, because it
   has no agent loop to compare.
+
+---
+
+## 10. BrowserGym / MiniWoB: the first externally-scored number in this whole exercise
+
+Every other measurement here, ours and theirs, was scored by a harness I wrote. MiniWoB's reward
+comes from the task definition, so it cannot be flattered by the person running it. That makes it the
+only ground truth in this document.
+
+Setup that works (the pypi install fails on py3.13 -- greenlet 3.0.3 will not build):
+
+```bash
+uv venv bg-venv --python 3.12 && uv pip install --python bg-venv/bin/python browsergym
+git clone --depth 1 https://github.com/Farama-Foundation/miniwob-plusplus
+(cd miniwob-plusplus/miniwob/html && python3 -m http.server 8099 &)
+MINIWOB_URL=http://localhost:8099/miniwob/ bg-venv/bin/python e2e/browser-v3/miniwob_baseline.py
+```
+
+341 environments register: **125 MiniWoB**, 215 AssistantBench, 0 WebArena (WebArena needs its own
+self-hosted sites).
+
+### The baseline that reframes everything
+
+A **~20-line deterministic heuristic with no model at all** -- read the flattened accessibility tree,
+match the quoted target in the goal, click or fill it:
+
+| result | value |
+| --- | --- |
+| **solved** | **5/15 = 33%** |
+| median wall | **1.44s** |
+| LLM calls | **0** |
+| cost | **$0** |
+
+Solved: click-test, click-button, click-dialog, focus-text, click-tab (all in 1 step, ~1.2-1.4s).
+Failed: click-link, click-checkboxes, enter-text, enter-text-dynamic, focus-text-2, enter-password,
+navigate-tree, click-option, simple-algebra, login-user.
+
+**Why this matters more than any competitor number in this document:** a third of these tasks fall to
+twenty lines of code, no model, in 1.4 seconds. Published agent scores on MiniWoB sit in the 70-90%
+range. So the honest question for any model-driven browser agent -- ours included -- is not "does it
+work" but "what does it buy over the free deterministic baseline, and is that worth 10-40x the
+latency and the per-token cost".
+
+Our own scripted path answers that well (9.8s, 100% where it fires). Our model loop at 37.8s and
+browser-use at 35.7s both need to justify ~25x the wall clock of the heuristic.
+
+### Next step for this harness
+
+`miniwob_baseline.py` takes task names as argv, so the same 15 (or all 125) can be run against a real
+agent policy for a like-for-like number on ground truth someone else owns. That is the missing
+measurement in this whole session and it is now one script away.
