@@ -133,3 +133,29 @@ test('docOrder:false keeps legacy rank-order display (the A/B off-arm)', () => {
   // rank order: textbox(0) < button(1) < option(3)
   assert.deepEqual(shown.map((x) => x.backendNodeId), [3, 2, 1]);
 });
+
+test('adjacent same-named INPUTS never collapse (both password fields must show)', () => {
+  const { shown } = rankAndCapInteractives([
+    mk('textbox', 'Password', 1),
+    mk('textbox', 'Password', 2),
+    mk('button', 'Submit', 3),
+  ]);
+  assert.deepEqual(shown.map((x) => x.backendNodeId), [1, 2, 3]);
+});
+
+test('adjacent NAMELESS rows never collapse (star and trash icons are different controls)', () => {
+  const { shown } = rankAndCapInteractives([
+    mk('button', '', 1),
+    mk('button', '', 2),
+    mk('button', '', 3),
+  ]);
+  assert.equal(shown.length, 3);
+});
+
+test('named non-input twins still collapse (icon+label pairs)', () => {
+  const { shown } = rankAndCapInteractives([
+    mk('button', 'Like', 1),
+    mk('button', 'Like', 2),
+  ]);
+  assert.equal(shown.length, 1);
+});

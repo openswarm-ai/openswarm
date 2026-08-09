@@ -27,13 +27,17 @@ function rolePriority(role: string): number {
   return role in ROLE_PRIORITY ? ROLE_PRIORITY[role] : DEFAULT_PRIORITY;
 }
 
-// Drop back-to-back duplicates with the same role+name. The AX tree often emits an icon node and its label as twins, and sticky headers repeat the same control. Consecutive-only so a genuine list (5 distinct "Add to cart" buttons interleaved with product text) is never collapsed. The sessionId is part of the key so a same-named element in a cross-origin child frame is never mistaken for a twin of the root frame's last element at the seam. Context too: five "Message" buttons in five people-cards are NOT twins, only same-card icon+label pairs (identical context) collapse.
+// Roles whose twins are individually meaningful: two same-named password boxes are two fields the user must both fill, never an icon+label pair. Collapsing them lost MiniWoB enter-password outright (arena, 2026-08-09).
+const NEVER_DEDUPE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'listbox']);
+
+// Drop back-to-back duplicates with the same role+name. The AX tree often emits an icon node and its label as twins, and sticky headers repeat the same control. Consecutive-only so a genuine list (5 distinct "Add to cart" buttons interleaved with product text) is never collapsed. The sessionId is part of the key so a same-named element in a cross-origin child frame is never mistaken for a twin of the root frame's last element at the seam. Context too: five "Message" buttons in five people-cards are NOT twins, only same-card icon+label pairs (identical context) collapse. Inputs and NAMELESS rows never collapse: adjacent unlabeled icons (star, trash) match on every key yet are different controls -- that collapse lost the whole MiniWoB email suite.
 function dedupeConsecutive(items: RankItem[]): RankItem[] {
   const out: RankItem[] = [];
   for (const it of items) {
     const prev = out[out.length - 1];
     if (prev && prev.role === it.role && prev.name === it.name
-        && prev.sessionId === it.sessionId && (prev.context || '') === (it.context || '')) continue;
+        && prev.sessionId === it.sessionId && (prev.context || '') === (it.context || '')
+        && !NEVER_DEDUPE_ROLES.has(it.role) && it.name !== '') continue;
     out.push(it);
   }
   return out;

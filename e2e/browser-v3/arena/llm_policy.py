@@ -164,6 +164,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     # v3: append the page's visible text, our BrowserGetText equivalent; menu-only lost every task
     # whose payload lives in prose (the algebra equation, which email is Cecile's).
     with_text: bool = False
+    # v4: DOM attribute names for nameless rows ('(trash)') -- the last piece the email suite needed.
+    hints: bool = False
 
     def reset(self, goal: str) -> None:
         self.history = []
@@ -171,7 +173,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.prev_bids = set()
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
-        raw_items: list[RankItem] = perception.interactives(obs, include_clickable=self.clickable)
+        raw_items: list[RankItem] = perception.interactives(
+            obs, include_clickable=self.clickable, attr_hints=self.hints)
         shown, truncated = rank_and_cap(raw_items, goal=goal)
         new = {it.bid for it in shown} - self.prev_bids if self.prev_bids else set()
         self.prev_bids = {it.bid for it in shown}
@@ -242,4 +245,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
     if name == "osw-llm-v3":
         return OpenSwarmLlmPolicy(name=name, model=model, endpoint=endpoint,
                                   clickable=True, with_text=True)
+    if name == "osw-llm-v4":
+        return OpenSwarmLlmPolicy(name=name, model=model, endpoint=endpoint,
+                                  clickable=True, with_text=True, hints=True)
     raise SystemExit(f"unknown arm: {name}")

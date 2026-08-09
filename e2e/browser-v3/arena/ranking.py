@@ -80,8 +80,10 @@ def dedupe_consecutive(items: list[RankItem]) -> list[RankItem]:
     out: list[RankItem] = []
     for it in items:
         prev = out[-1] if out else None
+        # Nameless rows are also exempt: two adjacent unlabeled icons (star, trash) look identical
+        # by role+name+context yet are different controls -- collapsing them lost the email suite.
         if (prev and prev.role == it.role and prev.name == it.name and prev.context == it.context
-                and it.role not in NEVER_DEDUPE_ROLES):
+                and it.role not in NEVER_DEDUPE_ROLES and it.name):
             continue
         out.append(it)
     return out
@@ -110,11 +112,13 @@ def render(items: list[RankItem], truncated: int, new_bids: set[str] | None = No
     lines = []
     for i, el in enumerate(items, 1):
         dup = counts.get(f"{el.role}|{el.name}", 0) > 1
-        ctx = f' ctx="{el.context}"' if dup and el.context else ""
+        # ctx also whenever the name alone cannot identify the row (empty or a bare attr hint).
+        weak_name = not el.name or el.name.startswith("(")
+        ctx = f' ctx="{el.context}"' if (dup or weak_name) and el.context else ""
         val = f' value="{el.value}"' if el.value else ""
         star = "*" if new_bids and el.bid in new_bids else ""
-        # Coordinates only where the label carries no signal; a named button needs no geometry.
-        pos = f" center=({el.center[0]:.0f},{el.center[1]:.0f})" if el.center and not el.name else ""
+        # Coordinates whenever the label alone cannot pin the row; a named button needs no geometry.
+        pos = f" center=({el.center[0]:.0f},{el.center[1]:.0f})" if el.center and weak_name else ""
         opts = ""
         if el.options:
             shown_opts = el.options[:12]

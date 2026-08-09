@@ -42,21 +42,29 @@ def visible(bid: str, extra: dict[str, Any], threshold: float = 0.5) -> bool:
 def build_context(nodes: list[dict[str, Any]], by_id: dict[str, dict[str, Any]],
                   node: dict[str, Any], depth: int = 3) -> str:
     """Nearest ancestor's text, so five identical 'Message' buttons say which card they belong to."""
-    cur = node
-    for _ in range(depth):
-        parent_id = cur.get("parentId")
-        if not parent_id or parent_id not in by_id:
-            return ""
-        parent = by_id[parent_id]
-        texts: list[str] = []
-        for cid in parent.get("childIds") or []:
+    def texts_under(n: dict[str, Any], levels: int) -> list[str]:
+        found: list[str] = []
+        for cid in n.get("childIds") or []:
             child = by_id.get(cid)
             if not child or child is node:
                 continue
             if node_role(child) in TEXT_ROLES:
                 t = node_name(child).strip()
                 if t:
-                    texts.append(t)
+                    found.append(t)
+            elif levels > 0:
+                # One level down inside sibling wrappers: an email row's sender name lives in
+                # <span class=sender><text> -- a direct-children-only walk never saw it.
+                found.extend(texts_under(child, levels - 1))
+        return found
+
+    cur = node
+    for _ in range(depth):
+        parent_id = cur.get("parentId")
+        if not parent_id or parent_id not in by_id:
+            return ""
+        parent = by_id[parent_id]
+        texts = texts_under(parent, 3)
         if texts:
             return " ".join(texts)[:60]
         cur = parent
@@ -64,7 +72,7 @@ def build_context(nodes: list[dict[str, Any]], by_id: dict[str, dict[str, Any]],
 
 
 def interactives(obs: dict[str, Any], include_hidden: bool = False,
-                 include_clickable: bool = False) -> list[RankItem]:
+                 include_clickable: bool = False, attr_hints: bool = False) -> list[RankItem]:
     """Every actionable node in document order, before any ranking or capping is applied.
 
     include_clickable is the technique ingested from browser-use: elements the page wires for
@@ -76,6 +84,7 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
     nodes: list[dict[str, Any]] = ax.get("nodes") or []
     extra = obs.get("extra_element_properties") or {}
     by_id = {n["nodeId"]: n for n in nodes if "nodeId" in n}
+    hints = dom_attr_hints(obs) if attr_hints else {}
     out: list[RankItem] = []
     for n in nodes:
         if n.get("ignored"):
@@ -92,6 +101,9 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
         if not include_hidden and not visible(str(bid), extra):
             continue
         name = node_name(n).strip()
+        # A nameless icon inherits its DOM identity: '(trash)' beats an unlabeled image row.
+        if not name and str(bid) in hints:
+            name = f"({hints[str(bid)]})"
         bbox = (extra.get(str(bid)) or {}).get("bbox")
         center = (bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2) if bbox else None
         out.append(RankItem(
@@ -129,6 +141,35 @@ def child_options(by_id: dict[str, dict[str, Any]], node: dict[str, Any], depth:
 
     walk(node, 0)
     return found or None
+
+
+# DOM attributes worth surfacing when the AX name is empty, most-identifying first.
+HINT_ATTRS = ("aria-label", "title", "alt", "placeholder", "name", "id", "class")
+
+
+def dom_attr_hints(obs: dict[str, Any]) -> dict[str, str]:
+    """bid -> best identifying DOM attribute, for nodes the AX tree names as nothing.
+
+    Ingested from browser-use: a trash icon is <span class="trash"> in the DOM and '' in the AX
+    tree, and every email task turns on knowing which nameless icon is which.
+    """
+    out: dict[str, str] = {}
+    dom = obs.get("dom_object") or {}
+    strings: list[str] = dom.get("strings") or []
+    for doc in dom.get("documents") or []:
+        for attr_idxs in (doc.get("nodes") or {}).get("attributes") or []:
+            pairs = {}
+            for k in range(0, len(attr_idxs) - 1, 2):
+                pairs[strings[attr_idxs[k]]] = strings[attr_idxs[k + 1]]
+            bid = pairs.get("bid")
+            if not bid:
+                continue
+            for attr in HINT_ATTRS:
+                v = (pairs.get(attr) or "").strip()
+                if v and not v.startswith("browsergym"):
+                    out[bid] = v[:40]
+                    break
+    return out
 
 
 def page_text(obs: dict[str, Any], limit: int = 1200) -> str:
