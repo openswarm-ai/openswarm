@@ -81,3 +81,4 @@ Thumbs.db
 ehthumbs.db
 desktop.ini
 frontend/tsconfig.tsbuildinfo
+e2e/browser-v3/arena/data/
