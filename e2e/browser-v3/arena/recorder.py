@@ -41,6 +41,8 @@ class StepRecord:
     llm_error: str = ""
     retries: int = 0
     shot: str = ""
+    # 1 when a screenshot rode along on this step's LLM call (the adaptive-vision cost metric).
+    vision: int = 0
 
 
 @dataclass

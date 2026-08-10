@@ -84,8 +84,10 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
             # space, and the product this arena stands in for ships coordinate clicks (click_point).
             from browsergym.core.action.highlevel import HighLevelActionSet
 
+            # multiaction on: a form turn is fill+fill+click in ONE model call -- fewer calls is
+            # simultaneously faster and stronger on multi-step tasks (browser-use does the same).
             acts = HighLevelActionSet(subsets=["chat", "bid", "coord", "infeas"],
-                                      strict=False, multiaction=False)
+                                      strict=False, multiaction=True)
             holder.append(gym.make(f"browsergym/miniwob.{task}", headless=not args.headed,
                                    max_episode_steps=args.max_steps, wait_for_user_message=False,
                                    action_mapping=acts.to_python_code))
@@ -127,6 +129,7 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 cost_usd=getattr(decision, "cost_usd", 0.0),
                 llm_error=getattr(decision, "llm_error", ""),
                 retries=getattr(decision, "retries", 0),
+                vision=getattr(decision, "vision", 0),
             )
             if args.shots != "none":
                 dest = rec.shot_path(arm, task, seed, step)

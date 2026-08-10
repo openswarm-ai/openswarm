@@ -63,6 +63,7 @@ class LlmDecision(Decision):
     cost_usd: float = 0.0
     llm_error: str = ""
     retries: int = 0
+    vision: int = 0
 
 
 @dataclass
@@ -96,9 +97,13 @@ class LlmPolicy:
         err = str(obs.get("last_action_error") or "").strip()
         self.history.append(f"{action} -> {'ERROR: ' + err[:120] if err else 'ok'}")
 
-    def call(self, goal: str, page: str) -> tuple[str, LlmDecision]:
+    def call(self, goal: str, page: str, image_b64: str = "") -> tuple[str, LlmDecision]:
         past = "\n".join(self.history[-self.max_history:]) or "(none yet)"
         user = f"GOAL: {goal}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
+        content: Any = user
+        if image_b64:
+            content = [{"type": "text", "text": user + "\n(A SCREENSHOT of the page is attached; use it for exact coordinates and to see state the text view cannot show.)"},
+                       {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]
         t0 = time.time()
         d = LlmDecision(action="")
         text = ""
@@ -110,7 +115,7 @@ class LlmPolicy:
                 resp = post_json(f"{self.endpoint}/v1/chat/completions", {
                     "model": self.model,
                     "messages": [{"role": "system", "content": self.system},
-                                 {"role": "user", "content": user}],
+                                 {"role": "user", "content": content}],
                     "max_tokens": self.max_tokens,
                     "stream": False,  # the router streams by default; a single action needs no SSE
                 })
@@ -172,6 +177,9 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.history = []
         self.index_to_bid = {}
         self.prev_bids = set()
+        self.last_view_hash = 0
+        self.fastpath_used = set()
+        self.row_names = {}
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
         raw_items: list[RankItem] = perception.interactives(
@@ -180,6 +188,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         new = {it.bid for it in shown} - self.prev_bids if self.prev_bids else set()
         self.prev_bids = {it.bid for it in shown}
         self.index_to_bid = {i: it.bid for i, it in enumerate(shown, 1)}
+        self.row_names = {i: it.name for i, it in enumerate(shown, 1)}
         view = render(shown, truncated, new)
         if self.with_text:
             text = perception.page_text(obs)
@@ -212,22 +221,75 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     # injected'). A model that repeats one no-effect action verbatim never breaks out on its own --
     # v5 lost email-inbox-nl-turk to eight identical scroll(0,3) calls.
     nudge_repeats: bool = False
+    # v7a: several actions per model call (fill+fill+click as one turn) -- fewer calls is faster
+    # AND stronger on multi-step tasks; browser-use ships the same.
+    multi: bool = False
+    # v7b: 'adaptive' attaches a screenshot ONLY when stuck or the goal reads spatial, so the easy
+    # 4-second wins never pay the vision bill. 'always' is the ablation arm.
+    vision: str = "off"
+    last_view_hash: int = 0
+    # v8: the product's scripted-path shape -- when the goal's quoted target is visible as exactly
+    # one row, click it with NO model call. Kills the near-miss click that ends tab/section tasks
+    # (a wrong 'dignissim' is terminal) and shaves a whole LLM round-trip off the win path.
+    fastpath: bool = False
+    fastpath_used: set[str] = field(default_factory=set)
+
+    def stuck_or_spatial(self, page: str, goal: str, step_had_error: bool) -> bool:
+        h = hash(page)
+        unchanged = h == self.last_view_hash and bool(self.history)
+        self.last_view_hash = h
+        return unchanged or step_had_error or bool(SPATIAL_HINTS.search(goal))
+
+    def try_fastpath(self, goal: str) -> str:
+        """Deterministic click when a quoted goal target is visible as exactly ONE row, once per name."""
+        import re as re_
+
+        from policies import quoted
+
+        targets = [t for t in quoted(goal) if t and t not in self.fastpath_used]
+        for want in targets:
+            hits = [i for i, bid in self.index_to_bid.items()]
+            matches = [i for i in hits if self.row_name(i).lower() == want.lower()]
+            if len(matches) == 1 and not re_.search(r"enter|type|fill|password|text", goal.lower()):
+                self.fastpath_used.add(want)
+                return f"click({matches[0]})"
+        return ""
+
+    row_names: dict[int, str] = field(default_factory=dict)
+
+    def row_name(self, index: int) -> str:
+        return self.row_names.get(index, "")
 
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
-        raw, d = self.call(goal, page)
-        chosen = clean_action(raw)
-        if self.nudge_repeats and chosen and self.history and self.history[-1].startswith(chosen + " ->"):
-            self.history.append(f"{chosen} -> REPEATED with no progress; that approach is exhausted, pick a different element or action type")
-            raw, d2 = self.call(goal, page)
+        if self.fastpath:
+            fp = self.try_fastpath(goal)
+            if fp:
+                d = LlmDecision(action=self.translate(fp), n_interactive=n, note="fastpath")
+                self.note(fp + "  (scripted exact-match)", obs)
+                return d
+        last_err = bool(str(obs.get("last_action_error") or "").strip())
+        image = ""
+        if self.vision == "always" or (self.vision == "adaptive"
+                                       and self.stuck_or_spatial(page, goal, last_err)):
+            image = encode_screenshot(obs)
+        raw, d = self.call(goal, page, image_b64=image)
+        d.vision = 1 if image else 0
+        chosen_list = clean_actions(raw) if self.multi else [clean_action(raw)]
+        chosen_list = [c for c in chosen_list if c]
+        if (self.nudge_repeats and len(chosen_list) == 1 and self.history
+                and self.history[-1].startswith(chosen_list[0] + " ->")):
+            self.history.append(f"{chosen_list[0]} -> REPEATED with no progress; that approach is exhausted, pick a different element or action type")
+            raw, d2 = self.call(goal, page, image_b64=image)
             d.prompt_tokens += d2.prompt_tokens
             d.completion_tokens += d2.completion_tokens
             d.think_ms += d2.think_ms
-            chosen = clean_action(raw) or chosen
+            retry = [c for c in (clean_actions(raw) if self.multi else [clean_action(raw)]) if c]
+            chosen_list = retry or chosen_list
         d.n_interactive = n
-        d.action = self.translate(chosen)
-        if chosen:
-            self.note(chosen, obs)
+        d.action = "\n".join(self.translate(c) for c in chosen_list)
+        for c in chosen_list:
+            self.note(c, obs)
         return d
 
 
@@ -238,6 +300,21 @@ Start your reply with one short line: PLAN: <what is done, what remains, what to
 Then the action on its own line. If the goal names a target you cannot see in the list or the page
 text, EXPLORE first (switch tabs, scroll, open sections) -- never act on a near-miss. Before any
 final submit/done click, re-check that every part of the goal is satisfied."""
+
+# v7: multi-action turns + occasional screenshots. Own constant for the same restart-safety reason.
+OSW_SYSTEM_V7 = OSW_SYSTEM_V5 + """
+You may output UP TO 3 actions, one per line, executed in order (e.g. two fills then the submit
+click). Only chain actions whose targets are already visible; after anything that changes the page
+(tab switch, open, search), STOP the chain there and look again next turn.
+When a screenshot is attached, trust it over the text for geometry: pick exact mouse_click(x, y)
+coordinates from what you see."""
+
+# v8: the exact-name discipline the tab/section losses demanded -- a wrong click on a goal-named
+# link is TERMINAL on these tasks, so a near-miss is worse than another exploration step.
+OSW_SYSTEM_V8 = OSW_SYSTEM_V7 + """
+When the goal names an exact target in quotes: click ONLY an element whose name matches it EXACTLY.
+If no exact match is visible yet, do not settle for a similar one -- open the next unexplored tab or
+section (track which you have tried in your PLAN line) until the exact name appears."""
 
 CALL_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
@@ -252,6 +329,39 @@ def clean_action(raw: str) -> str:
     text = re.sub(r"^(python|json|tool_code)\s*", "", text)
     m = CALL_RE.search(text)
     return m.group(0) if m else ""
+
+
+def clean_actions(raw: str, limit: int = 3) -> list[str]:
+    """All action calls in the reply, in order, capped -- the multi-action variant of clean_action."""
+    if not raw:
+        return []
+    text = raw.strip().strip("`")
+    text = re.sub(r"^(python|json|tool_code)\s*", "", text)
+    return [m.group(0) for m in CALL_RE.finditer(text)][:limit]
+
+
+SPATIAL_HINTS = re.compile(r"circle|angle|midpoint|draw|drag|shape|slider|point|pie|line|grid|color\b", re.I)
+
+
+def encode_screenshot(obs: dict[str, Any], max_w: int = 720) -> str:
+    """Downscaled PNG of the current frame; small pages stay small so vision stays cheap."""
+    arr = obs.get("screenshot")
+    if arr is None:
+        return ""
+    try:
+        import base64
+        import io
+
+        from PIL import Image
+
+        img = Image.fromarray(arr)
+        if img.width > max_w:
+            img = img.resize((max_w, int(img.height * max_w / img.width)))
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ""
 
 
 def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
@@ -276,4 +386,16 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
         return OpenSwarmLlmPolicy(name=name, model=model, endpoint=endpoint, clickable=True,
                                   with_text=True, hints=True, system=OSW_SYSTEM_V5, max_history=12,
                                   max_tokens=350, nudge_repeats=True)
+    # v7 family: ablatable primitives on top of v5 (the champion base).
+    v7 = dict(model=model, endpoint=endpoint, clickable=True, with_text=True, hints=True,
+              system=OSW_SYSTEM_V7, max_history=12, max_tokens=400, nudge_repeats=True)
+    if name == "osw-llm-v7":
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="adaptive", **v7)
+    if name == "osw-llm-v7m":  # multi-action only (vision ablated)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="off", **v7)
+    if name == "osw-llm-v7v":  # adaptive vision only (multi ablated)
+        return OpenSwarmLlmPolicy(name=name, multi=False, vision="adaptive", **v7)
+    if name == "osw-llm-v8":
+        v8 = dict(v7, system=OSW_SYSTEM_V8)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="adaptive", fastpath=True, **v8)
     raise SystemExit(f"unknown arm: {name}")
