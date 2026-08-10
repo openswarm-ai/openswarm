@@ -270,8 +270,12 @@ class OpenSwarmLlmPolicy(LlmPolicy):
                 return d
         last_err = bool(str(obs.get("last_action_error") or "").strip())
         image = ""
-        if self.vision == "always" or (self.vision == "adaptive"
-                                       and self.stuck_or_spatial(page, goal, last_err)):
+        # progressive: adaptive triggers PLUS any task that has already burned 6 actions gets eyes
+        # every turn -- a dragging episode is by definition one the text view is not solving.
+        struggling = self.vision == "progressive" and len(self.history) >= 6
+        if (self.vision == "always"
+                or (self.vision in ("adaptive", "progressive")
+                    and (self.stuck_or_spatial(page, goal, last_err) or struggling))):
             image = encode_screenshot(obs)
         raw, d = self.call(goal, page, image_b64=image)
         d.vision = 1 if image else 0
@@ -398,4 +402,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
     if name == "osw-llm-v8":
         v8 = dict(v7, system=OSW_SYSTEM_V8)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="adaptive", fastpath=True, **v8)
+    if name == "osw-llm-v9":  # v8 + progressive vision; run with --max-steps 24 (21 losses were step-capped)
+        v9 = dict(v7, system=OSW_SYSTEM_V8)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v9)
     raise SystemExit(f"unknown arm: {name}")
