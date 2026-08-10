@@ -101,7 +101,11 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
         if not include_hidden and not visible(str(bid), extra):
             continue
         name = node_name(n).strip()
-        # A nameless icon inherits its DOM identity: '(trash)' beats an unlabeled image row.
+        # Nameless rows resolve by their OWN text first ('dignissim' from the child text node), and
+        # only then by DOM identity ('(trash)'). The class hint alone made every link in a tab panel
+        # read '(alink)' -- indistinguishable, so the model guessed and the guess was terminal.
+        if not name:
+            name = subtree_text(by_id, n)
         if not name and str(bid) in hints:
             name = f"({hints[str(bid)]})"
         bbox = (extra.get(str(bid)) or {}).get("bbox")
@@ -116,6 +120,26 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
             options=child_options(by_id, n) if role in ("combobox", "listbox", "menu") else None,
         ))
     return out
+
+
+def subtree_text(by_id: dict[str, dict[str, Any]], node: dict[str, Any], levels: int = 2) -> str:
+    """Text living INSIDE the node -- a styled link's label is a child StaticText, not an AX name."""
+    found: list[str] = []
+
+    def walk(n: dict[str, Any], d: int) -> None:
+        for cid in n.get("childIds") or []:
+            child = by_id.get(cid)
+            if not child:
+                continue
+            if node_role(child) in TEXT_ROLES:
+                t = node_name(child).strip()
+                if t:
+                    found.append(t)
+            elif d > 0:
+                walk(child, d - 1)
+
+    walk(node, levels)
+    return " ".join(found)[:60]
 
 
 OPTION_ROLES = {"option", "menuitem", "MenuListOption", "ListBoxOption"}

@@ -405,4 +405,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
     if name == "osw-llm-v9":  # v8 + progressive vision; run with --max-steps 24 (21 losses were step-capped)
         v9 = dict(v7, system=OSW_SYSTEM_V8)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v9)
+    if name == "osw-llm-v10":  # v9 + subtree-text name resolution (the '(alink)' fix); same flags
+        v10 = dict(v7, system=OSW_SYSTEM_V8)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v10)
     raise SystemExit(f"unknown arm: {name}")
