@@ -75,6 +75,7 @@ class LlmPolicy:
     system: str = BU_SYSTEM
     history: list[str] = field(default_factory=list)
     max_history: int = 6
+    max_tokens: int = 200
 
     def reset(self, goal: str) -> None:
         self.history = []
@@ -110,7 +111,7 @@ class LlmPolicy:
                     "model": self.model,
                     "messages": [{"role": "system", "content": self.system},
                                  {"role": "user", "content": user}],
-                    "max_tokens": 200,
+                    "max_tokens": self.max_tokens,
                     "stream": False,  # the router streams by default; a single action needs no SSE
                 })
                 text = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
@@ -207,16 +208,36 @@ class OpenSwarmLlmPolicy(LlmPolicy):
                     parts[i] = f'"{bid}"'
         return f"{fn}({', '.join(parts)})"
 
+    # v6: browser-use's loop-detection nudge, taken from their own logs ('Loop detection nudge
+    # injected'). A model that repeats one no-effect action verbatim never breaks out on its own --
+    # v5 lost email-inbox-nl-turk to eight identical scroll(0,3) calls.
+    nudge_repeats: bool = False
+
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
         raw, d = self.call(goal, page)
-        d.n_interactive = n
         chosen = clean_action(raw)
+        if self.nudge_repeats and chosen and self.history and self.history[-1].startswith(chosen + " ->"):
+            self.history.append(f"{chosen} -> REPEATED with no progress; that approach is exhausted, pick a different element or action type")
+            raw, d2 = self.call(goal, page)
+            d.prompt_tokens += d2.prompt_tokens
+            d.completion_tokens += d2.completion_tokens
+            d.think_ms += d2.think_ms
+            chosen = clean_action(raw) or chosen
+        d.n_interactive = n
         d.action = self.translate(chosen)
         if chosen:
             self.note(chosen, obs)
         return d
 
+
+# v5's addition, kept as its own constant so a supervisor restart never mutates v4 mid-sweep:
+# browser-use's eval-memory loop won 35 multi-step tasks against v3's click-a-near-miss habit.
+OSW_SYSTEM_V5 = OSW_SYSTEM + """
+Start your reply with one short line: PLAN: <what is done, what remains, what to check next>.
+Then the action on its own line. If the goal names a target you cannot see in the list or the page
+text, EXPLORE first (switch tabs, scroll, open sections) -- never act on a near-miss. Before any
+final submit/done click, re-check that every part of the goal is satisfied."""
 
 CALL_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
@@ -248,4 +269,11 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
     if name == "osw-llm-v4":
         return OpenSwarmLlmPolicy(name=name, model=model, endpoint=endpoint,
                                   clickable=True, with_text=True, hints=True)
+    if name == "osw-llm-v5":
+        return OpenSwarmLlmPolicy(name=name, model=model, endpoint=endpoint, clickable=True,
+                                  with_text=True, hints=True, system=OSW_SYSTEM_V5, max_history=12, max_tokens=350)
+    if name == "osw-llm-v6":
+        return OpenSwarmLlmPolicy(name=name, model=model, endpoint=endpoint, clickable=True,
+                                  with_text=True, hints=True, system=OSW_SYSTEM_V5, max_history=12,
+                                  max_tokens=350, nudge_repeats=True)
     raise SystemExit(f"unknown arm: {name}")

@@ -132,6 +132,18 @@ async def drive(goal: str, cdp_url: str, model: str, endpoint: str, max_steps: i
             stats["llm_calls"] = int(getattr(usage, "total_calls", len(stats["actions"])) or 0)
     except asyncio.TimeoutError:
         stats["error"] = f"agent.run exceeded {timeout_s:.0f}s"
+        # Salvage what the agent did before the cap: reward stays valid either way, but a timeout
+        # episode recorded as steps=0 tok=0 misreports THEIR effort as absence of effort.
+        try:
+            hist = getattr(agent, "history", None)
+            if hist:
+                stats["actions"] = [str(a)[:120] for a in hist.action_names()]
+                usage = getattr(hist, "usage", None)
+                if usage:
+                    stats["prompt_tokens"] = int(getattr(usage, "total_prompt_tokens", 0) or 0)
+                    stats["completion_tokens"] = int(getattr(usage, "total_completion_tokens", 0) or 0)
+        except Exception:
+            pass
     except Exception as exc:
         stats["error"] = f"{type(exc).__name__}: {exc}"[:200]
     finally:
