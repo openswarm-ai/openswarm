@@ -36,6 +36,21 @@ Forms is the one honest deficit: book-flight's autocomplete flow, order-food, an
 social-media multi-item flows reward their 44s of patience. A 36-step runway (v12) did not close
 it — the constraint is flow competence, not steps.
 
+
+## Multi-model ledger (same arm, same tasks, whole-stack pairs; MiniWoB-scored)
+
+| model | ours (v14) | real browser-use | verdict |
+|---|---|---|---|
+| haiku-4-5 | 71.2% @ 4.8s, 0 false (v10: 75.2% @ 5.2s) | 69.6% @ 44.5s, 16 false | ours leads all axes |
+| sonnet-4-6 | **77.6% @ 6.5s, 0 false** | 74.4% @ 37.4s, 8 false | ours leads all axes |
+| sonnet-5 | 76.0% @ 5.5s, 0 false | sweeping | model tier plateaued |
+| opus-5 | sweeping | — | — |
+
+The plateau at 76-78% across sonnet-4-6/sonnet-5 plus the 82.4% technique-union ceiling localizes
+the remaining gap: ~22 tasks need purpose-built widget primitives (date/time pickers, precise
+canvas geometry, long autocomplete flows), not a stronger model. Their false-claim rate persists
+across every model (16 haiku, 8 sonnet-4-6) -- structural to the JS-evaluate hatch, as predicted.
+
 ## The full ladder — every version, every technique, its measured worth
 
 | ver | change (source) | rate | med win |

@@ -210,8 +210,10 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         if not m:
             return call
         fn, argstr = m.group(1), m.group(2)
-        # scroll deltas and mouse_*/keyboard_* coordinates are geometry, never element handles.
-        if fn == "scroll" or fn.startswith(("mouse_", "keyboard_")):
+        # scroll deltas, mouse_*/keyboard_* coordinates, navigation URLs and chat answers carry no
+        # element handles -- pass through untouched.
+        if fn == "scroll" or fn.startswith(("mouse_", "keyboard_", "go")) or fn in (
+                "send_msg_to_user", "report_infeasible"):
             return call
         # click(93, 234) is a coordinate click the model spelled wrong; book-flight looped four
         # turns on 'expected a string' before this rewrite existed.
@@ -391,11 +393,15 @@ coordinates from what you see."""
 OSW_SYSTEM_V8 = OSW_SYSTEM_V7 + """
 When the goal names an exact target in quotes: click ONLY an element whose name matches it EXACTLY.
 If no exact match is visible yet, do not settle for a similar one -- open the next unexplored tab or
-section (track which you have tried in your PLAN line) until the exact name appears."""
+section (track which you have tried in your PLAN line) until the exact name appears.
+On the open web you may also navigate: goto("url") | go_back() | go_forward().
+When the goal is a QUESTION, research it and deliver the answer with send_msg_to_user("answer") --
+the answer text alone, no prose around it."""
 
 CALL_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
-    r"|mouse_click|mouse_dblclick|mouse_move|mouse_drag_and_drop|keyboard_type|keyboard_press)\s*\([^)]*\)")
+    r"|mouse_click|mouse_dblclick|mouse_move|mouse_drag_and_drop|keyboard_type|keyboard_press"
+    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible)\s*\([^)]*\)")
 
 
 def clean_action(raw: str) -> str:

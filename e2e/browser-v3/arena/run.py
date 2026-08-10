@@ -19,6 +19,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import browsergym.assistantbench  # noqa: F401  registers the 215 live-web research envs
 import browsergym.miniwob  # noqa: F401  importing is what registers the 125 envs
 import gymnasium as gym
 
@@ -86,9 +87,12 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
 
             # multiaction on: a form turn is fill+fill+click in ONE model call -- fewer calls is
             # simultaneously faster and stronger on multi-step tasks (browser-use does the same).
-            acts = HighLevelActionSet(subsets=["chat", "bid", "coord", "infeas"],
+            acts = HighLevelActionSet(subsets=["chat", "bid", "coord", "nav", "infeas"],
                                       strict=False, multiaction=True)
-            holder.append(gym.make(f"browsergym/miniwob.{task}", headless=not args.headed,
+            # A task name containing '.' is a full BrowserGym suffix (assistantbench.validation.3);
+            # bare names stay MiniWoB. One grader per suite, none of them ours.
+            env_id = f"browsergym/{task}" if "." in task else f"browsergym/miniwob.{task}"
+            holder.append(gym.make(env_id, headless=not args.headed,
                                    max_episode_steps=args.max_steps, wait_for_user_message=False,
                                    action_mapping=acts.to_python_code))
             return holder[0].reset(seed=seed)

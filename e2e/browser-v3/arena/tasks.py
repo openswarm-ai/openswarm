@@ -74,16 +74,19 @@ SMOKE: list[str] = [
 
 
 def resolve_tasks(spec: str) -> list[str]:
-    """Accept 'all', 'smoke', a category name, or a comma-separated list of task names."""
+    """Accept 'all', 'smoke', 'abench', a category name, or a comma-separated list of task names."""
     spec = spec.strip()
     if spec == "all":
         return ALL
     if spec == "smoke":
         return SMOKE
+    # AssistantBench validation split: live-web research questions, scored by their question_scorer.
+    if spec == "abench":
+        return [f"assistantbench.validation.{i}" for i in range(33)]
     if spec in CATEGORIES:
         return sorted(CATEGORIES[spec])
     names = [s.strip() for s in spec.split(",") if s.strip()]
-    unknown = [n for n in names if n not in CATEGORY_OF]
+    unknown = [n for n in names if n not in CATEGORY_OF and "." not in n]
     if unknown:
         raise SystemExit(f"unknown task(s): {', '.join(unknown)}")
     return names

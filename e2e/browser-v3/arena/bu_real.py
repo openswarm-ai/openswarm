@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import browsergym.assistantbench  # noqa: F401  registers the live-web research envs
 import browsergym.miniwob  # noqa: F401  registers the 125 envs
 import gymnasium as gym
 
@@ -94,7 +95,8 @@ def reap_leftover_browsers() -> None:
 
 def make_env(task: str, seed: int, max_steps: int):
     patch_launch_with_cdp_port()
-    env = gym.make(f"browsergym/miniwob.{task}", headless=True, max_episode_steps=max_steps)
+    env_id = f"browsergym/{task}" if "." in task else f"browsergym/miniwob.{task}"
+    env = gym.make(env_id, headless=True, max_episode_steps=max_steps)
     obs, _ = env.reset(seed=seed)
     return env, obs
 
