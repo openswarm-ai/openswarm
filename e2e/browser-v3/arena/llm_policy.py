@@ -189,6 +189,14 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.prev_bids = {it.bid for it in shown}
         self.index_to_bid = {i: it.bid for i, it in enumerate(shown, 1)}
         self.row_names = {i: it.name for i, it in enumerate(shown, 1)}
+        self.last_new_bids = new
+        if self.som:
+            extra = obs.get("extra_element_properties") or {}
+            self.row_boxes = {}
+            for i, it in enumerate(shown, 1):
+                bbox = (extra.get(it.bid) or {}).get("bbox")
+                if bbox:
+                    self.row_boxes[i] = tuple(bbox)
         view = render(shown, truncated, new)
         if self.with_text:
             text = perception.page_text(obs)
@@ -265,8 +273,54 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     def row_name(self, index: int) -> str:
         return self.row_names.get(index, "")
 
+    # v13: scripted drag. One-shot mouse_drag_and_drop fails HTML5 drag handlers that need to SEE
+    # intermediate mouseover events; decompose into down -> stepped moves -> up.
+    scripted_drag: bool = False
+    # v13: deterministic autocomplete resolver -- after a fill, a NEW row whose name starts with the
+    # typed text is the dropdown suggestion; click it without a model call. book-flight's whole
+    # failure mode is the model re-typing instead of picking the suggestion.
+    auto_complete: bool = False
+    last_fill: str = ""
+    last_new_bids: set[str] = field(default_factory=set)
+    # v13: Set-of-Marks -- number the menu rows on the screenshot itself (Skyvern/SeeAct).
+    som: bool = False
+    row_boxes: dict[int, tuple[float, float, float, float]] = field(default_factory=dict)
+
+    def decompose_drag(self, call: str) -> str:
+        m = re.fullmatch(r"mouse_drag_and_drop\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", call)
+        if not m:
+            return call
+        x0, y0, x1, y1 = (float(v) for v in m.groups())
+        steps = [f"mouse_down({x0:.0f}, {y0:.0f})"]
+        for k in (0.25, 0.5, 0.75, 1.0):
+            steps.append(f"mouse_move({x0 + (x1 - x0) * k:.0f}, {y0 + (y1 - y0) * k:.0f})")
+        steps.append(f"mouse_up({x1:.0f}, {y1:.0f})")
+        return "\n".join(steps)
+
+    def try_autocomplete(self, new_bids: set[str]) -> str:
+        """Click the fresh dropdown row matching the last fill's text; '' when no clean match.
+
+        One attempt per fill: the intent is only live on the turn right after typing -- a stale
+        fill grabbing some unrelated new row two turns later would be worse than no primitive.
+        """
+        if not (self.auto_complete and self.last_fill and new_bids):
+            self.last_fill = ""
+            return ""
+        want, self.last_fill = self.last_fill.lower(), ""
+        matches = [i for i, name in self.row_names.items()
+                   if self.index_to_bid.get(i) in new_bids
+                   and name and (name.lower().startswith(want) or want in name.lower())]
+        if len(matches) == 1:
+            return f"click({matches[0]})"
+        return ""
+
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
+        ac = self.try_autocomplete(self.last_new_bids)
+        if ac:
+            d = LlmDecision(action=self.translate(ac), n_interactive=n, note="autocomplete")
+            self.note(ac + "  (scripted autocomplete pick)", obs)
+            return d
         if self.fastpath:
             fp = self.try_fastpath(goal)
             if fp:
@@ -281,7 +335,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         if (self.vision == "always"
                 or (self.vision in ("adaptive", "progressive")
                     and (self.stuck_or_spatial(page, goal, last_err) or struggling))):
-            image = encode_screenshot(obs)
+            image = encode_screenshot(obs, marks=self.row_boxes if self.som else None)
         raw, d = self.call(goal, page, image_b64=image)
         d.vision = 1 if image else 0
         chosen_list = clean_actions(raw) if self.multi else [clean_action(raw)]
@@ -304,9 +358,15 @@ class OpenSwarmLlmPolicy(LlmPolicy):
             retry = [c for c in (clean_actions(raw) if self.multi else [clean_action(raw)]) if c]
             chosen_list = retry or chosen_list
         d.n_interactive = n
-        d.action = "\n".join(self.translate(c) for c in chosen_list)
+        translated = [self.translate(c) for c in chosen_list]
+        if self.scripted_drag:
+            translated = [self.decompose_drag(t) for t in translated]
+        d.action = "\n".join(translated)
         for c in chosen_list:
             self.note(c, obs)
+            fm = re.match(r'fill\(\s*\d+\s*,\s*"([^"]+)"', c)
+            if fm:
+                self.last_fill = fm.group(1)
         return d
 
 
@@ -360,8 +420,13 @@ def clean_actions(raw: str, limit: int = 3) -> list[str]:
 SPATIAL_HINTS = re.compile(r"circle|angle|midpoint|draw|drag|shape|slider|point|pie|line|grid|color\b", re.I)
 
 
-def encode_screenshot(obs: dict[str, Any], max_w: int = 720) -> str:
-    """Downscaled PNG of the current frame; small pages stay small so vision stays cheap."""
+def encode_screenshot(obs: dict[str, Any], max_w: int = 720,
+                      marks: dict[int, tuple[float, float, float, float]] | None = None) -> str:
+    """Downscaled PNG of the current frame; small pages stay small so vision stays cheap.
+
+    marks is Set-of-Marks (Skyvern/SeeAct): draw each menu row's index on its box, so the text
+    list and the pixels share one address space and 'the third link' stops being a guess.
+    """
     arr = obs.get("screenshot")
     if arr is None:
         return ""
@@ -369,9 +434,15 @@ def encode_screenshot(obs: dict[str, Any], max_w: int = 720) -> str:
         import base64
         import io
 
-        from PIL import Image
+        from PIL import Image, ImageDraw
 
         img = Image.fromarray(arr)
+        if marks:
+            draw = ImageDraw.Draw(img)
+            for idx, (x, y, w, h) in marks.items():
+                draw.rectangle([x, y, x + w, y + h], outline=(220, 30, 30), width=2)
+                draw.rectangle([x, y - 12, x + 8 * len(str(idx)) + 6, y], fill=(220, 30, 30))
+                draw.text((x + 3, y - 12), str(idx), fill=(255, 255, 255))
         if img.width > max_w:
             img = img.resize((max_w, int(img.height * max_w / img.width)))
         buf = io.BytesIO()
@@ -428,4 +499,12 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
     if name == "osw-llm-v12":  # v10 exactly, chain-split off; run with --max-steps 36 for the long forms
         v12 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v12)
+    if name == "osw-llm-v13":  # v10 + scripted drag + autocomplete resolver + Set-of-Marks vision
+        v13 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=True, **v13)
+    if name == "osw-llm-v14":  # v13 autopsy verdict: keep autocomplete + drag, DROP SoM (occludes micro-UIs)
+        v14 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False, **v14)
     raise SystemExit(f"unknown arm: {name}")
