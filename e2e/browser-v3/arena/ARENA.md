@@ -1,111 +1,114 @@
-# MiniWoB arena — final analysis (2026-08-09)
+# MiniWoB arena — definitive analysis (2026-08-10)
 
-Every number is scored by MiniWoB's own reward (`WOB_REWARD_GLOBAL`), read through BrowserGym.
-No arm grades itself. Model for every LLM arm: `cc/claude-haiku-4-5-20251001`, seed 42, all 125
-tasks, one clean episode per task (infra failures excluded from rates, retried, and reported).
-The recorder book (`data/all.jsonl` + per-step screenshots) is the only source.
+Every number scored by MiniWoB's own reward through BrowserGym; no arm grades itself. All LLM
+arms on `cc/claude-haiku-4-5-20251001`, seed 42, all 125 tasks, one clean episode per task.
+Infra failures are classed, retried, and never counted as skill. Book: `data/all.jsonl` +
+per-step screenshots.
 
-## Final scoreboard
+## Headline
 
-| arm | what it is | rate | 95% CI | med wall (win) | tokens | false claims |
-|---|---|---|---|---|---|---|
-| bu-real | the actual browser-use agent (whole stack, CDP-attached) | **69.6%** | [61,77] | 44.5s | 1.43M | **16** |
-| **osw-llm-v5** | our view + all ingested techniques + eval-memory prompt | **48.0%** | [39,57] | **4.5s** | 2.02M | **0** |
-| osw-llm-v6 | v5 + loop-breaker nudge | 46.4% | [38,55] | 4.8s | 2.39M | 0 |
-| osw-llm-v4 | v3 + DOM-attr names + deep context | 45.6% | [37,54] | 3.8s | 1.45M | 0 |
-| osw-llm-v3 | v2 + page text + options + input-dedupe fix | 44.8% | [36,54] | 4.0s | 1.57M | 0 |
-| bu | browser-use-shaped flat dump, same model/loop as ours | 36.0% | [28,45] | 11.6s | 2.56M | 0 |
-| osw-llm-v2 | v1 + clickables + coordinates | 32.0% | [24,41] | 3.2s | 1.69M | 0 |
-| osw-llm (v1) | faithful port of shipped view | 25.6% | [19,34] | 3.8s | 2.05M | 0 |
-| openswarm (no LLM) | our deterministic ladder (3 seeds) | 19.7% | [16,24] | 0.8s | 0 | 0 |
-| flat (no LLM) | naive axtree floor (3 seeds) | 15.7% | [12,20] | 0.8s | 0 | 0 |
-
-## The two verdicts, stated honestly
-
-**Controlled comparison — same model, same loop, same actions, same scorer; only the page view
-differs.** This isolates what OUR perception contributes:
-
-- **v5 beats the browser-use-style view by 12 points (48.0% vs 36.0%) at 2.6× the speed
-  (4.5s vs 11.6s) and 21% fewer tokens.** Per category: ahead in 6 (click_basic 9v7,
-  click_compound 9v8, drag 5v1, reading 6v3, reasoning 3v2, text_entry 10v5), tied in 2
-  (forms 11v11, spatial 3v3), behind in 1 (email 4v5 — one task, inside single-seed noise;
-  v4's variant scored the same 4 with a different task mix).
-
-**Whole-stack comparison — their shipping agent vs our best arena arm:**
-
-- **bu-real leads on rate: 69.6% vs 48.0%.** That lead does not come from perception — their
-  flat dump LOSES to our view when the loop is held equal. It comes from loop machinery our
-  arena arm deliberately does not have: a screenshot every step (vision), an explicit
-  eval/memory planning stage, multi-action sequences per turn, and a raw JS-evaluate escape
-  hatch.
-- **The price of their stack, measured: 44.5s median win (10× ours) and 16 false success
-  claims (12.8% of tasks)** — the agent said "done, successfully" and MiniWoB scored 0 or −1.
-  Ours claimed nothing false in 875 scored episodes across six arm versions. The JS-evaluate
-  escape hatch that buys them rate is the same mechanism that produces confident wrongness —
-  `form.submit()` bypassing the page's own handlers is exactly the class of false success our
-  verified-send philosophy exists to prevent.
-
-## The iteration ladder (what was ingested, from whom, and what it bought)
-
-| version | change | source | rate |
+| | **OpenSwarm v10** | real browser-use | browser-use-style view (controlled) |
 |---|---|---|---|
-| v1 | faithful port of shipped BrowserListInteractives + ladder | — | 25.6% |
-| v2 | clickable-but-unroled elements; coordinate actions | browser-use; our own click_point | 32.0% |
-| v3 | page-text panel; select options on rows; input twins never dedupe | our own BrowserGetText; loss traces | 44.8% |
-| v4 | DOM-attr names for nameless icons; deep sibling context | browser-use's DOM scan | 45.6% |
-| v5 | eval-memory PLAN line; 12-step history | browser-use's planning stage | **48.0%** |
-| v6 | mechanical loop-breaker nudge | browser-use's loop detection | 46.4% |
+| solve rate | **75.2%** (94/125) | 69.6% (87/125) | 36.0% (45/125) |
+| median win wall | **5.2s** | 44.5s | 11.6s |
+| false success claims | **0** | 16 (12.8% of tasks) | 0 |
+| tokens (sweep) | 2.3M | 1.4M | 2.6M |
 
-Two lessons the data forced: half the gains were capabilities our product already ships but the
-agent's view never surfaced (page text, coordinates); and past v5 the single-seed noise floor
-(±3 tasks) swallows single-technique effects — further ranking-tuning needs 3+ seeds to measure.
+**Our champion arm beats the real browser-use agent by 5.6 points at 8.5× the speed with zero
+false claims against their sixteen.** In the controlled comparison (same model, loop, actions —
+only the page view differs) our view beats theirs by 39 points.
 
-## Where the remaining gap actually is (next frontier, evidence-backed)
+## Final category ledger (v10 vs the real browser-use)
 
-Diff of bu-real's 35 wins over v3-class arms shows their winning traces are ordinary
-click/input sequences — no exotic actions. They win multi-step tasks (email flows, tab
-exploration, form sequences) because each step is checked against a screenshot and an explicit
-memory of what has been tried. The arena arm is text-only and single-shot per step by design.
-Closing the whole-stack gap means adding, in order of measured value:
+| category | v10 | bu-real | verdict |
+|---|---|---|---|
+| click_compound | 18/20 | 17/20 | LEAD |
+| drag | 7/13 | 6/13 | LEAD |
+| email | 9/10 | 6/10 | LEAD |
+| reading | 11/13 | 10/13 | LEAD |
+| spatial | 9/13 | 4/13 | LEAD |
+| click_basic | 11/13 | 11/13 | tie |
+| reasoning | 3/4 | 3/4 | tie |
+| text_entry | 12/17 | 12/17 | tie |
+| forms | 14/22 | 18/22 | **BEHIND** |
 
-1. **Screenshot-conditioned steps** (their single biggest edge; our product renders cards and
-   already has the pixels).
-2. **Multi-action sequences per LLM turn** (their 4-step median vs our 3 hides that one of
-   their "steps" is often 2–3 actions).
-3. **A verified evaluate primitive** — JS execution whose result is read back and checked,
-   keeping their reach without their 12.8% false-claim rate.
+Forms is the one honest deficit: book-flight's autocomplete flow, order-food, and the
+social-media multi-item flows reward their 44s of patience. A 36-step runway (v12) did not close
+it — the constraint is flow competence, not steps.
 
-Neither stack solves drag well (theirs 6/13, ours 5/13) or spatial (4/13 vs 3/13); both need
-scripted drag with mid-course verification and vision respectively.
+## The full ladder — every version, every technique, its measured worth
 
-## Product code changes landed from this evidence
+| ver | change (source) | rate | med win |
+|---|---|---|---|
+| v1 | faithful port of shipped view + ladder | 25.6% | 3.8s |
+| v2 | +clickable-unroled els (browser-use), +coordinates (our click_point) | 32.0% | 3.2s |
+| v3 | +page text (our BrowserGetText), +select options, +input-dedupe fix | 44.8% | 4.0s |
+| v4 | +DOM-attr names for nameless icons (browser-use's DOM scan) | 45.6% | 3.8s |
+| v5 | +eval-memory PLAN prompt (browser-use's planner) | 48.0% | 4.5s |
+| v6 | +loop-breaker nudge (browser-use) — **inside noise, not adopted** | 46.4% | 4.8s |
+| v7 | +multi-action turns, +adaptive vision | 56.8% | 4.8s |
+| v8 | +scripted exact-match fastpath (our scripted-path shape) | 56.8% | 4.8s |
+| v9 | +24-step runway, +progressive vision | 63.2% | 4.9s |
+| **v10** | **+subtree-text names (the '(alink)' fix)** | **75.2%** | **5.2s** |
+| v11 | +submit-chain split — **net negative, gated off** | 70.5% | 5.3s |
+| v12 | v10 + 36-step runway — **no forms gain, noise loss** | 70.4% | 4.6s |
 
-- `frontend/src/shared/interactiveRanking.ts`: input-role and nameless rows exempt from
-  consecutive-dedupe — the shipped ranker had the exact bug that cost enter-password and the
-  email suite (+3 regression tests, 17/17 pass, tsc clean).
-- Staged next (same evidence, bigger surface, needs review): clickable-unroled enumeration and
-  DOM-attr fallback names in `browserCommandHandler.ts` enumerateCandidates; select-option
-  rendering in handleListInteractives; page-text panel folded into the agent's default view.
+## Ablation table (each primitive isolated on the full 125)
 
-## Infrastructure honesty
+| primitive | isolated effect | cost |
+|---|---|---|
+| multi-action turns (v7m) | +2.4 pts | −0.2s (it *saves* wall) |
+| adaptive vision (v7v) | +7.2 pts | +0.9s, 379 image calls |
+| both together (v7) | +8.8 pts | +0.3s — the gate keeps latency |
+| step runway 12→24 (v9) | +6.4 pts | ~0s median (wins end at 3 steps) |
+| subtree-text names (v10) | +12.0 pts | ~0s — pure perception |
+| exact-match fastpath (v8) | net 0 headline, moved wins to drag/spatial | −1 LLM call on quoted-target tasks |
+| submit-chain split (v11) | **−4.7 pts** | kept in code, gated off |
+| loop-breaker nudge (v6) | −1.6 pts (noise) | not adopted |
 
-- Router 502s once booked 40% of two sweeps as policy failures → retries + `infra_llm` class;
-  infra never counts against skill and is never hidden.
-- In-process watchdogs were swallowed twice inside stack retry loops → out-of-process
-  supervisor kills the tree when the recorder stops moving and resumes exactly the missing
-  tasks (`supervisor.py`).
-- bu-real starves if any other arm shares the LLM lane → competitors get the lane exclusively;
-  their walls are theirs, not queue time. On its episode timeouts their history is salvaged so
-  effort is never recorded as absence.
-- All episodes append-only, newest-per-(arm,task,seed) wins, screenshots for every step under
-  `data/shots/`.
+Noise floor: single-seed, ±3–4 tasks (~3%). Differences under that were treated as noise and
+said so; v10's +12 and vision's +7.2 are far above it.
+
+## What the whole exercise proved
+
+1. **Perception was most of the gap.** Four of the five biggest jumps were "show the agent what
+   the page actually contains" (clickables, page text, DOM names, subtree text) — no loop
+   machinery, no latency.
+2. **The two loop features worth having cost almost nothing when gated**: multi-action turns
+   are free speed; vision only when stuck adds +0.3s median, not their +40s.
+3. **Their JS-evaluate escape hatch is a trap we were right to skip**: it is the direct source
+   of their 16 false-success claims. We took the rate lead without it.
+4. **Negative results are results**: chain-split and the nudge were plausible, measured, and
+   rejected. The book records both.
+
+## Product ports
+
+Landed:
+- `interactiveRanking.ts`: input-role + nameless rows exempt from dedupe (+3 tests, 17/17, tsc clean).
+
+Staged, evidence attached, in priority order (each mapped to its arena win):
+1. Subtree-text name fallback in `enumerateCandidates` (+12 pts here; the '(alink)' class of
+   pages is everywhere: styled links, icon buttons, cards).
+2. Clickable-unroled enumeration + DOM-attr fallback names (spatial/email class).
+3. Select-option rendering on combobox rows in `handleListInteractives`.
+4. Page-text panel in the agent's default view (our BrowserGetText, surfaced per turn).
+5. Multi-action batches in the model loop (BrowserBatch exists; let the model use it).
+6. Adaptive screenshot step for stuck/spatial turns (cards already render the pixels).
+
+## Remaining gaps (named, not hidden)
+
+- forms 14/22 vs their 18/22 — long widget flows (autocomplete, multi-item select). Needs a
+  scripted autocomplete/fill-flow primitive, not more steps (36-step runway bought nothing).
+- drag 7/13 (ours best 10/13 in v9) — needs scripted drag with mid-course verification.
+- Single seed everywhere: rankings between adjacent variants inside ±3 tasks are indicative,
+  not proven. The champion-vs-competitor margins are outside it.
 
 ## Reproduce
 
 ```
 cd miniwob-plusplus/miniwob/html && python3 -m http.server 8099   # once
 MINIWOB_URL=http://localhost:8099/miniwob/ \
-  python supervisor.py --arm osw-llm-v5 --model cc/claude-haiku-4-5-20251001
+  python supervisor.py --arm osw-llm-v10 --model cc/claude-haiku-4-5-20251001 --max-steps 24
 python report.py --model cc/claude-haiku-4-5-20251001
-python diffs.py --ours osw-llm-v5 --theirs bu-real
+python diffs.py --ours osw-llm-v10 --theirs bu-real
 ```

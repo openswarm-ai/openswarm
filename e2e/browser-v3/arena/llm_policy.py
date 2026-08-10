@@ -237,6 +237,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     # (a wrong 'dignissim' is terminal) and shaves a whole LLM round-trip off the win path.
     fastpath: bool = False
     fastpath_used: set[str] = field(default_factory=set)
+    split_submit: bool = False
 
     def stuck_or_spatial(self, page: str, goal: str, step_had_error: bool) -> bool:
         h = hash(page)
@@ -285,13 +286,14 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         d.vision = 1 if image else 0
         chosen_list = clean_actions(raw) if self.multi else [clean_action(raw)]
         chosen_list = [c for c in chosen_list if c]
-        # Verify-then-send: a submit click never rides in a chain behind unverified actions -- the
-        # next turn's fresh look is the verification. form-sequence died to drag+click+Submit-in-one.
-        for i, c in enumerate(chosen_list[1:], 1):
-            idx_m = re.match(r"click\((\d+)", c)
-            if idx_m and re.search(r"submit|send|ok\b|done", self.row_name(int(idx_m.group(1))), re.I):
-                chosen_list = chosen_list[:i]
-                break
+        # Verify-then-send chain split, GATED: measured net-negative on the full sweep (v11 70.5%
+        # vs v10 75.2%) -- the extra look costs more than the gamble it prevents. Kept for study.
+        if self.split_submit:
+            for i, c in enumerate(chosen_list[1:], 1):
+                idx_m = re.match(r"click\((\d+)", c)
+                if idx_m and re.search(r"submit|send|ok\b|done", self.row_name(int(idx_m.group(1))), re.I):
+                    chosen_list = chosen_list[:i]
+                    break
         if (self.nudge_repeats and len(chosen_list) == 1 and self.history
                 and self.history[-1].startswith(chosen_list[0] + " ->")):
             self.history.append(f"{chosen_list[0]} -> REPEATED with no progress; that approach is exhausted, pick a different element or action type")
@@ -421,5 +423,9 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v10)
     if name == "osw-llm-v11":  # v10 + coord-click rewrite + submit-chain split + untruncated payloads
         v11 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
-        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v11)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  split_submit=True, **v11)
+    if name == "osw-llm-v12":  # v10 exactly, chain-split off; run with --max-steps 36 for the long forms
+        v12 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v12)
     raise SystemExit(f"unknown arm: {name}")
