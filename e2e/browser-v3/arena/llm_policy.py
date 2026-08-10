@@ -205,6 +205,10 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         # scroll deltas and mouse_*/keyboard_* coordinates are geometry, never element handles.
         if fn == "scroll" or fn.startswith(("mouse_", "keyboard_")):
             return call
+        # click(93, 234) is a coordinate click the model spelled wrong; book-flight looped four
+        # turns on 'expected a string' before this rewrite existed.
+        if fn in ("click", "dblclick") and re.fullmatch(r"\s*\d+\s*,\s*\d+\s*", argstr):
+            return f"mouse_{fn}({argstr})"
         # Only leading positional args are element handles, so rewrite those and leave payloads alone.
         # Quoted digits count too: the model addresses indices, so click("3") means row 3, never bid 3.
         n_handles = 2 if fn == "drag_and_drop" else 1
@@ -281,6 +285,13 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         d.vision = 1 if image else 0
         chosen_list = clean_actions(raw) if self.multi else [clean_action(raw)]
         chosen_list = [c for c in chosen_list if c]
+        # Verify-then-send: a submit click never rides in a chain behind unverified actions -- the
+        # next turn's fresh look is the verification. form-sequence died to drag+click+Submit-in-one.
+        for i, c in enumerate(chosen_list[1:], 1):
+            idx_m = re.match(r"click\((\d+)", c)
+            if idx_m and re.search(r"submit|send|ok\b|done", self.row_name(int(idx_m.group(1))), re.I):
+                chosen_list = chosen_list[:i]
+                break
         if (self.nudge_repeats and len(chosen_list) == 1 and self.history
                 and self.history[-1].startswith(chosen_list[0] + " ->")):
             self.history.append(f"{chosen_list[0]} -> REPEATED with no progress; that approach is exhausted, pick a different element or action type")
@@ -408,4 +419,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
     if name == "osw-llm-v10":  # v9 + subtree-text name resolution (the '(alink)' fix); same flags
         v10 = dict(v7, system=OSW_SYSTEM_V8)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v10)
+    if name == "osw-llm-v11":  # v10 + coord-click rewrite + submit-chain split + untruncated payloads
+        v11 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True, **v11)
     raise SystemExit(f"unknown arm: {name}")
