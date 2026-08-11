@@ -7,7 +7,8 @@
     "build": "webpack --mode=production",
     "build:watch": "webpack --mode=development --watch",
     "dev": "webpack serve --mode=development",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@codemirror/lang-html": "^6.4.11",
