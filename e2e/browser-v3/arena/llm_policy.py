@@ -416,6 +416,9 @@ class OpenSwarmLlmPolicy(LlmPolicy):
                 self.verified_once = True
                 self.history.append(f"{last} -> HOLD: before this final click, re-check EVERY part of the goal against the page; reply the SAME action to confirm, or the corrective actions instead")
                 raw2, d2 = self.call(goal, page, image_b64=image or encode_screenshot(obs))
+                # The HOLD prompt is for THIS call only; leaving it in history poisons every later
+                # turn with a stale instruction the model keeps trying to obey.
+                self.history.pop()
                 d.prompt_tokens += d2.prompt_tokens
                 d.completion_tokens += d2.completion_tokens
                 d.think_ms += d2.think_ms
