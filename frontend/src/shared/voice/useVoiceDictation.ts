@@ -369,7 +369,7 @@ export function useVoiceDictation() {
         // the OS paste fallback (other apps). The floating bubble is just confirmation, not the output.
         // Success is silent: the text landing at the cursor IS the feedback. Only the clipboard
         // fallback still speaks, because the user has to act (paste) to get the text.
-        const target = injectAtFocus(text);
+        const target = await injectAtFocus(text);
         pushDictation(text, target || 'clipboard');
         learnFromTranscript(text);
         if (!target) {

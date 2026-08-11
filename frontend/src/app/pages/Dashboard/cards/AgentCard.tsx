@@ -32,10 +32,9 @@ import {
   clearGlowingAgentCard,
   removeCard,
   recordClosedCard,
-  setBrowserDocked,
-  keepBrowserCardOpen,
 } from '@/shared/state/dashboardLayoutSlice';
 import { store } from '@/shared/state/store';
+import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
 import WindowControls, { ARC_CHIP_SX } from './WindowControls';
 import { useTiledCard } from './useTiledCard';
 import { useCardTiling } from './useCardTiling';
@@ -672,12 +671,14 @@ const AgentCard: React.FC<Props> = ({
     if (linkedWorkflowSidecarId) {
       dispatch(setCardSidecar({ workflowId: linkedWorkflowSidecarId, sessionId: null, kind: null }));
     }
-    // Closing the CHAT must not take the browser with it: its browser undocks to the canvas and is pinned open (keep_open exempts it from the finished-agent auto-reap). The user closes it separately.
+    // Closing the chat takes its browsers with it (Haik's ENG-249: the old undock-and-pin behavior
+    // read as the browser "popping open on its own", forcing a second cleanup every time). Each one
+    // lands in recently-closed first, so Cmd+Shift+T brings it back if it was wanted.
     if (!glowEntry) {
       for (const bc of Object.values(store.getState().dashboardLayout.browserCards)) {
         if (bc.docked_to !== session.id && bc.spawned_by !== session.id) continue;
-        if (bc.docked_to === session.id) dispatch(setBrowserDocked({ browserId: bc.browser_id, dockedTo: null }));
-        dispatch(keepBrowserCardOpen(bc.browser_id));
+        dispatch(recordClosedCard({ kind: 'browser', id: bc.browser_id }));
+        removeBrowserCardCleanly(bc.browser_id, dispatch);
       }
     }
     // Record for Cmd+Shift+T BEFORE removeCard wipes the position, but only on a real close (the glow branch just clears a tether, it doesn't close the session).

@@ -1430,6 +1430,7 @@ const dashboardLayoutSlice = createSlice({
       action: PayloadAction<{
         tabs: BrowserTab[]; url: string; expandedSessionIds?: string[];
         id?: string; x?: number; y?: number; width?: number; height?: number;
+        dockTo?: string | null;
       }>
     ) {
       const { x, y, width, height } = action.payload;
@@ -1463,6 +1464,10 @@ const dashboardLayoutSlice = createSlice({
         zOrder: state.nextZOrder++,
         // Pasted onto the dashboard the user is looking at, else it bleeds onto every dashboard.
         dashboard_id: getLastDashboardId() ?? undefined,
+        // When the copied browser belonged to a copied agent, dock it inline under the NEW agent so
+        // the paste looks like the original instead of a stray full-size canvas browser (ENG-250).
+        spawned_by: action.payload.dockTo || null,
+        docked_to: (action.payload.dockTo && (clearOtherDocks(state, action.payload.dockTo), action.payload.dockTo)) || null,
       };
     },
 

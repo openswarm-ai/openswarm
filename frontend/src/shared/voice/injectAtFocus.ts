@@ -1,13 +1,14 @@
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { getWebview } from '@/shared/browserRegistry';
 import { takeInjectSnapshot, setInjectSnapshot, isUsableTarget } from './injectTargetSnapshot';
+import { guestHasEditableFocus } from './guestHasEditableFocus';
 
 // Dictation lands where the user's cursor actually is, like every real dictation tool: a focused
 // in-app field gets the text typed in (undo-friendly, fires React input events), a focused browser
 // card forwards into the guest page's field, anything else falls back to the OS-level paste.
 export type InjectTarget = 'field' | 'webview' | 'composer' | null;
 
-export function injectAtFocus(text: string): InjectTarget {
+export async function injectAtFocus(text: string): Promise<InjectTarget> {
   const snap = takeInjectSnapshot();
   // The cursor wins, not where you started. Wispr's grammar, and Eric's call: you dictate, you click
   // where you want it, it lands there. This deliberately reverts the snapshot-first version, which
@@ -36,16 +37,20 @@ export function injectAtFocus(text: string): InjectTarget {
     }
   }
   // A webview steals focus when the user clicks into a page, so activeElement IS the webview tag.
-  const focusedTag = active && active.tagName === 'WEBVIEW' ? (active as unknown as { insertText?: (t: string) => Promise<void> }) : null;
-  if (focusedTag?.insertText) {
-    try { void focusedTag.insertText(text); return 'webview'; } catch { /* fall through */ }
+  // insertText silently no-ops when the guest has no focused editable, which read as the dictation
+  // vanishing (ENG-254): confirm the guest target BEFORE claiming success, and await the insert so a
+  // suspended/crashed guest falls through to the visible composer fallback instead of eating words.
+  const focusedTag = active && active.tagName === 'WEBVIEW'
+    ? (active as unknown as { insertText?: (t: string) => Promise<void>; executeJavaScript?: (c: string) => Promise<unknown> }) : null;
+  if (focusedTag?.insertText && await guestHasEditableFocus(focusedTag)) {
+    try { await focusedTag.insertText(text); return 'webview'; } catch { /* fall through */ }
   }
   // Last-interacted browser card: the user clicked a page field, then hit the hotkey.
   const browserId = snap.browserId || getLastInteractedBrowser();
   if (browserId) {
-    const wv = getWebview(browserId) as unknown as { insertText?: (t: string) => Promise<void>; focus?: () => void } | undefined;
-    if (wv?.insertText) {
-      try { wv.focus?.(); void wv.insertText(text); return 'webview'; } catch { /* fall through */ }
+    const wv = getWebview(browserId) as unknown as { insertText?: (t: string) => Promise<void>; executeJavaScript?: (c: string) => Promise<unknown>; focus?: () => void } | undefined;
+    if (wv?.insertText && await guestHasEditableFocus(wv)) {
+      try { wv.focus?.(); await wv.insertText(text); return 'webview'; } catch { /* fall through */ }
     }
   }
   // No cursor anywhere: open the dashboard composer with the transcript typed in. Words are never dropped.

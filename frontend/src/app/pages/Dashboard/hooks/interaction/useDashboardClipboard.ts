@@ -83,7 +83,8 @@ export function useDashboardClipboard({
           const title = activeTab?.title || 'Browser';
           copied.push({
             type, id, name: title,
-            meta: { name: title, url: activeTab?.url || bc.url, tabs: bc.tabs },
+            // Carry the owning session so a group paste can re-dock the browser under the NEW agent (ENG-250).
+            meta: { name: title, url: activeTab?.url || bc.url, tabs: bc.tabs, spawnedBy: bc.docked_to ?? bc.spawned_by ?? null },
             x: bc.x, y: bc.y, width: bc.width, height: bc.height,
           });
           names.push(title);

@@ -4,6 +4,7 @@ import { ElementSelectionProvider } from '@/app/components/editor/ElementSelecti
 import { useDomElementSelector } from '@/app/components/editor/useDomElementSelector';
 import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useDashboardController } from './hooks/state/useDashboardController';
+import { useOrphanBrowserReaper } from './hooks/useOrphanBrowserReaper';
 import DashboardCanvas from './canvas/DashboardCanvas';
 
 const DashboardSelectionOverlay: React.FC = () => {
@@ -20,6 +21,7 @@ interface DashboardProps {
 
 const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true }) => {
   const controller = useDashboardController(dashboardId, isActive);
+  useOrphanBrowserReaper();
   return (
     <>
       <DashboardSelectionOverlay />

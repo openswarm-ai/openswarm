@@ -66,6 +66,7 @@ import {
 import { captureBrowserShot } from '@/shared/captureBrowserShot';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
 import { isAgentDrivenBrowser } from '@/shared/isAgentDrivenBrowser';
+import { restoreLastUserFocus } from '@/shared/lastUserFocus';
 import { registerCapsuleForRestore } from '@/shared/browserStateCapsule';
 import BrowserFindBar from './BrowserFindBar';
 import { openCardContextMenu, isNativeMenuTarget } from '../desktop/openCardContextMenu';
@@ -681,8 +682,15 @@ const BrowserCard: React.FC<Props> = ({
       wv.addEventListener('render-process-gone', onProcessGone as any);
       wv.addEventListener('crashed', onProcessGone as any);
       wv.addEventListener('did-fail-load', onDidFailLoad as any);
+      // While an agent drives this browser, the guest focusing an input hands the host <webview>
+      // element focus, yanking the user out of whatever they were typing (ENG-252, 4x-reported). The
+      // agent drives via the webContents transport, not host DOM focus, so restoring the user's caret
+      // here does not disturb the agent. Only fires for agent-driven cards; a user's own click is untouched.
+      const onWvFocus = () => { if (isAgentDrivenBrowser(browserId)) restoreLastUserFocus(); };
+      wv.addEventListener('focus', onWvFocus);
 
       cleanups.push(() => {
+        wv.removeEventListener('focus', onWvFocus);
         unregisterWebview(browserId, tabId);
         wv.removeEventListener('did-navigate', onNavigate);
         wv.removeEventListener('did-navigate-in-page', onNavigate);

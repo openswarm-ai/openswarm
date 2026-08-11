@@ -1429,12 +1429,47 @@ async function loadAuthToken() {
   console.warn(`[auth] FAILED to load auth token from ${tokenPath} after 2s — WS/HTTP will be rejected`);
 }
 
+function windowBoundsPath() {
+  try { return path.join(app.getPath('userData'), 'window-bounds.json'); } catch { return null; }
+}
+
+// The user's manual window size is persisted and restored, so a crash-recovery recreateMainWindow no
+// longer rebuilds at the default 1400x900 and drops the size they dragged out to (ENG-253). Only
+// honored when the saved rect still fits on some display, so unplugging a monitor can't hide the app.
+function loadSavedBounds() {
+  const p = windowBoundsPath();
+  if (!p) return null;
+  try {
+    const b = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height) || b.width < 800 || b.height < 600) return null;
+    const displays = require('electron').screen.getAllDisplays();
+    const onScreen = displays.some((d) => {
+      const wa = d.workArea;
+      return b.x != null && b.y != null && b.x < wa.x + wa.width && b.x + 200 > wa.x && b.y < wa.y + wa.height && b.y + 100 > wa.y;
+    });
+    return onScreen ? b : { width: b.width, height: b.height };
+  } catch { return null; }
+}
+
+let boundsSaveTimer = null;
+function persistWindowBounds(win) {
+  if (!win || win.isDestroyed() || win.isFullScreen() || win.isMinimized()) return;
+  const p = windowBoundsPath();
+  if (!p) return;
+  if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+  boundsSaveTimer = setTimeout(() => {
+    try { fs.writeFileSync(p, JSON.stringify(win.getBounds())); } catch (_) {}
+  }, 400);
+}
+
 function createWindow() {
   isCreatingMainWindow = true;
   console.log('[diag][main] createWindow start');
+  const saved = loadSavedBounds();
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: (saved && saved.width) || 1400,
+    height: (saved && saved.height) || 900,
+    ...(saved && saved.x != null ? { x: saved.x, y: saved.y } : {}),
     minWidth: 800,
     minHeight: 600,
     title: 'OpenSwarm',
@@ -1684,6 +1719,10 @@ function createWindow() {
   mainWindow.on('blur', () => sendFocusEvent('blur'));
   mainWindow.on('focus', () => sendFocusEvent('focus'));
 
+  // Remember the size/position the user set, so nothing (a crash-recovery recreate especially) drops it (ENG-253).
+  mainWindow.on('resize', () => persistWindowBounds(mainWindow));
+  mainWindow.on('move', () => persistWindowBounds(mainWindow));
+
   // Forward renderer console output to main stderr so packaged-build diagnostics survive without DevTools open.
   mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     const tag = ['LOG', 'INFO', 'WARN', 'ERROR'][level] || 'LOG';
@@ -1717,7 +1756,9 @@ function createWindow() {
 // Why setImmediate for the destroy:
 //   - We're INSIDE the old window's render-process-gone handler. Destroying its BrowserWindow from inside its own event callback works in current Electron but is fragile across version bumps; deferring one tick is free insurance.
 function recreateMainWindow() {
-  console.log('[diag][main] recreateMainWindow START, crashesInWindow=', rendererCrashTimes.length);
+  // Named on purpose: this is the prime suspect for "the window resized itself" (ENG-253); the diag
+  // line lets a report say whether a silent recreate is what dropped the user's window size.
+  console.log('[diag][main] recreateMainWindow START (window will restore saved bounds), crashesInWindow=', rendererCrashTimes.length);
   const oldWindow = mainWindow;
   mainWindowReady = false;
   try {

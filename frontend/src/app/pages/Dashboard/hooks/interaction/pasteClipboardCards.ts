@@ -30,8 +30,12 @@ export async function pasteClipboardCards({ dispatch, dashboardId, expandedSessi
 
   selection.deselectAll();
   const newSelection = new Map<string, CardType>();
+  // Old agent id -> new pasted id, so a browser copied alongside its agent re-docks under the copy (ENG-250).
+  const agentRemap = new Map<string, string>();
+  // Agents first so their remap exists before their browsers are pasted, whatever the copy order.
+  const ordered = [...copied].sort((a, b) => (a.type === 'agent' ? -1 : 0) - (b.type === 'agent' ? -1 : 0));
 
-  for (const card of copied) {
+  for (const card of ordered) {
     const px = at ? at.x + (card.x - anchorX) : card.x + PASTE_OFFSET;
     const py = at ? at.y + (card.y - anchorY) : card.y - PASTE_OFFSET;
 
@@ -39,6 +43,7 @@ export async function pasteClipboardCards({ dispatch, dashboardId, expandedSessi
       const action = await dispatch(duplicateSession({ sessionId: card.id, dashboardId }));
       if (duplicateSession.fulfilled.match(action)) {
         const newId = action.payload.id;
+        agentRemap.set(card.id, newId);
         dispatch(placeCard({ sessionId: newId, x: px, y: py, width: card.width, height: card.height, expandedSessionIds }));
         if (card.expanded) dispatch(expandSession(newId));
         newSelection.set(newId, 'agent');
@@ -55,9 +60,11 @@ export async function pasteClipboardCards({ dispatch, dashboardId, expandedSessi
       newSelection.set(pastedKey, 'view');
     } else if (card.type === 'browser') {
       const browserId = `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const originalOwner = card.meta.spawnedBy as string | undefined;
+      const dockTo = originalOwner ? agentRemap.get(originalOwner) ?? null : null;
       dispatch(pasteBrowserCard({
         id: browserId, tabs: card.meta.tabs || [], url: card.meta.url || '',
-        x: px, y: py, width: card.width, height: card.height,
+        x: px, y: py, width: card.width, height: card.height, dockTo,
       }));
       newSelection.set(browserId, 'browser');
     }
