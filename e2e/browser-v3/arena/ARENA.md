@@ -117,6 +117,19 @@ Staged, evidence attached, in priority order (each mapped to its arena win):
 5. Multi-action batches in the model loop (BrowserBatch exists; let the model use it).
 6. Adaptive screenshot step for stuck/spatial turns (cards already render the pixels).
 
+## Measurement caveats (confounders, stated)
+
+- **False-claim asymmetry**: browser-use's API surfaces an explicit success claim and ours never
+  claims at all, so our 0 is partly structural -- read "ours never lies" as "ours never claims".
+- **Host-load taint window (2026-08-11 ~00:30-04:00)**: the machine ran at load ~100 (user apps:
+  ~88 Chrome processes, VS Code, a dev server). bu-real-opus5's 48.0% cell and two v16 launch
+  attempts fall inside it; the v16 attempts were discarded for a clean re-run and the
+  bu-real-opus5 cell carries an asterisk pending re-run -- fairness cuts both ways. Measurement
+  now auto-pauses when load exceeds the guard.
+- **Co-run CPU load**: concurrent sweeps never share an LLM lane but do share the machine;
+  champion numbers were re-verified solo with an external stopwatch.
+- **Single seed per cell**: adjacent-variant differences under ±4 tasks are noise and labeled so.
+
 ## Remaining gaps (named, not hidden)
 
 - forms 14/22 vs their 18/22 — long widget flows (autocomplete, multi-item select). Needs a
