@@ -182,6 +182,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.row_names = {}
         self.row_roles = {}
         self.picker_done = False
+        self.verified_once = False
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
         raw_items: list[RankItem] = perception.interactives(
@@ -307,6 +308,14 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     native_pickers: bool = False
     picker_done: bool = False
     row_roles: dict[int, str] = field(default_factory=dict)
+    # v16a: one verification call before the episode's first terminal-looking click -- the measured
+    # variance killer (same task passes/fails run to run on a premature submit).
+    verify_terminal: bool = False
+    verified_once: bool = False
+    # v16b: any mouse_* geometry action forces eyes on the NEXT turn (look-act-look-again).
+    post_mouse_vision: bool = False
+    # v16c: rapid-fire cap -- more, cheaper actions per turn for feedback-loop tasks.
+    multi_cap: int = 3
 
     def try_native_picker(self, goal: str) -> str:
         if not self.native_pickers or self.picker_done:
@@ -372,13 +381,15 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         # progressive: adaptive triggers PLUS any task that has already burned 6 actions gets eyes
         # every turn -- a dragging episode is by definition one the text view is not solving.
         struggling = self.vision == "progressive" and len(self.history) >= 6
+        after_mouse = (self.post_mouse_vision and self.history
+                       and self.history[-1].startswith("mouse_"))
         if (self.vision == "always"
                 or (self.vision in ("adaptive", "progressive")
-                    and (self.stuck_or_spatial(page, goal, last_err) or struggling))):
+                    and (self.stuck_or_spatial(page, goal, last_err) or struggling or after_mouse))):
             image = encode_screenshot(obs, marks=self.row_boxes if self.som else None)
         raw, d = self.call(goal, page, image_b64=image)
         d.vision = 1 if image else 0
-        chosen_list = clean_actions(raw) if self.multi else [clean_action(raw)]
+        chosen_list = clean_actions(raw, limit=self.multi_cap) if self.multi else [clean_action(raw)]
         chosen_list = [c for c in chosen_list if c]
         # Verify-then-send chain split, GATED: measured net-negative on the full sweep (v11 70.5%
         # vs v10 75.2%) -- the extra look costs more than the gamble it prevents. Kept for study.
@@ -397,6 +408,20 @@ class OpenSwarmLlmPolicy(LlmPolicy):
             d.think_ms += d2.think_ms
             retry = [c for c in (clean_actions(raw) if self.multi else [clean_action(raw)]) if c]
             chosen_list = retry or chosen_list
+        # One verification round before the first terminal-looking click of the episode.
+        if (self.verify_terminal and not self.verified_once and chosen_list):
+            last = chosen_list[-1]
+            m_sub = re.match(r"click\((\d+)", last)
+            if m_sub and re.search(r"submit|send|done|ok\b", self.row_name(int(m_sub.group(1))), re.I):
+                self.verified_once = True
+                self.history.append(f"{last} -> HOLD: before this final click, re-check EVERY part of the goal against the page; reply the SAME action to confirm, or the corrective actions instead")
+                raw2, d2 = self.call(goal, page, image_b64=image or encode_screenshot(obs))
+                d.prompt_tokens += d2.prompt_tokens
+                d.completion_tokens += d2.completion_tokens
+                d.think_ms += d2.think_ms
+                redo = [c for c in clean_actions(raw2, limit=self.multi_cap) if c]
+                if redo:
+                    chosen_list = redo
         d.n_interactive = n
         translated = [self.translate(c) for c in chosen_list]
         if self.scripted_drag:
@@ -433,6 +458,12 @@ time. Never poke spinbuttons when the parent input can be filled whole.
 Multi-item goals ("all items matching X"): list every target in your PLAN line, mark each done as
 you go, and re-check the list before submitting -- missing one item scores zero.
 If a named search result is not on this page, click the next page number and keep looking."""
+
+OSW_SYSTEM_V16 = """
+After every sub-step of a form, confirm the value stuck (check value= in the fresh list) before
+moving on. In guess-and-check tasks (hot/cold, higher/lower), act FAST: one short action per turn,
+keep the running state in your PLAN line, no deliberation. Before any final submit, re-check every
+requirement of the goal against the page."""
 
 # v8: the exact-name discipline the tab/section losses demanded -- a wrong click on a goal-named
 # link is TERMINAL on these tasks, so a near-miss is worse than another exploration step.
@@ -564,4 +595,10 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, **v15)
+    if name == "osw-llm-v16":  # v15 + verify-terminal + look-act-look + rapid-fire cap
+        v16 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, **v16)
     raise SystemExit(f"unknown arm: {name}")
