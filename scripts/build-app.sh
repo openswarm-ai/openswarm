@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# Killing this build (Ctrl-C, or a parent that gets killed) used to orphan electron-builder's 7za
+# child, which then sat for HOURS holding a ~300MB archive open (found one aged 20h). Run in our own
+# process group and sweep it on any exit so a cancelled build takes its whole tree with it (ENG-247).
+set -m
+trap 'pkill -P $$ 2>/dev/null; kill -- -$$ 2>/dev/null' EXIT INT TERM
+
 # Master build script for the OpenSwarm desktop app.
 #
 # Usage:
