@@ -2242,6 +2242,12 @@ app.whenReady().then(async () => {
         const lk = k.toLowerCase();
         if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-full-version-list') {
           headers[k] = addGoogleChromeBrand(headers[k]);
+        } else if (lk === 'user-agent' && /\bElectron\//i.test(headers[k]) && !borrowed) {
+          // The webview `useragent` attribute misses out-of-process iframes (Google's GSI sign-in
+          // button runs in one), which then send the DEFAULT UA carrying the Electron token, and
+          // Google refuses sign-in from an "embedded browser" (ENG-238, measured on pinterest.com).
+          // Stripping it at the header covers every frame, worker and process in the partition.
+          headers[k] = headers[k].replace(/\s*Electron\/\S+/i, '');
         } else if (borrowed && lk === 'user-agent') {
           const swapped = bareChromeUserAgent(headers[k]);
           // Once per site: proof the swap actually fired, so "borrowed but still signed out" can be
