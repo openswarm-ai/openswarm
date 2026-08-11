@@ -91,6 +91,9 @@ def main() -> None:
     # Resume window: episodes recorded after this epoch count as done, so a restarted supervisor
     # keeps the finished work of the run it replaces instead of re-running all 125.
     ap.add_argument("--since", type=float, default=0.0)
+    # Live-web suites corrupt process-wide playwright state on a single hang; one task per process
+    # contains the blast radius (measured: val.5 hang -> every later episode instant-failed).
+    ap.add_argument("--isolate", action="store_true")
     args = ap.parse_args()
     args.log = args.log or f"/tmp/supervise_{args.arm}.log"
 
@@ -102,7 +105,8 @@ def main() -> None:
         if not remaining:
             break
         print(f"[supervisor] round {rnd}: {len(remaining)} tasks remaining", flush=True)
-        proc = spawn(args.arm, remaining, args)
+        batch = remaining[:1] if args.isolate else remaining
+        proc = spawn(args.arm, batch, args)
         last_size = path.stat().st_size if path.exists() else 0
         last_change = time.time()
         while proc.poll() is None:
