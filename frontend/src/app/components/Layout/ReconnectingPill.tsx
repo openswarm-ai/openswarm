@@ -32,18 +32,18 @@ const ReconnectingPill: React.FC = () => {
 
   // Portal to body: `position: fixed` resolves against a transformed ancestor, not the viewport, and
   // AppShell sits inside one, so the pill rendered visibly off-centre (measured on a screenshot).
+  // A flex row spanning the viewport does the centring. Grow animates with its own `transform`, which
+  // silently overwrote a `translateX(-50%)` on the same element and left the pill half its width off
+  // centre (measured: centre 834 vs viewport centre 700). No transform, nothing to clobber.
   return createPortal(
+    <Box sx={{ position: 'fixed', bottom: 16, left: 0, right: 0, zIndex: 1400, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
     <Grow in={show} unmountOnExit>
       <Box
         onClick={() => window.location.reload()}
         role="button"
         aria-label="Reconnecting to OpenSwarm; click to reload"
         sx={{
-          position: 'fixed',
-          bottom: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1400,
+          pointerEvents: 'auto',
           display: 'flex',
           alignItems: 'center',
           gap: 1,
@@ -65,7 +65,8 @@ const ReconnectingPill: React.FC = () => {
           click to reload
         </Typography>
       </Box>
-    </Grow>,
+    </Grow>
+    </Box>,
     document.body,
   );
 };

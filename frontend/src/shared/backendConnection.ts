@@ -50,7 +50,12 @@ export function noteBackendFailure(): void {
     reachableNow = false;
     emit(false);
     startProbe();
+    return;
   }
+  // Waiting for a SECOND user request to corroborate the first failure means an idle app never
+  // notices its backend died (measured: backend down 24s, signal still green, no pill). Ask the
+  // prober instead: it answers in ms and a healthy backend clears the streak, so this cannot flap.
+  if (reachableNow && failStreak === 1) setTimeout(() => { if (reachableNow) probeNow(); }, 300);
 }
 
 export function noteBackendSuccess(): void {
