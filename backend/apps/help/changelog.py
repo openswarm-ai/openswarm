@@ -33,6 +33,12 @@ P_RELEASES: List[ReleaseNote] = [
             "Dictation starts faster: the microphone stays warm for a few minutes after each use.",
         ],
         fixes=[
+            "The canvas can no longer break into a state where panning dies, cards vanish, and the zoom reads NaN; a bad camera value is refused instead of saved.",
+            "A stray trackpad pinch outside the canvas no longer magnifies the whole app out of view; it snaps back within a second.",
+            "Quitting while a window is leaving fullscreen no longer crashes the app, and no longer leaves an invisible copy running either.",
+            "Google sign-in inside the built-in browser stopped being refused as an embedded browser on sites like Pinterest.",
+            "Starting dictation lights up the stop control only in the chat you are dictating into, not every chat at once.",
+            "Chat titles and tool-group labels can no longer hang a request for ten minutes when a provider is wedged; they fall back within 45 seconds.",
             "Signing in with Google lands every time. The sign-in could previously finish in your browser and never reach the app, leaving you signed out after a reload.",
             "Experimental builds stop flipping back and forth with the stable version on every restart.",
             "If the app briefly loses its local connection it now retries and heals itself, and tells you plainly when it cannot, instead of spinning forever with no explanation.",
