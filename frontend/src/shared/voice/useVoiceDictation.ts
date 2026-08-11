@@ -57,6 +57,10 @@ export interface VoiceFeedback {
 export interface InjectTargetInfo {
   label: string;
   icon: string | null;
+  // Which composer owns the dictation right now (its data-osw-composer id), or null when the
+  // target is not a composer. Lets each composer show "Stop dictation" only when IT is the target
+  // instead of every chat lighting up at once (ENG-239).
+  composerId: string | null;
 }
 
 function browserTargetInfo(): InjectTargetInfo {
@@ -64,18 +68,19 @@ function browserTargetInfo(): InjectTargetInfo {
   const card = browserId ? store.getState().dashboardLayout.browserCards[browserId] : undefined;
   const tab = card?.tabs?.find((t) => t.id === card.activeTabId);
   const host = (() => { try { return tab?.url ? new URL(tab.url).hostname : null; } catch { return null; } })();
-  return { label: host || 'browser page', icon: tab?.favicon || null };
+  return { label: host || 'browser page', icon: tab?.favicon || null, composerId: null };
 }
 
 export function describeInjectTarget(): InjectTargetInfo {
   const a = document.activeElement as HTMLElement | null;
+  const composerId = a?.closest?.('[data-osw-composer]')?.getAttribute('data-osw-composer') ?? null;
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) {
     const hint = a.getAttribute('placeholder') || a.getAttribute('aria-label');
-    return { label: hint ? hint.slice(0, 30) : 'text field', icon: null };
+    return { label: hint ? hint.slice(0, 30) : 'text field', icon: null, composerId };
   }
   if (a && a.tagName === 'WEBVIEW') return browserTargetInfo();
   if (getLastInteractedBrowser()) return browserTargetInfo();
-  return { label: 'chat composer', icon: null };
+  return { label: 'chat composer', icon: null, composerId };
 }
 
 // Context hint for the polisher: what the user is dictating into (a field label, a page title), so
@@ -112,7 +117,7 @@ export function useVoiceDictation() {
   const [pct, setPct] = useState<number>(0);
   const [feedback, setFeedback] = useState<VoiceFeedback | null>(null);
   const [partial, setPartial] = useState<VoicePartial | null>(null);
-  const [target, setTarget] = useState<InjectTargetInfo>({ label: '', icon: null });
+  const [target, setTarget] = useState<InjectTargetInfo>({ label: '', icon: null, composerId: null });
   const partialSeqRef = useRef<number>(0);
   const recRef = useRef<Recorder | null>(null);
   const warmMicRef = useRef<WarmMic | null>(null);
@@ -436,7 +441,7 @@ export function useVoiceDictation() {
   // The target chip tracks focus LIVE while recording: clicking into a field mid-dictation retargets
   // injection (by design), and the chip must tell that truth as it happens.
   useEffect(() => {
-    if (state !== 'recording') { setTarget({ label: '', icon: null }); return undefined; }
+    if (state !== 'recording') { setTarget({ label: '', icon: null, composerId: null }); return undefined; }
     setTarget(describeInjectTarget());
     const onFocus = (): void => setTarget(describeInjectTarget());
     window.addEventListener('focusin', onFocus, true);

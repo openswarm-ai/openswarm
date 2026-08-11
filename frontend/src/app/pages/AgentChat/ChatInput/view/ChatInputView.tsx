@@ -112,6 +112,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
   return (
     <Box
       ref={p.containerRef}
+      data-osw-composer={p.sessionId ?? 'dashboard'}
       onDragOver={p.handleDragOver}
       onDragLeave={p.handleDragLeave}
       onDrop={p.handleDrop}

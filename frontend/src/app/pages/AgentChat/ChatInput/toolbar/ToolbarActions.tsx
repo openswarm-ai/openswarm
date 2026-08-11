@@ -69,7 +69,10 @@ export const ToolbarActions: React.FC<Props> = ({
       elementSelection.setSelectMode(true);
     }
   };
-  const { state: voiceState, toggle: voiceToggle } = useVoice();
+  const { state: voiceState, toggle: voiceToggle, target: voiceTarget } = useVoice();
+  // Only the composer the dictation is actually landing in shows the stop affordance; every chat
+  // used to flip to "Stop dictation" at once because this read only the global state (ENG-239).
+  const dictatingHere = voiceState === 'recording' && voiceTarget.composerId === (sessionId ?? 'dashboard');
   const plusItems: PlusMenuItem[] = [];
   plusItems.push({
     key: 'attach',
@@ -80,10 +83,10 @@ export const ToolbarActions: React.FC<Props> = ({
   // A menu click can't be held, so this entry always toggles regardless of the hold-to-talk setting.
   plusItems.push({
     key: 'dictate',
-    label: voiceState === 'recording' ? 'Stop dictation' : 'Dictate',
+    label: dictatingHere ? 'Stop dictation' : 'Dictate',
     icon: <MicNoneOutlinedIcon sx={{ fontSize: 17 }} />,
     toggle: true,
-    active: voiceState === 'recording',
+    active: dictatingHere,
     onSelect: voiceToggle,
   });
   if (onToggleWebSearch) {
