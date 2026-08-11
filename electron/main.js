@@ -1535,7 +1535,38 @@ function createWindow() {
   // (Cmd+W via the default menu, red X, or a programmatic close) — the
   // signature of the 1.2.77 prod self-quits. True means a normal quit is
   // closing windows as part of its pipeline.
+  // AppKit throws (uncaught NSException -> SIGTRAP) when a window is closed while its
+  // exit-fullscreen transition is still running: gatherParticipatingWindowNumbers walks the
+  // participating windows and insertObject: hits one that is already torn down. Closing a
+  // native-fullscreen window IS that recipe, because _close starts the exit transition itself
+  // and our popup children (setParentWindow) are torn down mid-flight. Seen live on Haik's Mac,
+  // 6 watchdog relaunches since June. Drain first: detach + close children, leave fullscreen,
+  // and only then let the close continue. The timeout means a wedged transition can never
+  // hold the app open forever.
+  // isFullScreen() already reports false DURING the exit animation, so it alone cannot see the
+  // dangerous window; the phase latch can: anything between enter-full-screen and the completing
+  // leave-full-screen event is unsafe to close in.
+  let fsCloseDrained = false;
+  let fsPhase = 'normal';
+  mainWindow.on('enter-full-screen', () => { fsPhase = 'fs'; console.log('[diag][main] enter-full-screen'); });
+  mainWindow.on('leave-full-screen', () => { fsPhase = 'normal'; console.log('[diag][main] leave-full-screen'); });
   mainWindow.on('close', (e) => {
+    if (process.platform === 'darwin' && !fsCloseDrained && fsPhase !== 'normal') {
+      e.preventDefault();
+      console.log('[diag][main] close during a fullscreen phase; draining the transition first');
+      const resume = () => {
+        if (fsCloseDrained) return;
+        fsCloseDrained = true;
+        // Small buffer so AppKit finishes its transition bookkeeping before _close runs.
+        setTimeout(() => { try { if (!thisWindow.isDestroyed()) thisWindow.close(); } catch (_) {} }, 120);
+      };
+      try { thisWindow.getChildWindows().forEach((c) => { try { c.setParentWindow(null); c.close(); } catch (_) {} }); } catch (_) {}
+      thisWindow.once('leave-full-screen', resume);
+      setTimeout(resume, 2500);
+      // Mid-exit a second setFullScreen(false) can re-arm the transition; only ask when still fullscreen.
+      if (thisWindow.isFullScreen()) { try { thisWindow.setFullScreen(false); } catch (_) { resume(); } }
+      return;
+    }
     console.log(`[diag][main] mainWindow close (quitInitiated=${quitInitiated})`);
     // macOS: the only way to land here with quitInitiated still false is the red
     // traffic-light button. Cmd+W is swallowed in before-input-event, renderer
