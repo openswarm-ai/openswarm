@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle, useState } from 'react';
+import { isElectron } from '@/shared/isElectron';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { Skeleton } from '@/app/components/feedback/Loading';
@@ -12,7 +13,7 @@ import RunInDesktopMessage from '@/app/components/RunInDesktopMessage';
 import { registerWebview, unregisterWebview, setActiveTab, type BrowserWebview } from '@/shared/browserRegistry';
 
 // In Electron use <webview> to escape iframe restrictions (popups, mic/camera, WebAuthn, cookied fetch); a srcdoc app still uses an iframe (data:text/html breaks webview same-origin); outside Electron we show a launch-correctly message.
-const isElectron = navigator.userAgent.includes('Electron');
+const inElectron = isElectron();
 
 // Card previews render small; downscale + JPEG so thumbnails don't bloat the output JSON or every list fetch.
 const THUMB_WIDTH = 600;
@@ -207,7 +208,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
   }, [serveUrl, frontendCode, inputData, backendResult]);
 
   // Webview only when we have a real serveUrl; data:text/html for srcdoc breaks same-origin in the Electron sandbox.
-  const useWebview = isElectron && !!iframeSrc;
+  const useWebview = inElectron && !!iframeSrc;
 
   // Webview's contentDocument is null from the host (separate renderer process); element selection skips it (known regression).
   useEffect(() => {
@@ -473,7 +474,7 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
             ...style,
           }}
         />
-      ) : isElectron ? (
+      ) : inElectron ? (
         // In Electron but not useWebview = a srcdoc app (no serveUrl); the iframe is REQUIRED here (data:text/html breaks webview same-origin), not a fallback. Non-Electron falls through to the launch-correctly message.
         <iframe
           ref={iframeRef}

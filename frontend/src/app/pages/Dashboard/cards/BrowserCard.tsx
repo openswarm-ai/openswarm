@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { isElectron as detectElectron } from '@/shared/isElectron';
 import { requestWebviewAttachSlot, releaseWebviewAttachSlot } from './webviewAttachQueue';
 import { createPortal } from 'react-dom';
 import { subscribeLiveDrag } from '../hooks/interaction/liveDragChannel';
@@ -154,7 +155,7 @@ function markWindowsWebviewSurvived(): void {
 }
 
 const isWindows = navigator.userAgent.includes('Windows');
-const inElectron = navigator.userAgent.includes('Electron');
+const inElectron = detectElectron();
 const isElectron = inElectron && (!isWindows || windowsWebviewEnabled());
 
 // Keep the openswarm/<ver> product token: Google's sign-in flags a BARE Chrome UA as not-genuine-Chrome and blocks it ("browser may not be secure"), but tolerates a UA carrying a product token. Only the Electron token must go (that one Google hard-blocks).

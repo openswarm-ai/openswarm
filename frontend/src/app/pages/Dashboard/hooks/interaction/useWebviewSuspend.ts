@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { isElectron } from '@/shared/isElectron';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
 import {
@@ -15,7 +16,7 @@ import { guestBudgetHasRoom, wireBrowserLiveCounter } from '@/shared/appWebviewB
 import { useAppHidden } from './useAppHidden';
 import { cardIntersectsViewport, distFromCenter, type Viewport } from './suspendGeometry';
 
-const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+const inElectron = isElectron();
 
 // Feed the global guest budget the live-browser count, so apps and browsers share ONE ceiling.
 wireBrowserLiveCounter(() => {
@@ -128,12 +129,12 @@ export function useWebviewSuspend(
   const vpRef = useRef<Viewport>({ panX, panY, zoom, vpW: 1200, vpH: 800 });
 
   // Hidden long enough = the user left; park every idle renderer, working agents keep theirs.
-  const appHidden = useAppHidden(isElectron);
+  const appHidden = useAppHidden(inElectron);
 
   // Window resize changes the viewport without touching pan/zoom/cards; tick so the evaluation below reruns, or a shrunken window never suspends anything.
   const [resizeTick, setResizeTick] = useState(0);
   useEffect(() => {
-    if (!isElectron) return;
+    if (!inElectron) return;
     let t: ReturnType<typeof setTimeout> | null = null;
     const onResize = () => {
       if (t) clearTimeout(t);
@@ -147,7 +148,7 @@ export function useWebviewSuspend(
   }, []);
 
   useEffect(() => {
-    if (!isElectron) return;
+    if (!inElectron) return;
     const el = viewportRef.current;
     vpRef.current = {
       panX, panY, zoom,

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { isElectron } from '@/shared/isElectron';
 import Box from '@mui/material/Box';
 import Fade from '@mui/material/Fade';
 import Typography from '@mui/material/Typography';
@@ -55,7 +56,7 @@ const MIN_H = 200;
 // has no login/scroll state worth keeping, so we just unmount the webview when the card is off-screen or
 // too small to read, and remount (reload) on return. Asymmetric: resume instantly, suspend after a beat
 // so panning past a card doesn't reload it.
-const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+const inElectron = isElectron();
 const APP_PREVIEW_MIN_PX = 260;   // below this on-screen width the live page is indistinguishable from a still
 const APP_PREVIEW_MARGIN_PX = 400; // resume once the card is within this of the viewport
 const APP_SUSPEND_SETTLE_MS = 1200;
@@ -223,7 +224,7 @@ const DashboardViewCard: React.FC<Props> = ({
         want = false; // reveal-parked: never boot until the first click clears the defer
       } else if (alwaysLive) {
         // Actively used (selected, interacting, agent-driven, tiled, fullscreen): pinned, never capped.
-        if (isElectron) requestAppSlot(cardKey, 0, true);
+        if (inElectron) requestAppSlot(cardKey, 0, true);
         want = true;
       } else {
         const now = getCanvasState();
@@ -241,7 +242,7 @@ const DashboardViewCard: React.FC<Props> = ({
           const vh = vpH / now.zoom + 2 * m;
           onscreen = cardX < vx + vw && cardX + cardWidth > vx && cardY < vy + vh && cardY + cardHeight > vy;
         }
-        if (!onscreen || !isElectron) {
+        if (!onscreen || !inElectron) {
           want = onscreen; // non-Electron previews are cheap iframes, no renderer to cap
         } else {
           // On-screen but passive: go live only if the hard cap has a slot; closest-to-center wins it.

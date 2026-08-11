@@ -507,6 +507,15 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 // taking the app down with it. Fails quiet: at worst a brief compositor blip.
 app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
 
+// A cross-origin sign-in iframe (Google's GSI button) reads navigator.userAgent in its OWN JS, and
+// an out-of-process frame gets that value from the app-wide fallback, NOT the webview `useragent`
+// attribute or any session override (both miss OOPIFs, measured). With the Electron token present
+// Google refuses sign-in as an "embedded browser" (ENG-238). Strip only the Electron token here so
+// the openswarm product token stays. Safe because the frontend now detects Electron via the
+// window.openswarm preload bridge, not this string (see frontend isElectron.ts); nothing reads the
+// UA for "Electron" anymore, and the backend never gated on it.
+try { app.userAgentFallback = app.userAgentFallback.replace(/\s*Electron\/\S+/i, ''); } catch (_) { /* older Electron */ }
+
 let mainWindow = null;
 let backendProcess = null;
 let backendRespawns = 0;
