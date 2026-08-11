@@ -3428,6 +3428,23 @@ ipcMain.on('perf:first-agent-response', () => perfMark('first-agent-response'));
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
+// Pinch anywhere outside the canvas magnifies the WHOLE renderer (limits are 1..3 so macOS delivers
+// pinch to the canvas at all), which pushes the sidebar, chats and even the zoom control off-screen
+// with no way back: the canvas pill still reads 100% because this is page scale, not camera zoom
+// (ENG-245). Momentarily clamping the limits to 1 snaps the page back; the canvas keeps its pinch.
+ipcMain.handle('reset-visual-zoom', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    mainWindow.webContents.setVisualZoomLevelLimits(1, 1);
+    setTimeout(() => {
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setVisualZoomLevelLimits(1, 3); } catch (_) {}
+    }, 50);
+    return true;
+  } catch (_) {
+    return false;
+  }
+});
+
 // The renderer drains the deep-link queue on useDeepLink mount and on every
 // 'deeplink-available' nudge; returning + clearing here is the single consume
 // point, so a link is delivered exactly once no matter the timing (ENG-240).

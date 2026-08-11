@@ -99,6 +99,7 @@ declare global {
     voiceRequestHoldPermission?: () => Promise<boolean>;
     onDeeplinkAvailable?: (cb: () => void) => () => void;
     drainDeeplinks?: () => Promise<Array<{ channel: string; url: string }>>;
+    resetVisualZoom?: () => Promise<boolean>;
     onAuthUrl?: (cb: (url: string) => void) => () => void;
     onOauthClaim?: (cb: (url: string) => void) => () => void;
     notify?: (payload: OpenSwarmNotifyRequest) => Promise<boolean>;

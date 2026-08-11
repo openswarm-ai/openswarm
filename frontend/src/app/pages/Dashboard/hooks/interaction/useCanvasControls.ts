@@ -55,7 +55,19 @@ interface CanvasState {
 }
 
 function clamp(val: number, min: number, max: number) {
+  // NaN survives Math.min/max, and one NaN in the camera makes the whole transform NaN: the canvas
+  // stops panning, cards land at NaN coordinates and vanish, and the readout says "NaN%". A fit
+  // against a zero-size viewport (0/0) is enough to produce it, so refuse it here (ENG-244).
+  if (!Number.isFinite(val)) return min;
   return Math.min(max, Math.max(min, val));
+}
+
+/** No non-finite value may ever enter the camera; a single NaN breaks navigation until reload. */
+function sanitizeCamera(next: CanvasState, prev: CanvasState): CanvasState {
+  const ok = Number.isFinite(next.panX) && Number.isFinite(next.panY) && Number.isFinite(next.zoom) && next.zoom > 0;
+  if (ok) return next;
+  console.warn('[canvas] refused a non-finite camera', next);
+  return { panX: Number.isFinite(prev.panX) ? prev.panX : 0, panY: Number.isFinite(prev.panY) ? prev.panY : 0, zoom: Number.isFinite(prev.zoom) && prev.zoom > 0 ? prev.zoom : 1 };
 }
 
 export interface ContentBounds {
@@ -122,7 +134,8 @@ export function useCanvasControls(
   }, []);
 
   // Per-frame camera write during a gesture: DOM + live ref only, NO React commit. Dragging cards re-pin to the cursor off the pan-changed event, same signal the old per-frame commit produced.
-  const applyLive = useCallback((next: CanvasState) => {
+  const applyLive = useCallback((raw: CanvasState) => {
+    const next = sanitizeCamera(raw, stateRef.current);
     stateRef.current = next;
     liveDirtyRef.current = true;
     applyLiveToDom();
@@ -138,7 +151,8 @@ export function useCanvasControls(
 
   // Discrete camera set (minimap jump, fit fallbacks): live + committed in the same call. The ONLY sanctioned writers are this and applyLive; a new pan path calling raw setState reintroduces the camera-snaps-back class.
   const setCanvasState = useCallback((updater: CanvasState | ((prev: CanvasState) => CanvasState)) => {
-    const next = typeof updater === 'function' ? updater(stateRef.current) : updater;
+    const raw = typeof updater === 'function' ? updater(stateRef.current) : updater;
+    const next = sanitizeCamera(raw, stateRef.current);
     stateRef.current = next;
     liveDirtyRef.current = false;
     applyLiveToDom();

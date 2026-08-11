@@ -69,6 +69,7 @@ import { report, reportAppOpened, getSessionTraceState, getRecentActions } from 
 import { installUxSignals } from '@/shared/uxSignals';
 import { useRouteTracker } from '@/shared/hooks/useRouteTracker';
 import { useDeepLink } from '@/shared/hooks/useDeepLink';
+import { useKeepPageScaleSane } from '@/shared/hooks/useKeepPageScaleSane';
 import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
 import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat';
 import { ThemeProvider, useThemeMode, useThemeAccent, useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -197,6 +198,7 @@ function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
 
 const DeepLinkListener: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useDeepLink();
+  useKeepPageScaleSane();
   useWindowFocus();
   useInteractionHeartbeat();
   return <>{children}</>;

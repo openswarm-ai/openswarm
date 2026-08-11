@@ -239,6 +239,7 @@ contextBridge.exposeInMainWorld('openswarm', {
     return () => ipcRenderer.removeListener('openswarm:deeplink-available', listener);
   },
   drainDeeplinks: () => ipcRenderer.invoke('drain-deeplinks'),
+  resetVisualZoom: () => ipcRenderer.invoke('reset-visual-zoom'),
 
   // Legacy push channels, kept so an old renderer bundle still receives links; main
   // no longer pushes to them (it queues + nudges instead), so on current builds these never fire.
