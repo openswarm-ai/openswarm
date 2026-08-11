@@ -55,7 +55,8 @@ def spawn(arm: str, tasks: list[str], args: argparse.Namespace) -> subprocess.Po
     else:
         cmd = [PY, str(ARENA / "run.py"), "--arm", arm, "--tasks", ",".join(tasks), "--seeds", "1",
                "--seed-base", str(args.seed), "--model", args.model, "--shots", args.shots,
-               "--max-steps", str(args.max_steps)]
+               "--max-steps", str(args.max_steps), "--step-timeout", str(args.step_timeout),
+               "--setup-timeout", str(args.setup_timeout)]
     env = dict(os.environ)
     env.setdefault("MINIWOB_URL", "http://localhost:8099/miniwob/")
     env.setdefault("BROWSER_USE_LOGGING_LEVEL", "warning")
@@ -83,6 +84,8 @@ def main() -> None:
     ap.add_argument("--rounds", type=int, default=12)
     ap.add_argument("--episode-timeout", type=float, default=100.0)
     ap.add_argument("--max-steps", type=int, default=12)
+    ap.add_argument("--step-timeout", type=float, default=30.0)
+    ap.add_argument("--setup-timeout", type=float, default=60.0)
     ap.add_argument("--shots", default="first-last")
     ap.add_argument("--log", default="")
     # Resume window: episodes recorded after this epoch count as done, so a restarted supervisor

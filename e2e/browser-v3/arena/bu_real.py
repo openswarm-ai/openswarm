@@ -75,7 +75,8 @@ def find_task_cdp_url() -> str:
                 targets = json.loads(resp.read().decode())
         except Exception:
             continue
-        if any("miniwob" in str(t.get("url", "")) for t in targets):
+        if any(str(t.get("url", "")).startswith("http") and "devtools" not in str(t.get("url", ""))
+               for t in targets if t.get("type") == "page"):
             return f"http://localhost:{port}"
     raise RuntimeError(f"none of the recent CDP ports {RECENT_PORTS} hosts a miniwob page")
 

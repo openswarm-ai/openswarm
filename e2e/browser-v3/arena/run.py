@@ -59,6 +59,8 @@ def classify(exc: BaseException) -> str:
     text = str(exc).lower()
     if isinstance(exc, StepHang):
         return "infra_step_hang"
+    if "no running event loop" in text or "has been closed" in text:
+        return "infra_playwright_state"
     if "timeout" in text or "Timeout" in name:
         return "infra_timeout"
     if "target" in text and "closed" in text:
@@ -110,7 +112,7 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 pass
         return ep
     ep.setup_s = time.time() - t_setup
-    ep.goal = str(obs.get("goal") or "")[:300]
+    ep.goal = str(obs.get("goal") or "")[:600]
     policy.reset(ep.goal)
 
     t0 = time.time()
