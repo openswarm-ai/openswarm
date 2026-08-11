@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { isElectron as detectElectron } from '@/shared/isElectron';
+import { store } from '@/shared/state/store';
 import { requestWebviewAttachSlot, releaseWebviewAttachSlot } from './webviewAttachQueue';
 import { createPortal } from 'react-dom';
 import { subscribeLiveDrag } from '../hooks/interaction/liveDragChannel';
@@ -750,8 +751,19 @@ const BrowserCard: React.FC<Props> = ({
     webviewMap.current.get(activeTabId)?.reload();
   }, [activeTabId]);
 
-  const handleRemove = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
+  // The window X. An agent's browser dragged OUT of its chat (undocked, owner still on canvas) used
+  // to be destroyed with no way back (ENG-251); its X now returns it inline to the chat instead.
+  // Everything else (a user's own browser, or one still docked and closed from inside the chat) is a
+  // real close, recorded to recently-closed so Cmd+Shift+T still recovers it.
+  const handleWindowClose = useCallback(() => {
+    const st = store.getState();
+    const card = st.dashboardLayout.browserCards[browserId];
+    const owner = card?.spawned_by;
+    const fading = !!st.dashboardLayout.endingBrowserCards[browserId];
+    if (owner && !fading && !card?.docked_to && st.dashboardLayout.cards[owner]) {
+      dispatch(setBrowserDocked({ browserId, dockedTo: owner }));
+      return;
+    }
     dispatch(recordClosedCard({ kind: 'browser', id: browserId }));
     removeBrowserCardCleanly(browserId, dispatch);
   }, [dispatch, browserId]);
@@ -1332,7 +1344,7 @@ const BrowserCard: React.FC<Props> = ({
           sx={{ display: 'flex', alignItems: 'center', pl: 1.25, pr: 0.75, flexShrink: 0 }}
         >
           <WindowControls
-            onClose={() => { dispatch(recordClosedCard({ kind: 'browser', id: browserId })); removeBrowserCardCleanly(browserId, dispatch); }}
+            onClose={handleWindowClose}
             onMinimize={handleMinimize}
             onTile={onTile}
             tiled={!!tileZone}
