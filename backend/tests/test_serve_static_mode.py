@@ -50,7 +50,9 @@ def test_start_skips_serve_when_edited(tmp_path, monkeypatch):
     rt = AppRuntime("ws-t2", ws)
     spawned = {"n": 0}
 
-    async def p_no_spawn(env):
+    # Sync on purpose: p_resolve_launch became a plain method, and an async mock here returns a
+    # never-awaited coroutine whose body (the counter) never runs, failing the assert at 0.
+    def p_no_spawn(env):
         spawned["n"] += 1
         return None, ws, "stub"
     monkeypatch.setattr(rt, "p_resolve_launch", p_no_spawn)

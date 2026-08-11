@@ -46,12 +46,13 @@ from backend.apps.outputs.runtime_proc import (
     suspend_process_tree,
     write_env_value,
 )
+from backend.config.loop_local import loop_local
 from backend.config.paths import AUTH_TOKEN_FILE
 
 logger = logging.getLogger(__name__)
 
 # Module-level lock so only ONE vite optimizeDeps runs at a time; must be acquired before manager.p_lock to avoid deadlock with manager.attach.
-p_vite_boot_lock = asyncio.Lock()
+get_vite_boot_lock = loop_local(asyncio.Lock)
 
 # How often the manager stats each attached workspace for a restart sentinel; one stat/sec/runtime is noise.
 RESTART_SENTINEL_POLL_SECONDS = 1.0
@@ -226,15 +227,16 @@ class AppRuntime:
             self.p_reset_terminal_log()
             if self.is_new_mode:
                 # Acquire the module-level boot lock BEFORE the spawn so only one new-mode workspace is mid-bundle at a time. The lock is released by the bind-poll task the moment vite emits "frontend ready" (or its 180s timeout fires), which is the moment the next workspace can start its own vite without competing for the same CPU. See `p_await_frontend_bind` for the release.
-                await p_vite_boot_lock.acquire()
+                p_boot_lock = get_vite_boot_lock()
+                await p_boot_lock.acquire()
                 try:
                     ok = await self.p_start_new_mode()
                     if not ok:
                         # Spawn failed before the bind-poll task was created; release synchronously so we don't wedge the next workspace.
-                        p_vite_boot_lock.release()
+                        p_boot_lock.release()
                     return ok
                 except Exception:
-                    p_vite_boot_lock.release()
+                    p_boot_lock.release()
                     raise
             return await self.p_start_old_mode()
 
@@ -378,7 +380,7 @@ class AppRuntime:
                 return
             lock_released = True
             try:
-                p_vite_boot_lock.release()
+                get_vite_boot_lock().release()
             except RuntimeError:
                 # Lock already released (e.g. start() failure path released synchronously before spawning the poll task).
                 pass
