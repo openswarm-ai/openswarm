@@ -268,6 +268,12 @@ async def generate_group_meta(session_id: str, body: dict):
         if not future.done():
             future.set_result(result)
         return result
+    except asyncio.TimeoutError as e:
+        # A raw TimeoutError would bubble past the CORS layer as a headerless 500, which the
+        # renderer console mislabels as a CORS violation; a 504 keeps the failure legible.
+        if not future.done():
+            future.set_exception(e)
+        raise HTTPException(status_code=504, detail="metadata generation timed out") from e
     except Exception as e:
         if not future.done():
             future.set_exception(e)

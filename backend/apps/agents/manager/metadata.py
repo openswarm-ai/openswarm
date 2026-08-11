@@ -2,9 +2,10 @@
 of agent_manager so the orchestrator doesn't carry the label-gen prompts + streaming.
 Provider-agnostic: resolves the cheap tier of whichever provider the user connected."""
 
+import asyncio
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from typeguard import typechecked
 
@@ -14,6 +15,23 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 
 logger = logging.getLogger(__name__)
+
+# The SDK's default stream timeout is 10 MINUTES; a wedged router held generate-group-meta open
+# that whole time, the renderer's fetch gave up first, and the aborted response surfaced as a
+# bogus CORS error in the console (ENG-244). Label text that takes this long is worthless anyway.
+AUX_STREAM_DEADLINE_S: float = 45.0
+
+
+@typechecked
+async def collect_stream_text(stream_cm: Any) -> str:
+    """Drain an aux metadata stream to a string, bounded by AUX_STREAM_DEADLINE_S."""
+    async def drain() -> str:
+        chunks: List[str] = []
+        async with stream_cm as stream:
+            async for text in stream.text_stream:
+                chunks.append(text)
+        return "".join(chunks)
+    return await asyncio.wait_for(drain(), timeout=AUX_STREAM_DEADLINE_S)
 
 
 @typechecked
@@ -60,18 +78,14 @@ async def generate_title(session: Optional[AgentSession], session_id: str, first
             f"<message>\n{labeled_prompt}\n</message>"
         )
         # Stream: 9router's cx/ non-streaming response translator drops `content` for GPT-5-family models; the per-event streaming translator works.
-        chunks: List[str] = []
-        async with client.messages.stream(
+        raw_text = await collect_stream_text(client.messages.stream(
             model=aux_model,
             max_tokens=aux_max_tokens_for(aux_model),
             system=system_prompt,
             messages=[{"role": "user", "content": user_turn}],
             # On the free lane this binds the title-gen to its query's run so it doesn't spend a second one; harmless elsewhere (the paid lane ignores the header).
             extra_headers={"X-Openswarm-Task-Id": session_id},
-        ) as stream:
-            async for text in stream.text_stream:
-                chunks.append(text)
-        raw_text = "".join(chunks)
+        ))
         generated = clean_short_label(raw_text)
         if generated:
             title = generated
@@ -140,8 +154,7 @@ async def generate_turn_label(
             "  Request: 'fix the bug in agent_manager.py' -> Investigating the bug\n"
             "  Request: 'check my gmail inbox' -> Checking your Gmail"
         )
-        chunks: List[str] = []
-        async with client.messages.stream(
+        raw_label = await collect_stream_text(client.messages.stream(
             model=aux_model,
             max_tokens=aux_max_tokens_for(aux_model),
             system=system,
@@ -154,11 +167,9 @@ async def generate_turn_label(
             }],
             # Binds this aux call to its query's free-trial run; ignored off the free lane.
             extra_headers={"X-Openswarm-Task-Id": session_id},
-        ) as stream:
-            async for text in stream.text_stream:
-                chunks.append(text)
+        ))
         # Bail on refusals/first-person rather than show a hallucinated label.
-        label = clean_short_label("".join(chunks), max_words=6, max_chars=60)
+        label = clean_short_label(raw_label, max_words=6, max_chars=60)
         if not label:
             return
 
@@ -232,19 +243,14 @@ async def generate_group_meta(
             "- Max 400 characters for the svg string"
         )
 
-        chunks: List[str] = []
-        async with client.messages.stream(
+        raw = (await collect_stream_text(client.messages.stream(
             model=aux_model,
             max_tokens=aux_max_tokens_for(aux_model, base=300),
             system=system,
             messages=[{"role": "user", "content": user_content}],
             # Binds this aux call to its query's free-trial run; ignored off the free lane.
             extra_headers={"X-Openswarm-Task-Id": session_id},
-        ) as stream:
-            async for text in stream.text_stream:
-                chunks.append(text)
-
-        raw = "".join(chunks).strip()
+        ))).strip()
         if not raw:
             raise ValueError("aux model returned empty content")
         if raw.startswith("```"):
