@@ -180,6 +180,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.last_view_hash = 0
         self.fastpath_used = set()
         self.row_names = {}
+        self.row_roles = {}
+        self.picker_done = False
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
         raw_items: list[RankItem] = perception.interactives(
@@ -189,6 +191,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.prev_bids = {it.bid for it in shown}
         self.index_to_bid = {i: it.bid for i, it in enumerate(shown, 1)}
         self.row_names = {i: it.name for i, it in enumerate(shown, 1)}
+        self.row_roles = {i: it.role for i, it in enumerate(shown, 1)}
         self.last_new_bids = new
         if self.som:
             extra = obs.get("extra_element_properties") or {}
@@ -299,6 +302,36 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         steps.append(f"mouse_up({x1:.0f}, {y1:.0f})")
         return "\n".join(steps)
 
+    # v15: native picker rung -- convert the goal's time/date into the ISO form the input demands
+    # and fill it whole; models poke the spinbuttons instead and lose.
+    native_pickers: bool = False
+    picker_done: bool = False
+    row_roles: dict[int, str] = field(default_factory=dict)
+
+    def try_native_picker(self, goal: str) -> str:
+        if not self.native_pickers or self.picker_done:
+            return ""
+        for i, name in self.row_names.items():
+            low = name.lower()
+            role = self.row_roles.get(i, "").lower()
+            if role == "inputtime" or "(tt)" in low:
+                m = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)?", goal, re.I)
+                if m:
+                    h, mnt, ap = int(m.group(1)), m.group(2), (m.group(3) or "").lower()
+                    if ap == "pm" and h != 12:
+                        h += 12
+                    if ap == "am" and h == 12:
+                        h = 0
+                    self.picker_done = True
+                    return f'fill({i}, "{h:02d}:{mnt}")'
+            if role in ("inputdate", "date") or "datepicker" in low or low == "(date)":
+                m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", goal)
+                if m:
+                    mo, dy, yr = m.groups()
+                    self.picker_done = True
+                    return f'fill({i}, "{yr}-{int(mo):02d}-{int(dy):02d}")'
+        return ""
+
     def try_autocomplete(self, new_bids: set[str]) -> str:
         """Click the fresh dropdown row matching the last fill's text; '' when no clean match.
 
@@ -318,6 +351,11 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
+        pk = self.try_native_picker(goal)
+        if pk:
+            d = LlmDecision(action=self.translate(pk), n_interactive=n, note="native-picker")
+            self.note(pk + "  (scripted native picker)", obs)
+            return d
         ac = self.try_autocomplete(self.last_new_bids)
         if ac:
             d = LlmDecision(action=self.translate(ac), n_interactive=n, note="autocomplete")
@@ -387,6 +425,14 @@ click). Only chain actions whose targets are already visible; after anything tha
 (tab switch, open, search), STOP the chain there and look again next turn.
 When a screenshot is attached, trust it over the text for geometry: pick exact mouse_click(x, y)
 coordinates from what you see."""
+
+# v15: widget discipline for the never-solved cluster -- native pickers, per-item flows, pagination.
+OSW_SYSTEM_V9_WIDGETS = """
+Native date inputs: fill(index, "YYYY-MM-DD"). Native time inputs: fill(index, "HH:MM") in 24-hour
+time. Never poke spinbuttons when the parent input can be filled whole.
+Multi-item goals ("all items matching X"): list every target in your PLAN line, mark each done as
+you go, and re-check the list before submitting -- missing one item scores zero.
+If a named search result is not on this page, click the next page number and keep looking."""
 
 # v8: the exact-name discipline the tab/section losses demanded -- a wrong click on a goal-named
 # link is TERMINAL on these tasks, so a near-miss is worse than another exploration step.
@@ -513,4 +559,9 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
         v14 = dict(v7, system=OSW_SYSTEM_V8, max_tokens=500)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
                                   scripted_drag=True, auto_complete=True, som=False, **v14)
+    if name == "osw-llm-v15":  # v14 + native picker rung + widget/per-item/pagination discipline
+        v15 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, **v15)
     raise SystemExit(f"unknown arm: {name}")

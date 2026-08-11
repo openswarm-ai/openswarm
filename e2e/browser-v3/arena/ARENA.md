@@ -43,8 +43,15 @@ it — the constraint is flow competence, not steps.
 |---|---|---|---|
 | haiku-4-5 | 71.2% @ 4.8s, 0 false (v10: 75.2% @ 5.2s) | 69.6% @ 44.5s, 16 false | ours leads all axes |
 | sonnet-4-6 | **77.6% @ 6.5s, 0 false** | 74.4% @ 37.4s, 8 false | ours leads all axes |
-| sonnet-5 | 76.0% @ 5.5s, 0 false | sweeping | model tier plateaued |
-| opus-5 | sweeping | — | — |
+| sonnet-5 | 76.0% @ 5.5s, 0 false | 63% running @ 42s | their loop DEGRADES on the newest model |
+| **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6 with 3 first-ever solves | pending fair run | ours scales with the model |
+
+Opus-run union (v14 ∪ v15): **107/125 = 85.6%** — the demonstrated architecture ceiling; the
+82% single-run number vs the 85.6% union is single-seed variance (±4-5 tasks), and closing THAT
+gap needs either pass@k protocol (reported as such) or a self-verify-before-terminal-click step.
+The final 18 tasks each need a dedicated widget rung; enter-time, enter-date and
+social-media-some fell to exactly such rungs (native-picker fill, per-item PLAN discipline) in
+v15 after resisting every model tier.
 
 The plateau at 76-78% across sonnet-4-6/sonnet-5 plus the 82.4% technique-union ceiling localizes
 the remaining gap: ~22 tasks need purpose-built widget primitives (date/time pickers, precise
