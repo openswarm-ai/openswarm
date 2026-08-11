@@ -486,6 +486,11 @@ app.on('open-url', (event, url) => {
 // (Chromium keeps painting invisible frames instead of pausing), zero impact when window is
 // foreground. If this doesn't help, removing the flag is a one-line revert with no UX trace.
 const _disabledFeatures = ['HardwareMediaKeyHandling'];
+// Google's GSI sign-in button prefers FedCM, whose account-chooser UI Electron cannot render, so
+// the click silently does NOTHING in a browser card (Eric reproduced on pinterest.com). With FedCM
+// off, GSI falls back to its classic popup flow, which our popup-UA machinery already handles and
+// which shows a normal Google sign-in page whether or not an account is signed in (ENG-238).
+_disabledFeatures.push('FedCm');
 if (process.platform === 'darwin') _disabledFeatures.push('MacWebContentsOcclusion');
 app.commandLine.appendSwitch('disable-features', _disabledFeatures.join(','));
 // disableHardwareAcceleration() was tried as a fallback but did not stop the 0xC0000005 crashes, confirming the segfault is not GPU-side. Dev mode (http origin) never crashed, packaged (file:// origin) always crashed, so the embedded localhost HTTP server (see startFrontendServer below) is the real fix and we keep GPU acceleration on.
