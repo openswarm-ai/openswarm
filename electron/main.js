@@ -1560,14 +1560,25 @@ function createWindow() {
   mainWindow.on('enter-full-screen', () => { fsPhase = 'fs'; console.log('[diag][main] enter-full-screen'); });
   mainWindow.on('leave-full-screen', () => { fsPhase = 'normal'; console.log('[diag][main] leave-full-screen'); });
   mainWindow.on('close', (e) => {
-    if (process.platform === 'darwin' && !fsCloseDrained && fsPhase !== 'normal') {
+    // isInstallingUpdate is excluded on purpose: quitAndInstall drives its own close, and
+    // preventDefault there strands the update (the old "Restart & Update does nothing" bug).
+    if (process.platform === 'darwin' && !fsCloseDrained && fsPhase !== 'normal' && !isInstallingUpdate) {
       e.preventDefault();
       console.log('[diag][main] close during a fullscreen phase; draining the transition first');
+      // preventDefault on a quit-driven close CANCELS the quit, so remember that this WAS a quit:
+      // closing the window alone would leave a headless app alive on macOS (window-all-closed
+      // deliberately stays alive there), which is a worse bug than the crash being avoided.
+      const wasQuitting = quitInitiated;
       const resume = () => {
         if (fsCloseDrained) return;
         fsCloseDrained = true;
         // Small buffer so AppKit finishes its transition bookkeeping before _close runs.
-        setTimeout(() => { try { if (!thisWindow.isDestroyed()) thisWindow.close(); } catch (_) {} }, 120);
+        setTimeout(() => {
+          try {
+            if (thisWindow.isDestroyed()) return;
+            if (wasQuitting) app.quit(); else thisWindow.close();
+          } catch (_) {}
+        }, 120);
       };
       try { thisWindow.getChildWindows().forEach((c) => { try { c.setParentWindow(null); c.close(); } catch (_) {} }); } catch (_) {}
       thisWindow.once('leave-full-screen', resume);
