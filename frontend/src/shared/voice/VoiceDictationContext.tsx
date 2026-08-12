@@ -112,7 +112,7 @@ export function VoiceDictationProvider({ children }: { children: React.ReactNode
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') return undefined;
     const onSnap = (): void => snapshotInjectTarget();
-    const onInject = (e: Event): void => { injectAtFocus(((e as CustomEvent<{ text?: string }>).detail?.text) ?? ''); };
+    const onInject = (e: Event): void => { void injectAtFocus(((e as CustomEvent<{ text?: string }>).detail?.text) ?? ''); };
     window.addEventListener('osw-test:snapshot', onSnap);
     window.addEventListener('osw-test:inject', onInject as EventListener);
     return () => {
