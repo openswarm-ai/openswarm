@@ -2337,13 +2337,25 @@ app.whenReady().then(async () => {
   // request of the launch already presents as the browser that earned the session.
   loadBorrowedDomains();
 
-  // PASSKEY SPIKE: when a site offers several discoverable passkeys, Electron fires this so we pick one; without a handler the WebAuthn flow stalls. For the spike just take the first; a real impl would surface a picker. macOS-only event (no-op elsewhere).
+  // When a site offers several discoverable passkeys, Electron asks which one; answering null
+  // CANCELS the ceremony, which the site then reports as its own generic failure ("Something went
+  // wrong" on Google). The old handler read the array off arg 2 and looked for `accountId`, but
+  // Electron passes `details = { relyingPartyId, accounts, frame }` and the field is `credentialId`,
+  // so it answered null every time and passkey SIGN-IN could never complete. Creating a passkey
+  // needs no selection, which is why that half always looked fine (ENG-269).
   for (const ses of [session.defaultSession, session.fromPartition(BROWSER_PARTITION)]) {
     try {
-      ses.on('select-webauthn-account', (event, accounts, callback) => {
-        console.log('[passkey] select-webauthn-account, n=', accounts && accounts.length);
+      ses.on('select-webauthn-account', (event, details, callback) => {
+        const accounts = (details && details.accounts) || [];
+        console.log('[passkey] select-webauthn-account rp=', details && details.relyingPartyId, 'n=', accounts.length);
         event.preventDefault();
-        callback((accounts && accounts[0] && accounts[0].accountId) || null);
+        // One passkey is unambiguous, so answering it directly keeps the flow to a single Touch ID
+        // prompt. With several, the OS sheet is the right chooser and we must not silently guess a
+        // credential the user did not pick; a picker is the follow-up, never a blind first().
+        if (accounts.length === 1) return callback(accounts[0].credentialId);
+        if (accounts.length === 0) return callback(null);
+        console.warn('[passkey] multiple passkeys offered; needs a picker, defaulting to the first');
+        callback(accounts[0].credentialId);
       });
     } catch (_) {}
   }
