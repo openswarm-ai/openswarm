@@ -61,10 +61,10 @@ change goals/values, not just RNG). The ~6-point pass@1-vs-pass@2 gap is decode 
 Claude-5 lanes give no temperature control over; the remaining stable losses are the four
 engineering clusters (long forms, pixel precision, console emulation, stateful games).
 
-**AssistantBench (live web, their question_scorer, sonnet-5): ours mean accuracy 0.050 on 14
-clean episodes (29/33 attempted, 2 nonzero answers)** -- consistent with the suite's brutal
-public SOTA (~25% for far heavier research agents); browser-use's run queued on identical
-protocol. Live-web infra losses remain high for both stacks; numbers here are directional.
+**AssistantBench (live web, sonnet-5): INVALID pending re-run.** ours read 0.050; browser-use read
+0.000 -- but the bu_real scorer was reading MiniWoB's WOB_REWARD_GLOBAL, which does not exist on
+AssistantBench pages, so its 0.000 is a scoring bug, not a result. Both arms need re-scoring
+through the AssistantBench env reward before any AssistantBench claim is made. Do not cite these.
 
 v16 (verify-terminal, look-act-look, rapid-fire, sub-step confirm) FINAL: 82.1% on clean episodes
 -- statistically tied with v14, but the fixes hit their targets: email 10/10 (their best 6/10),
