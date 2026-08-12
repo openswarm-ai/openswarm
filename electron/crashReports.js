@@ -6,9 +6,17 @@ const fs = require('fs');
 
 const MAX_REPORTS = 30;
 const LOG_TAIL_BYTES = 64 * 1024;
+// A fault that repeats is the normal case, not the rare one, and each report costs a 64KB log read
+// plus a 68KB write. Without these two caps one stuck fault turns the reporter into a disk hog: a
+// live 1.7.6-exp2 loop wrote 30 identical reports in 36ms. Same fault inside the window is counted,
+// not rewritten, and a session can never spend more than CAP reports total.
+const DEDUPE_WINDOW_MS = 60_000;
+const MAX_REPORTS_PER_SESSION = 20;
 
 let p_app = null;
 let p_notify = null;
+let p_written = 0;
+const p_lastByFingerprint = new Map();
 
 function init(app, notifyFn) {
   p_app = app;
@@ -43,7 +51,21 @@ function prune(dir) {
   } catch (_) {}
 }
 
+// Kind plus the first stack frame: enough to tell two different faults apart, stable across laps of
+// the same one (the timestamps and line noise below it are not).
+function fingerprint(kind, details) {
+  const stack = details && typeof details === 'object' ? String(details.stack || details.message || '') : String(details || '');
+  return kind + '|' + stack.split('\n').slice(0, 2).join('|').slice(0, 300);
+}
+
 function writeCrashReport(kind, details) {
+  const now = Date.now();
+  const fp = fingerprint(kind, details);
+  const seen = p_lastByFingerprint.get(fp);
+  if (seen && now - seen.at < DEDUPE_WINDOW_MS) { seen.count += 1; return null; }
+  if (p_written >= MAX_REPORTS_PER_SESSION) return null;
+  p_lastByFingerprint.set(fp, { at: now, count: 1 });
+  p_written += 1;
   try {
     const dir = reportsDir();
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -56,6 +78,8 @@ function writeCrashReport(kind, details) {
       arch: process.arch,
       electron: process.versions.electron,
       details,
+      // How many identical faults this report stands for, so dedupe hides nothing.
+      repeats: (p_lastByFingerprint.get(fp) || {}).count || 1,
       backendLogTail: backendLogTail(),
     };
     fs.writeFileSync(file, JSON.stringify(report, null, 2));
@@ -68,7 +92,8 @@ function writeCrashReport(kind, details) {
     }
     return file;
   } catch (err) {
-    console.error('[crash-reports] failed to write report:', err && err.message);
+    // Logging is exactly what may have failed upstream, so it cannot be allowed to throw from here.
+    try { console.error('[crash-reports] failed to write report:', err && err.message); } catch (_) {}
     return null;
   }
 }

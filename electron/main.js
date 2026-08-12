@@ -1,4 +1,16 @@
 const { app, components, BrowserWindow, ipcMain, shell, session, dialog, crashReporter, powerMonitor, Menu, clipboard, globalShortcut } = require('electron');
+// Whoever was reading our stdout can go away (terminal closed, launcher exited) and then every
+// console call throws EPIPE. Unhandled, that lands in uncaughtException, whose FIRST line is a
+// console.error, which throws EPIPE again: a crash handler that crashes, forever, writing a 68KB
+// report per lap. Measured live on 1.7.6-exp2: 30 reports in 36ms, ~56MB/s of disk. Listening here
+// means the EPIPE is handled and never becomes a crash at all; after one, logging is simply off.
+function p_muteConsole() {
+  const noop = () => {};
+  for (const k of ['log', 'warn', 'error', 'info', 'debug', 'trace']) console[k] = noop;
+}
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err) => { if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED')) p_muteConsole(); });
+}
 const whisperService = require('./voice/whisperService');
 const { createStreamingSession } = require('./voice/streamingSession');
 const whisperModels = require('./voice/whisperModels');
@@ -104,9 +116,18 @@ try {
 // Capture every main-process throw we can. Without these, a throw inside an IPC handler or BrowserWindow event listener can die silently and look indistinguishable from a renderer crash in the trace.
 const crashReports = require('./crashReports');
 crashReports.init(app, null);
+// Reentrancy guard: anything this handler does can itself throw, and a handler that re-enters is an
+// infinite loop with a disk write in it. One lap at a time, and the logging is optional.
+let p_handlingUncaught = false;
 process.on('uncaughtException', (err) => {
-  console.error('[diag][main:uncaughtException]', err && err.stack || err);
-  crashReports.writeCrashReport('main-uncaught-exception', { message: String(err && err.message || err), stack: String(err && err.stack || '') });
+  if (p_handlingUncaught) return;
+  p_handlingUncaught = true;
+  try {
+    try { console.error('[diag][main:uncaughtException]', err && err.stack || err); } catch (_) { p_muteConsole(); }
+    crashReports.writeCrashReport('main-uncaught-exception', { message: String(err && err.message || err), stack: String(err && err.stack || '') });
+  } finally {
+    p_handlingUncaught = false;
+  }
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[diag][main:unhandledRejection]', reason && reason.stack || reason);
