@@ -138,7 +138,7 @@ try {
   }
 } catch (_) {}
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFileSync, spawnSync } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 const hiddenBrowser = require('./hiddenBrowser');
@@ -1923,6 +1923,40 @@ async function clearStaleFrontendCache() {
   }
 }
 
+// Browsing caches grow without bound (measured on a real profile: Partitions 2.2GB, Code Cache
+// 291MB), and a machine that blows through macOS's disk-write ceiling gets the app killed with no
+// crash report (ENG-247). So bound them: past the cap, drop the REGENERABLE bytes at boot. Cookies,
+// localStorage and IndexedDB are deliberately untouched, clearing those would sign the user out of
+// every site their agents rely on; clearCache only drops fetched bytes the network can refetch.
+const DISK_CACHE_CAP_MB = 1500;
+
+function dirSizeMb(dir) {
+  try {
+    const out = spawnSync('du', ['-sk', dir], { encoding: 'utf8', timeout: 20000 });
+    const kb = parseInt(String((out && out.stdout) || '0').trim().split(/\s+/)[0], 10);
+    return Number.isFinite(kb) ? Math.round(kb / 1024) : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function sweepOversizedCaches() {
+  try {
+    const root = app.getPath('userData');
+    const before = dirSizeMb(path.join(root, 'Partitions')) + dirSizeMb(path.join(root, 'Code Cache'));
+    if (before < DISK_CACHE_CAP_MB) {
+      console.log(`[cache] browsing caches ${before}MB, under the ${DISK_CACHE_CAP_MB}MB cap; nothing to sweep`);
+      return;
+    }
+    await session.fromPartition(BROWSER_PARTITION).clearCache();
+    await session.defaultSession.clearCache();
+    const after = dirSizeMb(path.join(root, 'Partitions')) + dirSizeMb(path.join(root, 'Code Cache'));
+    console.log(`[cache] swept oversized browsing caches: ${before}MB -> ${after}MB (logins untouched)`);
+  } catch (err) {
+    console.warn('[cache] sweepOversizedCaches failed:', err && err.message);
+  }
+}
+
 function setupAutoUpdater() {
   if (!autoUpdater) return;
   // Escape hatch for locally-built packaged smokes: an unpublished build otherwise downloads the
@@ -2418,6 +2452,8 @@ app.whenReady().then(async () => {
     // Must run before createWindow loads the URL, or the renderer fetches the stale bundle first.
     await clearStaleFrontendCache();
     createWindow();
+    // After first paint, never before: the sweep shells out to du and must not delay the window.
+    setTimeout(() => { void sweepOversizedCaches(); }, 8000);
     if (!isDev) {
       setupAutoUpdater();
       mainWindow.webContents.on('did-finish-load', () => {

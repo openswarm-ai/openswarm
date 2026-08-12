@@ -66,6 +66,18 @@ export function useDashboardClipboard({
             expanded: expandedSessionIds.includes(id),
           });
           names.push(session.name || id);
+          // A chat's browser lives INSIDE it, so copying the agent has to carry it along; selecting a
+          // card the user sees as one thing must not paste half of it (ENG-250). Deduped below in case
+          // the browser was independently selected too.
+          for (const bc of Object.values(browserCards)) {
+            if (bc.docked_to !== id && bc.spawned_by !== id) continue;
+            const tab = bc.tabs.find((t) => t.id === bc.activeTabId);
+            copied.push({
+              type: 'browser', id: bc.browser_id, name: tab?.title || 'Browser',
+              meta: { name: tab?.title || 'Browser', url: tab?.url || bc.url, tabs: bc.tabs, spawnedBy: id },
+              x: bc.x, y: bc.y, width: bc.width, height: bc.height,
+            });
+          }
         } else if (type === 'view') {
           const output = outputs[id];
           const vc = viewCards[id];
@@ -90,7 +102,9 @@ export function useDashboardClipboard({
           names.push(title);
         }
       }
-      setClipboardCards(copied);
+      // Selecting an agent AND its browser must not paste the browser twice.
+      const deduped = copied.filter((c, i) => copied.findIndex((o) => o.type === c.type && o.id === c.id) === i);
+      setClipboardCards(deduped);
       navigator.clipboard.writeText(names.join(', ')).catch(() => {});
       // Copy IS attach: the selection lands in the composer as context chips, no select mode, no paste step.
       if (copied.length > 0) onCopiedToContext?.(copied);
