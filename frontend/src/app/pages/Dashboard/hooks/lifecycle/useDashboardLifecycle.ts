@@ -24,7 +24,7 @@ import {
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs, type Output } from '@/shared/state/outputsSlice';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
-import { isUserLaunchedSession } from '@/shared/state/isUserLaunchedSession';
+import { deservesCanvasCard } from '@/shared/state/isUserLaunchedSession';
 import { REVEAL_MIN_ZOOM } from '../../canvas/revealZoom';
 import { fetchWorkflows, fetchAllRuns, fetchActiveRuns } from '@/shared/state/workflowsSlice';
 import { fetchMissedRuns } from '@/shared/state/missedRunsSlice';
@@ -326,7 +326,7 @@ export function useDashboardLifecycle({
   useEffect(() => {
     if (!layoutInitialized) return;
     const dashboardSessionIds = Object.values(sessions)
-      .filter((s) => s.dashboard_id === dashboardId && isUserLaunchedSession(s))
+      .filter((s) => s.dashboard_id === dashboardId && deservesCanvasCard(s))
       .map((s) => s.id);
     const liveIds = dashboardSessionIds.sort().join(',');
     if (liveIds === prevSessionIdsRef.current) return;
