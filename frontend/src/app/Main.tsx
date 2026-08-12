@@ -5,7 +5,7 @@ import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mu
 import Box from '@mui/material/Box';
 import Fade from '@mui/material/Fade';
 import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
+import Typography from '@mui/material/Typography';
 import { store } from '../shared/state/store';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSettings, updateSettingsPatch, markFreeTrialArmSettled } from '@/shared/state/settingsSlice';
@@ -357,8 +357,11 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
   const connectionMode = useAppSelector((s) => s.settings.data.connection_mode);
   const freeTrialRemaining = useAppSelector((s) => s.settings.data.free_trial_remaining);
 
+  const c = useClaudeTokens();
   const [sessionSwitch, setSessionSwitch] = useState<{ toFreeTrial: boolean; runs: number | null; toLabel: string } | null>(null);
   const pendingRef = useRef(false);
+  // Sessions already announced, so a poll that re-hydrates a dead model cannot re-nag.
+  const warnedSessionsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!settingsLoaded || !modelsLoaded || !nineRouterUp) return;
@@ -396,7 +399,14 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
     let switched = false;
     for (const sess of Object.values(store.getState().agents.sessions)) {
       if (sess.model && !valid.has(sess.model)) {
-        switched = true;
+        // The switch is store-only, and the metadata poll re-hydrates the dead model from disk every
+        // few seconds, so re-announcing meant the banner returned forever for anyone holding a chat
+        // pinned to a retired model. Fix it every time (the next send must carry a live model), tell
+        // them once.
+        if (!warnedSessionsRef.current.has(sess.id)) {
+          warnedSessionsRef.current.add(sess.id);
+          switched = true;
+        }
         dispatch(updateSessionModel({ sessionId: sess.id, model: target }));
       }
     }
@@ -409,24 +419,42 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
   return (
     <>
       {children}
+      {/* Same glass pill the reconnecting toast uses. This was a raw MUI filled Alert, i.e. stock
+          Material blue on an app with none of it anywhere else, and it sat at the same bottom-centre
+          spot as that pill so the two stacked into one crowded blue block. Sits above it. */}
       <Snackbar
         open={!!sessionSwitch}
         autoHideDuration={9000}
         onClose={() => setSessionSwitch(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ bottom: { xs: 72, sm: 72 } }}
       >
-        <Alert
-          severity="info"
-          variant="filled"
-          onClose={() => setSessionSwitch(null)}
-          sx={{ fontSize: '0.8125rem' }}
+        <Box
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 1, px: 1.75, py: 1, borderRadius: 999,
+            background: c.bg.elevated, border: `1px solid ${c.border.strong}`, boxShadow: c.shadow.lg,
+          }}
         >
-          {sessionSwitch && (sessionSwitch.toFreeTrial ? (
-            <>Your model isn't connected, you're on the free trial now{sessionSwitch.runs != null ? <> ({sessionSwitch.runs} runs left)</> : null}.</>
-          ) : (
-            <>Your model isn't available anymore, switched to <b>{sessionSwitch.toLabel}</b>.</>
-          ))}
-        </Alert>
+          <Typography sx={{ fontSize: '0.8125rem', color: c.text.primary, fontWeight: 500 }}>
+            {sessionSwitch && (sessionSwitch.toFreeTrial ? (
+              <>Your model isn't connected, you're on the free trial now{sessionSwitch.runs != null ? <> ({sessionSwitch.runs} runs left)</> : null}.</>
+            ) : (
+              <>Switched to <b>{sessionSwitch.toLabel}</b>, your previous model is no longer available.</>
+            ))}
+          </Typography>
+          <Box
+            component="button"
+            aria-label="Dismiss"
+            onClick={() => setSessionSwitch(null)}
+            sx={{
+              border: 'none', background: 'transparent', cursor: 'pointer', p: 0, ml: 0.5,
+              fontSize: '1rem', lineHeight: 1, color: c.text.tertiary,
+              '&:hover': { color: c.text.primary },
+            }}
+          >
+            &times;
+          </Box>
+        </Box>
       </Snackbar>
     </>
   );
