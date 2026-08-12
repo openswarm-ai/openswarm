@@ -8,10 +8,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { focusGuestForKeys, guestKeyTakeoverCount, resetGuestKeyTakeoverCount } from './focusGuestForKeys.ts';
 
-function fakeWebview(): { focus: () => void; focused: number } {
-  const wv = { focused: 0, focus(): void { wv.focused += 1; } };
-  return wv as { focus: () => void; focused: number };
+function fakeWebview(): { focus: (o?: FocusOptions) => void; focused: number; lastOpts?: FocusOptions } {
+  const wv = {
+    focused: 0,
+    lastOpts: undefined as FocusOptions | undefined,
+    focus(o?: FocusOptions): void { wv.focused += 1; wv.lastOpts = o; },
+  };
+  return wv;
 }
+
+// A docked browser parks off-canvas, and focus() is allowed to scroll its target into view.
+test('the guest is focused without scrolling it into view', () => {
+  const wv = fakeWebview();
+  withActive(userInput, () => focusGuestForKeys(wv as never));
+  assert.equal(wv.lastOpts?.preventScroll, true, 'a bare focus() can drag a parked card into view');
+});
 
 function withActive(el: unknown, fn: () => void): void {
   const doc = globalThis.document as unknown as { activeElement: unknown };

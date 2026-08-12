@@ -641,6 +641,7 @@ const slice = createSlice({
         delete state.runControlPending[action.meta.arg.runId];
       })
       .addCase(fetchRuns.fulfilled, (state, action) => {
+        if (!action.payload || !Array.isArray(action.payload.runs)) return;
         state.runs[action.payload.id] = action.payload.runs;
         for (const r of action.payload.runs) {
           const pending = state.runControlPending[r.id];

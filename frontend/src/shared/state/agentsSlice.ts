@@ -1215,6 +1215,10 @@ const agentsSlice = createSlice({
       })
       .addCase(fetchSessions.fulfilled, (state, action) => {
         state.loading = false;
+        // A wrong-shaped answer must change nothing. Coercing it to [] is precisely the board wipe
+        // (ENG-271); throwing here dies inside immer's produce, which is the "payload is not
+        // iterable" crash. Doing nothing is the only option that is safe in both directions.
+        if (!Array.isArray(action.payload)) return;
         const fetchedIds = new Set(action.payload.map((s) => s.id));
         const activeStatuses = new Set(['running', 'waiting_approval']);
 
@@ -1430,6 +1434,7 @@ const agentsSlice = createSlice({
         state.trackedNotificationIds = state.trackedNotificationIds.filter((id) => id !== sessionId);
       })
       .addCase(fetchHistory.fulfilled, (state, action) => {
+        if (!Array.isArray(action.payload)) return;
         const history: Record<string, HistorySession> = {};
         for (const s of action.payload) {
           history[s.id] = s;

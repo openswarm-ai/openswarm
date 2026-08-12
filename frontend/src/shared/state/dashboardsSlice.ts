@@ -116,6 +116,9 @@ const dashboardsSlice = createSlice({
       })
       .addCase(fetchDashboards.fulfilled, (state, action) => {
         state.loading = false;
+        // This replaces the whole list, so a wrong-shaped answer must not be read as "you have no
+        // dashboards" any more than it should throw inside immer. Keep what we had.
+        if (!Array.isArray(action.payload)) return;
         const items: Record<string, Dashboard> = {};
         for (const d of action.payload) {
           items[d.id] = d;

@@ -33,7 +33,10 @@ export function focusGuestForKeys(wv: BrowserWebview): void {
   const before = typeof document !== 'undefined' ? document.activeElement : null;
   if (before !== (wv as unknown as Element) && p_isUserTextSurface(before)) p_takeovers += 1;
   try {
-    wv.focus();
+    // A docked browser is parked far off-canvas, and a bare focus() is allowed to scroll its target
+    // into view. Measured harmless at left:-100000 (negative clamps to 0), but not for a card parked
+    // the other way, and refusing the scroll costs nothing: keys still land in a parked guest.
+    wv.focus({ preventScroll: true });
   } catch {
     // The card unmounted mid-command. The keystroke will miss, which beats it hitting the user.
   }
