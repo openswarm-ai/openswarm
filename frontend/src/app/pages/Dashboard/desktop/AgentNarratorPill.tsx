@@ -86,6 +86,29 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
         <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'rgba(255,255,255,0.92)' }}>
           {label}
         </Typography>
+        {/* Is this agent still working? Collapsed is the ONE place you cannot tell, because the
+            transcript is not on screen, and "Thinking..." only ever appeared as a last-resort
+            fallback: a running agent showing a widget, todos or a browser shot had no status at all.
+            This lives on the title row, which every pill always has, so it never moves and never
+            competes with the content below it.
+            Present = working, absent = done. Only marking the live ones keeps a row of finished
+            cards completely quiet, which is the state most cards are in most of the time. */}
+        {running && (
+          <Box
+            aria-label="Working"
+            role="status"
+            sx={{
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0, ml: 0.25,
+              background: 'rgba(255,255,255,0.9)',
+              animation: 'osw-pill-alive 1.6s ease-in-out infinite',
+              '@keyframes osw-pill-alive': {
+                '0%, 100%': { opacity: 0.35, transform: 'scale(0.85)' },
+                '50%': { opacity: 1, transform: 'scale(1)' },
+              },
+              '@media (prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.9 },
+            }}
+          />
+        )}
       </Box>
 
       {liveAsk ? (
