@@ -617,9 +617,12 @@ export function useCanvasControls(
     }
   }, [startInertia, springBackIfNeeded, commitLive]);
 
-  // Clean up panning if mouse leaves the window
+  // Releasing the button OUTSIDE the window means our window never sees the mouseup, so the pan latch
+  // stayed armed and the canvas followed the cursor forever, with no way to escape the app (ENG-257).
+  // Enumerating exit paths is whack-a-mole, so the last guard is self-healing: any mouse move with no
+  // button held while we think we are panning proves the latch is stale, and it clears itself.
   useEffect(() => {
-    const onUp = () => {
+    const release = () => {
       if (panStartRef.current) {
         panStartRef.current = null;
         setIsPanning(false);
@@ -627,8 +630,17 @@ export function useCanvasControls(
         commitLive();
       }
     };
-    window.addEventListener('mouseup', onUp);
-    return () => window.removeEventListener('mouseup', onUp);
+    const onStrayMove = (e: MouseEvent) => { if (e.buttons === 0) release(); };
+    window.addEventListener('mouseup', release);
+    window.addEventListener('pointercancel', release);
+    window.addEventListener('blur', release);
+    window.addEventListener('mousemove', onStrayMove, true);
+    return () => {
+      window.removeEventListener('mouseup', release);
+      window.removeEventListener('pointercancel', release);
+      window.removeEventListener('blur', release);
+      window.removeEventListener('mousemove', onStrayMove, true);
+    };
   }, [commitLive]);
 
   useEffect(() => {
