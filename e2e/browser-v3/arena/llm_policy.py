@@ -77,6 +77,9 @@ class LlmPolicy:
     history: list[str] = field(default_factory=list)
     max_history: int = 6
     max_tokens: int = 200
+    # 0.0 removes sampling variance -- measured: same agent, same seed, different runs won
+    # different tasks purely on decode randomness.
+    temperature: float = 1.0
 
     def reset(self, goal: str) -> None:
         self.history = []
@@ -117,6 +120,7 @@ class LlmPolicy:
                     "messages": [{"role": "system", "content": self.system},
                                  {"role": "user", "content": content}],
                     "max_tokens": self.max_tokens,
+                    "temperature": self.temperature,
                     "stream": False,  # the router streams by default; a single action needs no SSE
                 })
                 text = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
@@ -181,7 +185,11 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.fastpath_used = set()
         self.row_names = {}
         self.row_roles = {}
+        self.row_values = {}
         self.picker_done = False
+        self.last_fill_row = 0
+        self.last_fill_val = ""
+        self.fill_retried = False
         self.verified_once = False
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
@@ -193,6 +201,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.index_to_bid = {i: it.bid for i, it in enumerate(shown, 1)}
         self.row_names = {i: it.name for i, it in enumerate(shown, 1)}
         self.row_roles = {i: it.role for i, it in enumerate(shown, 1)}
+        self.row_values = {i: it.value or "" for i, it in enumerate(shown, 1)}
         self.last_new_bids = new
         if self.som:
             extra = obs.get("extra_element_properties") or {}
@@ -308,6 +317,29 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     native_pickers: bool = False
     picker_done: bool = False
     row_roles: dict[int, str] = field(default_factory=dict)
+    # v17a: mechanical fill-verify -- if the previous turn filled a row and the fresh look shows the
+    # row WITHOUT that value, the fill silently failed (JS-heavy inputs eat programmatic fills);
+    # re-issue it once before anything else. Feature-triggered: fires only on observed mismatch.
+    fill_verify: bool = False
+    last_fill_row: int = 0
+    last_fill_val: str = ""
+    fill_retried: bool = False
+
+    def try_fill_verify(self) -> str:
+        if not (self.fill_verify and self.last_fill_row and self.last_fill_val and not self.fill_retried):
+            return ""
+        row_val = ""
+        # row_names carries names; values ride in the rendered view -- check the authoritative map
+        i = self.last_fill_row
+        name = self.row_names.get(i, "")
+        if i in self.row_names and self.last_fill_val.lower() not in (self.row_values.get(i, "") or "").lower():
+            self.fill_retried = True
+            return f'fill({i}, "{self.last_fill_val}")'
+        self.last_fill_row = 0
+        return ""
+
+    row_values: dict[int, str] = field(default_factory=dict)
+
     # v16a: one verification call before the episode's first terminal-looking click -- the measured
     # variance killer (same task passes/fails run to run on a premature submit).
     verify_terminal: bool = False
@@ -360,6 +392,11 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
+        fv = self.try_fill_verify()
+        if fv:
+            d = LlmDecision(action=self.translate(fv), n_interactive=n, note="fill-verify-retry")
+            self.note(fv + "  (mechanical fill retry: value did not stick)", obs)
+            return d
         pk = self.try_native_picker(goal)
         if pk:
             d = LlmDecision(action=self.translate(pk), n_interactive=n, note="native-picker")
@@ -432,9 +469,12 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         d.action = "\n".join(translated)
         for c in chosen_list:
             self.note(c, obs)
-            fm = re.match(r'fill\(\s*\d+\s*,\s*"([^"]+)"', c)
+            fm = re.match(r'fill\(\s*(\d+)\s*,\s*"([^"]+)"', c)
             if fm:
-                self.last_fill = fm.group(1)
+                self.last_fill = fm.group(2)
+                self.last_fill_row = int(fm.group(1))
+                self.last_fill_val = fm.group(2)
+                self.fill_retried = False
         return d
 
 
@@ -598,6 +638,12 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, **v15)
+    if name == "osw-llm-v17":  # v16 + temp0 + mechanical fill-verify; all rungs feature-gated
+        v17 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, temperature=0.0, fill_verify=True, **v17)
     if name == "osw-llm-v16":  # v15 + verify-terminal + look-act-look + rapid-fire cap
         v16 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
