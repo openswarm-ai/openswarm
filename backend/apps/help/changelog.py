@@ -22,7 +22,24 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
-        version="1.7.6",
+        version="1.7.8",
+        headline="A stuck chat unsticks itself, and agents can finally upload files.",
+        highlights=[
+            "Agents can attach a file to an upload field on a website, including the hidden ones sites put behind a styled Choose File button.",
+            "Closing a popped-out browser puts it back in the chat it came from instead of destroying it.",
+            "Copying a chat brings its browser along, so a pasted copy is not missing half of itself.",
+            "Your window keeps the size you gave it, even after the app recovers from a crash.",
+        ],
+        fixes=[
+            "A chat that started failing on \"that request hit a snag\" now recovers on your next message instead of staying broken until you branch it.",
+            "The canvas no longer keeps following your cursor after you release the mouse outside the window.",
+            "Browsers left behind by finished agents are cleaned up instead of piling up and eating memory.",
+            "Google sign-in buttons inside the browser now open a window OpenSwarm can actually complete.",
+            "Dictation says where your words went instead of dropping them silently.",
+        ],
+    ),
+    ReleaseNote(
+        version="1.7.7",
         headline="Agents remember, apps get lighter, and fullscreen stays put.",
         highlights=[
             "Agents can now save facts you tell them and recall them in any later chat. You curate the list in Settings.",
