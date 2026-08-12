@@ -256,6 +256,12 @@ async def service_lifespan():
     except Exception:
         pass
 
+    # Shutdown got all the way here on its own, so stand the fuse down before it fires on a live process.
+    try:
+        from backend.apps.service.shutdown_fuse import disarm_shutdown_fuse
+        disarm_shutdown_fuse()
+    except Exception:
+        pass
     logger.info("Service shut down")
 
 
