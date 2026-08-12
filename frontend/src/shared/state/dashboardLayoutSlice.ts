@@ -131,6 +131,22 @@ export type ClosedCard =
 export type ClosedCardKind = ClosedCard['kind'];
 
 const RECENTLY_CLOSED_CAP = 25;
+// Reopening a chat should drop it back where it was, so we remember closed cards' geometry. Nothing
+// pruned it and it is persisted, so it grew forever and rode every layout save to disk: measured 555
+// entries from 250 closes (the reconcile path records one too, so a close can bill twice). A position
+// from hundreds of cards ago has no value, nobody reopens that, so keep the recent ones and drop the
+// rest. Insertion order on a string-keyed object is the age order we need.
+const CLOSED_POSITIONS_CAP = 50;
+
+function rememberClosedPosition(
+  map: Record<string, CardPosition>, id: string, pos: CardPosition,
+): void {
+  // Re-closing the same card must refresh its age, not keep the stale slot.
+  delete map[id];
+  map[id] = pos;
+  const ids = Object.keys(map);
+  for (let i = 0; i < ids.length - CLOSED_POSITIONS_CAP; i++) delete map[ids[i]];
+}
 
 export interface DashboardLayoutState {
   cards: Record<string, CardPosition>;
@@ -799,7 +815,7 @@ const dashboardLayoutSlice = createSlice({
 
       for (const id of Object.keys(state.cards)) {
         if (!liveIds.has(id)) {
-          state.closedCardPositions[id] = { ...state.cards[id] };
+          rememberClosedPosition(state.closedCardPositions, id, { ...state.cards[id] });
           delete state.cards[id];
           // A dead card must never keep owning a tile: an orphaned 'fullscreen' entry hides ALL chrome until reload.
           delete state.tiledCards[id];
@@ -1779,7 +1795,7 @@ const dashboardLayoutSlice = createSlice({
       state,
       action: PayloadAction<{ sessionId: string; position: CardPosition }>
     ) {
-      state.closedCardPositions[action.payload.sessionId] = action.payload.position;
+      rememberClosedPosition(state.closedCardPositions, action.payload.sessionId, action.payload.position);
     },
 
     replaceDraftId(
