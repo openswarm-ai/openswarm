@@ -106,6 +106,22 @@ the remaining gap: ~22 tasks need purpose-built widget primitives (date/time pic
 canvas geometry, long autocomplete flows), not a stronger model. Their false-claim rate persists
 across every model (16 haiku, 8 sonnet-4-6) -- structural to the JS-evaluate hatch, as predicted.
 
+## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
+
+The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
+on it; CompWoB showed such scores collapse to ~61 on compositional variants). Published
+generic-harness MiniWoB: GPT-5 71.5, GPT-4o 71.3, Claude Sonnet 4 70.7, Claude 3.5 69.8
+(ServiceNow GenericAgent); best published harness lift = Orby +5.1 on the same model (74.9).
+**Ours: v20 86.4 single-run / 91.2 labeled pass@2, zero MiniWoB-specific logic (audited), zero
+false claims -- ~12 points above any published generic agent.** Our data independently confirms
+the survey's core finding at larger scale: harness >> model (our +60 points of harness gains vs
++7 from model tier upgrades on a fixed harness). Claude 5-family public numbers do not exist;
+our sonnet-5/opus-5/fable-5 grid is, as far as known, the first. Per the survey's rubric
+(80-90 "quite strong", 90-95 "extremely robust"), MiniWoB is hereby DEMOTED in this repo to a
+regression/unit suite; realistic-workflow weight moves to WebArena-class benchmarks when infra
+exists. v20 final loss modes: 10 hard-cluster (needs product primitives), 7 truncation-deaths
+(strict-retry halved but did not eliminate them).
+
 ## The full ladder — every version, every technique, its measured worth
 
 | ver | change (source) | rate | med win |
