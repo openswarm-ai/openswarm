@@ -393,6 +393,40 @@ BROWSER_TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "BrowserUploadFile",
+        "description": (
+            "Attach a local file to a file-upload field (resume, photo, document). ALWAYS use this "
+            "instead of clicking an Upload / Choose File / Attach button: clicking one opens the "
+            "operating system's file picker, which is outside the page and which you cannot see or "
+            "control, so the run dead-ends there. This tool fills the field directly, no dialog "
+            "opens, and the page's own change handlers fire exactly as if a human had picked the "
+            "file.\n"
+            "It finds the file input for you even when the site hides it behind a styled button, "
+            "which is the usual design. Pass `index` only to disambiguate when a page has several "
+            "upload fields and the first one is not the one you want.\n"
+            "`path` must be a file the user attached to this chat or one an agent created in its "
+            "workspace; anything else is refused. Verify the result: it reports back the filename "
+            "the page actually received."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path of the local file to attach.",
+                },
+                "index": {
+                    "type": "integer",
+                    "description": (
+                        "Optional. 1-based index from BrowserListInteractives, when the page has "
+                        "more than one upload field. Omit to use the page's first one."
+                    ),
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "BrowserActVerified",
         "description": (
             "Run a short SEQUENCE of dependent UI steps (2-4) in one call, where each "
@@ -807,6 +841,7 @@ ACTION_MAP = {
     "BrowserPressKey": "press_key",
     "BrowserListInteractives": "list_interactives",
     "BrowserClickIndex": "click_index",
+    "BrowserUploadFile": "upload_file",
     "BrowserClickPoint": "click_point",
     "BrowserBatch": "batch",
     "BrowserDetectWebMCP": "detect_webmcp",
@@ -1221,6 +1256,7 @@ ACTION_TOOLS_REQUIRING_REPORT = {
     "BrowserScroll",
     "BrowserEvaluate",
     "BrowserClickIndex",  # Phase 3
+    "BrowserUploadFile",
     "BrowserClickPoint",  # app mode: tap a canvas/game at a screen point
     "BrowserBatch",  # Phase 4
     "BrowserActVerified",  # verified-step sequence (mutates state like a batch)

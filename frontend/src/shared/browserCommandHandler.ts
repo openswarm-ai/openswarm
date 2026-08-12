@@ -12,7 +12,7 @@ import { typeChars, type TypedKeys } from './typeChars';
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'get_console' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'click_point' | 'batch' | 'detect_webmcp' | 'list_routes' | 'replay_route' | 'click_by_name' | 'find_composer';
+export type BrowserAction = 'screenshot' | 'get_text' | 'get_console' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'upload_file' | 'click_point' | 'batch' | 'detect_webmcp' | 'list_routes' | 'replay_route' | 'click_by_name' | 'find_composer';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -1639,6 +1639,78 @@ async function handleClickIndex(wv: BrowserWebview, params: Record<string, any>)
   return result;
 }
 
+// Attach a local file to an <input type="file"> without ever opening the OS picker. A native dialog
+// lives outside the page, so an agent that clicks an Upload button can neither see nor dismiss it and
+// the run dead-ends (ENG-47); CDP fills the field directly and the page's change handlers fire as if
+// a human had picked it. Sites almost always hide the real input behind a styled button, so we find it
+// ourselves rather than trusting a visible-element index.
+async function handleUploadFile(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const path = String(params.path || '');
+  if (!path) return { error: 'path parameter is required' };
+
+  let backendNodeId: number | undefined;
+  let sessionId: string | undefined;
+  const idx = Number(params.index);
+  if (Number.isFinite(idx) && idx >= 1) {
+    try {
+      const cacheBridge = (window as any).openswarm?.cdpCacheGet;
+      const cached = cacheBridge ? await cacheBridge(wv.getWebContentsId()) : null;
+      const entry = cached && cached[idx];
+      if (typeof entry === 'number') backendNodeId = entry;
+      else if (entry && typeof entry === 'object' && entry.backendNodeId != null) {
+        backendNodeId = Number(entry.backendNodeId);
+        sessionId = entry.sessionId || undefined;
+      }
+    } catch { /* fall through to the page-wide search below */ }
+  }
+
+  let found = 0;
+  if (backendNodeId == null) {
+    try {
+      const doc = await sendCdp(wv, 'DOM.getDocument', { depth: 0 });
+      const hits = await sendCdp(wv, 'DOM.querySelectorAll',
+        { nodeId: doc?.root?.nodeId, selector: 'input[type=file]' });
+      const nodeIds: number[] = hits?.nodeIds || [];
+      found = nodeIds.length;
+      if (!found) {
+        return { error: 'No file-upload field on this page. Open the page or dialog that has the upload control first, then retry.' };
+      }
+      const described = await sendCdp(wv, 'DOM.describeNode', { nodeId: nodeIds[0] });
+      backendNodeId = described?.node?.backendNodeId;
+    } catch (err: any) {
+      return { error: `Could not search the page for an upload field (${err?.message || 'DOM query failed'}).` };
+    }
+  }
+  if (backendNodeId == null) return { error: 'Could not resolve the upload field on this page.' };
+
+  try {
+    await sendCdp(wv, 'DOM.setFileInputFiles', { files: [path], backendNodeId }, sessionId);
+  } catch (err: any) {
+    return { error: `Attaching the file failed (${err?.message || 'setFileInputFiles failed'}).` };
+  }
+
+  // Read the filename back off the input. "The command returned OK" is not "the page has the file".
+  try {
+    const resolved = await sendCdp(wv, 'DOM.resolveNode', { backendNodeId }, sessionId);
+    const r = await sendCdp(wv, 'Runtime.callFunctionOn', {
+      objectId: resolved?.object?.objectId,
+      functionDeclaration: 'function() { const f = this.files; return f && f.length ? f[0].name + "|" + f[0].size : ""; }',
+      returnByValue: true,
+    }, sessionId);
+    const receipt = String(r?.result?.value || '');
+    if (!receipt) {
+      return { error: 'The upload field did not accept the file (it reports no file attached). The site may restrict the file type.' };
+    }
+    const [name, size] = receipt.split('|');
+    return {
+      text: `Attached "${name}" (${size} bytes) to the upload field${found > 1 ? ` (page has ${found} upload fields; used the first)` : ''}. The page's change handlers have fired. Any Submit/Save step is still yours to do.`,
+      uploadedName: name,
+    };
+  } catch {
+    return { text: `Sent "${path.split('/').pop()}" to the upload field, but could not read the field back to confirm it took. Check the page before submitting.` };
+  }
+}
+
 // Robust click for REPLAY: re-resolve the target fresh by (role, name) instead of a stale index, so a recorded skill survives index shifts between runs.
 async function handleClickByName(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const wantName = String(params.name || '').trim();
@@ -2294,6 +2366,9 @@ async function runBrowserCommand(
         break;
       case 'list_interactives':
         result = await handleListInteractives(wv, params);
+        break;
+      case 'upload_file':
+        result = await handleUploadFile(wv, params);
         break;
       case 'click_index':
         result = await handleClickIndex(wv, params);

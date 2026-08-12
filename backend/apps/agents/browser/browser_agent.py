@@ -211,6 +211,7 @@ def render_app_controls(describe_value: object) -> tuple[str, str] | None:
 # both BrowserPressKey({key}) and a batch's {"type":"press_key","params":{key}}.
 P_SINGLE_ACTION_TYPE = {
     "BrowserClick": "click", "BrowserClickIndex": "click_index",
+    "BrowserUploadFile": "upload_file",
     "BrowserClickByName": "click_name", "BrowserType": "type",
     "BrowserPressKey": "press_key", "BrowserScroll": "scroll",
     "BrowserNavigate": "navigate", "BrowserClickPoint": "click_point",
@@ -415,6 +416,14 @@ async def p_execute_browser_tool(
         return {"error": f"Unknown browser tool: {tool_name}"}
 
     params = {k: v for k, v in tool_input.items()}
+    # Resolve the upload path HERE, before the command crosses to the renderer, so the only string
+    # the page-driven agent can turn into bytes-on-the-wire is one that already passed the allow-list.
+    if action == "upload_file":
+        from backend.apps.agents.browser.resolve_upload_path import resolve_upload_path, UploadPathRefused
+        try:
+            params["path"] = resolve_upload_path(str(params.get("path") or ""))
+        except UploadPathRefused as p_refused:
+            return {"error": str(p_refused)}
     # Self-healing click toggle + click-effect metric. Threaded for solo clicks AND batches (most clicks are batched, so gating on click_index alone misses them). handleBatch propagates these into its click_index sub-actions.
     if action in ("click_index", "batch"):
         params["selfheal"] = os.environ.get("OSW_SELFHEAL_CLICK", "1") != "0"
@@ -560,7 +569,7 @@ def format_tool_result(result: dict, tool_name: str) -> list[dict]:
 
 # Mutating tools whose results get fresh page state attached (the browser-use loop shape: act, settle, see), so acting and seeing are one turn, not two.
 P_AUTO_STATE_TOOLS = {
-    "BrowserNavigate", "BrowserClick", "BrowserClickIndex", "BrowserClickByName",
+    "BrowserNavigate", "BrowserClick", "BrowserClickIndex", "BrowserClickByName", "BrowserUploadFile",
     "BrowserType", "BrowserPressKey", "BrowserScroll", "BrowserBatch",
 }
 # Matches the frontend's DEFAULT_INTERACTIVE_CAP (interactiveRanking.ts): a shorter cap here silently hid rows 36-60 that an explicit BrowserListInteractives would show, forcing the model to re-list the very elements it just acted on. Delta compression keeps the common attach small, so the worst case (a full 60-row attach) is bounded and rare.
