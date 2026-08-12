@@ -78,10 +78,14 @@ change goals/values, not just RNG). The ~6-point pass@1-vs-pass@2 gap is decode 
 Claude-5 lanes give no temperature control over; the remaining stable losses are the four
 engineering clusters (long forms, pixel precision, console emulation, stateful games).
 
-**AssistantBench (live web, sonnet-5): INVALID pending re-run.** ours read 0.050; browser-use read
-0.000 -- but the bu_real scorer was reading MiniWoB's WOB_REWARD_GLOBAL, which does not exist on
-AssistantBench pages, so its 0.000 is a scoring bug, not a result. Both arms need re-scoring
-through the AssistantBench env reward before any AssistantBench claim is made. Do not cite these.
+**AssistantBench: WITHDRAWN as unmeasurable in this harness (both stacks).** Three distinct plumbing
+faults, not performance: (1) bu_real scored via a MiniWoB-only page global -- fixed; (2) the agent's
+answer must reach the env validator's chat, which neither stack does reliably (browser-use answers
+through its own done(), ours emitted send_msg_to_user on only 5 of 14 clean episodes); (3) live-web
+obs-extraction flakiness burns a third of episodes as infra. Every AssistantBench number here
+(0.050, 0.000) measures answer-delivery plumbing, not research skill -- DO NOT CITE. A valid
+AssistantBench comparison needs the BrowserGym-native agent loop, not our CDP-attach shim. Only
+MiniWoB is a trustworthy measurement in this repo.
 
 v16 (verify-terminal, look-act-look, rapid-fire, sub-step confirm) FINAL: 82.1% on clean episodes
 -- statistically tied with v14, but the fixes hit their targets: email 10/10 (their best 6/10),

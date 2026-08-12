@@ -129,6 +129,11 @@ async def drive(goal: str, cdp_url: str, model: str, endpoint: str, max_steps: i
             stats["claimed_success"] = bool(history.is_successful())
         except Exception:
             stats["claimed_success"] = False
+        try:
+            stats["final_answer"] = str(history.final_result() or "")[:800]
+        except Exception:
+            stats["final_answer"] = ""
+
         usage = getattr(history, "usage", None)
         if usage:
             stats["prompt_tokens"] = int(getattr(usage, "total_prompt_tokens", 0) or 0)
@@ -249,6 +254,13 @@ def main() -> None:
                 stats = drive_in_thread(ep.goal, cdp_url, args.model, args.endpoint,
                                         args.max_steps, args.episode_timeout) if cdp_url else {}
                 ep.wall_s = time.time() - t0
+                # Their answer lives in their own done() action; the suite's validator reads the
+                # env chat. Relay it, or a research suite scores their real answers as silence.
+                if "." in task and stats.get("final_answer"):
+                    try:
+                        env.unwrapped.chat.add_message(role="assistant", msg=stats["final_answer"])
+                    except Exception:
+                        pass
                 try:
                     ep.reward, ep.raw_reward = score(env, task)
                 except Exception as exc:
