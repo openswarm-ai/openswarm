@@ -46,6 +46,14 @@ it — the constraint is flow competence, not steps.
 | sonnet-5 | 76.0% @ 5.5s, 0 false | 63% running @ 42s | their loop DEGRADES on the newest model |
 | **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6; v16 82.1 @ 9.5s | 66.4% @ 28.3s, 2 false (clean re-run; replaces tainted 48.0%*) | ours leads +16 pts at 4.5x speed |
 
+**v18 (feature-dispatched episode modes) FINAL: 85.5% (106/124) @ 9.6s, 0 false claims.**
+The dispatcher did not raise the headline over v17's 85.2 pass@1 mean -- but it transformed the
+category shape: **drag 13/13 (perfect, from 8), email 10/10, click_compound 19/20, spatial 8/13,
+text_entry 15/17**, every one a lead over browser-use's best cell. Forms stayed the only deficit
+(15/22 vs their 18/22): mode routing chooses the right *strategy*, but long transactional flows
+need the missing *primitive* (field-by-field controller with readback), not a better prompt.
+Category ledger vs bu-real-opus5 (66.4%): LEAD 7, tie 1, BEHIND 1.
+
 **v17 (isolation + mechanical fill-verify), two seeds, every episode clean, 0 false claims:**
 
 | protocol | result |
