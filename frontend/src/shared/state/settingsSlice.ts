@@ -51,7 +51,11 @@ export interface AppSettings {
   dev_mode: boolean;
   /** Notification toggles read before firing native notifications. */
   notify_agent_completion?: boolean;
+  notify_agent_errors?: boolean;
   notify_workflow_runs?: boolean;
+  notify_workflow_failures?: boolean;
+  notify_sound?: boolean;
+  notify_when_focused?: boolean;
   allow_experimental_updates: boolean;
   /** Managed subscription state; surfaces only when user has subscribed via cloud. */
   connection_mode?: 'own_key' | 'openswarm-pro' | 'free-trial';

@@ -1,10 +1,13 @@
 // Native notifications for agent completion; fires only when document is hidden (user switched away).
 import { store } from '@/shared/state/store';
+import { notifyWanted, notifyOn, notifyAllowedNow, type NotifyPrefs } from './notifyWanted';
 
-function notificationsEnabled(kind: 'agent' | 'workflow'): boolean {
-  const d = store.getState().settings.data as { notify_agent_completion?: boolean; notify_workflow_runs?: boolean };
-  return kind === 'agent' ? d.notify_agent_completion !== false : d.notify_workflow_runs !== false;
+function prefs(): NotifyPrefs {
+  return store.getState().settings.data as NotifyPrefs;
 }
+
+const on = notifyOn;
+const wanted = (kind: 'agent' | 'workflow', bad: boolean): boolean => notifyWanted(prefs(), kind, bad);
 
 const FIRED_RECENTLY = new Set<string>();
 const COOLDOWN_MS = 30_000;
@@ -30,42 +33,47 @@ export interface AgentCompletionPayload {
   bodyExcerpt?: string;
 }
 
-export function notifyAgentCompletion(p: AgentCompletionPayload): void {
-  if (typeof document === 'undefined') return;
-  if (!notificationsEnabled('agent')) return;
-  // Same-window: skip noise (hidden = tab-switched, minimized, or another BrowserWindow in front).
-  if (!document.hidden) return;
-  if (typeof Notification === 'undefined') return;
-  const perm = ensurePermission();
-  if (perm !== 'granted') return;
+/** Fire one renderer notification. The caller owns the "does the user want this?" decision, so the
+ *  workflow fallback below cannot be silenced by the AGENT toggles the way it used to be. */
+function p_fire(args: { title: string; body: string; tag: string; sessionId: string; dashboardId?: string }): void {
+  if (typeof document === 'undefined' || typeof Notification === 'undefined') return;
+  // Same-window: skip noise (hidden = tab-switched, minimized, or another BrowserWindow in front),
+  // unless the user asked to be told regardless.
+  if (!notifyAllowedNow(prefs(), document.hidden)) return;
+  if (ensurePermission() !== 'granted') return;
 
-  // Per-session debounce: collapse rapid completed/error/completed flips.
-  const key = `${p.sessionId}:${p.status}`;
-  if (FIRED_RECENTLY.has(key)) return;
-  FIRED_RECENTLY.add(key);
-  setTimeout(() => FIRED_RECENTLY.delete(key), COOLDOWN_MS);
-
-  const title = p.status === 'error'
-    ? `${p.sessionName} hit an error`
-    : `${p.sessionName} finished`;
-  const body = (p.bodyExcerpt || '').slice(0, 140);
+  // Per-target debounce: collapse rapid completed/error/completed flips.
+  if (FIRED_RECENTLY.has(args.tag)) return;
+  FIRED_RECENTLY.add(args.tag);
+  setTimeout(() => FIRED_RECENTLY.delete(args.tag), COOLDOWN_MS);
 
   try {
-    const n = new Notification(title, {
-      body,
-      tag: p.sessionId,
-      silent: false,
+    const n = new Notification(args.title, {
+      body: args.body,
+      tag: args.sessionId,
+      silent: !on(prefs().notify_sound),
     });
     n.onclick = () => {
       try { window.focus(); } catch {}
       window.dispatchEvent(new CustomEvent('openswarm:notification-click', {
-        detail: { sessionId: p.sessionId, dashboardId: p.dashboardId },
+        detail: { sessionId: args.sessionId, dashboardId: args.dashboardId },
       }));
       n.close();
     };
   } catch {
     // Notification API can throw if sandboxed or headless; fail silently.
   }
+}
+
+export function notifyAgentCompletion(p: AgentCompletionPayload): void {
+  if (!wanted('agent', p.status === 'error')) return;
+  p_fire({
+    title: p.status === 'error' ? `${p.sessionName} hit an error` : `${p.sessionName} finished`,
+    body: (p.bodyExcerpt || '').slice(0, 140),
+    tag: `${p.sessionId}:${p.status}`,
+    sessionId: p.sessionId,
+    dashboardId: p.dashboardId,
+  });
 }
 
 export type WorkflowNotificationOutcome = 'open' | 'ack' | 'rerun' | 'edit';
@@ -108,13 +116,16 @@ function workflowBodyFor(p: WorkflowRunNotification): string {
 
 /** Native OS notification for a finished workflow run. Prefers the Electron main process, which reaches Notification Center even with the window hidden or the renderer backgrounded; the renderer's own Notification API is the browser-only fallback and it only fires when the tab is hidden. */
 export function notifyWorkflowRun(p: WorkflowRunNotification): void {
-  if (!notificationsEnabled('workflow')) return;
+  if (!wanted('workflow', p.status === 'failure')) return;
   const bridge = typeof window !== 'undefined' ? window.openswarm : undefined;
   if (!bridge?.notify) {
-    notifyAgentCompletion({
+    // Straight to the firer, never back through notifyAgentCompletion: that re-asked the AGENT
+    // toggles, so switching agent notifications off silently took workflow ones with it.
+    p_fire({
+      title: workflowTitleFor(p),
+      body: workflowBodyFor(p),
+      tag: `${p.workflowId}:${p.status}`,
       sessionId: p.sessionId || p.workflowId,
-      sessionName: p.workflowTitle || 'Workflow',
-      status: p.status === 'success' ? 'completed' : 'error',
     });
     return;
   }

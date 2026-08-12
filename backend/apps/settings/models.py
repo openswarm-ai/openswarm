@@ -122,9 +122,15 @@ class AppSettings(BaseModel):
     auto_reveal_sub_agents: bool = True
     dev_mode: bool = False
     allow_experimental_updates: bool = False
-    # Notification toggles read by the renderer before firing native notifications.
+    # Notification toggles read by the renderer before firing native notifications. Each one maps to
+    # a branch the notifier already takes, so none of these is a switch that only looks connected.
     notify_agent_completion: bool = True
+    notify_agent_errors: bool = True
     notify_workflow_runs: bool = True
+    notify_workflow_failures: bool = True
+    notify_sound: bool = True
+    # Off by default: a notification for the window you are already looking at is just noise.
+    notify_when_focused: bool = False
     claude_subscription_token: Optional[str] = None
     openai_subscription_token: Optional[str] = None
     gemini_subscription_token: Optional[str] = None
