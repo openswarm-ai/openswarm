@@ -40,6 +40,9 @@ clear(index) | hover(index) | focus(index) | scroll(dx, dy) | drag_and_drop(from
 For targets with no element of their own (a spot on a canvas, a slider position), use coordinates:
 mouse_click(x, y) | mouse_dblclick(x, y) | mouse_drag_and_drop(from_x, from_y, to_x, to_y)
 For a combobox/listbox row showing options="...", pick with select_option(index, "exact option").
+A row marked `off` is below the fold -- acting on it scrolls it into view automatically, so use it
+directly rather than scrolling blindly. `#k/n` is the row's position inside its repeated group, so
+"the 2nd result/post/story" means the row marked #2/n.
 Prefer filling the box the goal names, then submitting. Do not repeat an action that already worked.
 If an action did not change the page, try a DIFFERENT action, never the same one again."""
 
@@ -198,7 +201,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
         raw_items: list[RankItem] = perception.interactives(
-            obs, include_clickable=self.clickable, attr_hints=self.hints)
+            obs, include_clickable=self.clickable, attr_hints=self.hints,
+            include_offscreen=self.offscreen)
         shown, truncated = rank_and_cap(raw_items, goal=goal)
         new = {it.bid for it in shown} - self.prev_bids if self.prev_bids else set()
         self.prev_bids = {it.bid for it in shown}
@@ -343,6 +347,9 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         return ""
 
     row_values: dict[int, str] = field(default_factory=dict)
+
+    # v19: include below-the-fold rows (the action layer scrolls them into view).
+    offscreen: bool = False
 
     # v18: ensemble dispatcher -- ONE agent, ONE episode, but the rung set is chosen per task from
     # page/goal FEATURES at first sight (never task names). The systematic cross-version wins were
@@ -697,12 +704,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
-    if name == "osw-llm-v18":  # v17 + feature-dispatched episode modes (form/geometry/console/game)
+    if name in ("osw-llm-v18", "osw-llm-v19"):  # v18 + (v19) off-screen rows and group ordinals
         v18 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
-                                  multi_cap=6, fill_verify=True, dispatch=True, **v18)
+                                  multi_cap=6, fill_verify=True, dispatch=True,
+                                  offscreen=(name == "osw-llm-v19"), **v18)
     if name == "osw-llm-v16":  # v15 + verify-terminal + look-act-look + rapid-fire cap
         v16 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

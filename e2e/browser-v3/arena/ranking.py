@@ -47,6 +47,10 @@ class RankItem:
     center: tuple[float, float] | None = None
     # Child option labels for combobox/listbox rows; without them a closed <select> is unactionable.
     options: list[str] | None = None
+    # Rendered but outside the viewport. The action layer scrolls into view automatically, so these
+    # are perfectly actionable -- hiding them made every long feed unsolvable (the @ashlea row the
+    # goal named was simply absent from the menu).
+    offscreen: bool = False
 
 
 def role_priority(role: str) -> int:
@@ -109,6 +113,29 @@ def render(items: list[RankItem], truncated: int, new_bids: set[str] | None = No
     for el in items:
         k = f"{el.role}|{el.name}"
         counts[k] = counts.get(k, 0) + 1
+    # Ordinals inside repeated structures: search results, feed posts, product cards. Counting is
+    # what goals mean by "the 2nd result"; without it the model guesses among interleaved links.
+    ordinals: dict[int, str] = {}
+    by_name: dict[str, list[int]] = {}
+    for i, el in enumerate(items, 1):
+        by_name.setdefault(f"{el.role}|{el.name}", []).append(i)
+    for key, idxs in by_name.items():
+        if len(idxs) > 1:
+            for k, i in enumerate(idxs, 1):
+                ordinals[i] = f" #{k}/{len(idxs)}"
+    run_start, run_role = 0, None
+    runs: list[tuple[int, int, str]] = []
+    for i, el in enumerate(items, 1):
+        if el.role != run_role:
+            if run_role is not None and i - run_start >= 3:
+                runs.append((run_start, i - 1, run_role))
+            run_start, run_role = i, el.role
+    if run_role is not None and len(items) + 1 - run_start >= 3:
+        runs.append((run_start, len(items), run_role))
+    for a, b, _role in runs:
+        for k, i in enumerate(range(a, b + 1), 1):
+            ordinals.setdefault(i, f" #{k}/{b - a + 1}")
+
     lines = []
     for i, el in enumerate(items, 1):
         dup = counts.get(f"{el.role}|{el.name}", 0) > 1
@@ -117,6 +144,7 @@ def render(items: list[RankItem], truncated: int, new_bids: set[str] | None = No
         ctx = f' ctx="{el.context}"' if (dup or weak_name) and el.context else ""
         val = f' value="{el.value}"' if el.value else ""
         star = "*" if new_bids and el.bid in new_bids else ""
+        off = " off" if el.offscreen else ""
         # Coordinates whenever the label alone cannot pin the row; a named button needs no geometry.
         pos = f" center=({el.center[0]:.0f},{el.center[1]:.0f})" if el.center and weak_name else ""
         opts = ""
@@ -124,7 +152,8 @@ def render(items: list[RankItem], truncated: int, new_bids: set[str] | None = No
             shown_opts = el.options[:12]
             more = f" +{len(el.options) - 12}" if len(el.options) > 12 else ""
             opts = f' options="{"|".join(shown_opts)}{more}"'
-        lines.append(f'[{i}]{star}<{el.role} "{el.name}"{ctx}{val}{pos}{opts}>')
+        ordinal = ordinals.get(i, "")
+        lines.append(f'[{i}]{star}<{el.role} "{el.name}"{ctx}{val}{pos}{opts}{ordinal}{off}>')
     head = f"{len(lines)} interactive elements (* = new since your last look):"
     text = head + "\n" + "\n".join(lines)
     if truncated > 0:

@@ -72,7 +72,8 @@ def build_context(nodes: list[dict[str, Any]], by_id: dict[str, dict[str, Any]],
 
 
 def interactives(obs: dict[str, Any], include_hidden: bool = False,
-                 include_clickable: bool = False, attr_hints: bool = False) -> list[RankItem]:
+                 include_clickable: bool = False, attr_hints: bool = False,
+                 include_offscreen: bool = False) -> list[RankItem]:
     """Every actionable node in document order, before any ranking or capping is applied.
 
     include_clickable is the technique ingested from browser-use: elements the page wires for
@@ -98,8 +99,13 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
                         and bool((extra.get(str(bid)) or {}).get("clickable")))
         if not (is_role or is_clickable):
             continue
-        if not include_hidden and not visible(str(bid), extra):
-            continue
+        props = extra.get(str(bid)) or {}
+        onscreen = visible(str(bid), extra)
+        # A row with a bbox is RENDERED; visibility<threshold just means below the fold. display:none
+        # yields no bbox and stays excluded.
+        if not onscreen and not include_hidden:
+            if not (include_offscreen and props.get("bbox")):
+                continue
         name = node_name(n).strip()
         # Nameless rows resolve by their OWN text first ('dignissim' from the child text node), and
         # only then by DOM identity ('(trash)'). The class hint alone made every link in a tab panel
@@ -118,6 +124,7 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
             context=build_context(nodes, by_id, n),
             center=center,
             options=child_options(by_id, n) if role in ("combobox", "listbox", "menu") else None,
+            offscreen=not onscreen,
         ))
     return out
 
