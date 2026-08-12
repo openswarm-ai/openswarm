@@ -125,6 +125,26 @@ export function extractPendingAskUi(messages: Array<{ id: string; role: string; 
   return null;
 }
 
+/** True when real agent work landed AFTER the newest ShowUI, which is what makes that widget stale.
+ *
+ * A tool call or a spoken answer after the widget means the plan it drew has moved on. A widget that
+ * is still the last thing in the transcript is the agent's CURRENT statement, however it is named,
+ * and a long-running skill re-emitting its tracker lands exactly there (ENG-272).
+ */
+export function hasWorkAfterLatestShowUi(messages: Array<{ role: string; content: unknown }>): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'tool_call') {
+      const body = (typeof msg.content === 'object' && msg.content !== null ? msg.content : {}) as { tool?: unknown };
+      // The ShowUI itself ends the scan: anything below it is older than the widget.
+      if (/(^|__)ShowUI$/.test(String(body.tool || ''))) return false;
+      return true;
+    }
+    if (msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.trim()) return true;
+  }
+  return false;
+}
+
 export function extractLatestShowUi(messages: Array<{ role: string; content: unknown }>): ShowUiPayload | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];

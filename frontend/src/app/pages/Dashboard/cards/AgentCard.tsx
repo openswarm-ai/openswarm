@@ -43,7 +43,7 @@ import { openCardContextMenu, isNativeMenuTarget } from '../desktop/openCardCont
 import { agentCardMenuRows } from './agentCardMenuRows';
 import { extractLatestTodos } from '../desktop/agentTodos';
 import { extractLiveSteps } from '../desktop/agentLiveSteps';
-import { extractLatestShowUi, extractPendingAskUi, freezeIfDone, artifactName } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
+import { extractLatestShowUi, extractPendingAskUi, freezeIfDone, artifactName, hasWorkAfterLatestShowUi } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
 import { useDragEndBackstops } from '../hooks/interaction/useDragEndBackstops';
 import { useBrowserPillShot } from '../desktop/useBrowserPillShot';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -724,11 +724,18 @@ const AgentCard: React.FC<Props> = ({
     [session.messages, session.status],
   );
   const pillArtifact = useMemo(() => {
-    const artifact = extractLatestShowUi(session.messages || []);
+    const msgs = session.messages || [];
+    const artifact = extractLatestShowUi(msgs);
     if (!artifact) return null;
-    // A plan/progress widget posted mid-turn goes stale the moment work continues; while running the
-    // pill prefers living surfaces (browser shot, live steps, todos). Answer widgets still win.
-    if (session.status === 'running' && /plan|progress/i.test(artifactName(artifact))) return null;
+    // A plan/progress widget posted mid-turn goes stale the moment work continues, so while running
+    // the pill prefers living surfaces (browser shot, live steps, todos). But "stale" means NOTHING
+    // HAPPENED SINCE, not "it is named plan": a skill whose whole job is a live-updating tracker
+    // re-emits it as the newest thing in the transcript, and hiding that left the collapsed view
+    // showing older state all day (ENG-272). So only suppress it when real work followed it.
+    if (session.status === 'running' && /plan|progress/i.test(artifactName(artifact))
+        && hasWorkAfterLatestShowUi(msgs)) {
+      return null;
+    }
     return freezeIfDone(artifact, session.status === 'running');
   }, [session.messages, session.status]);
   const pillAskPair = useMemo(
