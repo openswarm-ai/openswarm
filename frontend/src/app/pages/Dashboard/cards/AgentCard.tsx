@@ -865,6 +865,21 @@ const AgentCard: React.FC<Props> = ({
         }),
         // contain: streaming chat updates inside don't reflow the dashboard. Skipping `paint` here because the highlighted/selected/glow boxShadows legitimately extend past the card border, `paint` containment would clip those visuals.
         contain: 'layout style',
+        // Every past session on a dashboard IS a card, so a long-lived board mounts hundreds of
+        // pills and pays to render all of them every pan frame. content-visibility lets the browser
+        // skip the ones off screen. Measured at 150 heavy sessions / 161 cards under 4x CPU
+        // throttling: p95 frame gap 80.4ms -> 21.4ms, dropped frames 96 -> 1 (ENG-261).
+        // COLLAPSED cards only, and never a webview host: a skipped guest stops painting, and the
+        // expanded card is the one you are reading. contain-intrinsic-size keeps a skipped card's
+        // box the size it would have been, so tethers and fit-to-view still measure it correctly.
+        ...(pillMode && !expanded && !isFullscreen && !tiledSize ? {
+          contentVisibility: 'auto',
+          // `auto` = remember the size this card last really rendered at, falling back to the guess
+          // only before its first paint. A pill is fit-content/auto sized, so a fixed guess is wrong
+          // for every card and costs a relayout each time one scrolls in: measured 27.8ms p95 with a
+          // fixed guess vs 21.4ms remembering the real size, at 4x throttle.
+          containIntrinsicSize: `auto ${Math.max(1, Math.round(cardWidth))}px auto 120px`,
+        } : {}),
         // Each card gets its own compositor layer; hover-cross used to cost 100-200ms PRESENTATION by re-painting the whole canvas.
         willChange: 'transform',
         width: pillMode ? 'fit-content' : tiledSize ? tiledSize.width : (localResize ? activeW : Math.max(cardWidth, MIN_W)),
