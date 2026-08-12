@@ -34,6 +34,7 @@ export const MARKETPLACE_CARD_ID = 'marketplace';
 export const DEFAULT_MARKETPLACE_CARD_W = DEFAULT_BROWSER_CARD_W;
 export const DEFAULT_MARKETPLACE_CARD_H = DEFAULT_BROWSER_CARD_H;
 export const WORKFLOWS_HUB_ID = 'workflows-hub';
+export const WORKFLOWS_MONITOR_ID = 'workflows-monitor';
 export const EXPANDED_CARD_MIN_H = 620;
 export const GRID_GAP = 24;
 // Gap between the Workflows window and the cards it spawns (run monitor, that monitor's browser). Keeps the hub -> monitor -> browser row evenly spaced.
@@ -256,7 +257,10 @@ interface LayoutPayload {
 function tileOwnerExists(s: DashboardLayoutState, id: string): boolean {
   return id in s.cards || id in s.viewCards || id in s.browserCards || id in s.workflowCards
     || (id === WORKFLOWS_HUB_ID && !!s.workflowsHub) || (id === SETTINGS_CARD_ID && !!s.settingsCard)
-    || (id === MARKETPLACE_CARD_ID && !!s.marketplaceCard);
+    || (id === MARKETPLACE_CARD_ID && !!s.marketplaceCard)
+    // The Run Monitor is a real tileable surface everywhere else in this file; leaving it out here
+    // would silently report its fullscreen as "owner gone" and leave the canvas chrome on top of it.
+    || (id === WORKFLOWS_MONITOR_ID && !!s.workflowsMonitorCard);
 }
 
 function ledgerAdd(ledger: string[], id: string): void {
@@ -2137,6 +2141,18 @@ export const reopenLastClosed = createAsyncThunk(
     dispatch(popClosedCard(entry.uid));
   }
 );
+
+// A card in the `fill` zone covers the whole viewport just like `fullscreen` does, but it is not
+// 'fullscreen', so the canvas chrome stayed up and the tidy/zoom cluster sat directly on the card's
+// composer (measured: 4 controls over a filled card, 0 over a fullscreen one). Anything that hides
+// chrome because a card owns the screen must ask THIS, not the fullscreen question.
+export const selectViewportCoveringCardId = (state: { dashboardLayout: DashboardLayoutState }): string | null => {
+  const s = state.dashboardLayout;
+  const entry = Object.entries(s.tiledCards).find(([, zone]) => zone === 'fullscreen' || zone === 'fill');
+  if (!entry) return null;
+  const id = entry[0];
+  return tileOwnerExists(s, id) && !s.minimizedCards[id] ? id : null;
+};
 
 export const selectFullscreenCardId = (state: { dashboardLayout: DashboardLayoutState }): string | null => {
   const s = state.dashboardLayout;

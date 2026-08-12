@@ -1,7 +1,7 @@
 import React, { useEffect, type RefObject } from 'react';
 import Box from '@mui/material/Box';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { addViewCard, addBrowserTab, clearTiledCard, toggleMinimizeCard, selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
+import { addViewCard, addBrowserTab, clearTiledCard, toggleMinimizeCard, selectFullscreenCardId, selectViewportCoveringCardId } from '@/shared/state/dashboardLayoutSlice';
 import { store } from '@/shared/state/store';
 import { buildDockEntries } from '../desktop/dockEntries';
 import DashboardHeader from './DashboardHeader';
@@ -188,6 +188,8 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   // macOS full screen: one card owns the whole window, every piece of chrome steps aside; Esc exits.
   const dispatch = useAppDispatch();
   const fullscreenCardId = useAppSelector(selectFullscreenCardId);
+  // Chrome hides because a card OWNS THE SCREEN, which `fill` does just as much as `fullscreen`.
+  const screenOwnedByCard = !!useAppSelector(selectViewportCoveringCardId);
   const minimizedCards = useAppSelector((s) => s.dashboardLayout.minimizedCards);
   const anyFullscreen = !!fullscreenCardId;
   const [headerRevealed, setHeaderRevealed] = React.useState(false);
@@ -458,7 +460,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             willChange: 'transform',
             transform: `translate3d(${canvas.panX % dotSpacing}px, ${canvas.panY % dotSpacing}px, 0)`,
             // Arc fullscreen: the float sits on a clean themed ground, the dot texture is canvas-only.
-            display: anyFullscreen ? 'none' : undefined,
+            display: screenOwnedByCard ? 'none' : undefined,
             backgroundImage: gridTileUrl,
             backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
           }}
@@ -517,7 +519,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
       </Box>
 
       {/* display:contents when visible so the overlays' absolute children keep positioning against the canvas root; display:none (not unmount) so the toolbar composer draft survives fullscreen. */}
-      <Box sx={{ display: fullscreenCardId ? 'none' : 'contents' }}>
+      <Box sx={{ display: screenOwnedByCard ? 'none' : 'contents' }}>
       <DashboardOverlays
         anyFullscreen={anyFullscreen}
         canvas={canvas}
