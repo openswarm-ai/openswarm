@@ -704,6 +704,12 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v21":  # v20 + bare-prompt retry (the 7 residual truncation deaths)
+        v21 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True, **v21)
     if name == "osw-llm-v20":  # v19 + strict-retry on unparseable replies + 800-token headroom
         v20 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

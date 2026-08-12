@@ -98,7 +98,7 @@ def make_env(task: str, seed: int, max_steps: int):
     if "." in task:
         import browsergym.assistantbench  # noqa: F401  lazy: HF datasets machinery breaks playwright
     env_id = f"browsergym/{task}" if "." in task else f"browsergym/miniwob.{task}"
-    env = gym.make(env_id, headless=True, max_episode_steps=max_steps)
+    env = gym.make(env_id, headless=os.environ.get("OSW_ARENA_HEADED") != "1", max_episode_steps=max_steps)
     obs, _ = env.reset(seed=seed)
     return env, obs
 
