@@ -304,6 +304,14 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
     else:
         # Track unclassified agent failures too so we stop flying blind on them.
         p_report_model_error("unclassified", session_id, session, turn, e, p_stderr_tail)
+        # Every classified branch above is an EXTERNAL fact (auth, credits, capacity, certs) that a
+        # respawn cannot fix. Landing here instead means the failure may live in this session's own
+        # CLI state, and that state is replayed verbatim on every retry, which is how one chat bricks
+        # forever on "hit a snag" while its siblings are fine (ENG-258). Arm the proven fresh-session
+        # rebuild so the next ordinary send drops the resume transcript and respawns the client; the
+        # user's own retry becomes the cure instead of needing a manual branch.
+        session.needs_fresh_session = True
+        logger.info(f"Agent {session_id}: unclassified failure, next turn rebuilds on a fresh CLI session")
         # The SDK's ProcessError masks the cause behind "Check stderr output for details"; append the scrubbed stderr tail so the card (and its analytics copy) names what actually broke instead of shipping a dead end.
         p_card_text = f"Error: {str(e)}"
         p_cause = redact_for_telemetry(p_stderr_tail, limit=400).strip()

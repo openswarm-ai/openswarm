@@ -83,3 +83,46 @@ def test_informative_error_does_not_get_stderr_appended(monkeypatch):
     session, _ = p_drive_error(monkeypatch, exc, stderr=["irrelevant tail"])
     card = [m for m in session.messages if m.role == "system"][-1].content
     assert "Runtime log tail" not in card
+
+
+# ENG-258: one session bricking on "hit a snag" forever while its siblings run fine. Every classified
+# branch is an external fact a respawn can't fix; the unclassified bucket is the one that can be this
+# session's own poisoned CLI state, replayed identically on every retry. Assert BOTH directions, or
+# "it arms" would pass just as well on a version that arms unconditionally.
+
+def test_unclassified_failure_arms_a_fresh_session_so_the_next_send_self_heals(monkeypatch):
+    session, _ = p_drive_error(
+        monkeypatch, Exception("API Error: 400 invalid_request_error: messages.3: unexpected block")
+    )
+    assert session.needs_fresh_session is True
+
+
+def test_a_dead_resume_transcript_does_not_stay_sticky(monkeypatch):
+    # The real shape of a session bricked by its own CLI state: the resume id no longer resolves, so
+    # every retry replays the same doomed resume until something drops it.
+    session, _ = p_drive_error(
+        monkeypatch, Exception("No conversation found with session ID: 9f3c1a2b-dead-4f00-bbbb-000000000000")
+    )
+    assert session.needs_fresh_session is True
+
+
+def test_out_of_credits_does_not_respawn_the_cli(monkeypatch):
+    session, _ = p_drive_error(
+        monkeypatch, Exception("Your credit balance is too low to run this request")
+    )
+    assert session.needs_fresh_session is False
+
+
+def test_auth_failure_does_not_respawn_the_cli(monkeypatch):
+    session, _ = p_drive_error(monkeypatch, Exception("401 invalid authentication credentials"))
+    assert session.needs_fresh_session is False
+
+
+def test_rate_limit_does_not_respawn_the_cli(monkeypatch):
+    session, _ = p_drive_error(monkeypatch, Exception("429 rate_limit_error: overloaded"))
+    assert session.needs_fresh_session is False
+
+
+def test_missing_cli_binary_does_not_respawn_the_cli(monkeypatch):
+    session, _ = p_drive_error(monkeypatch, Exception(P_FIELD_CLI_MISSING))
+    assert session.needs_fresh_session is False
