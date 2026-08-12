@@ -136,7 +136,12 @@ const RECENTLY_CLOSED_CAP = 25;
 // entries from 250 closes (the reconcile path records one too, so a close can bill twice). A position
 // from hundreds of cards ago has no value, nobody reopens that, so keep the recent ones and drop the
 // rest. Insertion order on a string-keyed object is the age order we need.
-const CLOSED_POSITIONS_CAP = 50;
+//
+// The cap must clear the LARGEST board, not the typical one: a transient empty answer reconciles
+// every card away at once and the restore reads these back, so a cap below the card count silently
+// scatters the overflow into fresh grid cells. Measured at a cap of 50, a 60-card board lost exactly
+// 10 cards, which is why this number is not 50.
+const CLOSED_POSITIONS_CAP = 1000;
 
 function rememberClosedPosition(
   map: Record<string, CardPosition>, id: string, pos: CardPosition,

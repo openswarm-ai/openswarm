@@ -59,7 +59,10 @@ const ReconnectingPill: React.FC = () => {
   // centre (measured: centre 834 vs viewport centre 700). No transform, nothing to clobber.
   return createPortal(
     <Box sx={{ position: 'fixed', bottom: 16, left: 0, right: 0, zIndex: 1400, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-    <Grow in={show} unmountOnExit>
+    {/* Asymmetric on purpose: the pill arrives quickly because it is answering a question you already
+        have, and leaves slowly so the resolution registers as calm rather than a flicker. One element
+        that changes its contents, never two pills swapping, so nothing on screen appears to move. */}
+    <Grow in={show} unmountOnExit timeout={{ enter: 180, exit: 420 }}>
       <Box
         onClick={showProblem ? () => window.location.reload() : undefined}
         role={showProblem ? 'button' : 'status'}
@@ -90,12 +93,19 @@ const ReconnectingPill: React.FC = () => {
             </Typography>
           </>
         ) : (
-          <>
+          <Box sx={{
+            display: 'flex', alignItems: 'center', gap: 1,
+            animation: 'oswSettle 240ms ease-out',
+            '@keyframes oswSettle': {
+              from: { opacity: 0 },
+              to: { opacity: 1 },
+            },
+          }}>
             <CheckRoundedIcon sx={{ fontSize: 16, color: c.status.success }} />
             <Typography sx={{ fontSize: '0.8125rem', color: c.text.primary, fontWeight: 500 }}>
               Reconnected
             </Typography>
-          </>
+          </Box>
         )}
       </Box>
     </Grow>
