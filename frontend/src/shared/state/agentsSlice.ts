@@ -209,6 +209,22 @@ export const fetchSessions = createAsyncThunk(
   },
 );
 
+// Persist a model switch so the heal sticks: updateSessionModel is store-only, and the metadata
+// poll re-hydrates the dead model from disk, which is why the "switched to X" notice repeated
+// forever for anyone holding a chat pinned to a retired model.
+export const persistSessionModel = createAsyncThunk(
+  'agents/persistSessionModel',
+  async ({ sessionId, model }: { sessionId: string; model: string }) => {
+    const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    if (!res.ok) throw new Error(`model persist failed: ${res.status}`);
+    return { sessionId, model };
+  },
+);
+
 export const launchAgent = createAsyncThunk('agents/launchAgent', async (config: AgentConfig) => {
   const res = await fetch(`${AGENTS_API}/launch`, {
     method: 'POST',

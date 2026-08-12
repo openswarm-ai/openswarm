@@ -648,6 +648,28 @@ async def update_output(output_id: str, body: OutputUpdate):
     return {"ok": True, "output": output.model_dump()}
 
 
+@outputs.router.get("/orphan-workspaces")
+async def list_orphans():
+    """App folders on disk that no record points at, with what deleting them would free."""
+    from backend.apps.outputs.orphan_workspaces import list_orphan_workspaces
+    items = list_orphan_workspaces()
+    return {
+        "items": [i.model_dump(mode="json") for i in items],
+        "total_reclaimable_bytes": sum(i.reclaimable_bytes for i in items),
+    }
+
+
+@outputs.router.delete("/orphan-workspaces/{workspace_id}")
+async def delete_orphan(workspace_id: str):
+    """Delete ONE orphan, by explicit id. Never a sweep: the orphan recoverer re-registers folders
+    that still carry a real name, so an unattended cleaner would race it and destroy real work."""
+    from backend.apps.outputs.orphan_workspaces import delete_orphan_workspace
+    freed = delete_orphan_workspace(workspace_id)
+    if freed is None:
+        raise HTTPException(status_code=404, detail="Not a deletable orphan workspace")
+    return {"ok": True, "workspace_id": workspace_id, "freed_bytes": freed}
+
+
 @outputs.router.delete("/{output_id}")
 async def delete_output(output_id: str):
     output = load(output_id)

@@ -129,6 +129,32 @@ async def get_session(session_id: str):
     payload["event_seq"] = event_seq
     return payload
 
+@agents.router.post("/sessions/{session_id}/model")
+async def set_session_model(session_id: str, body: dict):
+    """Pin a session to a different model, on disk.
+
+    The renderer already switched sessions off a retired model in its own store, but that write was
+    store-only, so the next metadata poll re-hydrated the dead model from disk and the "switched to
+    X" notice fired again, forever (the retired-Fable reports). Persisting it makes the heal stick
+    after one pass.
+    """
+    model = str((body or {}).get("model") or "").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+    session = agent_manager.get_session(session_id)
+    if not session:
+        try:
+            session = await agent_manager.resume_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session not found")
+    session.model = model
+    from backend.apps.agents.manager.session.session_store import save_session
+    doc_data = session.model_dump(mode="json")
+    doc_data["search_text"] = agent_manager.build_search_text(session)
+    save_session(session_id, doc_data)
+    return {"ok": True, "session_id": session_id, "model": model}
+
+
 @agents.router.post("/launch")
 async def launch_agent(config: AgentConfig):
     session = await agent_manager.launch_agent(config)

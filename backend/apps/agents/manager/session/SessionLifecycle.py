@@ -236,7 +236,7 @@ class SessionLifecycle(AgentManagerProtocol):
             return list(self.sessions.values())
         # Memory first, then promote on-disk sessions for this dashboard, but ONLY ones the dashboard's layout still has a card for. A session keeps its dashboard_id when its card is deleted, so promoting by tag alone resurrected deleted chats on every reopen; the layout's cards are the real source of truth for what's on the board. Imported sessions ARE in the layout, so they still surface, and this bounds the disk read to once per session per run, like resume_session.
         result = [s for s in self.sessions.values() if s.dashboard_id == dashboard_id]
-        card_ids = self.p_dashboard_card_ids(dashboard_id)
+        card_ids = self.dashboard_card_ids(dashboard_id)
         for sid, data in load_all_session_data():
             # Skip anything already in memory (not just this dashboard's slice): promoting a stale disk copy over a live session would clobber its in-flight state.
             if sid in self.sessions or sid not in card_ids:
@@ -254,7 +254,7 @@ class SessionLifecycle(AgentManagerProtocol):
         return result
 
     @typechecked
-    def p_dashboard_card_ids(self, dashboard_id: str) -> Set[str]:
+    def dashboard_card_ids(self, dashboard_id: str) -> Set[str]:
         """Session ids the dashboard's layout currently has agent cards for.
         Read straight off disk (no dashboards-module import, avoids a cycle).
 

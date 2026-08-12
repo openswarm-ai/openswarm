@@ -90,6 +90,7 @@ CROSS_ENTITY_REFERENCES: List[EntityReference] = [
     EntityReference(module="backend.apps.outputs.models", model="AgentCreateAppRequest", field="parent_session_id", target=EntityKind.SESSION),
     EntityReference(module="backend.apps.outputs.models", model="Output", field="session_id", target=EntityKind.SESSION),
     EntityReference(module="backend.apps.outputs.models", model="Output", field="workspace_id", target=EntityKind.WORKSPACE),
+    EntityReference(module="backend.apps.outputs.orphan_workspaces", model="OrphanWorkspace", field="workspace_id", target=EntityKind.WORKSPACE),
     EntityReference(module="backend.apps.outputs.models", model="OutputCreate", field="session_id", target=EntityKind.SESSION),
     EntityReference(module="backend.apps.outputs.models", model="OutputCreate", field="workspace_id", target=EntityKind.WORKSPACE),
     EntityReference(module="backend.apps.outputs.models", model="OutputExecute", field="output_id", target=EntityKind.OUTPUT),

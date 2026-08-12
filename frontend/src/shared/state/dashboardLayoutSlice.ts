@@ -783,6 +783,10 @@ const dashboardLayoutSlice = createSlice({
       delete state.cards[action.payload];
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      // zOrders had three writers and no deleter, so every card ever focused stayed in it forever,
+      // and it is PERSISTED: the entry rode every layout save to disk and back on every fetch. Small
+      // per row, unbounded over a long-lived board.
+      delete state.zOrders[action.payload];
       ledgerRemove(state.creationOrder, action.payload);
     },
 
@@ -800,6 +804,7 @@ const dashboardLayoutSlice = createSlice({
           // A dead card must never keep owning a tile: an orphaned 'fullscreen' entry hides ALL chrome until reload.
           delete state.tiledCards[id];
           delete state.minimizedCards[id];
+          delete state.zOrders[id];
           ledgerRemove(state.creationOrder, id);
         }
       }
@@ -983,6 +988,7 @@ const dashboardLayoutSlice = createSlice({
       delete state.viewCards[action.payload];
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      delete state.zOrders[action.payload];
       ledgerRemove(state.creationOrder, action.payload);
       if (state.activeViewCardId === action.payload) state.activeViewCardId = null;
     },
@@ -992,7 +998,10 @@ const dashboardLayoutSlice = createSlice({
     },
 
     addBrowserCard(state, action: PayloadAction<{ url: string; expandedSessionIds?: string[]; x?: number; y?: number }>) {
-      const id = `browser-${Date.now().toString(36)}`;
+      // Two browsers created in the same millisecond used to get the SAME id and the second
+      // silently overwrote the first: measured, adding 8 in a loop produced 6. generateTabId three
+      // lines up already learned this; the card id never did.
+      const id = `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const tabId = generateTabId();
       // Caller may pre-resolve the spawn position (beside the selected card, or in front of the viewport); otherwise fall back to the top-left grid scan.
       const pos = action.payload.x != null && action.payload.y != null
@@ -1088,6 +1097,7 @@ const dashboardLayoutSlice = createSlice({
       delete state.endingBrowserCards[action.payload];
       delete state.tiledCards[action.payload];
       delete state.minimizedCards[action.payload];
+      delete state.zOrders[action.payload];
       ledgerRemove(state.creationOrder, action.payload);
     },
 

@@ -11,7 +11,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSettings, updateSettingsPatch, markFreeTrialArmSettled } from '@/shared/state/settingsSlice';
 import { fetchSubscriptionStatus } from '@/shared/state/subscriptionsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
-import { updateSessionModel } from '@/shared/state/agentsSlice';
+import { updateSessionModel, persistSessionModel } from '@/shared/state/agentsSlice';
 import { API_BASE } from '@/shared/config';
 import {
   setAppVersion,
@@ -410,6 +410,8 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
           switched = true;
         }
         dispatch(updateSessionModel({ sessionId: sess.id, model: target }));
+        // Write it through, or the poll re-hydrates the dead model and we are back here next tick.
+        void dispatch(persistSessionModel({ sessionId: sess.id, model: target }));
       }
     }
     if (switched) {

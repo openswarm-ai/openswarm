@@ -3,7 +3,7 @@
 The wipe chain, reproduced live on 2026-08-12 (it destroyed a real dev dashboard): the sessions
 list answering [] is treated as AUTHORITY by the renderer, which strips its store, deletes every
 card, and the debounced layout save persists the wipe. Card-less sessions are never promoted from
-disk again, so one wrong [] is permanent. p_dashboard_card_ids used to swallow every exception into
+disk again, so one wrong [] is permanent. dashboard_card_ids used to swallow every exception into
 an empty set, which turned a garbled or half-written dashboard file (a crash mid-save is exactly
 the world ENG-244/246 live in) into that wrong []. Missing file stays a real empty board.
 """
@@ -25,13 +25,13 @@ def dash_dir(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 def test_a_missing_dashboard_file_is_a_real_empty_board(dash_dir: str) -> None:
-    assert agent_manager.p_dashboard_card_ids("no-such-dashboard") == set()
+    assert agent_manager.dashboard_card_ids("no-such-dashboard") == set()
 
 
 def test_a_readable_dashboard_yields_its_card_ids(dash_dir: str) -> None:
     with open(os.path.join(dash_dir, "d1.json"), "w", encoding="utf-8") as f:
         json.dump({"layout": {"cards": {"s1": {"session_id": "s1"}, "s2": {"session_id": "s2"}}}}, f)
-    assert agent_manager.p_dashboard_card_ids("d1") == {"s1", "s2"}
+    assert agent_manager.dashboard_card_ids("d1") == {"s1", "s2"}
 
 
 def test_a_garbled_dashboard_file_fails_loud_instead_of_answering_empty(dash_dir: str) -> None:
@@ -39,7 +39,7 @@ def test_a_garbled_dashboard_file_fails_loud_instead_of_answering_empty(dash_dir
     with open(os.path.join(dash_dir, "d2.json"), "w", encoding="utf-8") as f:
         f.write('{"layout": {"cards": {')
     with pytest.raises(Exception):
-        agent_manager.p_dashboard_card_ids("d2")
+        agent_manager.dashboard_card_ids("d2")
 
 
 def test_get_all_sessions_propagates_the_read_error(dash_dir: str) -> None:
