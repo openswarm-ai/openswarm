@@ -20,9 +20,6 @@ def thinking_params_for(api: str, level: str, model_id: str = "") -> dict | None
 
     if level == "off":
         if api == "anthropic":
-            # Fable 5 400s on an explicit thinking:disabled; omit the param to turn thinking off (off is its default). Other Claude models accept it.
-            if "fable" in model_id:
-                return None
             return {"thinking": {"type": "disabled"}}
         if api == "codex":
             return {"reasoning": {"effort": "none"}}

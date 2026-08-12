@@ -285,7 +285,7 @@ def p_friendly_model(raw: str) -> str:
     base = (raw or "unknown").removesuffix("-cc")
     names = {
         "opus-5": "Claude Opus 5", "opus": "Claude Opus", "sonnet-5": "Claude Sonnet 5",
-        "sonnet": "Claude Sonnet", "haiku": "Claude Haiku", "fable-5": "Claude Fable 5",
+        "sonnet": "Claude Sonnet", "haiku": "Claude Haiku",
     }
     if base in names:
         return names[base]

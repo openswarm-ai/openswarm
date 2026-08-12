@@ -216,9 +216,7 @@ def inject_thinking_options(options_kwargs: Dict, session: AgentSession, prompt:
             level = "off"
         if api_type == "anthropic":
             if level == "off":
-                # Fable 5 400s on an explicit thinking:disabled; off is its default (omit the param).
-                if not (isinstance(resolved_model, str) and "fable" in resolved_model):
-                    options_kwargs["thinking"] = {"type": "disabled"}
+                options_kwargs["thinking"] = {"type": "disabled"}
             elif level in ("low", "medium", "high"):
                 options_kwargs["effort"] = level
         elif api_type in ("openai", "codex"):

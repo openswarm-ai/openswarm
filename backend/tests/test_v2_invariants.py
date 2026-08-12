@@ -668,16 +668,19 @@ def test_banned_models_not_offered():
     can't serve it, AI Studio key 429s pro-preview. (gpt-5.5's cx entry left
     this list 2026-07-26: the pinned 0.3.60's old 404 healed upstream and a
     live probe returned a real completion, so both its lanes work. Fable 5
-    left 2026-07-02 after its ban lifted.)"""
+    left 2026-07-02 after its ban lifted, and came BACK 2026-08-12: it was
+    selectable and simply did not work, and Opus covers the same ground.)"""
     from backend.apps.agents.providers.registry import BUILTIN_MODELS
     all_values = {m["value"] for models in BUILTIN_MODELS.values() for m in models}
-    for dead in ("gemini-3.1-pro", "gemini-3.1-pro-api", "gemini-3-flash", "gemini-3-flash-api"):
+    for dead in ("gemini-3.1-pro", "gemini-3.1-pro-api", "gemini-3-flash", "gemini-3-flash-api",
+                 "fable-5-cc", "fable-5-api"):
         assert dead not in all_values, f"{dead} is back in the picker"
     assert "gpt-5.5-api" in all_values
     assert "gpt-5.5" in all_values  # cx lane restored 2026-07-26 (live-probed)
     # No '3.1 pro' label survives in any provider group either.
     all_labels = " | ".join(m["label"].lower() for models in BUILTIN_MODELS.values() for m in models)
     assert "3.1 pro" not in all_labels
+    assert "fable" not in all_labels
     assert "gemini 3 flash" not in all_labels
 
 

@@ -757,7 +757,7 @@ async def list_models():
                     r["label"] += " (API key)"
                 r["billing_kind"] = "api_key"
                 r["is_free"] = False
-            # Models that only exist on the API-key route (Fable 5, whose sub route 404s on our pinned 9Router) have no adaptive twin to relabel, so add them or they vanish.
+            # Models that only exist on the API-key route have no adaptive twin to relabel, so add them or they vanish.
             adaptive_ids = {m.get("model_id") for m in adaptive}
             api_only = [m for m in api_variants if m.get("model_id") not in adaptive_ids]
             rows = p_serialize(api_only) + rows
@@ -765,7 +765,7 @@ async def list_models():
             # Only a sub: the adaptive rows route through 9router's cc/ lane, so they're covered by the subscription, not pay-per-use.
             for r in rows:
                 r["billing_kind"] = "subscription"
-            # Sub-only models with no adaptive twin (Fable 5) won't ride the relabeled rows, so add their cc/ entry.
+            # Sub-only models with no adaptive twin won't ride the relabeled rows, so add their cc/ entry.
             adaptive_ids = {m.get("model_id") for m in adaptive}
             cc_only = [m for m in cc_variants if m.get("model_id") not in adaptive_ids]
             rows = p_serialize(cc_only) + rows

@@ -78,6 +78,12 @@ def migrate_legacy_fields(raw: dict) -> dict:
         raw["connection_mode"] = "openswarm-pro"
     if "openswarm_auth_token" in raw and "openswarm_bearer_token" not in raw:
         raw["openswarm_bearer_token"] = raw.pop("openswarm_auth_token")
+    # The free tier is retired. Nothing arms it any more, but installs that already carry the mode
+    # would otherwise keep it forever, and with it the silent mid-run pin to Haiku. Move them to
+    # own_key so the model they picked is the model they get.
+    if raw.get("connection_mode") == "free-trial":
+        raw["connection_mode"] = "own_key"
+        raw.pop("free_trial_token", None)
     return raw
 
 

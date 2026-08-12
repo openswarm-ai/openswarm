@@ -6,8 +6,6 @@ from __future__ import annotations
 # --------------------------------------------------------------------------- Curated model tiers; Intelligence, Speed, Cost on a 1-5 scale --------------------------------------------------------------------------- Hand-tuned from public benchmarks + per-token pricing (knowledge cutoff Jan 2026). The tier numbers serve the picker hover card so users can pick a model that fits the task without reading a leaderboard. Intelligence:  5 = frontier reasoner, 1 = nano / specialised tiny Speed:         5 = sub-second TTFT + 250 tok/s, 1 = slow + thinking Cost:          5 = $25+/M output, 1 = under $0.50/M output (or free) Lookup order (compute_tiers below): 1. Bare model_id direct 2. ":free" stripped (so anthropic/claude-opus-4.7:free shares scoring with anthropic/claude-opus-4.7) 3. Vendor-prefixed and bare-after-slash variants for cross-format coverage (so "claude-opus-4-7" matches "anthropic/claude-opus-4.7") 4. Last-path-component normalised (dashes ↔ dots) Models not in this map fall through to a heuristic that uses cost bucket + reasoning flag + name-keyword adjustments. (intelligence, speed, cost) on a 1-5 scale. Tiers: 5 frontier, 4 top open / strong sub, 3 solid mid, 2 small specialised, 1 nano.
 MODEL_TIERS: dict[str, tuple[int, int, int]] = {
     # Anthropic
-    "claude-fable-5":               (5, 2, 5),
-    "anthropic/claude-fable-5":     (5, 2, 5),
     "claude-opus-4-8":              (5, 2, 5),
     "claude-opus-4.8":              (5, 2, 5),
     "anthropic/claude-opus-4.8":    (5, 2, 5),

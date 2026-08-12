@@ -71,10 +71,6 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
          "model_id": "claude-haiku-4-5", "router_model_id": "cc/claude-haiku-4-5-20251001", "api": "anthropic", "reasoning": True, "route": "cc"},
 
         # Fable 5 re-added 2026-07-02 after the ban lifted (Eric confirmed access is back); pull both rows again if it errors live.
-        {"value": "fable-5-cc", "label": "Claude Fable 5", "context_window": 1_000_000,
-         "model_id": "claude-fable-5", "router_model_id": "cc/claude-fable-5", "api": "anthropic", "reasoning": True, "route": "cc"},
-        {"value": "fable-5-api", "label": "Claude Fable 5 (API key)", "context_window": 1_000_000,
-         "model_id": "claude-fable-5", "router_model_id": "claude-fable-5", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-5-api", "label": "Claude Opus 5 (API key)", "context_window": 1_000_000,
          "model_id": "claude-opus-5", "router_model_id": "claude-opus-5", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-4-8-api", "label": "Claude Opus 4.8 (API key)", "context_window": 1_000_000,
@@ -263,9 +259,6 @@ def p_antigravity_connected() -> bool:
 
 def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     """Short model name → id string for ClaudeAgentOptions."""
-    # Free trial funds only Haiku via the cloud proxy; force it so a session left on a gpt-*/sub model can't escape to a lane the trial can't fund (which snags as a 401/404).
-    if getattr(settings, "connection_mode", "own_key") == "free-trial":
-        short_name = "haiku"
     entry = find_builtin_model(short_name)
     if entry is None:
         return short_name
@@ -410,7 +403,6 @@ COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("Anthropic", "opus-4-7"): (5.0, 25.0),
     ("Anthropic", "opus-4-8"): (5.0, 25.0),
     ("Anthropic", "opus-5"): (5.0, 25.0),
-    ("Anthropic", "fable-5-api"): (10.0, 50.0),
     ("Anthropic", "haiku"): (1.0, 5.0),
     # OpenAI API-key rates (GPT-5.6 tiers, GA 2026-07-09)
     ("OpenAI", "gpt-5.6-api"): (5.0, 30.0),
