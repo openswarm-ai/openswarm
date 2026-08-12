@@ -106,6 +106,15 @@ the remaining gap: ~22 tasks need purpose-built widget primitives (date/time pic
 canvas geometry, long autocomplete flows), not a stronger model. Their false-claim rate persists
 across every model (16 haiku, 8 sonnet-4-6) -- structural to the JS-evaluate hatch, as predicted.
 
+## Champion: v22 -- 89.6% single-run, the structural-fix payoff
+
+Action-first reply order (truncation structurally impossible) + every prior rung: **112/125 =
+89.6% @ 8.5s median, 0 false claims** -- +3.2 over v20, one task from the 90 line. book-flight
+fell for the FIRST time in 20+ sweeps (forms 19/22); drag 13/13 and email 10/10 remain perfect.
+The 13 residual losses are the irreducible product-primitive cluster (games, console, precision
+geometry, two long forms) plus a residual empty-reply subclass (model prose with no action at
+all -- prefill-forcing is the structural close). Seed-43 confirmation in flight.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
