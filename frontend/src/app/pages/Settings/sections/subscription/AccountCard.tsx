@@ -8,6 +8,7 @@ import { signOut } from '@/shared/state/settingsSlice';
 import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import SignInDialog from '@/app/components/overlays/SignInDialog';
+import { googleStartUrl } from '@/shared/googleStartUrl';
 
 /** Account card at top of General tab; three states: signed in, paid-but-unlinked, or not signed in. */
 const AccountCard: React.FC = () => {
@@ -46,11 +47,10 @@ const AccountCard: React.FC = () => {
   const onSignIn = () => {
     // Pass local_port so the bearer-handoff page POSTs to the right backend (Electron binds in 8324..8424).
     const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
-    const params = new URLSearchParams({
-      install_id: installId,
-      local_port: String(localPort),
-    });
-    const startUrl = proxyUrl.replace(/\/$/, '') + '/api/auth/google/start?' + params.toString();
+    const startUrl = googleStartUrl(proxyUrl, installId, localPort);
+    // No error surface on this card, so the honest move is to do nothing visible rather than send
+    // them to a black cloud error page. Settings land within a second and the click then works.
+    if (!startUrl) return;
     const api = (window as any).openswarm;
     if (api?.openExternal) api.openExternal(startUrl);
     else window.open(startUrl, '_blank');

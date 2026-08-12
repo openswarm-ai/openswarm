@@ -19,6 +19,7 @@ import { activateSignin, fetchSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
+import { googleStartUrl } from '@/shared/googleStartUrl';
 
 type Stage = 'choose' | 'email_form' | 'code_form';
 
@@ -50,11 +51,11 @@ export default function SignInDialog({ onClose, initialStage = 'choose', mandato
   const onGoogle = () => {
     report('signin', 'google_clicked');
     const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
-    const params = new URLSearchParams({
-      install_id: installId,
-      local_port: String(localPort),
-    });
-    const startUrl = `${cloudBase}/api/auth/google/start?${params.toString()}`;
+    const startUrl = googleStartUrl(cloudBase, installId, localPort);
+    if (!startUrl) {
+      setErrMsg('Still finishing startup. Give it a second and try again.');
+      return;
+    }
     const api = (window as any).openswarm;
     if (api?.openExternal) {
       api.openExternal(startUrl);

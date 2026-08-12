@@ -11,6 +11,7 @@ import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import SignInDialog from '@/app/components/overlays/SignInDialog';
 import OnboardingLogo from '../OnboardingLogo';
 import BeatShell from './BeatShell';
+import { googleStartUrl } from '@/shared/googleStartUrl';
 
 // The account gate: users sign in (Google or email) before anything else, so the free trial and their
 // setup are tied to a real account. Google hands off through the external browser and lands out-of-band
@@ -27,6 +28,7 @@ const BeatSignIn: React.FC<{
   const proxyUrl = useAppSelector((s) => s.settings.data.openswarm_proxy_url || OPENSWARM_DEFAULT_PROXY_URL);
   const installId = useAppSelector((s) => s.settings.data.installation_id ?? '');
   const [waitingGoogle, setWaitingGoogle] = useState(false);
+  const [notReady, setNotReady] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const signedIn = !!userId;
 
@@ -40,8 +42,11 @@ const BeatSignIn: React.FC<{
     if (signedIn) return;
     report('signin', 'google_clicked');
     const localPort = (window as unknown as { __OPENSWARM_PORT__?: number }).__OPENSWARM_PORT__ || 8324;
-    const params = new URLSearchParams({ install_id: installId, local_port: String(localPort) });
-    const startUrl = `${proxyUrl.replace(/\/$/, '')}/api/auth/google/start?${params.toString()}`;
+    const startUrl = googleStartUrl(proxyUrl, installId, localPort);
+    // First run is exactly when settings may not have landed yet, so this beat is the likeliest
+    // place to catch a not-ready install. Say so on the row instead of opening a broken page.
+    if (!startUrl) { setNotReady(true); return; }
+    setNotReady(false);
     const api = (window as unknown as { openswarm?: { openExternal?: (u: string) => void } }).openswarm;
     if (api?.openExternal) api.openExternal(startUrl);
     else window.open(startUrl, '_blank');
@@ -49,7 +54,7 @@ const BeatSignIn: React.FC<{
   };
 
   const rows: Array<{ id: string; name: string; icon: React.ReactNode; onClick: () => void; hint?: string }> = [
-    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 20, color: '#4285F4' }} />, onClick: onGoogle, hint: waitingGoogle && !signedIn ? 'Waiting for your browser...' : undefined },
+    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 20, color: '#4285F4' }} />, onClick: onGoogle, hint: notReady ? 'Still starting up, try again in a second' : (waitingGoogle && !signedIn ? 'Waiting for your browser...' : undefined) },
     { id: 'email', name: 'Continue with email', icon: <EmailIcon sx={{ fontSize: 20, color: '#6f6e6a' }} />, onClick: () => { if (!signedIn) setEmailOpen(true); } },
   ];
 
