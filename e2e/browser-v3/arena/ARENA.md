@@ -44,7 +44,14 @@ it — the constraint is flow competence, not steps.
 | haiku-4-5 | 71.2% @ 4.8s, 0 false (v10: 75.2% @ 5.2s) | 69.6% @ 44.5s, 16 false | ours leads all axes |
 | sonnet-4-6 | **77.6% @ 6.5s, 0 false** | 74.4% @ 37.4s, 8 false | ours leads all axes |
 | sonnet-5 | 76.0% @ 5.5s, 0 false | 63% running @ 42s | their loop DEGRADES on the newest model |
-| **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6 with 3 first-ever solves | pending fair run | ours scales with the model |
+| **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6; v16 82.1 @ 9.5s | 48.0%* tainted; clean re-run in flight | ours scales with the model |
+
+v16 (verify-terminal, look-act-look, rapid-fire, sub-step confirm) FINAL: 82.1% on clean episodes
+-- statistically tied with v14, but the fixes hit their targets: email 10/10 (their best 6/10),
+text_entry 16/17, click_basic 12/13. The wins moved WHERE predicted while the untouched hard
+cluster (long forms, games, terminal) stayed lost. Demonstrated opus union across v14|v15|v16:
+**112/125 = 89.6%** -- the architecture solves ~90% of the suite; single-run selection of which
+90% is now the binding constraint (pass@k or an ensemble-of-rungs closes it).
 
 Opus-run union (v14 ∪ v15): **107/125 = 85.6%** — the demonstrated architecture ceiling; the
 82% single-run number vs the 85.6% union is single-seed variance (±4-5 tasks), and closing THAT
