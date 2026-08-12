@@ -189,7 +189,20 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   const dispatch = useAppDispatch();
   const fullscreenCardId = useAppSelector(selectFullscreenCardId);
   // Chrome hides because a card OWNS THE SCREEN, which `fill` does just as much as `fullscreen`.
-  const screenOwnedByCard = !!useAppSelector(selectViewportCoveringCardId);
+  const coveringCardId = !!useAppSelector(selectViewportCoveringCardId);
+  // Exiting holds the chrome down through the card's shrink animation; flipping it back on the
+  // state change painted tidy/zoom on top of a still-nearly-fullscreen card for a few hundred ms.
+  const [chromeHeld, setChromeHeld] = React.useState(false);
+  // Idempotent on purpose: a ref-transition version stranded the hold forever under StrictMode's
+  // double-invoke (cleanup cleared the timeout, the second run saw no transition, chrome never
+  // came back). Held while covered, release rescheduled on every rerun, so replays are harmless.
+  React.useEffect(() => {
+    if (coveringCardId) { setChromeHeld(true); return undefined; }
+    if (!chromeHeld) return undefined;
+    const t = window.setTimeout(() => setChromeHeld(false), 420);
+    return () => window.clearTimeout(t);
+  }, [coveringCardId, chromeHeld]);
+  const screenOwnedByCard = coveringCardId || chromeHeld;
   const minimizedCards = useAppSelector((s) => s.dashboardLayout.minimizedCards);
   const anyFullscreen = !!fullscreenCardId;
   const [headerRevealed, setHeaderRevealed] = React.useState(false);
