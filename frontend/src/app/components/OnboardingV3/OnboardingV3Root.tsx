@@ -73,10 +73,12 @@ function useOnboardingV3Gate(): boolean {
 const IntroBeat: React.FC<{ c: ClaudeTokens; line: string; sub?: string; onNext: () => void }> = ({ c, line, sub, onNext }) => (
   <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: ARC_BLUE_BG, overflow: 'hidden', fontFamily: ONBOARDING_SANS }}>
     <div style={{ position: 'absolute', inset: 0, backgroundImage: GRAIN_URL, opacity: 0.32, pointerEvents: 'none' }} />
+    {/* Opacity and transform only. An animated blur re-rasterises the whole headline every frame,
+        and this is the first thing anyone ever sees of the product. */}
     <motion.h1
-      initial={{ opacity: 0, y: 16, filter: 'blur(8px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      transition={{ duration: 0.7, delay: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.06, ease: [0.22, 1, 0.36, 1] }}
       style={{ position: 'relative', margin: 0, fontSize: 'clamp(2.8rem, 5.4vw, 4.4rem)', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', textAlign: 'center', padding: '0 24px', fontFamily: 'inherit' }}
     >
       {line}
@@ -85,7 +87,7 @@ const IntroBeat: React.FC<{ c: ClaudeTokens; line: string; sub?: string; onNext:
       <motion.p
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.8 }}
+        transition={{ duration: 0.45, delay: 0.24 }}
         style={{ position: 'relative', margin: '14px 0 0', fontSize: '1rem', color: 'rgba(255,255,255,0.75)' }}
       >
         {sub}
@@ -95,7 +97,7 @@ const IntroBeat: React.FC<{ c: ClaudeTokens; line: string; sub?: string; onNext:
       onClick={onNext}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 1.05 }}
+      transition={{ duration: 0.4, delay: 0.34 }}
       whileHover={{ scale: 1.06 }}
       style={{
         position: 'relative', marginTop: 40, width: 54, height: 40, borderRadius: 12, border: 'none',
@@ -176,8 +178,8 @@ const OnboardingV3Root: React.FC = () => {
         }}
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.72, filter: 'blur(18px)' }}
-          animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', width: stageW, height: stageH, borderRadius: 16 }}
+          initial={{ opacity: 0, scale: 0.72 }}
+          animate={{ opacity: 1, scale: 1, width: stageW, height: stageH, borderRadius: 16 }}
           transition={{ type: 'spring', stiffness: 170, damping: 24, mass: 0.9 }}
           style={{
             position: 'relative', overflow: 'hidden',
