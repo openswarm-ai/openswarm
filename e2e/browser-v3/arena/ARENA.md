@@ -44,7 +44,7 @@ it — the constraint is flow competence, not steps.
 | haiku-4-5 | 71.2% @ 4.8s, 0 false (v10: 75.2% @ 5.2s) | 69.6% @ 44.5s, 16 false | ours leads all axes |
 | sonnet-4-6 | **77.6% @ 6.5s, 0 false** | 74.4% @ 37.4s, 8 false | ours leads all axes |
 | sonnet-5 | 76.0% @ 5.5s, 0 false | 63% running @ 42s | their loop DEGRADES on the newest model |
-| **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6; v16 82.1 @ 9.5s | 48.0%* tainted; clean re-run in flight | ours scales with the model |
+| **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6; v16 82.1 @ 9.5s | 66.4% @ 28.3s, 2 false (clean re-run; replaces tainted 48.0%*) | ours leads +16 pts at 4.5x speed |
 
 v16 (verify-terminal, look-act-look, rapid-fire, sub-step confirm) FINAL: 82.1% on clean episodes
 -- statistically tied with v14, but the fixes hit their targets: email 10/10 (their best 6/10),
