@@ -46,6 +46,11 @@ it — the constraint is flow competence, not steps.
 | sonnet-5 | 76.0% @ 5.5s, 0 false | 63% running @ 42s | their loop DEGRADES on the newest model |
 | **opus-5** | **82.4% @ 6.3s, 0 false** (v14); v15 81.6; v16 82.1 @ 9.5s | 66.4% @ 28.3s, 2 false (clean re-run; replaces tainted 48.0%*) | ours leads +16 pts at 4.5x speed |
 
+**v17 (isolation + mechanical fill-verify) FINAL: 84.0% (105/125) @ 9.6s, 0 false -- new
+single-run champion**, all 125 clean (one process per task killed the copy-paste wedge class).
+Its 20 losses are now almost purely the four named engineering clusters: long transactional
+forms (6), pixel-precision spatial (5), console/editor emulation, and stateful games.
+
 v16 (verify-terminal, look-act-look, rapid-fire, sub-step confirm) FINAL: 82.1% on clean episodes
 -- statistically tied with v14, but the fixes hit their targets: email 10/10 (their best 6/10),
 text_entry 16/17, click_basic 12/13. The wins moved WHERE predicted while the untouched hard
