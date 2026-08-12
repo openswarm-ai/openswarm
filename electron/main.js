@@ -1829,6 +1829,14 @@ async function showCrashRecoveryOverlay() {
       cancelId: 1,
       noLink: true,
     });
+    // Every branch here ends the app or resets its crash budget, and until now the only trace was a
+    // console line, which is exactly the thing a dead stdout eats (ENG-264). "It just died" stays
+    // unexplainable while the one moment that explains it goes unrecorded.
+    crashReports.writeCrashReport('renderer-crash-cap-reached', {
+      message: 'repeated renderer crashes hit the cap; recovery dialog shown',
+      choice: result.response === 0 ? 'reload' : 'quit',
+      crashCount: rendererCrashTimes.length,
+    });
     if (result.response === 0) {
       rendererCrashTimes = [];
       recreateMainWindow();
@@ -1836,6 +1844,12 @@ async function showCrashRecoveryOverlay() {
       app.quit();
     }
   } catch (err) {
+    // The dialog itself failed, so the app is about to vanish with no window and no explanation.
+    crashReports.writeCrashReport('crash-recovery-dialog-failed', {
+      message: String(err && err.message || err),
+      stack: String(err && err.stack || ''),
+      crashCount: rendererCrashTimes.length,
+    });
     console.error('[main] showCrashRecoveryOverlay failed:', err && err.message);
     app.quit();
   }
