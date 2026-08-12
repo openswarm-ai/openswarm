@@ -256,15 +256,23 @@ class SessionLifecycle(AgentManagerProtocol):
     @typechecked
     def p_dashboard_card_ids(self, dashboard_id: str) -> Set[str]:
         """Session ids the dashboard's layout currently has agent cards for.
-        Read straight off disk (no dashboards-module import, avoids a cycle)."""
-        try:
-            import os
-            import backend.config.paths as config_paths
-            from backend.config.json_store import read_json_or_none
-            d = read_json_or_none(os.path.join(config_paths.DASHBOARDS_DIR, f"{dashboard_id}.json")) or {}
-            return set((d.get("layout", {}).get("cards") or {}).keys())
-        except Exception:
+        Read straight off disk (no dashboards-module import, avoids a cycle).
+
+        Missing file = a real empty board. Anything ELSE fails loud on purpose: answering "no
+        cards" off a garbled or half-written file makes list_sessions answer "no sessions", and
+        the renderer treats that as authority, strips its store, deletes every card, and the
+        debounced layout save then persists the wipe. A transient read error must surface as an
+        error, never as an empty board (the ENG-271 wipe chain, reproduced live).
+        """
+        import os
+        import json
+        import backend.config.paths as config_paths
+        path = os.path.join(config_paths.DASHBOARDS_DIR, f"{dashboard_id}.json")
+        if not os.path.exists(path):
             return set()
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return set((d.get("layout", {}).get("cards") or {}).keys())
 
     @typechecked
     def get_session(self, session_id: str) -> Optional[AgentSession]:

@@ -194,11 +194,16 @@ const initialState: AgentsState = {
 
 export const fetchSessions = createAsyncThunk(
   'agents/fetchSessions',
-  async ({ dashboardId }: { dashboardId?: string } = {}) => {
+  // dashboardId is REQUIRED: the fulfilled reducer treats the response as authority and strips
+  // dead sessions, and an unscoped answer must never carry that power (see the reducer).
+  async ({ dashboardId }: { dashboardId: string }) => {
     const params = new URLSearchParams();
-    if (dashboardId) params.set('dashboard_id', dashboardId);
-    const qs = params.toString();
-    const res = await fetch(`${AGENTS_API}/sessions${qs ? `?${qs}` : ''}`);
+    params.set('dashboard_id', dashboardId);
+    const res = await fetch(`${AGENTS_API}/sessions?${params.toString()}`);
+    // Same rule the layout fetch learned the hard way: a non-2xx body silently parsing to "no
+    // sessions" is how a healthy board gets wiped. An error must land in .rejected (which strips
+    // nothing), not masquerade as an empty fulfilled.
+    if (!res.ok) throw new Error(`sessions fetch failed: ${res.status}`);
     const data = await res.json();
     return data.sessions as AgentSession[];
   },
@@ -1199,13 +1204,19 @@ const agentsSlice = createSlice({
 
         // Strip sessions the server no longer has, but a dashboard's list is only authoritative for ITS OWN sessions: hopping dashboards must not eat the finished chat you were just reading (it looked like wiped history).
         const fetchedDashboardId = action.meta.arg?.dashboardId;
-        for (const [id, existing] of Object.entries(state.sessions)) {
-          if (fetchedIds.has(id)) continue;
-          if (fetchedDashboardId && existing.dashboard_id !== fetchedDashboardId) continue;
-          if (existing.status === 'draft') continue;
-          if (state.trackedNotificationIds.includes(id)) continue;
-          if (activeStatuses.has(existing.status)) continue;
-          delete state.sessions[id];
+        // No scope = no authority to delete ANYTHING. An unscoped answer is memory-only on the
+        // backend (empty right after a respawn), and one such payload stripping globally is the
+        // start of the wipe chain: store emptied -> reconcile deletes every card -> debounced save
+        // persists it, permanently, because card-less sessions are never promoted again (ENG-271).
+        if (fetchedDashboardId) {
+          for (const [id, existing] of Object.entries(state.sessions)) {
+            if (fetchedIds.has(id)) continue;
+            if (existing.dashboard_id !== fetchedDashboardId) continue;
+            if (existing.status === 'draft') continue;
+            if (state.trackedNotificationIds.includes(id)) continue;
+            if (activeStatuses.has(existing.status)) continue;
+            delete state.sessions[id];
+          }
         }
 
         // Merge fetched sessions, preserving local-only fields
