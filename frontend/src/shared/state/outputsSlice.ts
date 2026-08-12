@@ -96,6 +96,7 @@ export const fetchOutputs = createAsyncThunk(
   'outputs/fetch',
   async () => {
     const res = await fetch(`${OUTPUTS_API}/list`);
+    if (!res.ok) throw new Error(`Outputs list failed: ${res.status}`);
     const data = await res.json();
     return data.outputs as Output[];
   },

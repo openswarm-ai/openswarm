@@ -36,6 +36,7 @@ export const fetchSkills = createAsyncThunk(
   'skills/fetch',
   async () => {
     const res = await fetch(`${SKILLS_API}/list`);
+    if (!res.ok) throw new Error(`Skills list failed: ${res.status}`);
     const data = await res.json();
     return data.skills as Skill[];
   },

@@ -41,6 +41,7 @@ export const fetchTools = createAsyncThunk(
   'tools/fetch',
   async () => {
     const res = await fetch(`${TOOLS_API}/list`);
+    if (!res.ok) throw new Error(`Tools list failed: ${res.status}`);
     const data = await res.json();
     return data.tools as ToolDefinition[];
   },

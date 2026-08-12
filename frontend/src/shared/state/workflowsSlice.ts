@@ -282,6 +282,7 @@ export const fetchWorkflows = createAsyncThunk(
   async (dashboardId?: string) => {
     const url = dashboardId ? `${API}/list?dashboard_id=${encodeURIComponent(dashboardId)}` : `${API}/list`;
     const res = await fetch(url);
+    if (!res.ok) throw new Error(`Workflows list failed: ${res.status}`);
     const data = await res.json();
     return data.workflows as Workflow[];
   },

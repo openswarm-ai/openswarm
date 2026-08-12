@@ -29,6 +29,7 @@ export const fetchModes = createAsyncThunk(
   'modes/fetch',
   async () => {
     const res = await fetch(`${MODES_API}/list`);
+    if (!res.ok) throw new Error(`Modes list failed: ${res.status}`);
     const data = await res.json();
     return { modes: data.modes as Mode[], builtinDefaults: (data.builtin_defaults ?? {}) as Record<string, Mode> };
   },
