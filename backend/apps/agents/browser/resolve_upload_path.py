@@ -54,10 +54,12 @@ def resolve_upload_path(path: str) -> str:
     target = os.path.realpath(os.path.expanduser(raw))
     roots = allowed_upload_roots()
     if not any(target == r or target.startswith(r + os.sep) for r in roots):
+        # Name the fix, not just the rule. The PARENT agent can read anywhere and is not driven by
+        # page content, so staging the file is safe there and is the one move that unblocks this.
         raise UploadPathRefused(
-            f"Refused: {raw} is outside the folders this agent may upload from. "
-            "Uploadable files are the ones the user attached to the chat and the ones agents "
-            "created in their workspace. Copy the file into the workspace first, then upload it."
+            f"Refused: {raw} is outside the folders a page-driven agent may upload from. "
+            f"Ask the agent that sent you here to copy the file to {UPLOAD_DIR} first "
+            f"(e.g. `cp \"{raw}\" {UPLOAD_DIR}/`), then upload it from there."
         )
     if not os.path.isfile(target):
         raise UploadPathRefused(f"Refused: {raw} is not a file that exists.")

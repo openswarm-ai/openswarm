@@ -1667,16 +1667,43 @@ async function handleUploadFile(wv: BrowserWebview, params: Record<string, any>)
   let found = 0;
   if (backendNodeId == null) {
     try {
+      // Tier 1, cheap: a plain selector over the light DOM, which is where most upload inputs live.
       const doc = await sendCdp(wv, 'DOM.getDocument', { depth: 0 });
       const hits = await sendCdp(wv, 'DOM.querySelectorAll',
         { nodeId: doc?.root?.nodeId, selector: 'input[type=file]' });
       const nodeIds: number[] = hits?.nodeIds || [];
       found = nodeIds.length;
-      if (!found) {
-        return { error: 'No file-upload field on this page. Open the page or dialog that has the upload control first, then retry.' };
+      if (found) {
+        const described = await sendCdp(wv, 'DOM.describeNode', { nodeId: nodeIds[0] });
+        backendNodeId = described?.node?.backendNodeId;
       }
-      const described = await sendCdp(wv, 'DOM.describeNode', { nodeId: nodeIds[0] });
-      backendNodeId = described?.node?.backendNodeId;
+    } catch { /* tier 2 below is the real answer anyway */ }
+  }
+  if (backendNodeId == null) {
+    // Tier 2: querySelectorAll cannot see into a shadow root or a cross-origin iframe, and design
+    // systems put upload widgets in both. `pierce` walks through them. It returns the whole tree, so
+    // it stays behind the cheap tier rather than being the default.
+    try {
+      const pierced = await sendCdp(wv, 'DOM.getDocument', { depth: -1, pierce: true });
+      const inputs: number[] = [];
+      const walk = (n: any): void => {
+        if (!n || inputs.length > 20) return;
+        if (n.nodeName === 'INPUT') {
+          const a: string[] = n.attributes || [];
+          for (let i = 0; i < a.length - 1; i += 2) {
+            if (a[i] === 'type' && String(a[i + 1]).toLowerCase() === 'file') { inputs.push(n.backendNodeId); break; }
+          }
+        }
+        (n.children || []).forEach(walk);
+        (n.shadowRoots || []).forEach(walk);
+        if (n.contentDocument) walk(n.contentDocument);
+      };
+      walk(pierced?.root);
+      found = inputs.length;
+      if (!found) {
+        return { error: 'No file-upload field on this page, including inside its embedded frames. Open the page or dialog that has the upload control first, then retry.' };
+      }
+      backendNodeId = inputs[0];
     } catch (err: any) {
       return { error: `Could not search the page for an upload field (${err?.message || 'DOM query failed'}).` };
     }
