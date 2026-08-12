@@ -77,9 +77,10 @@ class LlmPolicy:
     history: list[str] = field(default_factory=list)
     max_history: int = 6
     max_tokens: int = 200
-    # 0.0 removes sampling variance -- measured: same agent, same seed, different runs won
-    # different tasks purely on decode randomness.
-    temperature: float = 1.0
+    # Claude-5 lanes REJECT temperature outright ("deprecated for this model") -- v17's first
+    # launch 400-looped on it. None = omit the field; the decode-variance lever is simply
+    # unavailable on these models, so variance must be attacked at the action layer instead.
+    temperature: float | None = None
 
     def reset(self, goal: str) -> None:
         self.history = []
@@ -115,14 +116,16 @@ class LlmPolicy:
         # books what remains as infra, never as skill.
         for attempt in range(3):
             try:
-                resp = post_json(f"{self.endpoint}/v1/chat/completions", {
+                payload = {
                     "model": self.model,
                     "messages": [{"role": "system", "content": self.system},
                                  {"role": "user", "content": content}],
                     "max_tokens": self.max_tokens,
-                    "temperature": self.temperature,
                     "stream": False,  # the router streams by default; a single action needs no SSE
-                })
+                }
+                if self.temperature is not None:
+                    payload["temperature"] = self.temperature
+                resp = post_json(f"{self.endpoint}/v1/chat/completions", payload)
                 text = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
                 usage = resp.get("usage") or {}
                 d.prompt_tokens = int(usage.get("prompt_tokens") or 0)
@@ -190,6 +193,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.last_fill_row = 0
         self.last_fill_val = ""
         self.fill_retried = False
+        self.mode = "standard"
         self.verified_once = False
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
@@ -340,6 +344,54 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     row_values: dict[int, str] = field(default_factory=dict)
 
+    # v18: ensemble dispatcher -- ONE agent, ONE episode, but the rung set is chosen per task from
+    # page/goal FEATURES at first sight (never task names). The systematic cross-version wins were
+    # mode-shaped: forms want strict per-field verification, canvases want eyes every turn, consoles
+    # want keyboard primitives, feedback games want many tiny turns.
+    dispatch: bool = False
+    mode: str = "standard"
+
+    def detect_mode(self, obs: dict[str, Any], goal: str) -> str:
+        g = goal.lower()
+        roles = list(self.row_roles.values())
+        n_inputs = sum(1 for r in roles if r in ("textbox", "searchbox", "combobox", "spinbutton",
+                                                 "listbox", "InputTime", "checkbox", "radio"))
+        named = sum(1 for n in self.row_names.values() if n and not n.startswith("("))
+        big_text = any(r == "textbox" for r in roles) and len(roles) <= 3
+        if re.search(r"terminal|command|console|editor|delete the (word|line)", g) and big_text:
+            return "console"
+        if re.search(r"guess|higher|lower|hot|cold|until|keep (clicking|guessing)", g):
+            return "game"
+        if named <= 2 and any(r in ("image", "generic", "clickable") for r in roles) and re.search(
+                r"circle|angle|line|midpoint|draw|shape|point|slider|color", g):
+            return "geometry"
+        if n_inputs >= 3 or re.search(r"book|order|purchase|fill (in|out)|form", g):
+            return "form"
+        return "standard"
+
+    MODE_PROMPTS = {
+        "form": "\nFORM MODE: complete ONE field per turn and confirm its value= stuck in the fresh look before the next; keep a checklist of every required field in your PLAN; submit only when every checklist item shows its value.",
+        "geometry": "\nGEOMETRY MODE: use the screenshot every turn; estimate coordinates, act, then MEASURE the result in the next screenshot and correct; small moves beat big guesses.",
+        "console": "\nCONSOLE MODE: click the text area once to focus, then use keyboard_type/keyboard_press for everything; re-read the text content after each command.",
+        "game": "\nGAME MODE: one small action per turn; keep every guess and its feedback in your PLAN line; binary-search on numeric feedback.",
+    }
+
+    def apply_mode(self, obs: dict[str, Any], goal: str) -> None:
+        if not self.dispatch or self.mode != "standard" or self.history:
+            return
+        m = self.detect_mode(obs, goal)
+        self.mode = m
+        if m == "geometry":
+            self.vision = "always"
+            self.multi = False
+        elif m == "game":
+            self.multi = False
+            self.max_tokens = 250
+        elif m == "form":
+            self.multi_cap = 2  # one-two verified steps per turn; no gambled 6-chains
+        if m in self.MODE_PROMPTS:
+            self.system = self.system + self.MODE_PROMPTS[m]
+
     # v16a: one verification call before the episode's first terminal-looking click -- the measured
     # variance killer (same task passes/fails run to run on a premature submit).
     verify_terminal: bool = False
@@ -392,6 +444,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
+        self.apply_mode(obs, goal)
         fv = self.try_fill_verify()
         if fv:
             d = LlmDecision(action=self.translate(fv), n_interactive=n, note="fill-verify-retry")
@@ -643,7 +696,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
-                                  multi_cap=6, temperature=0.0, fill_verify=True, **v17)
+                                  multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v18":  # v17 + feature-dispatched episode modes (form/geometry/console/game)
+        v18 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, **v18)
     if name == "osw-llm-v16":  # v15 + verify-terminal + look-act-look + rapid-fire cap
         v16 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=500)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
