@@ -180,12 +180,23 @@ def drive_in_thread(goal: str, cdp_url: str, model: str, endpoint: str, max_step
     return result
 
 
-def score(env) -> tuple[float, float]:
-    """MiniWoB's verdict, read straight off the page globals -- the only grader in this file."""
+def score(env, task: str = "") -> tuple[float, float]:
+    """The suite's OWN verdict. MiniWoB exposes page globals; every other suite scores through its
+    task object's validate(). Reading the MiniWoB global on an AssistantBench page silently
+    returned 0.0 for every episode -- a scoring bug that read as a perfect-zero result."""
     page = env.unwrapped.page
-    reward = float(page.evaluate("typeof WOB_REWARD_GLOBAL !== 'undefined' ? WOB_REWARD_GLOBAL : 0") or 0)
-    raw = float(page.evaluate("typeof WOB_RAW_REWARD_GLOBAL !== 'undefined' ? WOB_RAW_REWARD_GLOBAL : 0") or 0)
-    return reward, raw
+    if "." not in task:
+        reward = float(page.evaluate("typeof WOB_REWARD_GLOBAL !== 'undefined' ? WOB_REWARD_GLOBAL : 0") or 0)
+        raw = float(page.evaluate("typeof WOB_RAW_REWARD_GLOBAL !== 'undefined' ? WOB_RAW_REWARD_GLOBAL : 0") or 0)
+        return reward, raw
+    # Non-MiniWoB suites: ask the task itself, exactly as BrowserGym's own step() would.
+    try:
+        chat = getattr(env.unwrapped, "chat", None)
+        msgs = list(getattr(chat, "messages", []) or [])
+        r, _done, _msg, _info = env.unwrapped.task.validate(page, msgs)
+        return float(r or 0), float(r or 0)
+    except Exception:
+        return 0.0, 0.0
 
 
 def main() -> None:
@@ -239,7 +250,7 @@ def main() -> None:
                                         args.max_steps, args.episode_timeout) if cdp_url else {}
                 ep.wall_s = time.time() - t0
                 try:
-                    ep.reward, ep.raw_reward = score(env)
+                    ep.reward, ep.raw_reward = score(env, task)
                 except Exception as exc:
                     ep.error_class = ep.error_class or "infra_score_readback"
                     ep.error_detail = f"{type(exc).__name__}: {exc}"[:200]
