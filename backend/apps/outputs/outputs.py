@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import mimetypes
+import shutil
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -649,7 +650,33 @@ async def update_output(output_id: str, body: OutputUpdate):
 
 @outputs.router.delete("/{output_id}")
 async def delete_output(output_id: str):
-    load(output_id)
+    output = load(output_id)
+    # Delete the source tree too. Dropping only the record left the whole app (source, dist, .env)
+    # on disk with nothing in the UI pointing at it: measured 9 orphans and ~0.85GB on one machine,
+    # and a deleted app is supposed to be GONE, not merely hidden. Worse, the orphan recoverer
+    # re-registers anything with a real name in its meta.json, so a cleared marker resurrects work
+    # the user deliberately deleted. SwarmApps.rollback already did this correctly; match it.
+    workspace_id = getattr(output, "workspace_id", None)
+    if workspace_id:
+        from backend.apps.outputs.runtime import manager as p_delete_manager
+        # Every instance of this app, live or parked: rmtree under a running vite leaves the process
+        # alive on a directory that no longer exists. Runtimes are keyed by workspace_path, which is
+        # the same for every instance, so match on that rather than on the key's shape.
+        p_doomed = [rt for rt in [*p_delete_manager.runtimes.values(), *p_delete_manager.idle_lru.values()]
+                    if rt.workspace_id == workspace_id]
+        for p_rt in p_doomed:
+            try:
+                await p_rt.stop()
+            except Exception:
+                logger.debug("could not stop a runtime for %s before delete", workspace_id, exc_info=True)
+        # realpath + component boundary: a workspace_id is stored data, and rmtree is not a call to
+        # take on trust.
+        root = os.path.realpath(WORKSPACE_DIR)
+        target = os.path.realpath(os.path.join(root, workspace_id))
+        if target != root and target.startswith(root + os.sep):
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            logger.warning("refusing to delete workspace outside the workspace root: %s", workspace_id)
     path = os.path.join(DATA_DIR, f"{output_id}.json")
     if os.path.exists(path):
         os.remove(path)

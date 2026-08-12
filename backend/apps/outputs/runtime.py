@@ -113,6 +113,8 @@ class AppRuntime:
         self.serve_static: bool = False
         # New-mode only: flips True once something is actually listening on frontend_port (we kick off a background poll task in p_start_new_mode). frontend_url returns null until this flips, so the preview pane doesn't try to navigate to an unbound port and show a "Site can't be reached" error mid-npm-install.
         self.p_frontend_ready: bool = False
+        # True only while a live bind-poll task owns the global vite boot lock; start() releases it otherwise.
+        self.p_boot_lock_handed_off: bool = False
         # True while the process tree is SIGSTOP'd in the idle pool. A frozen vite still holds its port but can't answer it, so frontend_url must stay null while suspended (else the webview loads a dead port = the ERR_FAILED on fast app-switching).
         self.p_suspended: bool = False
         self.process: Optional[asyncio.subprocess.Process] = None
@@ -229,15 +231,17 @@ class AppRuntime:
                 # Acquire the module-level boot lock BEFORE the spawn so only one new-mode workspace is mid-bundle at a time. The lock is released by the bind-poll task the moment vite emits "frontend ready" (or its 180s timeout fires), which is the moment the next workspace can start its own vite without competing for the same CPU. See `p_await_frontend_bind` for the release.
                 p_boot_lock = get_vite_boot_lock()
                 await p_boot_lock.acquire()
+                # Releasing is the DEFAULT; only an actual spawn hands the lock to its bind-poll task.
+                # The old shape released on `not ok`, so the serve-static branch (which returns True
+                # without spawning) held the global lock forever and every later app blocked on the
+                # acquire above with no error anywhere. Owning it here means a new early-return in
+                # p_start_new_mode cannot leak the lock, however it exits.
+                self.p_boot_lock_handed_off = False
                 try:
-                    ok = await self.p_start_new_mode()
-                    if not ok:
-                        # Spawn failed before the bind-poll task was created; release synchronously so we don't wedge the next workspace.
+                    return await self.p_start_new_mode()
+                finally:
+                    if not self.p_boot_lock_handed_off:
                         p_boot_lock.release()
-                    return ok
-                except Exception:
-                    p_boot_lock.release()
-                    raise
             return await self.p_start_old_mode()
 
     async def p_start_new_mode(self) -> bool:
@@ -330,6 +334,8 @@ class AppRuntime:
         # Kick off the port-bind poller so frontend_url flips on once Vite is actually accepting connections.
         self.p_frontend_ready = False
         self.p_frontend_ready_task = asyncio.create_task(self.p_await_frontend_bind())
+        # The poll task now owns the boot lock and is the one that releases it; start() must not.
+        self.p_boot_lock_handed_off = True
         return True
 
     def p_resolve_launch(self, env: dict) -> tuple[list[str], str, str]:
