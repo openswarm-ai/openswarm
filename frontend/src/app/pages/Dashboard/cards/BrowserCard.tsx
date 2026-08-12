@@ -44,6 +44,7 @@ import {
   recordClosedCard,
   toggleMinimizeCard,
   setBrowserDocked,
+  GRID_GAP,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
 import WindowControls from './WindowControls';
@@ -1183,6 +1184,14 @@ const BrowserCard: React.FC<Props> = ({
   // an off-screen guest never paints again, and capturePage on one never settles (Electron 42).
   const wantsDockPark = !!dockedTo && !!dockParentCard && !dockParentExpanded && !agentDriving && !dragging && !isTiled && !isMinimized && !keepAliveHidden;
   const dockParked = wantsDockPark && pillShotSettled;
+  // A docked browser's stored x/y is the beside-chat spot captured AT DOCK TIME, so moving the chat
+  // leaves it behind. An agent-driven browser skips the park (above), so it painted itself over
+  // wherever the chat USED to be, sometimes exactly on the chat's own header, where a press grabs the
+  // browser and drags that instead of the chat. Follow the parent's live rect while it is collapsed.
+  const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !dockParked
+    && !dragging && !localResize && !isTiled && !isMinimized && !keepAliveHidden;
+  const followX = followsParent && dockParentCard ? dockParentCard.x + dockParentCard.width + GRID_GAP * 12 : null;
+  const followY = followsParent && dockParentCard ? dockParentCard.y : null;
   const tiledSize = useTiledCard({ cardId: browserId, zone: tileZone, active: !keepAliveHidden && !isMinimized && !dockParked, originX: displayX, originY: displayY, getCamera: getCanvasState });
   const pillShotPaintable = !!pillShotOwner && !dockParked && !isMinimized && !keepAliveHidden && !suspendedSnap;
   useEffect(() => {
@@ -1264,8 +1273,8 @@ const BrowserCard: React.FC<Props> = ({
         // Docked = a TRUE miniature: the card keeps its full-size layout and shrinks by uniform
         // transform (centered in the slot), so the page never reflows and agent clicks stay valid.
         // Resizing the webview to the slot re-rendered the page as a narrow window, which is wrong.
-        left: keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardX : displayX)),
-        top: dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardY : displayY),
+        left: keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardX : (followX ?? displayX))),
+        top: dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardY : (followY ?? displayY)),
         transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : undefined),
         transformOrigin: tiledSize || dockActive ? '0 0' : undefined,
         width: tiledSize ? tiledSize.width : displayW,
