@@ -279,9 +279,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const browserSlotSx = {
     position: 'relative',
     // When the height cap bites, the WIDTH shrinks to keep the slot at the page's exact aspect (a maxHeight that broke the ratio left the live overlay letterboxed inside its own frame).
-    width: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? `min(100%, calc(min(480px, 52vh) * ${dockedSurfaceW / dockedSurfaceH}))` : '100%',
+    // Half the viewport for one embedded page leaves the conversation unreadable, and the chat sits
+    // pinned to the bottom so that half is always the half you are looking at. A third still reads
+    // as a real preview and leaves the transcript the room to be a transcript.
+    width: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? `min(100%, calc(min(380px, 34vh) * ${dockedSurfaceW / dockedSurfaceH}))` : '100%',
     aspectRatio: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? `${dockedSurfaceW} / ${dockedSurfaceH}` : undefined,
-    height: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? 'auto' : 'min(360px, 38vh)',
+    height: dockedSurfaceW > 0 && dockedSurfaceH > 0 ? 'auto' : 'min(300px, 28vh)',
     minHeight: 140,
     mx: 'auto',
     mt: 1,
