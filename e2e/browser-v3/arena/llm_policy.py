@@ -541,8 +541,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 # v5's addition, kept as its own constant so a supervisor restart never mutates v4 mid-sweep:
 # browser-use's eval-memory loop won 35 multi-step tasks against v3's click-a-near-miss habit.
 OSW_SYSTEM_V5 = OSW_SYSTEM + """
-Start your reply with one short line: PLAN: <what is done, what remains, what to check next>.
-Then the action on its own line. If the goal names a target you cannot see in the list or the page
+Reply with your action call(s) FIRST, each on its own line. AFTER them you may add one line:
+PLAN: <what is done, what remains, what to check next>. Never put anything before the first action. If the goal names a target you cannot see in the list or the page
 text, EXPLORE first (switch tabs, scroll, open sections) -- never act on a near-miss. Before any
 final submit/done click, re-check that every part of the goal is satisfied."""
 
@@ -704,6 +704,12 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v22":  # STRUCTURAL truncation fix: action-first reply order (class impossible)
+        v22 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True, **v22)
     if name == "osw-llm-v21":  # v20 + bare-prompt retry (the 7 residual truncation deaths)
         v21 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
