@@ -96,7 +96,14 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
   // separately, it display:none's the whole overlay layer), so "pill hidden" always coincides with
   // "hero shown". The singleton windows (Settings, Marketplace, Run Monitor) count as content,
   // otherwise the hero floats on top of an open window.
-  const canvasEmpty = layoutInitialized && sessionList.length === 0
+  // agents.sessions is a GLOBAL dict, so counting all of it said "not empty" on a brand-new dashboard
+  // just because some OTHER dashboard had chats, and the hero never rendered for anyone with history.
+  // Untagged legacy sessions count as local, same rule the browser-card filter uses.
+  const sessionsHere = useMemo(
+    () => sessionList.filter((s) => !s.dashboard_id || s.dashboard_id === dashboardId),
+    [sessionList, dashboardId],
+  );
+  const canvasEmpty = layoutInitialized && sessionsHere.length === 0
     && Object.keys(viewCards).length === 0 && Object.keys(browserCards).length === 0
     && Object.keys(workflowCards).length === 0 && !workflowsHub
     && !settingsWindowOpen && !marketplaceWindowOpen && !workflowsMonitorCard;
