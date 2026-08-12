@@ -1,5 +1,6 @@
 import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, isPendingLoad, wakePendingLoad, clearPendingLoad, type BrowserWebview } from './browserRegistry';
 import { shouldSelfHealClick } from './selfHealClick';
+import { focusGuestForKeys } from './focusGuestForKeys';
 import { FP_EXPR, clickEffect } from './clickEffect';
 import { store } from './state/store';
 import { resumeBrowserCard } from './state/dashboardLayoutSlice';
@@ -812,11 +813,16 @@ function cdpKeyDescriptor(rawKey: string): CdpKeyDescriptor | null {
 async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
   const rawKey = (params.key as string) || '';
   if (!rawKey) return { error: 'key parameter is required' };
-  await evalInPage(wv, 'document.body && document.body.focus && document.body.focus(); true');
+  // A key event follows the HOST window's focus, not the CDP target it was addressed to. With the
+  // user's caret in a composer, the agent's Enter lands in THEIR half-written message. Taking the
+  // webview first is the only thing that makes that unrepresentable; the in-guest body.focus() that
+  // used to sit here does not do it (measured: keys still went to the host). handleBrowserCommand
+  // hands the caret back when the command ends.
+  focusGuestForKeys(wv);
   const desc = cdpKeyDescriptor(rawKey);
   if (desc) {
     try {
-      // CDP key events are trusted AND scoped to THIS webview no matter where the user's cursor sits; the sendInputEvent path delivered to whatever had focus, which is the "agent typed into my note" bug. keyDown-with-text inserts the char; bare named keys use rawKeyDown so no stray char lands.
+      // keyDown-with-text inserts the char; bare named keys use rawKeyDown so no stray char lands.
       const down: Record<string, any> = { type: desc.text ? 'keyDown' : 'rawKeyDown', key: desc.key, windowsVirtualKeyCode: desc.vk, nativeVirtualKeyCode: desc.vk };
       if (desc.code) down.code = desc.code;
       if (desc.text) down.text = desc.text;
@@ -827,9 +833,8 @@ async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): 
       return { text: `Pressed ${rawKey}` };
     } catch { /* fall through to the legacy path so a CDP hiccup never makes a key dead */ }
   }
-  // Legacy focus-dependent fallback (exotic keys or CDP unavailable): keeps every key that worked before working.
+  // Legacy fallback (exotic keys or CDP unavailable): keeps every key that worked before working.
   const keyCode = KEY_NAME_MAP[rawKey] || rawKey;
-  await evalInPage(wv, 'document.body && document.body.focus && document.body.focus(); true');
   // Native OS-level key events have isTrusted=true, so hostile sites' keyboard handlers respect them.
   wv.sendInputEvent({ type: 'keyDown', keyCode });
   wv.sendInputEvent({ type: 'char', keyCode });
@@ -1246,6 +1251,9 @@ async function clickBackendNode(
         return { text: `Focused ${label} and typed the text in${via}. Verified: the box now contains "${got}". Do NOT type it again.` };
       };
       try {
+        // DOM.focus lands inside the guest but leaves the HOST caret alone, and insertText follows
+        // the host: measured, a whole sentence went into the user's composer instead of the page.
+        focusGuestForKeys(wv);
         await sendCdp(wv, 'Input.insertText', { text: opts.text }, sessionId);
       } catch (err: any) {
         return { error: `Focused ${label} but could not type into it: ${err?.message || String(err)}` };
