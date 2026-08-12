@@ -54,6 +54,15 @@ text_entry 15/17**, every one a lead over browser-use's best cell. Forms stayed 
 need the missing *primitive* (field-by-field controller with readback), not a better prompt.
 Category ledger vs bu-real-opus5 (66.4%): LEAD 7, tie 1, BEHIND 1.
 
+**v19 (off-screen rows + group ordinals) FINAL: 84.8%, 0 false.** The targeted flips landed --
+social-media-all and social-media-some both solved for the first time in any single run (the
+@ashlea class: the goal's target was below the fold and previously absent from the menu), forms
+ticked 15->16 -- but variance gave back equivalent tasks elsewhere. **Three consecutive versions
+now sit at 84.8-85.5: the prompt-and-perception plateau is ~85 single-run (91.2 labeled pass@2),
+and the residual is decode variance plus the four engineering clusters.** Further headline gains
+require the mechanical primitives (form-flow controller, game-state loop, console rung,
+pixel-feedback geometry) -- product-level rungs, not agent tuning.
+
 **v17 (isolation + mechanical fill-verify), two seeds, every episode clean, 0 false claims:**
 
 | protocol | result |
