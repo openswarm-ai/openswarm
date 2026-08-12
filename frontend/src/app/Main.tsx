@@ -74,6 +74,7 @@ import { useWindowFocus } from '@/shared/hooks/useWindowFocus';
 import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat';
 import { ThemeProvider, useThemeMode, useThemeAccent, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
+import { alertStyleOverrides } from '@/shared/styles/alertOverrides';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
   return createTheme({
@@ -183,6 +184,7 @@ function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
           },
         },
       },
+      MuiAlert: { styleOverrides: alertStyleOverrides(c) },
       MuiTooltip: {
         styleOverrides: {
           tooltip: {
