@@ -75,6 +75,7 @@ import { useInteractionHeartbeat } from '@/shared/hooks/useInteractionHeartbeat'
 import { ThemeProvider, useThemeMode, useThemeAccent, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { alertStyleOverrides } from '@/shared/styles/alertOverrides';
+import { inputStyleOverrides } from '@/shared/styles/inputOverrides';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
   return createTheme({
@@ -185,6 +186,7 @@ function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
         },
       },
       MuiAlert: { styleOverrides: alertStyleOverrides(c) },
+      MuiOutlinedInput: { styleOverrides: inputStyleOverrides(c) },
       MuiTooltip: {
         styleOverrides: {
           tooltip: {
