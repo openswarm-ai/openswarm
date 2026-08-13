@@ -3,6 +3,7 @@
 # Idempotent: docker start if the container exists, docker run if not. Hostname is localhost.
 set -u
 D=/Applications/Docker.app/Contents/Resources/bin/docker
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
 H=localhost
 
 up() { # name image port_map extra_runs...
