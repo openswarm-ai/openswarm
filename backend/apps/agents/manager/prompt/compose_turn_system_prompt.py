@@ -11,6 +11,7 @@ from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
+from backend.apps.agents.manager.prompt.repo_staleness_note import repo_staleness_note
 from backend.apps.agents.manager.prompt.prompt_context import (
     build_app_runtime_contract,
     build_browser_context,
@@ -44,6 +45,12 @@ def compose_turn_system_prompt(
         mcp_registry_ctx,
         skills_catalog_ctx,
     )
+
+    # Pin the agent's notion of the checkout's vintage the same way we pin "now": an agent that
+    # diagnoses from a tree 545 commits behind, with nothing saying so, is confidently wrong (ENG-280).
+    staleness = repo_staleness_note(getattr(session, "cwd", None))
+    if staleness:
+        composed_prompt = f"{composed_prompt}\n\n{staleness}" if composed_prompt else staleness
 
     # Pin the agent's notion of "now" to the host wall clock + zone so it can answer day-of-week questions without hallucinating.
     try:
