@@ -135,6 +135,8 @@ class AgentSession(BaseModel):
     # Auto-continue: agent loop dispatches a hidden turn at end-of-loop using pending_continuation_prompt. Race-free vs background tasks.
     pending_continuation: bool = False
     pending_continuation_prompt: Optional[str] = None
+    # The final silent-quit nudge runs with ZERO tools, so "do not call any more tools" stops being a request the model can decline (ENG-291).
+    pending_continuation_toolless: bool = False
     # Silent-quit nudges spent since the user's last real message; hard-capped so an agent that keeps ending empty can't loop.
     empty_finish_nudges: int = 0
     # Tool-call count at the last nudge: a re-nudge is only earned by NEW tool work since then.

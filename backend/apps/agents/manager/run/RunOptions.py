@@ -153,6 +153,12 @@ class RunOptions(AgentManagerProtocol):
             browser_delegation_tools, invoke_agent_tools,
         )
 
+        # A toolless continuation is the whole point of the final nudge: with nothing allowed, the
+        # only move left is the text the user is missing. Cleared by the loop once the turn starts.
+        if getattr(session, "pending_continuation_toolless", False):
+            effective_allowed = []
+            mcp_servers = {}
+
         composed_prompt = append_web_tools_hint(composed_prompt, need_web_mcp, effective_allowed)
 
         # Log effective tool lists

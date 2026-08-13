@@ -57,9 +57,11 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     session.empty_finish_progress_mark = p_tool_calls
     session.empty_finish_nudges += 1
     session.pending_continuation = True
-    session.pending_continuation_prompt = (
-        FINAL_NUDGE_PROMPT if session.empty_finish_nudges >= NUDGE_HARD_CAP else NUDGE_PROMPT
-    )
+    p_final = session.empty_finish_nudges >= NUDGE_HARD_CAP
+    session.pending_continuation_prompt = FINAL_NUDGE_PROMPT if p_final else NUDGE_PROMPT
+    # Wording alone did not hold: the same escalation shipped in 1.7.6 and the prods came back on
+    # 1.7.7, so the last turn now runs with no tools at all rather than being asked nicely.
+    session.pending_continuation_toolless = p_final
     logger.warning(f"Agent {session_id}: turn finished with no answer after tool work; one hidden continue nudge")
     try:
         from backend.apps.service.client import submit_diagnostic
