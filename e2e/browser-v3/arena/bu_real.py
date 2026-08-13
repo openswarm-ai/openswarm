@@ -95,7 +95,9 @@ def reap_leftover_browsers() -> None:
 
 def make_env(task: str, seed: int, max_steps: int):
     patch_launch_with_cdp_port()
-    if "." in task:
+    if task.startswith("compwob."):
+        import compwob  # noqa: F401  registers the composed tasks (legacy-engine base_url)
+    elif "." in task:
         import browsergym.assistantbench  # noqa: F401  lazy: HF datasets machinery breaks playwright
     env_id = f"browsergym/{task}" if "." in task else f"browsergym/miniwob.{task}"
     env = gym.make(env_id, headless=os.environ.get("OSW_ARENA_HEADED") != "1", max_episode_steps=max_steps)

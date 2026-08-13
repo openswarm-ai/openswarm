@@ -33,12 +33,18 @@ def compwob_page_names() -> list[str]:
 ALL_COMPWOB_TASKS: list[type] = []
 
 for _name in compwob_page_names():
-    # '../compwob/<name>' rides the miniwob base_url; the browser normalizes the parent hop.
+    # Plain subdomain + a base_url that matches the browser's own URL LITERALLY: validate()
+    # string-compares page.url to base_url+subdomain+'.html', so any '../' cleverness terminates
+    # every episode with 'invalid url' after its first step (measured). Boring URLs are robust URLs.
     _cls = type(
         f"Compwob_{_name.replace('-', '_').replace('.', '_')}",
         (AbstractMiniwobTask,),
-        {"subdomain": f"../compwob/{_name}", "desc": f"CompWoB composed task {_name}"},
+        {"subdomain": _name, "desc": f"CompWoB composed task {_name}"},
     )
+    _orig_init = _cls.__init__
+    def _init(self, seed, base_url=None, _o=_orig_init, **kw):
+        _o(self, seed=seed, base_url=os.environ.get("COMPWOB_URL", "http://localhost:8098/compwob/"), **kw)
+    _cls.__init__ = _init
     # Stable public id: compwob.<name> (the subdomain's ../ prefix stays an URL detail).
     _cls.get_task_id = classmethod(lambda cls, n=_name: f"compwob.{n}")
     ALL_COMPWOB_TASKS.append(_cls)
