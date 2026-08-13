@@ -18,8 +18,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to smoke (e.g. v1.7.0)
-        required: true
+        description: Release tag to smoke (e.g. v1.7.0). Leave blank when using run_id.
+        required: false
+      run_id:
+        description: >-
+          Signed release-windows run id to smoke instead of a release. Lets an experimental build be
+          verified without publishing anything, which is the only way to smoke a tree that must not
+          reach a release channel.
+        required: false
   push:
     branches:
       - win-smoke
@@ -41,6 +47,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $exe = Join-Path $env:RUNNER_TEMP "OpenSwarm-Setup-x64.exe"
+          $runId = "${{ inputs.run_id }}"
+          if ($runId) {
+            # Artifact path: a signed build made with publish=false never becomes a release asset,
+            # so the only way to smoke it is to pull the artifact the build job uploaded.
+            $dir = Join-Path $env:RUNNER_TEMP "winart"
+            gh run download $runId -n openswarm-windows-x64 -D $dir
+            $found = Get-ChildItem -Path $dir -Recurse -Filter "*.exe" |
+                     Where-Object { $_.Name -like "*Setup*" } | Select-Object -First 1
+            if (-not $found) {
+              "--- artifact contents ---"; Get-ChildItem -Path $dir -Recurse | Select-Object -ExpandProperty Name
+              throw "no Setup .exe inside artifact openswarm-windows-x64 of run $runId"
+            }
+            Copy-Item $found.FullName $exe -Force
+            "installer: $((Get-Item $exe).Length) bytes (from run $runId)"
+            exit 0
+          }
           # A DRAFT release has no tag reference, so `gh release download <tag>` answers
           # "release not found" even though the assets are right there. Resolve it out of the full
           # list and pull the asset by id, which works for drafts and published releases alike.
