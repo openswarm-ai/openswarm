@@ -1,4 +1,5 @@
 import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, isPendingLoad, wakePendingLoad, clearPendingLoad, type BrowserWebview } from './browserRegistry';
+import { scheduleCaretHandback } from './caretHandback';
 import { shouldSelfHealClick } from './selfHealClick';
 import { focusGuestForKeys } from './focusGuestForKeys';
 import { FP_EXPR, clickEffect } from './clickEffect';
@@ -2248,7 +2249,10 @@ async function handleBrowserCommand(data: Record<string, any>) {
     await runBrowserCommand(request_id, action, browser_id, tab_id, params);
   } finally {
     inflightCommands.delete(request_id);
-    restoreFocus();
+    // Coalesced, not immediate: a run is many commands, and restoring after each one handed the
+    // caret back and took it again dozens of times, which is ENG-252's actual complaint. The user
+    // still gets it back, once, when the agent stops.
+    scheduleCaretHandback(restoreFocus);
   }
 }
 
