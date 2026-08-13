@@ -1,28 +1,21 @@
 // Where should a window.open from inside the app end up? (ENG-279)
 //
-// Two very different callers share one handler:
+// A tab disposition has always been reopened as a card, and stays that way. A real window.open must
+// NOT be, and that is the whole point of this file.
 //
-//   the MAIN window opening a provider sign-in (Anthropic's OAuth popup). That wants a real
-//   native child window and always has; it is app-level auth, nothing to do with browsing.
+// Measured 2026-08-13 with an isolated Electron probe over a real http origin (data: URLs are
+// opaque origins and would have faked the result), arms proven different before reading the verdict:
 //
-//   a BROWSER CARD's guest page opening "Sign in with Google", an SSO handoff, a consent or
-//   payment screen. That used to spawn a native window too, which sits outside the browser-card
-//   system and therefore has no browser_id. An agent driving that card simply cannot see it: the
-//   flow stops dead at the popup and the run looks stalled for no visible reason.
+//   native popup : window.opener = true,  opener received AUTH_CODE_12345
+//   reopened card: window.opener = false, opener received NOTHING
 //
-// So the opener decides. A tab disposition was already routed into a card; now anything opened by
-// a card goes to a card as well, which makes "a popup from a card that no agent can address"
-// unrepresentable rather than merely unlikely.
-
-/**
- * @param {string} contentsType  webContents.getType(): 'webview' for a browser card's guest
- * @param {string} disposition   Electron's window-open disposition
- * @returns {'card'|'native'}
- */
+// OAuth popups hand the authorization code back through window.opener.postMessage, so reopening one
+// as a card hangs the flow AFTER the user has already signed in. That is strictly worse than the
+// blindness it was meant to fix: the agent stalls either way, and now the human's sign-in is burnt
+// too. So the opener relationship wins; making popups agent-addressable has to happen some other
+// way (register the native popup's webContents id, which the CDP layer can already drive).
 function popupRoute(contentsType, disposition) {
   if (disposition === 'foreground-tab' || disposition === 'background-tab') return 'card';
-  // Anything a browser card opens belongs to that card's world, whatever the disposition.
-  if (contentsType === 'webview') return 'card';
   return 'native';
 }
 
