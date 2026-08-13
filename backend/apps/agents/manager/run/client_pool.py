@@ -24,7 +24,7 @@ from backend.apps.agents.core.models import AgentSession
 logger = logging.getLogger(__name__)
 
 # Options entries that are per-turn or non-serializable; everything else is boot-frozen and hashed.
-P_NON_BOOT_KEYS = frozenset({"can_use_tool", "stderr", "hooks", "resume", "fork_session"})
+NON_BOOT_KEYS = frozenset({"can_use_tool", "stderr", "hooks", "resume", "fork_session"})
 
 
 def persistent_client_enabled() -> bool:
@@ -48,7 +48,7 @@ def boot_fingerprint(options_kwargs: Dict, session: AgentSession) -> str:
     (needs_fresh_session / needs_fork / fork) already forces a respawn through force_respawn. Hashing
     it bought nothing and cost a full CLI respawn on EVERY turn once a session crossed
     compact_threshold_pct, measured at +1.0s TTFT per turn."""
-    frozen = {k: v for k, v in options_kwargs.items() if k not in P_NON_BOOT_KEYS}
+    frozen = {k: v for k, v in options_kwargs.items() if k not in NON_BOOT_KEYS}
     frozen["p_branch"] = session.active_branch_id
     # Pool diagnostics (OPENSWARM_POOL_DIAG=1): on a respawn, names WHICH boot field drifted; the tool for debugging respawn churn (e.g. the thinking short/long-prompt flip) in the field.
     if os.environ.get("OPENSWARM_POOL_DIAG") == "1":
