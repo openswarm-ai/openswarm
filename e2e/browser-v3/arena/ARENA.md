@@ -142,6 +142,16 @@ caught by canary before any number shipped. Gradient: 2-part 82%, 3-part 41%, 5+
 the long-horizon sequencing frontier, plus a traced-pending cluster of simple-pair losses.
 browser-use runs the identical 101 next (their first known CompWoB number).
 
+**Follow-ups measured:** browser-use CRASHES on 73/101 composed pages (their DOM instrumentation
+fails on the legacy engine: coverage ceiling 28/101; on the 28 that load, 21/28 with 2 false
+claims -- not comparable to a full-suite number and reported only as such). Our v23 rerun with
+the ordering fix: 65.3 again -- the fix won exactly its 2 predicted tasks, variance reclaimed 2
+others; the persistent structure is 3-part 36% and >=5-part 0/8, whose traces show clean
+execution for ~10 steps and then lost bookkeeping (scroll flailing, blind coordinate guess).
+Next mechanism: a rendered clause-checklist per turn. Toolchain note: the entire stack now
+lives in ~/.cache/arena after macOS's /tmp reaper deleted pyvenv.cfg mid-sweep -- a silent-error
+class now structurally closed.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
