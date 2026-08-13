@@ -31,6 +31,10 @@ P_RELEASES: List[ReleaseNote] = [
             "Your window keeps the size you gave it, even after the app recovers from a crash.",
         ],
         fixes=[
+            "Deleting a published app now takes it off the internet. It used to remove the app from your machine while the public link kept serving it, and because the record was gone you could no longer take it down.",
+            "Publishing warns you about a backend the published app cannot run, however the code happens to write the address. It only recognised one spelling before, so most such apps published clean and broke only once they were live.",
+            "The app no longer crawls a 21,000-server directory in the background on every launch. It now loads that list the first time you open the connector browser, and not before.",
+            "Installing an experimental build no longer quietly puts you back on the stable one the next time you quit.",
             "The model you pick is the model that runs. The retired free tier was quietly forcing every session onto Haiku no matter what the picker said; it is gone, and installs still carrying it are moved off.",
             "Fable is no longer offered in the model picker. It never worked when selected.",
             "A chat that started failing on \"that request hit a snag\" now recovers on your next message instead of staying broken until you branch it.",
