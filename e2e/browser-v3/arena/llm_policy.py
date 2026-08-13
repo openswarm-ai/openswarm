@@ -302,12 +302,17 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         from policies import quoted
 
         targets = [t for t in quoted(goal) if t and t not in self.fastpath_used]
-        for want in targets:
-            hits = [i for i, bid in self.index_to_bid.items()]
-            matches = [i for i in hits if self.row_name(i).lower() == want.lower()]
-            if len(matches) == 1 and not re_.search(r"enter|type|fill|password|text", goal.lower()):
-                self.fastpath_used.add(want)
-                return f"click({matches[0]})"
+        if not targets:
+            return ""
+        # ORDER IS PART OF THE TASK: composed goals ("click Ok, then the link") enforce sequence,
+        # and skipping to a later quoted target because the first is ambiguous clicked things out
+        # of order -- an instant, unrecoverable loss (measured on ordered pairs). The fastpath may
+        # only act on the FIRST unsatisfied target; anything else falls through to the model.
+        want = targets[0]
+        matches = [i for i in self.index_to_bid if self.row_name(i).lower() == want.lower()]
+        if len(matches) == 1 and not re_.search(r"enter|type|fill|password|text", goal.lower()):
+            self.fastpath_used.add(want)
+            return f"click({matches[0]})"
         return ""
 
     row_names: dict[int, str] = field(default_factory=dict)
