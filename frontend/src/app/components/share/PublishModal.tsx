@@ -51,6 +51,20 @@ const SlowHint: React.FC<{ active: boolean; color: string }> = ({ active, color 
   );
 };
 
+// What a published app can actually do, said before the user commits rather than after their public
+// URL 404s. The edge serves five routes and only three are reachable from an app: a static catch-all,
+// one sandboxed compute call and one LLM call. Apps built against a real backend work perfectly in
+// preview and break the moment they go live, which is the worst possible place to find out (ENG-293).
+const CapabilityNote: React.FC<{ color: string; border: string }> = ({ color, border }) => (
+  <Box sx={{ border: `1px solid ${border}`, borderRadius: 1, px: 1.25, py: 1, mt: 0.5 }}>
+    <Typography sx={{ fontSize: '0.75rem', color, lineHeight: 1.55 }}>
+      Published apps run as a static site. They can call AI and one sandboxed compute function, but
+      they get no server, database, or file storage, so any code that fetches your app&apos;s own
+      backend will not work once it is live.
+    </Typography>
+  </Box>
+);
+
 const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
@@ -209,11 +223,12 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
     }
     // review
     if (!hasFindings) {
-      return center(
-        <>
+      return (
+        <Box sx={{ px: 2.5, py: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
           <CheckCircleOutlineIcon sx={{ color: c.status.success, fontSize: 26 }} />
           <Typography sx={{ fontSize: '0.875rem', color: c.text.primary }}>Looks good. Ready to publish.</Typography>
-        </>,
+          <CapabilityNote color={c.text.secondary} border={c.border.subtle} />
+        </Box>
       );
     }
     return (
