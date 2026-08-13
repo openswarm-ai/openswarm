@@ -15,5 +15,7 @@ export function isUsableInstallId(id: string | undefined | null): boolean {
 export function googleStartUrl(proxyUrl: string, installId: string, localPort: number): string | null {
   if (!isUsableInstallId(installId)) return null;
   const params = new URLSearchParams({ install_id: installId, local_port: String(localPort) });
-  return `${proxyUrl.replace(/\/$/, '')}/api/auth/google/start?${params.toString()}`;
+  // Strip ALL trailing slashes, not one: a settings value ending "com//" produced the path
+  // "//api/auth/google/start", which is a different path to any server that normalises strictly.
+  return `${proxyUrl.replace(/\/+$/, '')}/api/auth/google/start?${params.toString()}`;
 }
