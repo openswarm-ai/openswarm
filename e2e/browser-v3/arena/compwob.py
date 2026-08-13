@@ -17,10 +17,7 @@ from browsergym.core.registration import register_task
 from browsergym.miniwob.base import AbstractMiniwobTask
 
 COMPWOB_DIR = Path(os.environ.get(
-    "COMPWOB_HTML_DIR",
-    Path(os.environ.get("MINIWOB_SCRATCH",
-                        "/private/tmp/claude-501/-Users-eric/33681c21-c82a-490e-a036-c4c0ec1414bd/scratchpad"))
-    / "miniwob-plusplus" / "miniwob" / "html" / "compwob"))
+    "COMPWOB_HTML_DIR", Path.home() / ".cache" / "arena" / "miniwob-legacy" / "html" / "compwob"))
 
 
 def compwob_page_names() -> list[str]:
