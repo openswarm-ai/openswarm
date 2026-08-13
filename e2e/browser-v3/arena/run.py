@@ -107,6 +107,15 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
 
         obs, _ = with_deadline(setup, args.setup_timeout)
         env = holder[0]
+        # Runway scales with instruction complexity -- a 7-clause goal legitimately needs ~3 steps
+        # per clause. Feature-triggered (comma/then/and counts), never task names; capped at 3x.
+        goal_now = str(obs.get("goal") or "")
+        import re as _re
+        clauses = 1 + len(_re.findall(r",| then | and then |after you|after clicking", goal_now))
+        if clauses >= 4:
+            grown = min(args.max_steps * 3, max(args.max_steps, clauses * 5))
+            if grown > args.max_steps:
+                env._max_episode_steps = grown  # gym TimeLimit wrapper attribute
     except Exception as exc:
         ep.error_class = classify(exc)
         ep.error_detail = f"{type(exc).__name__}: {exc}"[:200]
