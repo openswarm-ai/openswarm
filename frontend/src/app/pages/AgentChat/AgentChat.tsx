@@ -1553,7 +1553,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   return (
     <Box sx={{ display: 'flex', height: '100%', ...(fullscreenWash && { background: fullscreenWash }) }}>
       <ContextDrawer />
-      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden', ...(fullscreenChat && { maxWidth: FULLSCREEN_READING_MAX_W, width: '100%', mx: 'auto' }) }}>
+      {/* Marks transcript AND composer as one chat, so Cmd+A from the composer can still find the conversation (ENG-231). */}
+      <Box data-chat-root sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden', ...(fullscreenChat && { maxWidth: FULLSCREEN_READING_MAX_W, width: '100%', mx: 'auto' }) }}>
         {!embedded && (
           <Box
             sx={{

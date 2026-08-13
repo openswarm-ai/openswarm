@@ -59,3 +59,40 @@ test('every scope is reachable, so the decision is not secretly one-armed', () =
   ]);
   assert.equal(seen.size, 3, `only reached ${[...seen].join(', ')}`);
 });
+
+// --- Eric, 2026-08-13: "Cmd+A in a fullscreen chat seems to do nothing." ---
+//
+// The first cut sent every text field to native select-all. A fullscreen chat AUTOFOCUSES its
+// composer and the composer sits OUTSIDE [data-chat-transcript], so focus was in an empty text box,
+// native select-all selected nothing, and the shortcut looked dead. That is the common path, not a
+// corner: the user has to click into the transcript first to get the documented behaviour.
+
+/** A composer: a text field beside its transcript, both under one [data-chat-root]. */
+function composer(value: string, transcript: HTMLElement | null): Element {
+  const root = {
+    querySelector: (sel: string) => (sel.includes('data-chat-transcript') ? transcript : null),
+  };
+  return {
+    tagName: 'TEXTAREA',
+    isContentEditable: false,
+    value,
+    closest: (sel: string) => (sel.includes('data-chat-root') ? root : null),
+  } as unknown as Element;
+}
+
+test('an EMPTY composer scopes Cmd+A to its own chat instead of doing nothing', () => {
+  const d = selectAllTarget(composer('', TRANSCRIPT));
+  assert.equal(d.scope, 'transcript', 'an empty composer left the shortcut dead in a fullscreen chat');
+  assert.equal(d.transcript, TRANSCRIPT, 'selected the wrong chat, or none');
+});
+
+test('a composer WITH a draft keeps native select-all, so typing is never hijacked', () => {
+  const d = selectAllTarget(composer('half a message', TRANSCRIPT));
+  assert.equal(d.scope, 'native', 'stole Cmd+A from a user who was mid-sentence');
+  assert.equal(d.transcript, null);
+});
+
+test('an empty text field with no chat around it stays native', () => {
+  const d = selectAllTarget(composer('', null));
+  assert.equal(d.scope, 'native', 'a search box outside any chat must not select a transcript');
+});
