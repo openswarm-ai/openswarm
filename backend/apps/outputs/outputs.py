@@ -23,7 +23,8 @@ from backend.apps.outputs.publish_capability import check_publish_capability
 from backend.apps.outputs.publish_common import slugify, PublishError
 from backend.apps.outputs.publish_scan import scan_for_publish, quick_ast_gate
 from backend.apps.outputs.publish_build import build_static, collect_bundle
-from backend.apps.outputs.publish_cloud import upload_to_cloud, unpublish_from_cloud
+from backend.apps.outputs.publish_cloud import upload_to_cloud
+from backend.apps.outputs.release_publication import release_publication
 from backend.apps.outputs.view_builder_templates import (
     VIEW_TEMPLATE_FILES,
     load_app_builder_skill,
@@ -673,6 +674,18 @@ async def delete_orphan(workspace_id: str):
 @outputs.router.delete("/{output_id}")
 async def delete_output(output_id: str):
     output = load(output_id)
+    # Take the app off the internet BEFORE destroying anything local, and refuse to continue if that
+    # fails. The record is the only thing that still knows the slug, so deleting first and releasing
+    # second leaves an app anyone can reach and its owner cannot (measured: delete returned 200 and
+    # the public URL kept serving byte-identical content).
+    try:
+        if await release_publication(output, load_settings()):
+            save(output)
+    except PublishError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Couldn't take this app off the internet, so it was not deleted: {e}",
+        )
     # Delete the source tree too. Dropping only the record left the whole app (source, dist, .env)
     # on disk with nothing in the UI pointing at it: measured 9 orphans and ~0.85GB on one machine,
     # and a deleted app is supposed to be GONE, not merely hidden. Worse, the orphan recoverer
@@ -920,15 +933,10 @@ async def publish_output(body: PublishRequest):
 async def unpublish_output(body: PublishPreflightRequest):
     """Take the app offline and clear its publish state."""
     output = load(body.output_id)
-    if output.published_slug:
-        try:
-            await unpublish_from_cloud(load_settings(), output.published_slug)
-        except PublishError as e:
-            return {"ok": False, "error": str(e)}
-    output.published_slug = None
-    output.published_url = None
-    output.publish_status = None
-    output.publish_error = None
+    try:
+        await release_publication(output, load_settings())
+    except PublishError as e:
+        return {"ok": False, "error": str(e)}
     save(output)
     return {"ok": True}
 
