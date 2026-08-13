@@ -148,7 +148,13 @@ claims -- not comparable to a full-suite number and reported only as such). Our 
 the ordering fix: 65.3 again -- the fix won exactly its 2 predicted tasks, variance reclaimed 2
 others; the persistent structure is 3-part 36% and >=5-part 0/8, whose traces show clean
 execution for ~10 steps and then lost bookkeeping (scroll flailing, blind coordinate guess).
-Next mechanism: a rendered clause-checklist per turn. Toolchain note: the entire stack now
+Next mechanism tried -- clause checklist (v24): **negative, 60.4%** (-5; short tasks paid for
+scaffolding overhead, long chains unmoved at 0/8). Three mechanisms deep (runway, ordering,
+checklist) the >=5-part cluster is invariant: the failure is not prompt-addressable bookkeeping
+but state re-acquisition mid-chain -- the page mutates past what any static decomposition
+describes. The honest reading: long-horizon composition needs either mid-episode replanning
+against CURRENT page state or subtask-level verification gates; both are product-primitive
+work, booked to the same frontier as MiniWoB's hard-10. Toolchain note: the entire stack now
 lives in ~/.cache/arena after macOS's /tmp reaper deleted pyvenv.cfg mid-sweep -- a silent-error
 class now structurally closed.
 
