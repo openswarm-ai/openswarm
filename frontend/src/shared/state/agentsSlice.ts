@@ -231,6 +231,7 @@ export const launchAgent = createAsyncThunk('agents/launchAgent', async (config:
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  if (!res.ok) throw new Error(`Launch failed: ${res.status}`);
   const data = await res.json();
   return data.session as AgentSession;
 });

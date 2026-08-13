@@ -51,6 +51,7 @@ export const createSkill = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (!res.ok) throw new Error(`Create skill failed: ${res.status}`);
     const data = await res.json();
     return data.skill as Skill;
   }
@@ -64,6 +65,7 @@ export const updateSkill = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
+    if (!res.ok) throw new Error(`Update skill failed: ${res.status}`);
     const data = await res.json();
     return data.skill as Skill;
   }

@@ -44,6 +44,7 @@ export const createMode = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (!res.ok) throw new Error(`Create mode failed: ${res.status}`);
     const data = await res.json();
     return data.mode as Mode;
   }
@@ -57,6 +58,7 @@ export const updateMode = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
+    if (!res.ok) throw new Error(`Update mode failed: ${res.status}`);
     const data = await res.json();
     return data.mode as Mode;
   }
@@ -66,6 +68,7 @@ export const resetMode = createAsyncThunk(
   'modes/reset',
   async (id: string) => {
     const res = await fetch(`${MODES_API}/${id}/reset`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Reset mode failed: ${res.status}`);
     const data = await res.json();
     return data.mode as Mode;
   }

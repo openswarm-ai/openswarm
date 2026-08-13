@@ -66,6 +66,7 @@ export const createTool = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (!res.ok) throw new Error(`Create tool failed: ${res.status}`);
     const data = await res.json();
     return data.tool as ToolDefinition;
   }
