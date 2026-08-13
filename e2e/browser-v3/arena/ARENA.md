@@ -106,7 +106,25 @@ the remaining gap: ~22 tasks need purpose-built widget primitives (date/time pic
 canvas geometry, long autocomplete flows), not a stronger model. Their false-claim rate persists
 across every model (16 haiku, 8 sonnet-4-6) -- structural to the JS-evaluate hatch, as predicted.
 
-## Champion: v22 -- 89.6% single-run, the structural-fix payoff
+## GOAL MET: v22 clears 90 -- 92.0% single run, 90.8% two-seed mean
+
+| protocol | result |
+|---|---|
+| seed 42 (pass@1) | 112/125 = 89.6% |
+| seed 43 (pass@1) | **115/125 = 92.0%** |
+| **pass@1 mean** | **90.8%** |
+| pass@2 union (labeled) | 117/125 = 93.6% |
+| stable both-seed core | 110/125 = 88.0% |
+
+Zero MiniWoB-specific logic (audited), zero demonstrations, zero exemplars, zero false claims,
+8.5s median win. Published generic-harness ceiling: 71.5 (GPT-5) / 74.9 (best harness) -- v22 sits
+**16-20 points above the public field** and inside the demonstration-trained/human band (93-95).
+The ladder ran 25.6 -> 92.0 in 22 versions; the two decisive classes of gain were perception
+completeness (show the agent everything actionable) and structural impossibility fixes (append-only
+book, per-task isolation, action-first replies). Remaining unsolved: 8-13 tasks in the
+product-primitive cluster -- games, console, pixel geometry, one marathon form.
+
+## Champion (superseded): v22 s42 first run
 
 Action-first reply order (truncation structurally impossible) + every prior rung: **112/125 =
 89.6% @ 8.5s median, 0 false claims** -- +3.2 over v20, one task from the 90 line. book-flight
