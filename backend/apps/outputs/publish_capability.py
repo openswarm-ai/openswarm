@@ -23,7 +23,37 @@ P_FRONTEND_EXTS = (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte", ".html")
 P_MAX_FILE_BYTES = 512 * 1024
 P_MAX_LISTED = 8
 # Matches /api/foo, "/api", '/api' and `/api` but not /apiary or /rapid.
-P_API_CALL = re.compile(r"/api(?:/|[\"'`]|$)")
+# A published app is served static files plus exactly two same-origin bridges, so ANY other
+# same-origin call is the cliff. Matching the literal "/api" caught 1 of 6 real shapes: a base-URL
+# constant, an env var, a proxy prefix, an absolute localhost URL and an axios baseURL all shipped
+# silently broken. Spelling is the agent's choice, so the detector cannot depend on it.
+P_BRIDGES = ("/__compute", "/__llm")
+P_STATIC_EXT = re.compile(r"\.[a-z0-9]{2,5}([\"'`?#]|$)", re.I)
+P_BACKEND_SIGNALS = (
+    re.compile(r"/api(?:/|[\"'`]|$)"),
+    # const API_BASE = '/backend'  /  baseURL: "/server"
+    re.compile(r"(?:api[_-]?base|base[_-]?url|apiurl|api[_-]?url)\s*[:=]\s*[\"'`](/[^\"'`]*)", re.I),
+    # import.meta.env.VITE_API_URL, process.env.REACT_APP_API_BASE
+    re.compile(r"env\.[A-Z0-9_]*API[A-Z0-9_]*", re.I),
+    # a backend the published host cannot reach at all
+    re.compile(r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?"),
+)
+# fetch('/server/v1/items') with no file extension is an endpoint, not an asset.
+P_ROOTED_FETCH = re.compile(r"fetch\(\s*[\"'`](/[^\"'`]*)")
+
+
+def p_reaches_unserved_backend(text: str) -> bool:
+    """True when the source calls something the published deploy does not serve."""
+    for pattern in P_BACKEND_SIGNALS:
+        if pattern.search(text):
+            return True
+    for path in P_ROOTED_FETCH.findall(text):
+        if path.startswith(P_BRIDGES):
+            continue
+        if P_STATIC_EXT.search(path):
+            continue
+        return True
+    return False
 
 
 class PublishCapabilityReport(BaseModel):
@@ -68,7 +98,7 @@ def p_api_callers(root: str) -> List[str]:
                 if os.path.getsize(full) > P_MAX_FILE_BYTES:
                     continue
                 with open(full, "r", encoding="utf-8", errors="replace") as fh:
-                    if P_API_CALL.search(fh.read()):
+                    if p_reaches_unserved_backend(fh.read()):
                         hits.append(os.path.relpath(full, root))
             except OSError:
                 continue

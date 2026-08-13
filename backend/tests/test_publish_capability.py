@@ -100,11 +100,17 @@ def test_backend_dir_without_port_still_counts(p_ws_root):
 
 
 def test_apiary_is_not_an_api_call(p_ws_root):
-    """Prefix matching would flag /apiary and /rapid; the boundary is load-bearing."""
+    """Prefix matching would flag /apiary and /rapid; the boundary is load-bearing.
+
+    The paths carry a file extension on purpose. ENG-293 widened the gate from "does this
+    say /api" to "does this call something the published deploy cannot serve", and an
+    extension-less rooted fetch really does 404 up there. What must stay true is the
+    original point: the letters "api" inside a longer word are not a backend call.
+    """
     out = p_app(p_ws_root)
     p_seed(
         p_ws_root, out, env="BACKEND_PORT=8123\n",
-        frontend="fetch('/apiary/bees'); fetch('/rapid');\n", backend_main=True,
+        frontend="fetch('/apiary/bees.json'); fetch('/rapid.png');\n", backend_main=True,
     )
     assert check_publish_capability(out).findings == []
 
