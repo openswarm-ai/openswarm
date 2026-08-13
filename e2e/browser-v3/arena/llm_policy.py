@@ -94,6 +94,12 @@ class LlmPolicy:
     def translate(self, raw: str) -> str:
         return raw
 
+    # v23: echo the page's REACTION into memory. Feedback tasks (hot/cold, too-high/too-low,
+    # score counters) answer every action in page text; a history of bare actions hides the only
+    # signal that matters. General mechanism: the text delta rides along, whatever it says.
+    echo_feedback: bool = False
+    last_page_text: str = ""
+
     def note(self, action: str, obs: dict[str, Any]) -> None:
         """History is kept in the MODEL's own namespace, with the outcome the page reported.
 
@@ -102,7 +108,20 @@ class LlmPolicy:
         five times. Feeding an agent a memory it cannot read is a harness bug, not an agent failure.
         """
         err = str(obs.get("last_action_error") or "").strip()
-        self.history.append(f"{action} -> {'ERROR: ' + err[:120] if err else 'ok'}")
+        line = f"{action} -> {'ERROR: ' + err[:120] if err else 'ok'}"
+        if self.echo_feedback:
+            now = ""
+            try:
+                import perception as _p
+                now = _p.page_text(obs, limit=400)
+            except Exception:
+                pass
+            if now and now != self.last_page_text:
+                new_bits = [w for w in now.split(" | ") if w not in self.last_page_text][:4]
+                if new_bits:
+                    line += f"  [page now says: {' | '.join(new_bits)[:120]}]"
+            self.last_page_text = now
+        self.history.append(line)
 
     def call(self, goal: str, page: str, image_b64: str = "") -> tuple[str, LlmDecision]:
         past = "\n".join(self.history[-self.max_history:]) or "(none yet)"
@@ -704,6 +723,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v23":  # v22 + feedback-echo (page reactions ride in history)
+        v23 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  echo_feedback=True, **v23)
     if name == "osw-llm-v22":  # STRUCTURAL truncation fix: action-first reply order (class impossible)
         v22 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
