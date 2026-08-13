@@ -1,3 +1,4 @@
+import { selectAllTarget } from './selectAllTarget';
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
@@ -109,14 +110,23 @@ export function useDashboardShortcuts({
     return () => window.removeEventListener('keydown', handleReopen);
   }, [isActive, dispatch]);
 
-  // Cmd/Ctrl+A selects every card so it can be deleted in one go. Skipped inside text fields so Cmd+A there still selects text, not cards.
+  // Cmd/Ctrl+A scope depends on where focus is: a text field keeps native behaviour, a chat takes
+  // that conversation, and only the bare canvas selects every card (ENG-231).
   useEffect(() => {
     const handleSelectAll = (e: KeyboardEvent) => {
       if (!isActive) return;
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'a') return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      const decision = selectAllTarget((e.target as Element) || document.activeElement);
+      if (decision.scope === 'native') return;
       e.preventDefault();
+      if (decision.scope === 'transcript' && decision.transcript) {
+        const range = document.createRange();
+        range.selectNodeContents(decision.transcript);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return;
+      }
       selection.selectAll();
     };
     window.addEventListener('keydown', handleSelectAll);
