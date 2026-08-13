@@ -306,13 +306,29 @@ async def p_refresh_loop():
         await asyncio.sleep(REFRESH_INTERVAL_S)
 
 
+def p_start_refresh_task() -> None:
+    global p_refresh_task
+    p_refresh_task = asyncio.create_task(p_refresh_loop())
+
+
+def arm_registry_refresh() -> None:
+    """Start the crawl, once, the first time anyone actually asks for the registry.
+
+    Arming at boot cost every user ~215 sequential requests an hour plus a GitHub star pass
+    to populate a browser most of them never open, and the in-memory cache re-paid it on
+    every restart. Only a request can arm it now, so an idle app crawls nothing.
+    """
+    if p_refresh_task is None:
+        p_start_refresh_task()
+
+
 @asynccontextmanager
 async def mcp_registry_lifespan():
     global p_refresh_task
-    p_refresh_task = asyncio.create_task(p_refresh_loop())
     yield
     if p_refresh_task:
         p_refresh_task.cancel()
+        p_refresh_task = None
         try:
             await p_refresh_task
         except asyncio.CancelledError:
@@ -324,6 +340,7 @@ mcp_registry = SubApp("mcp-registry", mcp_registry_lifespan)
 
 @mcp_registry.router.get("/stats")
 async def registry_stats():
+    arm_registry_refresh()
     google = sum(1 for s in p_cache.values() if s.get("source") == "google")
     community = sum(1 for s in p_cache.values() if s.get("source") == "community")
     return {
@@ -342,6 +359,7 @@ async def registry_search(
     sort: str = Query("name", description="Sort by: name, stars"),
     source: str = Query("", description="Filter by source: google, community, or empty for all"),
 ):
+    arm_registry_refresh()
     pool = p_cache.values()
     if source:
         pool = [s for s in pool if s.get("source") == source]
@@ -387,6 +405,7 @@ async def registry_search(
 
 @mcp_registry.router.get("/detail/{server_name:path}")
 async def registry_detail(server_name: str):
+    arm_registry_refresh()
     srv = p_cache.get(server_name)
     if not srv:
         return {"error": "Server not found"}, 404
