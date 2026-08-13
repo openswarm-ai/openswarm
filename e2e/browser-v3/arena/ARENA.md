@@ -149,8 +149,10 @@ They lead by ~17 points and earned it**: their per-step eval/memory loop holds l
 actions leave its history window. The prior claims that they crashed on 73 pages are fully
 retracted: one page is broken upstream, and my supervisor's head-of-line blocking (retrying that
 one page 201 times) starved the rest — both instrument bugs, both fixed (rotation + blacklist).
-Ingest v25 (pre-registered): gated long-goal mode = single-action turns + compressed
-never-truncated history; prediction = flips the >=5-part cluster, controls unaffected.
+Ingest v25 (pre-registered): gated single-step turns + compressed full history. PILOT RESULT:
+prediction FAILED -- all six long targets still lost, controls unharmed; booked no-effect. Their
+long-chain edge is not history depth. Next pre-registered hypothesis: pacing -- composed pages
+animate between sections and their 48s/task includes implicit settle time ours never grants.
 
 **Follow-ups measured:** browser-use CRASHES on 73/101 composed pages (their DOM instrumentation
 fails on the legacy engine: coverage ceiling 28/101; on the 28 that load, 21/28 with 2 false
