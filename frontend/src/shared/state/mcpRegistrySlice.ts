@@ -50,6 +50,7 @@ export const searchRegistry = createAsyncThunk(
   async ({ q, limit = 20, offset = 0, sort = 'name', source = '' }: { q: string; limit?: number; offset?: number; sort?: string; source?: string }) => {
     const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, source });
     const res = await fetch(`${MCP_REGISTRY_API}/search?${params}`);
+    if (!res.ok) throw new Error(`MCP registry search failed: ${res.status}`);
     return (await res.json()) as { servers: McpServer[]; total: number; offset: number; limit: number };
   }
 );

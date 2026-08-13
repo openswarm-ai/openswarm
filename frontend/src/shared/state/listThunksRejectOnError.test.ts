@@ -19,19 +19,28 @@ import { fetchSkills } from './skillsSlice.ts';
 import { fetchModes } from './modesSlice.ts';
 import { fetchOutputs } from './outputsSlice.ts';
 import { fetchWorkflows } from './workflowsSlice.ts';
+import { searchRegistry } from './mcpRegistrySlice.ts';
+import { searchSkillRegistry, fetchAllRegistrySkills } from './skillRegistrySlice.ts';
 
 type Thunk = { (arg?: unknown): (d: unknown, g: unknown, e: unknown) => Promise<{ type: string; payload?: unknown }> };
 
-const LIST_THUNKS: Array<[string, Thunk]> = [
-  ['fetchTools', fetchTools as unknown as Thunk],
-  ['fetchSkills', fetchSkills as unknown as Thunk],
-  ['fetchModes', fetchModes as unknown as Thunk],
-  ['fetchOutputs', fetchOutputs as unknown as Thunk],
-  ['fetchWorkflows', fetchWorkflows as unknown as Thunk],
+// Some thunks destructure their argument, so passing undefined throws before the fetch and the
+// rejection would be the harness's, not the guard's. Each entry carries the arg its thunk needs.
+const LIST_THUNKS: Array<[string, Thunk, unknown]> = [
+  ['fetchTools', fetchTools as unknown as Thunk, undefined],
+  ['fetchSkills', fetchSkills as unknown as Thunk, undefined],
+  ['fetchModes', fetchModes as unknown as Thunk, undefined],
+  ['fetchOutputs', fetchOutputs as unknown as Thunk, undefined],
+  ['fetchWorkflows', fetchWorkflows as unknown as Thunk, undefined],
+  // The last two hard-throw sites: their reducers array-spread payload.servers / payload.skills,
+  // so an undefined payload does not degrade, it throws inside immer.
+  ['searchRegistry', searchRegistry as unknown as Thunk, { q: 'x' }],
+  ['searchSkillRegistry', searchSkillRegistry as unknown as Thunk, { q: 'x' }],
+  ['fetchAllRegistrySkills', fetchAllRegistrySkills as unknown as Thunk, undefined],
 ];
 
 /** Run a thunk's payload creator with fetch stubbed, and report which lifecycle action it ended on. */
-async function runWith(thunk: Thunk, response: unknown): Promise<string> {
+async function runWith(thunk: Thunk, response: unknown, arg?: unknown): Promise<string> {
   const realFetch = globalThis.fetch;
   (globalThis as { fetch: unknown }).fetch = async () => response;
   try {
@@ -39,8 +48,9 @@ async function runWith(thunk: Thunk, response: unknown): Promise<string> {
     const getState = () => ({
       tools: { loading: false }, skills: { loading: false }, modes: { loading: false },
       outputs: { loading: false }, workflows: { loading: false, items: {} },
+      mcpRegistry: { loading: false, servers: [] }, skillRegistry: { loading: false, skills: [] },
     });
-    const action = await thunk(undefined)(() => {}, getState, undefined);
+    const action = await thunk(arg)(() => {}, getState, undefined);
     return action?.type ?? 'no-action';
   } finally {
     (globalThis as { fetch: unknown }).fetch = realFetch;
@@ -53,9 +63,9 @@ const unauthorized = {
   json: async () => ({ detail: 'Unauthorized' }),
 };
 
-for (const [name, thunk] of LIST_THUNKS) {
+for (const [name, thunk, arg] of LIST_THUNKS) {
   test(`${name} REJECTS on 401 instead of resolving undefined into the reducer`, async () => {
-    const type = await runWith(thunk, unauthorized);
+    const type = await runWith(thunk, unauthorized, arg);
     assert.ok(
       type.endsWith('/rejected'),
       `${name} ended on "${type}"; a fulfilled action here hands the reducer an undefined payload`,
@@ -71,10 +81,11 @@ test('a healthy 200 still fulfils, for every list thunk', async () => {
     status: 200,
     json: async () => ({
       tools: [], skills: [], modes: [], builtin_defaults: {}, outputs: [], workflows: [],
+      servers: [], total: 0, offset: 0, limit: 20,
     }),
   };
-  for (const [name, thunk] of LIST_THUNKS) {
-    const type = await runWith(thunk, okBody);
+  for (const [name, thunk, arg] of LIST_THUNKS) {
+    const type = await runWith(thunk, okBody, arg);
     assert.ok(type.endsWith('/fulfilled'), `${name} ended on "${type}" for a good response`);
   }
 });

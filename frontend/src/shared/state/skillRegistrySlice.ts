@@ -45,6 +45,7 @@ export const searchSkillRegistry = createAsyncThunk(
   async ({ q, limit = 20, offset = 0, sort = 'name', category = '' }: { q: string; limit?: number; offset?: number; sort?: string; category?: string }) => {
     const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset), sort, category });
     const res = await fetch(`${SKILL_REGISTRY_API}/search?${params}`);
+    if (!res.ok) throw new Error(`Skill registry search failed: ${res.status}`);
     return (await res.json()) as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
   },
 );
@@ -59,6 +60,7 @@ export const fetchAllRegistrySkills = createAsyncThunk(
   async () => {
     const params = new URLSearchParams({ q: '', limit: '100', offset: '0', sort: 'name', category: '' });
     const res = await fetch(`${SKILL_REGISTRY_API}/search?${params}`);
+    if (!res.ok) throw new Error(`Skill registry fetchAll failed: ${res.status}`);
     return (await res.json()) as { skills: RegistrySkill[]; total: number; offset: number; limit: number };
   },
 );
@@ -143,6 +145,7 @@ const skillRegistrySlice = createSlice({
       })
       .addCase(searchSkillRegistry.fulfilled, (state, action) => {
         state.loading = false;
+        if (!action.payload || !Array.isArray(action.payload.skills)) return;
         if (action.meta.arg.offset && action.meta.arg.offset > 0) {
           state.skills = [...state.skills, ...action.payload.skills];
         } else {
