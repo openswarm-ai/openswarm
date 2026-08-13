@@ -24,9 +24,19 @@ const light = {
 } as unknown as ClaudeTokens;
 
 for (const [name, tokens] of [['dark', dark], ['light', light]] as const) {
-  test(`${name}: typed text is never the same colour as the field it sits on`, () => {
+  test(`${name}: typed text is never the same colour as the surface it sits on`, () => {
     const root = inputStyleOverrides(tokens).root as Record<string, string>;
-    assert.notEqual(root.color, root.backgroundColor, 'text and field background are identical');
+    const surface = (tokens as unknown as { bg: { surface: string } }).bg.surface;
+    assert.notEqual(root.color, surface, 'text colour equals the surface behind the field');
+  });
+
+  test(`${name}: the override changes ONLY colour, never geometry or fill`, () => {
+    // Regression guard on my own scope creep: an earlier version restyled 74 controls to fix a
+    // contrast bug. Anything here that is not a colour is out of bounds.
+    const root = inputStyleOverrides(tokens).root as Record<string, unknown>;
+    for (const banned of ['borderRadius', 'backgroundColor', 'border', 'padding', 'height', 'fontSize']) {
+      assert.equal(root[banned], undefined, `override sets ${banned}, which is not a readability fix`);
+    }
   });
 
   test(`${name}: the inner input and textarea inherit the readable colour, not MUI's`, () => {
@@ -43,6 +53,7 @@ for (const [name, tokens] of [['dark', dark], ['light', light]] as const) {
 }
 
 test('the override actually sets a colour at all, so a future empty return fails here', () => {
-  const root = inputStyleOverrides(dark).root as Record<string, string>;
-  assert.ok(root.color && root.backgroundColor, 'override returned nothing to inherit');
+  const root = inputStyleOverrides(dark).root as Record<string, unknown>;
+  assert.ok(root.color, 'override returned nothing to inherit');
+  assert.ok(root['& input, & textarea'], 'inner input rule missing');
 });

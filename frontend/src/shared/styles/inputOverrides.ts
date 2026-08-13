@@ -1,24 +1,24 @@
 import type { ClaudeTokens } from './claudeTokens';
 
-// A bare <TextField> renders with MUI's own palette, not ours. On a dark surface that is black text
-// on a black field: you cannot see what you are typing (ENG-281, hit on the question flow's
-// "Other..." box). Fixing the one call site would leave every future bare field able to do it again,
-// so the colours are pinned at the theme and every input in the app inherits them.
+// A bare <TextField> renders its text with MUI's palette, not ours. On a dark surface that is black
+// text on a black field: you cannot see what you are typing (ENG-281, hit on the question flow's
+// "Other..." box). Pinned at the theme so every input inherits it and no future bare field can
+// reintroduce the bug.
+//
+// Deliberately COLOUR ONLY. An earlier version of this also set borderRadius, backgroundColor and
+// the fieldset border colours, which changed the appearance of all 38 TextFields and 36 Selects in
+// the app (Select renders through MuiOutlinedInput too) to fix a problem that was only ever about
+// text contrast. Geometry and fill are left exactly as they were: the blast radius of a readability
+// fix should be readability.
 
 export function inputStyleOverrides(c: ClaudeTokens): Record<string, object> {
   return {
     root: {
       color: c.text.primary,
-      backgroundColor: c.bg.surface,
-      borderRadius: 10,
       '& input, & textarea': { color: c.text.primary },
-      // Placeholders need their own rule: MUI paints them via opacity on the inherited colour, which
+      // Placeholders need their own rule: MUI dims them with opacity on the inherited colour, which
       // lands invisible when the inherited colour was already wrong.
       '& input::placeholder, & textarea::placeholder': { color: c.text.tertiary, opacity: 1 },
-      '& fieldset': { borderColor: c.border.medium },
-      '&:hover fieldset': { borderColor: c.border.strong },
-      '&.Mui-focused fieldset': { borderColor: c.accent.primary },
-      '&.Mui-disabled': { color: c.text.ghost },
     },
   };
 }
