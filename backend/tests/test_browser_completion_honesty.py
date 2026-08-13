@@ -7,6 +7,7 @@ Run:
 from backend.apps.agents.browser.browser_loop import (
     completion_is_honest,
     is_mutation_task,
+    summary_fabricates_tool_calls,
 )
 
 
@@ -80,3 +81,41 @@ def test_a_real_edit_via_browserevaluate_still_completes():
     ]
     honest, reason = completion_is_honest(log, mutation_task=True)
     assert honest and reason == "", reason
+
+
+# --- Gate 3 (ENG-297): tool-call markup in the SUMMARY is narration, not a tool call. ---
+#
+# Dispatch 3 printed literal <invoke name="BrowserEvaluate"> markup as TEXT, complete with
+# plausible return values for lines 1/2/3 of the file, on an action log of 2 read-only calls. The
+# caller read that as real output, believed a line-1 prompt injection that did not exist, and
+# escalated it to the user as a security incident. This is the failure that produced an actual lie,
+# so the markup must fail the run rather than reach anyone as content.
+
+
+def test_fabricated_tool_call_markup_is_caught():
+    for text in [
+        'I ran <invoke name="BrowserEvaluate">{"script":"..."}</invoke> and got line 1',
+        "here is the call: <invoke name=\"BrowserGetText\">",
+        "<function_calls>\n<invoke name=\"BrowserClick\">",
+    ]:
+        assert summary_fabricates_tool_calls(text), f"fabricated markup passed through: {text[:50]!r}"
+
+
+def test_ordinary_prose_about_tools_is_not_caught():
+    """Cry-wolf direction: agents legitimately NAME tools in prose, and failing those would make
+    every honest summary a failure."""
+    for text in [
+        "I used BrowserEvaluate to read the buffer, then saved.",
+        "BrowserClick failed twice so I fell back to BrowserClickIndex.",
+        "The page has an <input> and a <button> element.",
+        "",
+    ]:
+        assert not summary_fabricates_tool_calls(text), f"honest prose flagged: {text[:50]!r}"
+
+
+def test_a_fabricating_run_cannot_report_completed():
+    log = [p_ok("BrowserGetText", "function doPost() {"), p_ok("BrowserScreenshot", "captured")]
+    honest, reason = completion_is_honest(
+        log, summary='<invoke name="BrowserEvaluate">{"script":"editor.getValue()"}</invoke>')
+    assert not honest, "a summary that faked tool calls was reported as a completion"
+    assert "fabricat" in reason.lower(), reason

@@ -407,9 +407,30 @@ def deliverable_is_informational(summary: str, task: str = "") -> bool:
     return False
 
 
+# The literal markup a tool call is made of. If it appears in the SUMMARY, the model typed it as
+# prose instead of calling anything, so every "result" it narrates alongside is invented.
+P_FABRICATED_CALL_RE = re.compile(
+    r"<\s*(?:antml:)?invoke\s+name\s*=|<\s*(?:antml:)?function_calls\s*>|"
+    r"<\s*(?:antml:)?tool_use\s+", re.I)
+
+
+def summary_fabricates_tool_calls(summary: str) -> bool:
+    """True when a run's summary contains tool-call MARKUP rather than a report.
+
+    Measured 2026-08-13 (ENG-297): one dispatch printed `<invoke name="BrowserEvaluate">` as text
+    with plausible return values for three file lines, on an action log of 2 read-only calls. The
+    caller treated it as real output and escalated a fabricated prompt-injection to the user as a
+    security incident.
+
+    Deliberately keys on the MARKUP, not on tool names: agents name tools in honest prose all the
+    time ("BrowserClick failed so I used BrowserClickIndex"), and flagging that would fail good runs.
+    """
+    return bool(P_FABRICATED_CALL_RE.search(summary or ""))
+
+
 def completion_is_honest(
     action_log: list[dict], publish_task: bool = False, send_confirmed: bool = False,
-    mutation_task: bool = False,
+    mutation_task: bool = False, summary: str = "",
 ) -> tuple[bool, str]:
     """Reality-check a run the model declared done. Returns (honest, reason).
 
@@ -428,6 +449,11 @@ def completion_is_honest(
     # can tell. Note the direction of the residual risk: autosend sets send_confirmed the moment its
     # click runs (a resend guard, not proof), so this can still let a bad send through, but it can
     # never newly flag a run that had any send signal at all.
+    # Checked before anything else: a summary built out of invented tool calls is not a weaker
+    # completion, it is a fabrication, and every other signal in the run is downstream of it.
+    if summary_fabricates_tool_calls(summary):
+        return False, ("the report contains fabricated tool-call markup, so its results were "
+                       "narrated rather than obtained; nothing in it can be trusted")
     if publish_task and not send_confirmed:
         return False, ("the send was never confirmed, so it may not have gone out; "
                        "check the page before trusting this")
