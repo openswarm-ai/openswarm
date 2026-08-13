@@ -1,4 +1,5 @@
 import { store } from '../state/store';
+import { warnIfNotCanonicalSessionId } from './sessionIdShape';
 import { unstable_batchedUpdates } from 'react-dom';
 import {
   updateSession,
@@ -1020,6 +1021,7 @@ export function seedSessionSeq(sessionId: string, seq: number): void {
 }
 
 export function createSessionWs(sessionId: string): WebSocketManager {
+  warnIfNotCanonicalSessionId(sessionId, 'createSessionWs');
   return new WebSocketManager(`${WS_BASE}/ws/agents/${sessionId}`, { sessionId });
 }
 
@@ -1032,6 +1034,7 @@ export function acquireSessionWs(sessionId: string): WebSocketManager {
     _backgroundedSessionWs = null;
     return ws;
   }
+  warnIfNotCanonicalSessionId(sessionId, 'acquireSessionWs');
   return new WebSocketManager(`${WS_BASE}/ws/agents/${sessionId}`, { sessionId });
 }
 
