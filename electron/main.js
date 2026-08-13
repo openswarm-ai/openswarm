@@ -1871,6 +1871,7 @@ function sendToRenderer(channel, ...args) {
 // em/en dashes per repo style.
 // Extracted to electron/updateErrorMessage.js so the mapping is unit-testable; see node --test there.
 const { friendlyUpdateError } = require('./updateErrorMessage');
+const { experimentalChannelDecision } = require('./experimentalChannelDecision');
 const { diagnoseSilentUpdateCheck } = require('./updateCheckDiagnosis');
 
 // Squirrel's built-in updater reports only via events; when AV or a proxy kills its request
@@ -2030,14 +2031,29 @@ function setupAutoUpdater() {
     // Renderer pushes the user's experimental-updates setting via IPC right after settings load.
     autoUpdater.allowPrerelease = false;
     // The boot check below must not race that IPC push: with allowDowngrade on, a prerelease build checking while allowPrerelease is still false sees latest-stable as a valid target and silently self-downgrades, then upgrades again next boot (the 1.7.5 <-> 1.7.6-exp1 ping-pong). Read the toggle straight from disk so the first check already knows it.
+    // "A fresh install is never on a prerelease" was wrong, and it cost us: installing the exp DMG
+    // and never opening Settings left the toggle at its default, which the updater read as an
+    // opt-out and used to reinstall stable on quit (ENG-292). Installing a prerelease IS the opt-in.
+    const p_settingsPath = path.join(app.getPath('userData'), 'data', 'settings', 'settings.json');
+    let p_stored;
+    let p_onDisk = null;
     try {
-      const onDisk = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'data', 'settings', 'settings.json'), 'utf8'));
-      autoUpdater.allowPrerelease = !!onDisk.allow_experimental_updates;
+      p_onDisk = JSON.parse(fs.readFileSync(p_settingsPath, 'utf8'));
+      p_stored = p_onDisk.allow_experimental_updates;
     } catch (_) {
-      // Fresh install or unreadable settings: stays false, and a fresh install is never on a prerelease.
+      // Fresh install or unreadable settings: undefined, which the decision treats as never-set.
     }
-    // Lets us un-ship a bad release: re-flip GH 'latest' to an older one and users hop back to it.
-    autoUpdater.allowDowngrade = true;
+    const p_channel = experimentalChannelDecision(app.getVersion(), p_stored);
+    autoUpdater.allowPrerelease = p_channel.allowPrerelease;
+    // Downgrades still un-ship a bad stable release; a prerelease only takes one on a real opt-out.
+    autoUpdater.allowDowngrade = p_channel.allowDowngrade;
+    if (p_channel.seedStoredTo !== null && p_onDisk) {
+      // Persist it so the renderer's own push does not re-assert the default a second later.
+      try {
+        p_onDisk.allow_experimental_updates = p_channel.seedStoredTo;
+        fs.writeFileSync(p_settingsPath, JSON.stringify(p_onDisk, null, 2));
+      } catch (_) {}
+    }
   }
 
   // electron-updater (Mac) passes an info object ({version,...}); the built-in
