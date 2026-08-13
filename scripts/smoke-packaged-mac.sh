@@ -106,6 +106,12 @@ rm -rf "$RUNDIR"; mkdir -p "$RUNDIR"
 cp -R "$APP" "$RUNDIR/" && ok "copied to a writable volume" || bad "could not copy the app off the DMG"
 RUNAPP="$RUNDIR/OpenSwarm.app"
 xattr -dr com.apple.quarantine "$RUNAPP" 2>/dev/null
+# Nothing may already own :8324, or the curl below is answered by a stray dev backend and the smoke
+# reports the app booted when it never did. Assert the port is free BEFORE launching, so the only
+# thing that can answer is the app under test.
+if lsof -nP -iTCP:8324 -sTCP:LISTEN >/dev/null 2>&1; then
+  bad "port :8324 is already taken" "kill the other backend first, or this check passes on its reply"
+fi
 PATH="/usr/bin:/bin:/usr/sbin:/sbin" "$RUNAPP/Contents/MacOS/OpenSwarm" >/tmp/osw-smoke.log 2>&1 &
 LAUNCHED=$!
 BOOTED=0
