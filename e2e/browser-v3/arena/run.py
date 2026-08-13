@@ -92,7 +92,9 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                                       strict=False, multiaction=True)
             # A task name containing '.' is a full BrowserGym suffix (assistantbench.validation.3);
             # bare names stay MiniWoB. One grader per suite, none of them ours.
-            if "." in task:
+            if task.startswith("compwob."):
+                import compwob  # noqa: F401  registers the 101 composed tasks
+            elif "." in task:
                 # Lazy: importing assistantbench pulls HF datasets' multiprocessing machinery in,
                 # which corrupts sync-playwright's event loop for the WHOLE process -- 248 of 252
                 # v16 MiniWoB episodes died to it before this moved out of module scope.

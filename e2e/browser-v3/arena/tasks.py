@@ -83,6 +83,10 @@ def resolve_tasks(spec: str) -> list[str]:
     # AssistantBench validation split: live-web research questions, scored by their question_scorer.
     if spec == "abench":
         return [f"assistantbench.validation.{i}" for i in range(33)]
+    # CompWoB: the 101 composed pages, discovered from the served directory.
+    if spec == "compwob":
+        import compwob
+        return [f"compwob.{n}" for n in compwob.compwob_page_names()]
     if spec in CATEGORIES:
         return sorted(CATEGORIES[spec])
     names = [s.strip() for s in spec.split(",") if s.strip()]
