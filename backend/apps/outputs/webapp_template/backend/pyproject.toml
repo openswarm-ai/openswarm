@@ -5,6 +5,11 @@ description = "OpenSwarm web app backend — FastAPI + SubApp plugin pattern"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi[standard]",
+    # Declared even though fastapi already requires it: an agent writing a SubApp reaches straight
+    # for BaseModel, and a dependency you rely on should be one you asked for.
+    "pydantic>=2.9.0",
+    "httpx",
+    "uvicorn",
     "typeguard==4.4.2",
     "swarm-debug",
 ]

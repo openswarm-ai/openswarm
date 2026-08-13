@@ -57,20 +57,33 @@ def test_the_final_nudge_is_marked_toolless(monkeypatch: Any) -> None:
     )
 
 
-def test_the_options_builder_actually_empties_the_list() -> None:
-    """The flag is worthless unless the turn's tool list is really emptied. This asserts the wiring
-    exists at the one place that decides it, so the seal cannot be a field nobody reads."""
+def test_the_toolless_turn_really_gets_no_tools() -> None:
+    """Behaviour, not a source grep: the flag must actually empty what the turn is handed.
+
+    An earlier version of this asserted the string "effective_allowed = []" appeared in
+    RunOptions, which broke the moment the logic moved and proved nothing about the result.
+    """
+    allowed = ["Bash", "Read", "Write", "WebSearch"]
+    servers = {"openswarm-core": {"env": {}}}
+
+    s_off = p_session()
+    assert empty_finish.apply_toolless_continuation(s_off, allowed, servers) == (allowed, servers), (
+        "an ordinary turn must keep every tool it was given"
+    )
+
+    s_on = p_session()
+    s_on.pending_continuation_toolless = True
+    got_allowed, got_servers = empty_finish.apply_toolless_continuation(s_on, allowed, servers)
+    assert got_allowed == [], f"final turn still offered {len(got_allowed)} tool(s): {got_allowed}"
+    assert got_servers == {}, "final turn still had MCP servers attached, so tools remain reachable"
+
+
+def test_run_options_actually_calls_it() -> None:
+    """The helper is only a seal if the options path invokes it."""
     import inspect
     from backend.apps.agents.manager.run import RunOptions
-
-    src = inspect.getsource(RunOptions)
-    assert "pending_continuation_toolless" in src, (
-        "nothing in RunOptions reads the flag, so the final turn still ships a full tool list"
-    )
-    idx = src.index("pending_continuation_toolless")
-    window = src[idx: idx + 320]
-    assert "effective_allowed = []" in window, (
-        "the flag is read but the allowed-tool list is not emptied"
+    assert "apply_toolless_continuation(" in inspect.getsource(RunOptions), (
+        "RunOptions never calls the helper, so the final turn still ships a full tool list"
     )
 
 

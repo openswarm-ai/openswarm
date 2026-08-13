@@ -141,3 +141,15 @@ def turn_finished_empty(session: AgentSession) -> bool:
         if role in ("user", "system"):
             return False
     return False
+
+
+@typechecked
+def apply_toolless_continuation(session: AgentSession, allowed: List[str], mcp_servers: dict) -> tuple:
+    """Strip every tool for the final nudge's turn, so "do not call any more tools" is a fact.
+
+    Lives here rather than in RunOptions because this module already decides WHEN a turn is the
+    final nudge; splitting the decision from its consequence is how the wording-only version
+    survived a release."""
+    if not getattr(session, "pending_continuation_toolless", False):
+        return allowed, mcp_servers
+    return [], {}

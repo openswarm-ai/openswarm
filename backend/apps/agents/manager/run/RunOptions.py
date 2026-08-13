@@ -22,6 +22,7 @@ from backend.apps.agents.manager.streaming import post_tool_hook as post_tool_ho
 from backend.apps.agents.manager.streaming import stop_hook as stop_hook_mod
 from backend.apps.agents.manager.streaming.HookContext import HookContext
 from backend.apps.agents.manager.permissions.build_effective_tool_lists import build_effective_tool_lists
+from backend.apps.agents.manager.run.empty_finish import apply_toolless_continuation
 from backend.apps.agents.manager.register_builtin_mcp_servers import register_builtin_mcp_servers
 from backend.apps.agents.manager.configure_provider_env import configure_provider_env
 from backend.apps.agents.manager.session.workspace_git import ensure_cwd_git_repo
@@ -153,20 +154,11 @@ class RunOptions(AgentManagerProtocol):
             browser_delegation_tools, invoke_agent_tools,
         )
 
-        # A toolless continuation is the whole point of the final nudge: with nothing allowed, the
-        # only move left is the text the user is missing. Cleared by the loop once the turn starts.
-        if getattr(session, "pending_continuation_toolless", False):
-            effective_allowed = []
-            mcp_servers = {}
-
+        effective_allowed, mcp_servers = apply_toolless_continuation(session, effective_allowed, mcp_servers)
         composed_prompt = append_web_tools_hint(composed_prompt, need_web_mcp, effective_allowed)
 
-        # Log effective tool lists
-        google_allowed = [t for t in effective_allowed if "google-workspace" in t]
-        reddit_allowed = [t for t in effective_allowed if "reddit" in t]
-        builtin_allowed = [t for t in effective_allowed if not t.startswith("mcp__")]
-        logger.info(f"[MCP-DEBUG] effective_allowed: {len(effective_allowed)} total "
-                    f"(builtins={len(builtin_allowed)}, google={len(google_allowed)}, reddit={len(reddit_allowed)})")
+        p_builtins = sum(1 for t in effective_allowed if not t.startswith("mcp__"))
+        logger.info(f"[MCP-DEBUG] effective_allowed: {len(effective_allowed)} total, builtins={p_builtins}")
         if effective_disallowed:
             logger.info(f"[MCP-DEBUG] effective_disallowed: {effective_disallowed}")
 
