@@ -94,6 +94,30 @@ class LlmPolicy:
     def translate(self, raw: str) -> str:
         return raw
 
+    # v25: long-goal mode (GATED >=4 clauses): single-action turns + never-truncated compressed
+    # history. Ingested from browser-use's CompWoB wins (82.0 vs our 65.3): their traces are
+    # steady 1-click-per-turn runs that never lose their place; ours flail once early actions
+    # scroll out of the 12-line history window. Prediction (pre-registered): flips the >=5-part
+    # 0/8 cluster and several 3-parts; 2-part controls unaffected (gate).
+    long_goal_mode: bool = False
+    long_goal_active: bool = False
+    all_actions: list[str] = field(default_factory=list)
+
+    def maybe_gate_long_goal(self, goal: str) -> None:
+        if not self.long_goal_mode or self.history:
+            return
+        clauses = 1 + len(re.findall(r",| then | and then |after you|after clicking", goal))
+        if clauses >= 4:
+            self.long_goal_active = True
+            self.multi = False
+            self.multi_cap = 1
+
+    def history_block(self) -> str:
+        if not self.long_goal_active or len(self.all_actions) <= self.max_history:
+            return ""
+        done = ", ".join(a.split("(")[0] + "(" + a.split("(", 1)[1][:18] for a in self.all_actions[:-3])
+        return f"\nALL ACTIONS SO FAR ({len(self.all_actions)}): {done[:600]}"
+
     # v24: clause checklist -- long composed instructions fail from lost BOOKKEEPING, not lost
     # ability (traces: ~10 clean steps then scroll-flailing). The goal is decomposed ONCE into
     # numbered clauses, rendered every turn, and the model must state its current clause; its
@@ -141,6 +165,8 @@ class LlmPolicy:
     def call(self, goal: str, page: str, image_b64: str = "") -> tuple[str, LlmDecision]:
         past = "\n".join(self.history[-self.max_history:]) or "(none yet)"
         extra = self.clause_block() if hasattr(self, "clause_block") else ""
+        if hasattr(self, "history_block"):
+            extra += self.history_block()
         user = f"GOAL: {goal}{extra}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
         content: Any = user
         if image_b64:
@@ -236,6 +262,9 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.last_fill_val = ""
         self.fill_retried = False
         self.mode = "standard"
+        self.long_goal_active = False
+        self.all_actions = []
+        self.maybe_gate_long_goal(goal)
         self.verified_once = False
 
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
@@ -576,6 +605,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         d.action = "\n".join(translated)
         for c in chosen_list:
             self.note(c, obs)
+            self.all_actions.append(c)
             fm = re.match(r'fill\(\s*(\d+)\s*,\s*"([^"]+)"', c)
             if fm:
                 self.last_fill = fm.group(2)
@@ -751,6 +781,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v25":  # v22 + gated long-goal mode (single-step + compressed full history)
+        v25 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  long_goal_mode=True, **v25)
     if name == "osw-llm-v24":  # v22 + clause checklist (long-chain bookkeeping scaffold)
         v24 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

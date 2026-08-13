@@ -142,6 +142,16 @@ caught by canary before any number shipped. Gradient: 2-part 82%, 3-part 41%, 5+
 the long-horizon sequencing frontier, plus a traced-pending cluster of simple-pair losses.
 browser-use runs the identical 101 next (their first known CompWoB number).
 
+**CompWoB FINAL PAIR (fair, full-coverage, one env-broken page excluded for both):
+browser-use 82.0% (82/100, 8 false claims, 48s med) — ours 65.3% (66/101, 0 false, 17s med).
+They lead by ~17 points and earned it**: their per-step eval/memory loop holds long compositions
+(3-part 82% vs our 41%; 5-7-part 4/6 vs our 0/8) that our fast chained loop drops once early
+actions leave its history window. The prior claims that they crashed on 73 pages are fully
+retracted: one page is broken upstream, and my supervisor's head-of-line blocking (retrying that
+one page 201 times) starved the rest — both instrument bugs, both fixed (rotation + blacklist).
+Ingest v25 (pre-registered): gated long-goal mode = single-action turns + compressed
+never-truncated history; prediction = flips the >=5-part cluster, controls unaffected.
+
 **Follow-ups measured:** browser-use CRASHES on 73/101 composed pages (their DOM instrumentation
 fails on the legacy engine: coverage ceiling 28/101; on the 28 that load, 21/28 with 2 false
 claims -- not comparable to a full-suite number and reported only as such). Our v23 rerun with
