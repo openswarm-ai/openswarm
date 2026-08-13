@@ -225,6 +225,11 @@ def stagnation_exhausted(streak: int) -> bool:
 P_PRODUCTIVE_TOOLS = {
     "BrowserClick", "BrowserClickIndex", "BrowserType", "BrowserNavigate",
     "BrowserPressKey", "BrowserScroll", "BrowserBatch", "BrowserActVerified",
+    # Enumerated against the live dispatcher 2026-08-13 (ENG-297): these seven change state and were
+    # all missing, so a run whose only actions were a delete, an upload or an API write counted as
+    # having taken NO action at all, and "every state-changing action failed" could never fire on it.
+    "BrowserClickByName", "BrowserClickPoint", "BrowserDeleteItem", "BrowserApiWrite",
+    "BrowserUploadFile", "BrowserSaveData", "BrowserRepeatFlow",
 }
 # Read/extract tools: a look-only task's evidence is that a read returned content.
 P_READ_TOOLS = {
@@ -338,6 +343,43 @@ def is_publish_task(task: str) -> bool:
     return not deliverable_is_informational("", task)
 
 
+# Verbs that CHANGE the page, as opposed to leaving something in the world (is_publish_task) or
+# merely acting on it. A run that reads perfectly and edits nothing has not done any of these.
+P_MUTATION_INTENT_RE = re.compile(
+    r"\b(edit|delete|remove|change|update|rename|replace|deploy|redeploy|install|"
+    r"uninstall|enable|disable|toggle|upload|clear|save)\b", re.I)
+
+# A question ABOUT state, which can never be an instruction to change it. Kept local to
+# is_mutation_task rather than widening P_INFO_ASK_RE, because that one also decides what the skill
+# store records and this needs no say there. "can you delete X" is a request, not a question, so it
+# is deliberately not matched.
+P_STATE_QUESTION_RE = re.compile(
+    r"^(what|which|where|who|whose|when|why|is|are|does|do|did|was|were|can i|could i|"
+    r"how (?:many|much|do|does))\b", re.I)
+
+
+def is_mutation_task(task: str) -> bool:
+    """A task whose deliverable is a CHANGED page, so reading cannot satisfy it.
+
+    Measured 2026-08-13, 6 dispatches at a Monaco editor: a run with 3 successful reads and zero
+    edits returned "Task completed." and the honesty gate agreed, because any successful read
+    counted as evidence once a run took no productive action. That rule is correct for "what is on
+    this page" and wrong for "change this page", and nothing distinguished them.
+
+    Same fail-safe direction as is_publish_task: the verbs are ordinary words in informational asks
+    ("what does the delete button say"), so an info ask is excluded and an explicit read-only
+    directive settles it. Worst case we skip the gate on a real edit; we never call a good read a
+    failure, which is the error that would make the gate untrustworthy.
+    """
+    if not P_MUTATION_INTENT_RE.search(task or ""):
+        return False
+    if browser_send_parse.is_readonly(task or ""):
+        return False
+    if P_STATE_QUESTION_RE.match((task or "").strip()):
+        return False
+    return not deliverable_is_informational("", task)
+
+
 def deliverable_is_informational(summary: str, task: str = "") -> bool:
     """True if the run's final answer is GATHERED CONTENT (a list/report the model
     extracted or judged), not a short action confirmation. A deterministic replay
@@ -367,6 +409,7 @@ def deliverable_is_informational(summary: str, task: str = "") -> bool:
 
 def completion_is_honest(
     action_log: list[dict], publish_task: bool = False, send_confirmed: bool = False,
+    mutation_task: bool = False,
 ) -> tuple[bool, str]:
     """Reality-check a run the model declared done. Returns (honest, reason).
 
@@ -399,6 +442,15 @@ def completion_is_honest(
     ]
     if actions and not actions_ok:
         return False, "every state-changing action failed"
+    # A task that asked for a CHANGE cannot be satisfied by reading. BrowserEvaluate counts here
+    # even though it is filed as a read, because on an edit task running JS IS how the edit happens
+    # (the one honest dispatch in the ENG-297 run did exactly that, ~12 times); refusing it would
+    # fail the only agent that did the work, which is the false positive that discredits the gate.
+    if mutation_task and not actions_ok and not any(
+        a.get("tool") == "BrowserEvaluate" and a.get("ok") for a in action_log
+    ):
+        return False, ("the task asked for a change but no state-changing action succeeded; "
+                       "nothing on the page was edited")
     if not actions and not reads_ok:
         return False, "only looked around: no action taken and no content read back"
     return True, ""
