@@ -98,6 +98,7 @@ def main() -> None:
     args.log = args.log or f"/tmp/supervise_{args.arm}.log"
 
     wanted = set(resolve_tasks(args.tasks)) if args.tasks != "all" else set(ALL)
+    setup_fails: dict[str, int] = {}
     t_run = args.since or time.time()
     path = RESULTS_DIR / f"{args.arm}.jsonl"
     for rnd in range(1, args.rounds + 1):
@@ -105,10 +106,17 @@ def main() -> None:
         if not remaining:
             break
         print(f"[supervisor] round {rnd}: {len(remaining)} tasks remaining", flush=True)
-        batch = remaining[:1] if args.isolate else remaining
+        # Rotate through remaining tasks: taking [:1] forever retried one permanently-broken page
+        # 201 times while 72 healthy tasks starved behind it (head-of-line blocking, measured).
+        # Tasks that fail setup 3x are environment-broken: blacklist with one recorded attempt.
+        remaining = [t for t in remaining if setup_fails.get(t, 0) < 3]
+        if not remaining:
+            break
+        batch = [remaining[rnd % len(remaining)]] if args.isolate else remaining
         proc = spawn(args.arm, batch, args)
         last_size = path.stat().st_size if path.exists() else 0
         last_change = time.time()
+        batch_task = batch[0] if args.isolate else None
         while proc.poll() is None:
             time.sleep(10)
             size = path.stat().st_size if path.exists() else 0
@@ -118,6 +126,10 @@ def main() -> None:
                 print(f"[supervisor] stalled {args.stall:.0f}s; killing tree", flush=True)
                 kill_tree(proc)
                 break
+        if args.isolate and batch_task and batch_task not in completed_tasks(args.arm, args.model, args.seed, t_run):
+            setup_fails[batch_task] = setup_fails.get(batch_task, 0) + 1
+            if setup_fails[batch_task] == 3:
+                print(f"[supervisor] blacklisting {batch_task}: 3 failed rounds (environment-broken)", flush=True)
         time.sleep(2)
     done = completed_tasks(args.arm, args.model, args.seed, t_run)
     print(f"[supervisor] finished: {len(done)}/{len(wanted)} tasks have clean episodes", flush=True)

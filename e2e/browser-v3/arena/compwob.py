@@ -42,6 +42,18 @@ for _name in compwob_page_names():
     def _init(self, seed, base_url=None, _o=_orig_init, **kw):
         _o(self, seed=seed, base_url=os.environ.get("COMPWOB_URL", "http://localhost:8098/compwob/"), **kw)
     _cls.__init__ = _init
+    _orig_setup = _cls.setup
+    def _setup(self, page, _o=_orig_setup):
+        # genProblem crashes if it runs before the page's own scripts finish attaching (a race the
+        # newer chromium loses deterministically). Gate on the page being genuinely ready first.
+        try:
+            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_function("typeof genProblem === 'function' && !!document.getElementById('wrap')",
+                                   timeout=15000)
+        except Exception:
+            pass
+        return _o(self, page)
+    _cls.setup = _setup
     # Stable public id: compwob.<name> (the subdomain's ../ prefix stays an URL detail).
     _cls.get_task_id = classmethod(lambda cls, n=_name: f"compwob.{n}")
     ALL_COMPWOB_TASKS.append(_cls)
