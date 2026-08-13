@@ -2362,12 +2362,20 @@ app.whenReady().then(async () => {
       ses.on('select-webauthn-account', (event, details, callback) => {
         const accounts = (details && details.accounts) || [];
         console.log('[passkey] select-webauthn-account rp=', details && details.relyingPartyId, 'n=', accounts.length);
+        // Nothing to choose from. This authenticator only ever sees credentials in OUR keychain
+        // access group, so a passkey the user made in Safari or Chrome is invisible here and the
+        // list arrives empty. Taking over the event and answering null is an explicit CANCEL, which
+        // the page renders as a prompt that simply never appears. Leave the event alone instead and
+        // let Chromium run its own default, so the site can fall through to "Try another way".
+        if (accounts.length === 0) {
+          console.warn('[passkey] no credential in our keychain group; leaving the choice to Chromium');
+          return;
+        }
         event.preventDefault();
         // One passkey is unambiguous, so answering it directly keeps the flow to a single Touch ID
         // prompt. With several, the OS sheet is the right chooser and we must not silently guess a
         // credential the user did not pick; a picker is the follow-up, never a blind first().
         if (accounts.length === 1) return callback(accounts[0].credentialId);
-        if (accounts.length === 0) return callback(null);
         console.warn('[passkey] multiple passkeys offered; needs a picker, defaulting to the first');
         callback(accounts[0].credentialId);
       });
