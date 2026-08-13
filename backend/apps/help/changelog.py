@@ -31,6 +31,10 @@ P_RELEASES: List[ReleaseNote] = [
             "Your window keeps the size you gave it, even after the app recovers from a crash.",
         ],
         fixes=[
+            "When an agent is driving a browser, your cursor stops being yanked away and handed back over and over; you get it back once, when the agent stops.",
+            "A sign-in popup opened from inside a browser card now opens as a card the agent can see, instead of a separate window it was blind to.",
+            "Pressing Cmd+A inside a chat selects that conversation, including its tool output and images, instead of selecting every card on the board.",
+            "An agent working in a folder is now told when that copy of the code is far behind, so it stops confidently diagnosing from a stale checkout.",
             "Deleting a published app now takes it off the internet. It used to remove the app from your machine while the public link kept serving it, and because the record was gone you could no longer take it down.",
             "Publishing warns you about a backend the published app cannot run, however the code happens to write the address. It only recognised one spelling before, so most such apps published clean and broke only once they were live.",
             "The app no longer crawls a 21,000-server directory in the background on every launch. It now loads that list the first time you open the connector browser, and not before.",
