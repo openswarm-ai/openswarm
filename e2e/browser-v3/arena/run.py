@@ -105,7 +105,25 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                                    action_mapping=acts.to_python_code))
             return holder[0].reset(seed=seed)
 
-        obs, _ = with_deadline(setup, args.setup_timeout)
+        # The composed pages' own genProblem can lose a load race and crash reset (measured:
+        # 1/101 for our launch path, 73/101 for the CDP-port path -- same pages, same seed).
+        # An environment race is infra, and it gets the same retry courtesy on every arm.
+        last_exc = None
+        for _attempt in range(3):
+            try:
+                obs, _ = with_deadline(setup, args.setup_timeout)
+                break
+            except Exception as exc:
+                last_exc = exc
+                if "Cannot set properties" not in str(exc) and "genProblem" not in str(exc):
+                    raise
+                if holder:
+                    try: with_deadline(holder[0].close, 10)
+                    except Exception: pass
+                    holder.clear()
+                time.sleep(2)
+        else:
+            raise last_exc
         env = holder[0]
         # Runway scales with instruction complexity -- a 7-clause goal legitimately needs ~3 steps
         # per clause. Feature-triggered (comma/then/and counts), never task names; capped at 3x.
