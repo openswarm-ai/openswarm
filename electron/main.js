@@ -1872,6 +1872,7 @@ function sendToRenderer(channel, ...args) {
 // Extracted to electron/updateErrorMessage.js so the mapping is unit-testable; see node --test there.
 const { friendlyUpdateError } = require('./updateErrorMessage');
 const { experimentalChannelDecision } = require('./experimentalChannelDecision');
+const { popupRoute } = require('./popupRoute');
 const { diagnoseSilentUpdateCheck } = require('./updateCheckDiagnosis');
 
 // Squirrel's built-in updater reports only via events; when AV or a proxy kills its request
@@ -2943,7 +2944,9 @@ app.on('web-contents-created', (_event, contents) => {
   }
 
   contents.setWindowOpenHandler(({ url, disposition }) => {
-    if (disposition === 'foreground-tab' || disposition === 'background-tab') {
+    // A popup opened by a browser card must become a card too, or it lands in a native window with
+    // no browser_id and the agent driving that card goes blind mid-auth (ENG-279).
+    if (popupRoute(contents.getType(), disposition) === 'card') {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('webview-new-window', url, contents.id, disposition);
       }
