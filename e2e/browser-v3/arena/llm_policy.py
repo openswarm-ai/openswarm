@@ -94,6 +94,21 @@ class LlmPolicy:
     def translate(self, raw: str) -> str:
         return raw
 
+    # v24: clause checklist -- long composed instructions fail from lost BOOKKEEPING, not lost
+    # ability (traces: ~10 clean steps then scroll-flailing). The goal is decomposed ONCE into
+    # numbered clauses, rendered every turn, and the model must state its current clause; its
+    # last report is echoed back. Pure scaffolding, content-agnostic.
+    checklist: bool = False
+    clauses: list[str] = field(default_factory=list)
+    cur_clause: int = 1
+
+    def clause_block(self) -> str:
+        if not (self.checklist and self.clauses):
+            return ""
+        rows = "\n".join(f"  {i}) {c}" for i, c in enumerate(self.clauses, 1))
+        return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
+                f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
+
     # v23: echo the page's REACTION into memory. Feedback tasks (hot/cold, too-high/too-low,
     # score counters) answer every action in page text; a history of bare actions hides the only
     # signal that matters. General mechanism: the text delta rides along, whatever it says.
@@ -125,7 +140,8 @@ class LlmPolicy:
 
     def call(self, goal: str, page: str, image_b64: str = "") -> tuple[str, LlmDecision]:
         past = "\n".join(self.history[-self.max_history:]) or "(none yet)"
-        user = f"GOAL: {goal}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
+        extra = self.clause_block() if hasattr(self, "clause_block") else ""
+        user = f"GOAL: {goal}{extra}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
         content: Any = user
         if image_b64:
             content = [{"type": "text", "text": user + "\n(A SCREENSHOT of the page is attached; use it for exact coordinates and to see state the text view cannot show.)"},
@@ -204,6 +220,10 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     def reset(self, goal: str) -> None:
         self.history = []
+        if self.checklist:
+            parts = re.split(r",\s+(?:and\s+)?(?:then\s+)?|\s+then\s+|\s+and then\s+|\.\s+", goal)
+            self.clauses = [p.strip().rstrip(".") for p in parts if len(p.strip()) > 3][:12]
+            self.cur_clause = 1
         self.index_to_bid = {}
         self.prev_bids = set()
         self.last_view_hash = 0
@@ -546,6 +566,9 @@ class OpenSwarmLlmPolicy(LlmPolicy):
                 redo = [c for c in clean_actions(raw2, limit=self.multi_cap) if c]
                 if redo:
                     chosen_list = redo
+        m_cl = re.search(r"CLAUSE\s+(\d+)", raw or "")
+        if m_cl and self.checklist:
+            self.cur_clause = max(self.cur_clause, int(m_cl.group(1)))
         d.n_interactive = n
         translated = [self.translate(c) for c in chosen_list]
         if self.scripted_drag:
@@ -728,6 +751,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v24":  # v22 + clause checklist (long-chain bookkeeping scaffold)
+        v24 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  checklist=True, **v24)
     if name == "osw-llm-v23":  # v22 + feedback-echo (page reactions ride in history)
         v23 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
