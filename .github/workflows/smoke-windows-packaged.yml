@@ -166,6 +166,35 @@ jobs:
           if (-not $ok) { throw "FAIL: backend never answered on :8324" }
           "PASS  app launched and its backend answered"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: The renderer paints something a human could use
+        shell: pwsh
+        run: |
+          # Every step above this one is about the installer. None of them look at a pixel, so a
+          # release could ship a renderer that boots to a blank route or unreadable text and still
+          # go 8/8 green. This attaches to the running app and measures what it actually painted.
+          #
+          # Deliberately NOT a bundle grep: the frontend is code-split into hundreds of chunks, so
+          # grepping one file proves nothing about whether a fix is present. Measuring the live
+          # renderer is immune to that.
+          $app = "${{ steps.locate.outputs.app }}"
+          $proc = Start-Process -FilePath $app -ArgumentList "--remote-debugging-port=9222" -PassThru
+          $up = $false
+          foreach ($i in 1..40) {
+            Start-Sleep -Seconds 3
+            try { Invoke-WebRequest -Uri "http://127.0.0.1:9222/json" -TimeoutSec 4 -UseBasicParsing | Out-Null; $up = $true; break } catch {}
+            if ($proc.HasExited) { throw "FAIL: app exited before DevTools came up ($($proc.ExitCode))" }
+          }
+          if (-not $up) { throw "FAIL: no CDP endpoint after 120s" }
+          Start-Sleep -Seconds 20
+          node "$env:GITHUB_WORKSPACE\.github\scripts\smoke-renderer.mjs"
+          $code = $LASTEXITCODE
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if ($code -ne 0) { throw "FAIL: renderer checks failed" }
+
       - name: Verdict
         run: |
           "Windows packaged smoke passed for ${{ inputs.tag || 'v1.7.0' }}"
