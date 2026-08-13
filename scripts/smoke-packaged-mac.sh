@@ -20,6 +20,7 @@ FAIL=0
 
 ok()   { PASS=$((PASS+1)); printf "  PASS  %s%s\n" "$1" "${2:+ ($2)}"; }
 bad()  { FAIL=$((FAIL+1)); printf "  FAIL  %s%s\n" "$1" "${2:+ ($2)}"; }
+warn() { printf "  WARN  %s%s\n" "$1" "${2:+ ($2)}"; }   # visible, not fatal
 step() { printf "\n=== %s ===\n" "$1"; }
 
 cleanup() {
@@ -65,6 +66,22 @@ grep -q "Developer ID Application" <<<"$AUTH" \
 SPCTL=$(spctl -a -vvv -t install "$APP" 2>&1 | tr '\n' ' ')
 grep -q "Notarized Developer ID" <<<"$SPCTL" && ok "notarized" || bad "NOT notarized" "$SPCTL"
 xcrun stapler validate "$APP" >/dev/null 2>&1 && ok "notarization stapled" || bad "staple missing"
+# -t exec is the assessment Gatekeeper runs when LAUNCHING, and it is the only one that catches a
+# broken code seal. A copy with one file edited inside the bundle still passes codesign -dvv and
+# still staples, then greets the user with "OpenSwarm is damaged and can't be opened". Measured on a
+# real bundle 2026-08-13: "a sealed resource is missing or invalid".
+EXEC=$(spctl -a -vvv -t exec "$APP" 2>&1 | tr '\n' ' ')
+grep -q "accepted" <<<"$EXEC" && grep -q "Notarized Developer ID" <<<"$EXEC" \
+  && ok "Gatekeeper accepts it for launch" || bad "Gatekeeper would REFUSE to launch it" "$EXEC"
+# The wrapper a user actually downloads. The app inside can be perfect while the DMG carries no
+# signature at all, and every check above would still pass. Reported, not fatal: 1.7.7 stable ships
+# unsigned too, so failing here would block a release for a pre-existing condition.
+DMG_SPCTL=$(spctl -a -vvv -t open --context context:primary-signature "$DMG" 2>&1 | tr '\n' ' ')
+if grep -q "accepted" <<<"$DMG_SPCTL"; then
+  ok "the DMG itself is signed and accepted"
+else
+  warn "the DMG wrapper is unsigned (users see this only if they run the app straight off the mounted image)" "$DMG_SPCTL"
+fi
 # The Widevine signature is what makes Spotify/Netflix play in the embedded browser. Shipped builds
 # carried a DEVELOPMENT certificate for a month because sign-pkg was handed the wrong path.
 FW="$APP/Contents/Frameworks/Electron Framework.framework"
