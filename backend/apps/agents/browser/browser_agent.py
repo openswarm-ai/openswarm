@@ -47,6 +47,7 @@ from backend.apps.agents.browser.browser_loop import (
     deliverable_is_informational,
     interstitial_dismiss_target,
     is_mutation_task,
+    outcome_facts,
     is_publish_task,
     is_removal_task,
     recoverable_tool_error,
@@ -3275,6 +3276,9 @@ async def run_browser_agent(
             # surface the honest failure to the parent so it doesn't treat a did-nothing run as a success it can build on
             **({} if honest else {"error": summary}),
             "action_log": action_log,
+            # Counts beside the prose, so a caller can reject a "completed" that mutated nothing
+            # without parsing the summary or eyeballing the action list (ENG-297).
+            "outcome": outcome_facts(action_log),
             "final_screenshot": final_screenshot,
         }
 

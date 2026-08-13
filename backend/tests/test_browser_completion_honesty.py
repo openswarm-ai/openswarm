@@ -7,6 +7,7 @@ Run:
 from backend.apps.agents.browser.browser_loop import (
     completion_is_honest,
     is_mutation_task,
+    outcome_facts,
     summary_fabricates_tool_calls,
 )
 
@@ -119,3 +120,44 @@ def test_a_fabricating_run_cannot_report_completed():
         log, summary='<invoke name="BrowserEvaluate">{"script":"editor.getValue()"}</invoke>')
     assert not honest, "a summary that faked tool calls was reported as a completion"
     assert "fabricat" in reason.lower(), reason
+
+
+# --- Gate 2 (ENG-297): the caller needs facts it can check, not prose it must trust. ---
+#
+# The only reason any of the six bad dispatches was caught is that a human read the "Actions taken"
+# list and noticed 3 read-only calls under a "Task completed." That is a manual heuristic applied by
+# a suspicious reader. A calling agent should be able to distrust prose on principle, which means
+# the counts have to arrive beside it in a shape nothing can narrate its way around.
+
+
+def p_err(tool):
+    return {"tool": tool, "ok": False, "result_summary": ""}
+
+
+def test_outcome_facts_counts_what_actually_happened():
+    log = [
+        p_ok("BrowserGetText", "function doPost() {"),
+        p_ok("BrowserClickIndex", "Clicked"),
+        p_err("BrowserType"),
+        p_ok("BrowserScreenshot", "captured"),
+    ]
+    f = outcome_facts(log)
+    assert f["calls"] == 4, f
+    assert f["mutations_attempted"] == 2, f      # ClickIndex + Type
+    assert f["mutations_succeeded"] == 1, f      # Type failed
+    assert f["reads_with_content"] == 2, f
+
+
+def test_outcome_facts_expose_the_ghost_shape():
+    """The dispatch-5 shape: reads only. A caller can reject this without reading a word."""
+    log = [p_ok("BrowserGetText", "x"), p_ok("BrowserListInteractives", "y"), p_ok("BrowserScreenshot", "z")]
+    f = outcome_facts(log)
+    assert f["mutations_attempted"] == 0 and f["mutations_succeeded"] == 0, f
+    assert f["reads_with_content"] == 3, f
+
+
+def test_outcome_facts_on_an_empty_run_are_all_zero_not_missing():
+    """Absent keys would make a caller's check silently pass; zeros make it fail honestly."""
+    f = outcome_facts([])
+    for k in ("calls", "mutations_attempted", "mutations_succeeded", "reads_with_content"):
+        assert f[k] == 0, f"{k} missing or non-zero on an empty run: {f}"

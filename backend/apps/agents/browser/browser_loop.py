@@ -414,6 +414,31 @@ P_FABRICATED_CALL_RE = re.compile(
     r"<\s*(?:antml:)?tool_use\s+", re.I)
 
 
+def outcome_facts(action_log: list[dict]) -> dict:
+    """What the run actually did, in counts a caller can check without reading the prose.
+
+    The six bad dispatches in ENG-297 were only caught because a human noticed "3 read-only calls"
+    under a "Task completed." That is a suspicious reader applying a heuristic, and a less suspicious
+    pass ships the fabrication onward. These counts travel WITH the summary so a calling agent can
+    distrust prose on principle instead of by intuition.
+
+    Every key is always present, including zeros: a missing key makes a caller's check pass silently,
+    which is the failure mode this exists to remove.
+    """
+    log = action_log or []
+    mutations = [a for a in log if a.get("tool") in P_PRODUCTIVE_TOOLS]
+    return {
+        "calls": len(log),
+        "mutations_attempted": len(mutations),
+        "mutations_succeeded": len([a for a in mutations if a.get("ok")]),
+        "reads_with_content": len([
+            a for a in log
+            if a.get("tool") in P_READ_TOOLS and a.get("ok")
+            and str(a.get("result_summary") or "").strip()
+        ]),
+    }
+
+
 def summary_fabricates_tool_calls(summary: str) -> bool:
     """True when a run's summary contains tool-call MARKUP rather than a report.
 
