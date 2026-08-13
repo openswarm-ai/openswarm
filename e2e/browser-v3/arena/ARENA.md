@@ -133,6 +133,15 @@ The 13 residual losses are the irreducible product-primitive cluster (games, con
 geometry, two long forms) plus a residual empty-reply subclass (model prose with no action at
 all -- prefill-forcing is the structural close). Seed-43 confirmation in flight.
 
+## CompWoB — the generalization verdict (101 composed tasks, benchmark-scored)
+
+**Ours (v22, opus-5): 66/101 = 65.3%, 0 false claims, 17.4s median win.** Reference: the
+published 95%-MiniWoB specialist collapsed to ~61% here; our 90.9→65.3 is a smaller relative
+collapse, on a harness whose two instrument bugs (legacy engine, literal-URL validate) were
+caught by canary before any number shipped. Gradient: 2-part 82%, 3-part 41%, 5+-part 0% --
+the long-horizon sequencing frontier, plus a traced-pending cluster of simple-pair losses.
+browser-use runs the identical 101 next (their first known CompWoB number).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
