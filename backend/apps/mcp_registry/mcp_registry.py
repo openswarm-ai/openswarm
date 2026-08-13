@@ -8,6 +8,8 @@ from typing import Optional
 
 import httpx
 from fastapi import Query
+from typeguard import typechecked
+
 from backend.config.Apps import SubApp
 
 logger = logging.getLogger(__name__)
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 REGISTRY_BASE = "https://registry.modelcontextprotocol.io/v0.1"
 PAGE_LIMIT = 100
 REFRESH_INTERVAL_S = 3600
+FIRST_LOAD_WAIT_S = 25.0
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_BATCH = 4000 if GITHUB_TOKEN else 50
@@ -322,6 +325,34 @@ def arm_registry_refresh() -> None:
         p_start_refresh_task()
 
 
+@typechecked
+def registry_server_count() -> int:
+    """How many servers are cached right now; 0 means the first crawl has not landed."""
+    return len(p_cache)
+
+
+@typechecked
+async def ensure_registry_ready(timeout_s: float = FIRST_LOAD_WAIT_S) -> bool:
+    """Arm the crawl and wait for the first server list, so a cold open is not a blank page.
+
+    Arming alone was not enough and shipped a real regression: the route fired the task and then
+    read the cache in the same breath, so the first Marketplace open after a boot returned zero
+    servers and a detail lookup 404'd, for as long as the ~215-request crawl took. Idle cost went
+    to zero and the feature went with it.
+
+    Polls rather than waiting on an Event: an asyncio primitive here would have to be loop-local to
+    avoid the ENG-219 hang, and this needs no cross-task signalling to earn that complexity.
+
+    Bounded on purpose. If the crawl is slow the caller still gets whatever is cached rather than
+    hanging, which is exactly the old behaviour and never worse.
+    """
+    arm_registry_refresh()
+    deadline = time.monotonic() + timeout_s
+    while not registry_server_count() and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    return registry_server_count() > 0
+
+
 @asynccontextmanager
 async def mcp_registry_lifespan():
     global p_refresh_task
@@ -340,11 +371,11 @@ mcp_registry = SubApp("mcp-registry", mcp_registry_lifespan)
 
 @mcp_registry.router.get("/stats")
 async def registry_stats():
-    arm_registry_refresh()
+    await ensure_registry_ready()
     google = sum(1 for s in p_cache.values() if s.get("source") == "google")
     community = sum(1 for s in p_cache.values() if s.get("source") == "community")
     return {
-        "total": len(p_cache),
+        "total": registry_server_count(),
         "google": google,
         "community": community,
         "lastUpdated": p_cache_updated_at,
@@ -359,7 +390,7 @@ async def registry_search(
     sort: str = Query("name", description="Sort by: name, stars"),
     source: str = Query("", description="Filter by source: google, community, or empty for all"),
 ):
-    arm_registry_refresh()
+    ready = await ensure_registry_ready()
     pool = p_cache.values()
     if source:
         pool = [s for s in pool if s.get("source") == source]
@@ -400,12 +431,12 @@ async def registry_search(
         for s in page
     ]
 
-    return {"servers": summary, "total": total, "offset": offset, "limit": limit}
+    return {"servers": summary, "total": total, "offset": offset, "limit": limit, "loading": not ready}
 
 
 @mcp_registry.router.get("/detail/{server_name:path}")
 async def registry_detail(server_name: str):
-    arm_registry_refresh()
+    await ensure_registry_ready()
     srv = p_cache.get(server_name)
     if not srv:
         return {"error": "Server not found"}, 404
