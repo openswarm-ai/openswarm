@@ -339,6 +339,15 @@ Prediction: >=3 of 8 targets (click-widget compositions specifically; the blocke
 now actually gets exercised when the model clicks the real covered input), controls 12/12
 (suppression only fires on single-child weak-named shells).
 
+FIRST RUN VOID (implementation bugs, not a verdict): targets 0/8 but the labeled trace showed
+the BLOCKED message never reached the model — (a) it was APPENDED after Playwright's multi-line
+call log and truncated out of both the record and history caps; (b) the bbox source
+(extra_element_properties) goes stale post-step and pointed the probe at BODY. Fixed: message
+prepended; rect computed in-page from the live bid element (verified: probe names
+DIV.ui-dialog-titlebar). Also fixed alongside: empty LLM completions (thinking exhausting
+max_tokens) are now retried with doubled budget instead of being booked as no-action turns —
+this was the entire login-composition 0-step failure mode. Prediction unchanged; pilot rerun.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained

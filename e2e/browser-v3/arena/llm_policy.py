@@ -244,6 +244,12 @@ class LlmPolicy:
                     payload["temperature"] = self.temperature
                 resp = post_json(f"{self.endpoint}/v1/chat/completions", payload)
                 text = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+                # Thinking models sometimes spend the whole budget before emitting text; an empty
+                # reply must be retried like any fault, never silently booked as a no-action turn.
+                if not text.strip():
+                    payload["max_tokens"] = min(int(self.max_tokens * 2), 2000)
+                    self.max_tokens = payload["max_tokens"]
+                    raise ValueError("empty completion (thinking exhausted max_tokens?)")
                 usage = resp.get("usage") or {}
                 d.prompt_tokens = int(usage.get("prompt_tokens") or 0)
                 d.completion_tokens = int(usage.get("completion_tokens") or 0)

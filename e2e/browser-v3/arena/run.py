@@ -218,16 +218,24 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
             if (getattr(policy, "blocker_probe", False) and "Timeout" in err
                     and re.match(r"(?:dbl)?click\(", decision.action)):
                 m_bid = re.search(r'"([^"]+)"', decision.action)
-                bbox = ((obs.get("extra_element_properties") or {}).get(m_bid.group(1)) or {}).get("bbox") if m_bid else None
-                if bbox:
+                if m_bid:
                     try:
+                        # Rect computed in-page from the live element (extra_element_properties
+                        # bboxes go stale post-step and once pointed the probe at BODY).
                         top = with_deadline(lambda: env.unwrapped.page.evaluate(
-                            "([x,y]) => { const e = document.elementFromPoint(x,y);"
-                            " return e ? e.tagName + (e.id?'#'+e.id:'') +"
-                            " (e.className&&typeof e.className==='string'?'.'+e.className.split(' ')[0]:'') : ''; }",
-                            [bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2]), 8)
+                            "(bid) => { const el = document.querySelector(`[bid=\"${bid}\"]`);"
+                            " if (!el) return ''; const r = el.getBoundingClientRect();"
+                            " const e = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);"
+                            " if (!e || e === el || el.contains(e)) return '';"
+                            " return e.tagName + (e.id?'#'+e.id:'') +"
+                            " (e.className&&typeof e.className==='string'?'.'+e.className.split(' ')[0]:''); }",
+                            m_bid.group(1)), 8)
                         if top:
-                            err += f" | BLOCKED: {top} is covering this element -- move or close the cover first (drag its titlebar or dismiss it), then retry"
+                            # PREPENDED: a suffix after Playwright's multi-line call log gets
+                            # truncated out of both the record and the model's history.
+                            err = (f"BLOCKED: {top} is covering the element you clicked -- move or "
+                                   f"close the cover first (drag its titlebar or dismiss it), then "
+                                   f"retry | {err}")
                             obs["last_action_error"] = err
                     except Exception:
                         pass
