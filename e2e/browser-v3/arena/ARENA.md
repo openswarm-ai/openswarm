@@ -396,6 +396,18 @@ execution (ours) vs order-opportunistic (theirs). Staged v33: deferred-clause ex
 (attempt stated order; a clause whose target is missing/blocked is DEFERRED and revisited,
 never stalled on) — pre-registration against exactly this 12-task cluster before any episode.
 
+## Benchmark roadmap (2026 landscape survey, method-filtered)
+
+Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
+subset only). ADDED: WebChoreArena (COLM 2026, wired, sweep queued); REAL/realevals.xyz (11
+deterministic self-hosted simulations of real sites, 110+ tasks, programmatic state verification
+— deterministic subset only) next after it; WASP (Meta, prompt-injection — the >=95 injection
+clause); OSWorld (the >=85 clause; biggest infra lift). EXCLUDED with reasons: Online-Mind2Web
+(LLM-judge on live drifting sites — but its '59% weaker on live web' finding motivates the live
+verified-writes clause), WebVoyager (publicly described as saturated), GAIA/BrowseComp/
+LiveAgentBench (research-QA, not browser operation), VisualWebArena (screenshot-agent variant of
+sites we already run; low marginal signal).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
