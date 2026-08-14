@@ -23,6 +23,7 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.agents.manager.permissions import path_gate
 from backend.apps.agents.manager.permissions.decision import effective_policy
+from backend.apps.agents.manager.streaming.unwedge_sidecar import arm_wedge_watchdog
 from backend.apps.agents.manager.prompt.tool_catalog import gated_mcp_server_names
 from backend.apps.agents.manager.prompt.prompt_context import (
     TOOLSEARCH_LOOP_THRESHOLD,
@@ -195,4 +196,6 @@ async def pre_tool_hook(ctx: HookContext, input_data: dict, tool_use_id: Optiona
 
     if tool_use_id:
         ctx.tool_start_times[tool_use_id] = time.time()
+        # A frozen sidecar hangs a quick core tool forever; the watchdog turns that into the self-healing death (ENG-303).
+        arm_wedge_watchdog(ctx, tool_use_id, tool_name)
     return {}
