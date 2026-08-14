@@ -284,6 +284,21 @@ v29 = discriminative per-row context (nearest section/heading ancestor + local s
 per row where twins exist) — a perception primitive for any multi-section page, nothing
 CompWoB-specific. Pre-registration follows implementation.
 
+## PRE-REGISTERED (2026-08-14, before any v29 episode): discriminative row context pilot
+
+Mechanism: `local_ctx` (v29), perception layer, three rungs -- (1) `dom_group_hints`: nearest
+SMALL labeled DOM ancestor (id/first class token, <=8 bids under it) becomes '§ <label>'; the
+AX tree prunes unlabeled wrappers so this is recovered from the DOM snapshot ('div.widget >
+input' was arriving as an anonymous textbox among 29 siblings); (2) sibling-group names ('w/
+kgfN 1E9F ...') when no labeled ancestor exists; (3) old nearest-text fallback. Section labels
+always render (a unique name cannot answer WHICH-group questions). Acid test passed offline:
+the widget section self-labels (§ widget on its 5 rows incl. both named textboxes), dialog
+titlebar self-labels, choice groups get distinct sibling contexts. Nothing task-specific: ids
+and class tokens are how every real page names its sections. Prediction: >=3 of 8 pilot
+targets (every one whose FIRST failing clause is an anonymous-among-twins pick — all 5
+click-widget-containing targets are candidates), controls 12/12 unharmed (v22 arm untouched;
+gate is the arm flag).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained

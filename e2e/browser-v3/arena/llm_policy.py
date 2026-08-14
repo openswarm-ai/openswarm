@@ -135,6 +135,11 @@ class LlmPolicy:
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
 
+    # v29: discriminative local-group row context (perception layer). See
+    # perception.build_local_context -- same-role nameless twins in different page sections must
+    # render distinct, or the model's choice between them is a coin flip it cannot know it's making.
+    local_ctx: bool = False
+
     # v28: per-step self-evaluation. The reply gains one trailing line -- 'EVAL: <verdict on the
     # previous action, judged from the current page>' -- which rides in history, so every turn
     # opens with the model's own judgment of whether its last step worked. browser-use's schema
@@ -307,7 +312,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
         raw_items: list[RankItem] = perception.interactives(
             obs, include_clickable=self.clickable, attr_hints=self.hints,
-            include_offscreen=self.offscreen)
+            include_offscreen=self.offscreen, local_ctx=self.local_ctx)
         shown, truncated = rank_and_cap(raw_items, goal=goal)
         new = {it.bid for it in shown} - self.prev_bids if self.prev_bids else set()
         self.prev_bids = {it.bid for it in shown}
@@ -873,6 +878,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v29":  # v22 + discriminative local-group row context (perception primitive)
+        v29 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, **v29)
     if name == "osw-llm-v28":  # v22 + per-step self-eval line riding in history (eval-memory half)
         v28 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

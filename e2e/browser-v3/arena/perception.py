@@ -71,9 +71,95 @@ def build_context(nodes: list[dict[str, Any]], by_id: dict[str, dict[str, Any]],
     return ""
 
 
+def dom_group_hints(obs: dict[str, Any], max_group: int = 8) -> dict[str, str]:
+    """bid -> '§ <label>' from the nearest SMALL labeled DOM ancestor (id or first class token).
+
+    The AX tree prunes unlabeled wrappers, flattening section structure ('div.widget > input'
+    arrives as a bare textbox among 29 siblings). The DOM snapshot still has it. An ancestor
+    only counts if few enough bids live under it (<= max_group) -- page-level wrappers like
+    <div id=area> label everything and therefore label nothing."""
+    out: dict[str, str] = {}
+    dom = obs.get("dom_object") or {}
+    strings: list[str] = dom.get("strings") or []
+    for doc in dom.get("documents") or []:
+        nd = doc.get("nodes") or {}
+        parent: list[int] = nd.get("parentIndex") or []
+        attr_rows: list[list[int]] = nd.get("attributes") or []
+        n = len(parent)
+        pairs: list[dict[str, str]] = []
+        for a in attr_rows:
+            pairs.append({strings[a[k]]: strings[a[k + 1]] for k in range(0, len(a) - 1, 2)})
+        while len(pairs) < n:
+            pairs.append({})
+        cnt = [0] * n
+        withbid = [i for i in range(n) if pairs[i].get("bid")]
+        for i in withbid:
+            j = parent[i]
+            while 0 <= j < n:
+                cnt[j] += 1
+                j = parent[j]
+        for i in withbid:
+            j = parent[i]
+            while 0 <= j < n:
+                p = pairs[j]
+                label = (p.get("id") or (p.get("class") or "").split(" ")[0]).strip()
+                if label and not label.startswith("browsergym") and cnt[j] <= max_group:
+                    out[pairs[i]["bid"]] = f"§ {label[:24]}"
+                    break
+                if cnt[j] > max_group:
+                    break  # every higher ancestor is even bigger
+                j = parent[j]
+    return out
+
+
+def build_local_context(by_id: dict[str, dict[str, Any]], node: dict[str, Any],
+                        inter_ids: set, name_of, depth: int = 4) -> str:
+    """v29: context from the node's LOCAL GROUP -- the names of its fellow members in the
+    smallest ancestor holding 2..8 interactives. build_context's nearest-ancestor-with-text
+    walk degrades to identical page-level soup on multi-section pages, so same-role nameless
+    twins (two anonymous textboxes in different sections) rendered indistinguishably and the
+    model's pick was a measured coin flip. Sibling names differ per section by construction."""
+    memo: dict[str, int] = {}
+
+    def icount(nid: str) -> int:
+        if nid in memo:
+            return memo[nid]
+        memo[nid] = 0  # cycle guard
+        n = by_id.get(nid) or {}
+        c = (1 if nid in inter_ids else 0) + sum(icount(cid) for cid in n.get("childIds") or [])
+        memo[nid] = c
+        return c
+
+    def members(nid: str, out: list, self_id: str) -> None:
+        if len(out) > 8:
+            return
+        if nid in inter_ids and nid != self_id:
+            out.append(nid)
+        for cid in (by_id.get(nid) or {}).get("childIds") or []:
+            members(cid, out, self_id)
+
+    self_id = node.get("nodeId")
+    cur = node
+    for _ in range(depth):
+        pid = cur.get("parentId")
+        if not pid or pid not in by_id:
+            break
+        parent = by_id[pid]
+        k = icount(pid)
+        if 2 <= k <= 8:
+            got: list = []
+            members(pid, got, self_id)
+            names = [name_of(by_id[m])[:14] for m in got]
+            names = [x for x in names if x]
+            if names:
+                return "w/ " + " ".join(names)[:56]
+        cur = parent
+    return ""
+
+
 def interactives(obs: dict[str, Any], include_hidden: bool = False,
                  include_clickable: bool = False, attr_hints: bool = False,
-                 include_offscreen: bool = False) -> list[RankItem]:
+                 include_offscreen: bool = False, local_ctx: bool = False) -> list[RankItem]:
     """Every actionable node in document order, before any ranking or capping is applied.
 
     include_clickable is the technique ingested from browser-use: elements the page wires for
@@ -86,7 +172,7 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
     extra = obs.get("extra_element_properties") or {}
     by_id = {n["nodeId"]: n for n in nodes if "nodeId" in n}
     hints = dom_attr_hints(obs) if attr_hints else {}
-    out: list[RankItem] = []
+    picked: list[tuple[dict[str, Any], str, str, dict[str, Any], bool]] = []
     for n in nodes:
         if n.get("ignored"):
             continue
@@ -106,22 +192,36 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
         if not onscreen and not include_hidden:
             if not (include_offscreen and props.get("bbox")):
                 continue
-        name = node_name(n).strip()
+        picked.append((n, role if is_role else (role or "clickable"), str(bid), props, onscreen))
+
+    def display_name(n: dict[str, Any]) -> str:
         # Nameless rows resolve by their OWN text first ('dignissim' from the child text node), and
         # only then by DOM identity ('(trash)'). The class hint alone made every link in a tab panel
         # read '(alink)' -- indistinguishable, so the model guessed and the guess was terminal.
-        if not name:
-            name = subtree_text(by_id, n)
-        if not name and str(bid) in hints:
-            name = f"({hints[str(bid)]})"
-        bbox = (extra.get(str(bid)) or {}).get("bbox")
+        nm = node_name(n).strip() or subtree_text(by_id, n)
+        b = str(n.get("browsergym_id") or "")
+        if not nm and b in hints:
+            nm = f"({hints[b]})"
+        return nm
+
+    inter_ids = {n.get("nodeId") for n, *_ in picked}
+    grp = dom_group_hints(obs) if local_ctx else {}
+    out: list[RankItem] = []
+    for n, role, bid, props, onscreen in picked:
+        name = display_name(n)
+        bbox = props.get("bbox")
         center = (bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2) if bbox else None
+        ctx = ""
+        if local_ctx:
+            ctx = grp.get(bid) or build_local_context(by_id, n, inter_ids, display_name)
+        if not ctx:
+            ctx = build_context(nodes, by_id, n)
         out.append(RankItem(
-            role=role if is_role else (role or "clickable"),
+            role=role,
             name=name,
-            bid=str(bid),
+            bid=bid,
             value=node_value(n)[:80],
-            context=build_context(nodes, by_id, n),
+            context=ctx,
             center=center,
             options=child_options(by_id, n) if role in ("combobox", "listbox", "menu") else None,
             offscreen=not onscreen,

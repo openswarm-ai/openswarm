@@ -141,7 +141,10 @@ def render(items: list[RankItem], truncated: int, new_bids: set[str] | None = No
         dup = counts.get(f"{el.role}|{el.name}", 0) > 1
         # ctx also whenever the name alone cannot identify the row (empty or a bare attr hint).
         weak_name = not el.name or el.name.startswith("(")
-        ctx = f' ctx="{el.context}"' if (dup or weak_name) and el.context else ""
+        # Section labels ('§ widget') always display: they answer WHICH-group questions the goal
+        # asks ('the text widget', 'in the dialog') that a unique name alone cannot.
+        show_ctx = (dup or weak_name or el.context.startswith("§")) and el.context
+        ctx = f' ctx="{el.context}"' if show_ctx else ""
         val = f' value="{el.value}"' if el.value else ""
         star = "*" if new_bids and el.bid in new_bids else ""
         off = " off" if el.offscreen else ""
