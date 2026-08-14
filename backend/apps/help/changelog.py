@@ -45,6 +45,8 @@ P_RELEASES: List[ReleaseNote] = [
             "The app no longer crawls a 21,000-server directory in the background on every launch. It now loads that list the first time you open the connector browser, and not before.",
             "Installing an experimental build no longer quietly puts you back on the stable one the next time you quit.",
             "The model you pick is the model that runs. The retired free tier was quietly forcing every session onto Haiku no matter what the picker said; it is gone, and installs still carrying it are moved off.",
+            "Renaming an app now writes the new name where agents read it, so asking about \"the X app\" stops confusing them.",
+            "Deleting an app that can't be taken off the internet now says so instead of making the app vanish from the board and reappear on the next reload.",
             "An app that had been opened before could get stuck loading forever, and opening a second window of it was the only way through. It reports where to find itself again, so the first window works.",
             "Apps with their own backend can start it again. On packaged builds the bundled Python shipped without the piece that makes a virtual environment usable, so every new app's backend died on startup while three separate steps reported success.",
             "An app whose backend is switched on always boots a real server now, instead of being served as a prebuilt page wired to an API that was never started.",
