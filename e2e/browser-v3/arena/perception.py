@@ -150,7 +150,10 @@ def build_local_context(by_id: dict[str, dict[str, Any]], node: dict[str, Any],
             got: list = []
             members(pid, got, self_id)
             names = [name_of(by_id[m])[:14] for m in got]
-            names = [x for x in names if x]
+            # Only REAL names discriminate. A cluster of attr-hint icons ('(retweet)' '(like)')
+            # names the group's furniture, not its identity -- and it DISPLACED the nearest-text
+            # context that carried the card's @handle, costing social-media-all all 3 seeds.
+            names = [x for x in names if x and not x.startswith("(")]
             if names:
                 return "w/ " + " ".join(names)[:56]
         cur = parent
@@ -253,6 +256,21 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
             options=child_options(by_id, n) if role in ("combobox", "listbox", "menu") else None,
             offscreen=not onscreen,
         ))
+    if local_ctx:
+        # A context is only information if it SEPARATES twins. When every same-role/name twin
+        # carries the identical structural label ('§ controls' on all 11 retweet buttons), the
+        # label displaced the per-card nearest-text that actually attributed rows to their post
+        # (measured: social-media-all lost all 3 seeds). Fall those rows back to nearest text.
+        node_of = {it.bid: n for (n, _r, b, _p, _o), it in zip(picked, out) for b in [it.bid]}
+        groups: dict[tuple[str, str], list[int]] = {}
+        for i, it in enumerate(out):
+            groups.setdefault((it.role, it.name), []).append(i)
+        for idxs in groups.values():
+            if len(idxs) > 1 and len({out[i].context for i in idxs}) == 1:
+                for i in idxs:
+                    n2 = node_of.get(out[i].bid)
+                    if n2 is not None:
+                        out[i].context = build_context(nodes, by_id, n2) or out[i].context
     return out
 
 
