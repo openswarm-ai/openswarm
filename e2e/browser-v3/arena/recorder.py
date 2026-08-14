@@ -56,6 +56,10 @@ class EpisodeRecord:
     reward: float = 0.0
     raw_reward: float = 0.0
     success: bool = False
+    # reward >= 1.0: fully solved. `success` (reward>0) equals this on MiniWoB but on
+    # checkpoint-scored benchmarks (WebArena-family) means only "partial credit" -- reports of
+    # solve rates MUST use strict. Added after the 2026-08 mislabeling correction in ARENA.md.
+    strict: bool = False
     # What the agent itself claimed; claimed and not success = a false success, the worst failure class.
     claimed_success: bool = False
     steps: int = 0

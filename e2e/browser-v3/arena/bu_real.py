@@ -276,6 +276,7 @@ def main() -> None:
                     ep.error_class = ep.error_class or "infra_score_readback"
                     ep.error_detail = f"{type(exc).__name__}: {exc}"[:200]
                 ep.success = ep.reward > 0
+                ep.strict = ep.reward >= 1.0  # solved-bit; success alone is partial credit on WebArena-family
                 ep.claimed_success = bool(stats.get("claimed_success"))
                 ep.steps = len(stats.get("actions") or [])
                 ep.prompt_tokens = stats.get("prompt_tokens", 0)

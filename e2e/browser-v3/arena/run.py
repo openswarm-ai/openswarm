@@ -208,7 +208,11 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
         if args.trace:
             traceback.print_exc()
     ep.wall_s = time.time() - t0
+    # success (reward>0) is MiniWoB semantics: pages pay only on completion. WebArena-family
+    # rewards are FRACTIONAL checkpoint credit, so reward>0 is "made progress", not "solved" --
+    # `strict` carries the solved bit for every benchmark so no report can conflate them again.
     ep.success = ep.reward > 0
+    ep.strict = ep.reward >= 1.0
     try:
         raw = with_deadline(lambda: env.unwrapped.page.evaluate(
             "typeof WOB_RAW_REWARD_GLOBAL !== 'undefined' ? WOB_RAW_REWARD_GLOBAL : 0"), 10)

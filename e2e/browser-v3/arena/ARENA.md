@@ -170,6 +170,34 @@ work, booked to the same frontier as MiniWoB's hard-10. Toolchain note: the enti
 lives in ~/.cache/arena after macOS's /tmp reaper deleted pyvenv.cfg mid-sweep -- a silent-error
 class now structurally closed.
 
+## WebArena Verified — first realistic-workflow measurement (100-task seeded partition)
+
+Setup: WebArena's own self-hosted sites (forum :9999, gitlab :8023) under colima; tasks are
+`browsergym/webarena_verified.*` scored end-to-end by THEIR evaluator (checkpointed functional
+validation — no LLM judging, no scoring code of ours). Partition: seed-42 sample of 100 from the
+304 reddit+gitlab tasks, committed in `wa_partition_100.json` before any episode ran; the same
+list runs on both stacks. Disclosed skew: reddit+gitlab is the hard-retrieval/admin end of
+WebArena — shopping partitions come later via site rotation (host disk cannot hold all 4 sites).
+
+**Ours (osw-llm-v22, cc/claude-opus-5): 0/100 fully-solved | 6 tasks with partial checkpoint
+credit (5× 0.667, 1× 0.5; sum 3.83) | median wall 63s | 0 false success claims.**
+
+CORRECTION (booked per method): earlier progress reports called these 6 partials "strict wins."
+That was wrong — the runner's `success = reward > 0` predicate is correct for MiniWoB (pages pay
+only on completion) but mislabels WebArena's fractional checkpoint rewards. The book always held
+the true rewards; the strict count is computed as `reward >= 1.0` and is 0. The error class is
+now unrepresentable: episodes carry an explicit `strict` field (see run.py).
+
+Reference points (full-task success, published): GPT-4 generic agent 14.4% on all-sites
+WebArena; tuned 2025-26 SOTA 50–62%; human 78%. Two honesty caveats cut both ways: (a) our 0%
+is on the hard partition, not all-sites — no cross-partition comparison is claimed; (b) 0 is 0 —
+the current harness, which is ~12 points above published generic agents on MiniWoB and 65% on
+CompWoB, does not yet complete a single full multi-checkpoint realistic workflow. The gap
+matches the CompWoB ≥5-part diagnosis exactly (mid-chain state re-acquisition), which is the
+strongest evidence yet that the missing piece is one product primitive, not benchmark tuning:
+partial credit shows clauses 1–2 execute, then bookkeeping dies. browser-use comparison arm
+runs next on the identical partition (auto-chained); its numbers land here when scored.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
