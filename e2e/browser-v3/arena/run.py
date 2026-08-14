@@ -101,6 +101,15 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                              ("HOMEPAGE", "http://localhost:4399")):
                     os.environ.setdefault(f"WA_{k}", v)
                 import browsergym.webarena_verified  # noqa: F401  registers the 812 Verified tasks
+            elif task.startswith("webchorearena."):
+                # Same self-hosted sites as WebArena; tasks/evaluator are theirs (COLM 2026).
+                # Runs under the ISOLATED chore-venv (their browsergym fork) -- never the main venv.
+                for k, v in (("SHOPPING", "http://localhost:7770"), ("SHOPPING_ADMIN", "http://localhost:7780/admin"),
+                             ("REDDIT", "http://localhost:9999"), ("GITLAB", "http://localhost:8023"),
+                             ("WIKIPEDIA", "http://localhost:8888"), ("MAP", "http://localhost:3000"),
+                             ("HOMEPAGE", "http://localhost:4399")):
+                    os.environ.setdefault(f"WA_{k}", v)
+                import browsergym.webchorearena  # noqa: F401  registers the 538 chore tasks
             elif "." in task:
                 # Lazy: importing assistantbench pulls HF datasets' multiprocessing machinery in,
                 # which corrupts sync-playwright's event loop for the WHOLE process -- 248 of 252
