@@ -131,8 +131,23 @@ export const updateOutput = createAsyncThunk(
   }
 );
 
+/** A refused delete is not a delete. This used to ignore the status entirely, so a published app
+ *  whose takedown failed (502, "sign in to manage published apps") vanished from the board while
+ *  the backend still had it: gone until reload, back after. Throws with the server's own reason so
+ *  the UI can say WHY instead of silently lying (the ENG-271 board-wipe class, one slice over). */
+export async function assertDeleteAccepted(res: { ok: boolean; status: number; json: () => Promise<unknown> }): Promise<void> {
+  if (res.ok) return;
+  let reason = `Delete failed (${res.status})`;
+  try {
+    const body = await res.json() as { detail?: unknown };
+    if (body?.detail) reason = String(body.detail);
+  } catch { /* a non-JSON error body just keeps the status line */ }
+  throw new Error(reason);
+}
+
 export const deleteOutput = createAsyncThunk('outputs/delete', async (id: string) => {
-  await fetch(`${OUTPUTS_API}/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${OUTPUTS_API}/${id}`, { method: 'DELETE' });
+  await assertDeleteAccepted(res);
   return id;
 });
 
