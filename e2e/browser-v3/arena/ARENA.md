@@ -430,6 +430,18 @@ dig; deprioritized behind WebChoreArena and the unmeasured goal clauses. CompWoB
 v34: ~77/95 ≈ 81% (74 + the 3 pilot flips at sweep seed); 12-task delta rerun queued to book it
 properly after the 3-seed rerun frees the lane.
 
+## MiniWoB 3-seed on the v32 stack (2026-08-14, post ctx-uniqueness fix)
+
+**89.0 mean (90.2 / 90.3 / 86.4)** vs the v22 baseline 90.9 (89.6/92.0/91.2). The interim 87.5
+was measured on the buggy displaced-context code and is superseded. The ctx-uniqueness fix is
+validated: social-media-all recovered 3/3 seeds. Remaining delta vs v22 concentrates in
+choose-date/book-flight/form-sequence: the native-picker fill dead-ends on READONLY datepicker
+inputs (trace: fill times out 3x, model resorts to Prev-clicking through re-rendering months),
+plus long-form seed variance (seed 44 alone is -4). Honest net of the v29–v34 stack: **-1.9
+MiniWoB, +12.6 CompWoB, +2 more CompWoB tasks under v34** — strongly positive, one agent, no
+per-benchmark configs. The readonly-picker dead end is a named future primitive (JS value-set
+fallback when a picker fill bounces); the >=95 MiniWoB clause remains open.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
