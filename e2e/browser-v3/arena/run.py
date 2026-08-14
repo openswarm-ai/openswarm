@@ -231,11 +231,22 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                             " (e.className&&typeof e.className==='string'?'.'+e.className.split(' ')[0]:''); }",
                             m_bid.group(1)), 8)
                         if top:
+                            forced = ""
+                            if getattr(policy, "force_unblock", False):
+                                # v32: dispatch the click on the element anyway (what CDP-driven
+                                # stacks do natively -- occlusion never stops them). The page's
+                                # listener decides if it counts; the model is told either way.
+                                ok = with_deadline(lambda: env.unwrapped.page.evaluate(
+                                    "(bid) => { const el = document.querySelector(`[bid=\"${bid}\"]`);"
+                                    " if (!el) return false; el.click(); return true; }",
+                                    m_bid.group(1)), 8)
+                                if ok:
+                                    forced = ("; the click was DISPATCHED anyway and may have "
+                                              "registered -- check the page before repeating it")
                             # PREPENDED: a suffix after Playwright's multi-line call log gets
                             # truncated out of both the record and the model's history.
-                            err = (f"BLOCKED: {top} is covering the element you clicked -- move or "
-                                   f"close the cover first (drag its titlebar or dismiss it), then "
-                                   f"retry | {err}")
+                            err = (f"BLOCKED: {top} is covering the element you clicked{forced} -- "
+                                   f"if it did not register, move or close the cover and retry | {err}")
                             obs["last_action_error"] = err
                     except Exception:
                         pass

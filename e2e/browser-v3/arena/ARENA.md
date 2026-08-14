@@ -348,6 +348,24 @@ DIV.ui-dialog-titlebar). Also fixed alongside: empty LLM completions (thinking e
 max_tokens) are now retried with doubled budget instead of being booked as no-action turns —
 this was the entire login-composition 0-step failure mode. Prediction unchanged; pilot rerun.
 
+RERUN VERDICT (2026-08-14): **fail on targets (0/8 pattern continuing; controls clean).** The
+BLOCKED message now demonstrably reaches the model and changes behavior — the trace shows it
+attempting to move the dialog (dragging the Close row: the titlebar itself is not an
+addressable element) and then resuming the clause sequence — but it never RETRIES the blocked
+clause-1 click, so the composition still scores 0. Model-side remediation of occlusion is now
+0-for-2 (instruction alone, instruction + named blocker).
+
+## PRE-REGISTERED (2026-08-14, before any v32 episode): forced dispatch on blocked clicks
+
+Mechanism: `force_unblock` (v32 = v31 + this) — when a click is BLOCKED, run.py dispatches a
+synthetic el.click() on the target immediately and the error says so ('the click was DISPATCHED
+anyway ... check the page before repeating it'). Rationale: CDP-driven stacks (browser-use)
+have exactly these semantics natively — occlusion never stops their clicks — so this is
+actionability PARITY between stacks, not a cheat; the blocked attempt and the forced dispatch
+are both surfaced honestly in history and in the book. Prediction: >=3 of 8 targets (the
+click-widget+click-dialog compositions), controls 12/12 (fires only on blocked clicks, which
+controls never hit).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained

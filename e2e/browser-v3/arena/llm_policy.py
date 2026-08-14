@@ -137,6 +137,10 @@ class LlmPolicy:
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
 
+    # v32: when a click is BLOCKED by an overlay, run.py dispatches a synthetic click on the
+    # target anyway (the actionability semantics CDP-driven stacks have natively) and says so.
+    force_unblock: bool = False
+
     # v31: suppress weak-named wrapper rows that shadow exactly one real child.
     suppress_wrappers: bool = False
 
@@ -905,6 +909,15 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v32":  # v31 + forced dispatch on blocked clicks (occlusion parity with CDP stacks)
+        v32 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
+                   max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, **v32)
     if name == "osw-llm-v31":  # v30 + wrapper suppression (trap rows shadowing one real child)
         v31 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
