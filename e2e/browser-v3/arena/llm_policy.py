@@ -127,11 +127,31 @@ class LlmPolicy:
     cur_clause: int = 1
 
     def clause_block(self) -> str:
+        if self.ledger and len(self.clauses) >= 3:
+            return self.ledger_block()
         if not (self.checklist and self.clauses):
             return ""
         rows = "\n".join(f"  {i}) {c}" for i, c in enumerate(self.clauses, 1))
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
+
+    # v27: ACTIVE sub-goal ledger. v24's static checklist (all clauses, full text, every turn)
+    # taxed attention and moved nothing; v26 proved plans execute cleanly against fresh pages.
+    # What dies mid-chain is knowing WHICH clause is live. So: done clauses collapse to ticks,
+    # the current clause alone gets full text and an imperative anchor, upcoming ones are stubs.
+    # Advancement is model-declared ('CLAUSE n') only after the page shows the current one done.
+    ledger: bool = False
+
+    def ledger_block(self) -> str:
+        k = min(self.cur_clause, len(self.clauses))
+        done = " ".join(f"✓{i}" for i in range(1, k))
+        up = "; ".join(f"{i}) {c[:40]}" for i, c in enumerate(self.clauses[k:], k + 1))
+        return ("\nGOAL PROGRESS (strict order):"
+                + (f"\n  done: {done}" if done else "")
+                + f"\n  → CURRENT clause {k}: {self.clauses[k - 1]}  <- work ONLY on this now"
+                + (f"\n  after: {up}" if up else "")
+                + f"\nWhen the page shows clause {k} is complete, start your reply with 'CLAUSE {k + 1}' "
+                  "to advance. Never work past the current clause; never re-do a ticked one.")
 
     # v23: echo the page's REACTION into memory. Feedback tasks (hot/cold, too-high/too-low,
     # score counters) answer every action in page text; a history of bare actions hides the only
@@ -246,7 +266,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
 
     def reset(self, goal: str) -> None:
         self.history = []
-        if self.checklist:
+        if self.checklist or self.ledger:
             parts = re.split(r",\s+(?:and\s+)?(?:then\s+)?|\s+then\s+|\s+and then\s+|\.\s+", goal)
             self.clauses = [p.strip().rstrip(".") for p in parts if len(p.strip()) > 3][:12]
             self.cur_clause = 1
@@ -645,7 +665,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
                 if redo:
                     chosen_list = redo
         m_cl = re.search(r"CLAUSE\s+(\d+)", raw or "")
-        if m_cl and self.checklist:
+        if m_cl and (self.checklist or self.ledger):
             self.cur_clause = max(self.cur_clause, int(m_cl.group(1)))
         if self.serial_multi and len(chosen_list) > 1:
             chosen_list = self.queue_rest(chosen_list)
@@ -832,6 +852,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v27":  # v22 + active sub-goal ledger (focused current-clause anchor, gated >=3 clauses)
+        v27 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  ledger=True, **v27)
     if name == "osw-llm-v26":  # v22 + serialized multi-action (queued steps re-resolve targets per-obs)
         v26 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

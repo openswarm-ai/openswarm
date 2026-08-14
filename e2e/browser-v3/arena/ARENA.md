@@ -215,6 +215,18 @@ given a fresh page. Updated diagnosis: the model loses track of which composed s
 active (goal-side, not page-side). Mechanism kept (it is correct-by-construction and free), but
 the cluster needs sub-goal tracking, not execution hygiene.
 
+## PRE-REGISTERED (2026-08-13, before any v27 episode): active sub-goal ledger pilot
+
+Follow-up to the v26 disconfirmation; also killed a rival explanation first: the 8-part page
+shows 34/34 interactives, 0 truncated — visibility is NOT the constraint. Mechanism: `ledger`
+(v27) — the v24 clause split, rendered ACTIVELY: done clauses collapse to ticks, only the
+current clause carries full text plus an imperative anchor, upcoming ones are 40-char stubs;
+advancement is model-declared ('CLAUSE n') on page evidence. Differs from failed v24 exactly in
+focus (one live clause) vs. passive full-list display. Gate: >=3 clauses; short tasks see
+nothing. Prediction: >=2 wins on the 8 pilot targets (incl. >=1 of the five >=5-part), controls
+12/12 unharmed. browser-use's edge here is an actively-updated plan + step verdicts; this is
+the plan-state half. Same pilot lists as v26 (v26_pilot.json).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
