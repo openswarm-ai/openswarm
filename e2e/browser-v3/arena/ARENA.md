@@ -366,6 +366,19 @@ are both surfaced honestly in history and in the book. Prediction: >=3 of 8 targ
 click-widget+click-dialog compositions), controls 12/12 (fires only on blocked clicks, which
 controls never hit).
 
+VERDICT (2026-08-14): **prediction failed (1 of 8 targets; needed >=3) — but the one win is the
+FIRST >=5-part victory in the entire ladder** (the 6-part dialog composition, 9 steps, the exact
+task the occlusion chain was diagnosed on), and controls are 12/12 across the whole stacked
+v29–v32 change set. The 7-8-part traces show the full mechanism operating: blocked clicks
+named and dispatched, the model dragging the dialog aside, every clause then executed in
+order — and the page still scores 0. The residue lives inside the composed pages' own
+validators (event order/timing/type semantics not observable from outside the page). BOUNDARY
+BOOKED: the CompWoB mechanism ladder ends here at v32. Net yield of the dig: three genuine
+perception primitives (section labels, wrapper suppression, named blockers), occlusion parity
+with CDP stacks, empty-completion retries, and labeled-target instrumentation — all
+real-product, none benchmark-specific. Full CompWoB sweep on v32 is a measurement of where the
+final stack lands (controls clean = safe); MiniWoB-125 3-seed regression follows it.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
