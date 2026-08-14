@@ -97,6 +97,13 @@ def make_env(task: str, seed: int, max_steps: int):
     patch_launch_with_cdp_port()
     if task.startswith("compwob."):
         import compwob  # noqa: F401  registers the composed tasks (legacy-engine base_url)
+    elif task.startswith("webarena_verified."):
+        for k, v in (("SHOPPING", "http://localhost:7770"), ("SHOPPING_ADMIN", "http://localhost:7780/admin"),
+                     ("REDDIT", "http://localhost:9999"), ("GITLAB", "http://localhost:8023"),
+                     ("WIKIPEDIA", "http://localhost:8888"), ("MAP", "http://localhost:3000"),
+                     ("HOMEPAGE", "http://localhost:4399")):
+            os.environ.setdefault(f"WA_{k}", v)
+        import browsergym.webarena_verified  # noqa: F401
     elif "." in task:
         import browsergym.assistantbench  # noqa: F401  lazy: HF datasets machinery breaks playwright
     env_id = f"browsergym/{task}" if "." in task else f"browsergym/miniwob.{task}"
