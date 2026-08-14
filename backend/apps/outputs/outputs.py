@@ -476,7 +476,11 @@ def runtime_status_payload(workspace_id: str, instance: int = 1) -> dict:
         "backend_url": f"http://127.0.0.1:{rt.port}" if rt.running and rt.port else None,
         # New-mode only: where the Vite dev server is reachable. Old-mode workspaces report null and the editor falls back to the legacy /api/outputs/workspace/{ws}/serve/... path.
         "frontend_port": rt.frontend_port,
-        "frontend_url": rt.frontend_url if rt.running else None,
+        # Ask the property, do not re-gate on `running`: a serve-static app HAS no process, so the
+        # extra gate blanked its URL and the preview pane had nothing to navigate to, which is the
+        # "app loads forever until I open a second instance" report (a second instance skips serve
+        # mode entirely). The property already handles ready/suspended/dead-vite itself.
+        "frontend_url": rt.frontend_url,
         "is_new_mode": rt.is_new_mode,
         # The boot narration used to be WS-only, so a wedged boot left no queryable trace and one 120s field wedge stayed a shrug (ENG-305); the tail makes any status poll name what the boot is doing.
         "recent_log": [getattr(line, "text", str(line))[-200:] for line in list(rt.log_buffer)[-12:]],
