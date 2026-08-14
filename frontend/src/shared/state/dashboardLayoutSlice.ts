@@ -1,3 +1,4 @@
+import { restoredCardPosition } from './restoredCardPosition';
 import { createSlice, createAsyncThunk, PayloadAction, createAction } from '@reduxjs/toolkit';
 import { launchAndSendFirstMessage, resumeSession, collapseSession, collapseAllSessions, setExpandedSessionIds } from './agentsSlice';
 import { untileClosedChats } from './untileClosedChats';
@@ -631,6 +632,19 @@ export interface SpawnAnchor {
   viewportCenter?: { x: number; y: number };
 }
 
+// Which card map holds this id, plus the exclusion tag `collectOccupiedRects` needs so a card is
+// never treated as blocking its own restore.
+function p_placedCard(state: DashboardLayoutState, id: string):
+  { card: { x: number; y: number; width: number; height: number }; exclude: CardPlacementExclusion } | null {
+  const agent = Object.values(state.cards).find((c) => c.session_id === id);
+  if (agent) return { card: agent, exclude: { type: 'agent', id } };
+  const view = Object.values(state.viewCards).find((c) => c.output_id === id);
+  if (view) return { card: view, exclude: { type: 'view', id } };
+  const browser = Object.values(state.browserCards).find((c) => c.browser_id === id);
+  if (browser) return { card: browser, exclude: { type: 'browser', id } };
+  return null;
+}
+
 export function computeSpawnPosition(
   state: DashboardLayoutState,
   newW: number,
@@ -696,6 +710,19 @@ const dashboardLayoutSlice = createSlice({
       const id = action.payload.cardId;
       if (state.minimizedCards[id]) {
         delete state.minimizedCards[id];
+        // Coming back onto an occupied slot lands the card on top of whatever took its place while
+        // it was parked. Keep the user's spot when it is still free, reflow only when it is not.
+        const owner = p_placedCard(state, id);
+        if (owner) {
+          const occupied = collectOccupiedRects(state, undefined, owner.exclude);
+          const next = restoredCardPosition(
+            { x: owner.card.x, y: owner.card.y, w: owner.card.width, h: owner.card.height },
+            occupied,
+            findOpenSpotNear,
+          );
+          owner.card.x = next.x;
+          owner.card.y = next.y;
+        }
       } else {
         state.minimizedCards[id] = true;
         if (state.tiledCards[id] === 'fullscreen') delete state.tiledCards[id];
