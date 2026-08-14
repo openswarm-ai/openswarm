@@ -248,6 +248,12 @@ export function useCanvasControls(
   const animateToRef = useRef<((target: CanvasState, duration?: number) => void) | null>(null);
 
   const animateTo = useCallback((target: CanvasState, duration: number = 320) => {
+    // The guard used to run one way only: starting a pan cancels a running fly, but a fly starting
+    // DURING a drag was free to run, and then two writers drive the camera from different origins on
+    // the same frames. That reads as the viewport jumping a long way mid-drag (ENG-299). The user's
+    // hand wins: a fly requested while they are dragging is dropped, not queued, because landing it
+    // afterwards would move the world out from under a hand that had already stopped.
+    if (panStartRef.current) return;
     cancelAnimation();
     const start = { ...stateRef.current };
     const startTime = performance.now();
