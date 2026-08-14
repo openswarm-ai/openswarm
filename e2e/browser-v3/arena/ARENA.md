@@ -379,6 +379,23 @@ with CDP stacks, empty-completion retries, and labeled-target instrumentation �
 real-product, none benchmark-specific. Full CompWoB sweep on v32 is a measurement of where the
 final stack lands (controls clean = safe); MiniWoB-125 3-seed regression follows it.
 
+## CompWoB FINAL on v32 (2026-08-14): 77.9% — goal clause (>=75) MET
+
+**74/95 clean = 77.9%** (was 65.3 on v22; +12.6 from the v29–v32 perception/actionability dig).
+6 of 101 pages excluded as infra: all login-family, deterministic upstream genProblem crash
+under our launcher (attempted across three supervisor passes; blacklisted, disclosed). Zero
+false claims; median 19s wall, 12.5k tokens. By parts: 2-part 56/66, 3-part 12/18, 4-part 3/4,
+**5-part 1/2, 6-part 2/2** (this cluster was 0-for-everything before v32), 7-8-part 0/3
+(page-validator boundary, booked above).
+
+Head-to-head vs browser-use on the 94 tasks BOTH stacks completed cleanly: both-win 67,
+they-win-we-lose 12, we-win-they-lose 7, both-lose 8 → theirs 84.0% vs ours 78.7% (their
+82.0 headline also counts the 6 pages that crash under our launcher). Their 12 wins cluster:
+7 are '-reverse' instruction-order variants, 3 dialog-first, 2 login-popup — order-literal
+execution (ours) vs order-opportunistic (theirs). Staged v33: deferred-clause execution
+(attempt stated order; a clause whose target is missing/blocked is DEFERRED and revisited,
+never stalled on) — pre-registration against exactly this 12-task cluster before any episode.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
