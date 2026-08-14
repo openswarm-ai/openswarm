@@ -150,8 +150,9 @@ class LlmPolicy:
                 + (f"\n  done: {done}" if done else "")
                 + f"\n  → CURRENT clause {k}: {self.clauses[k - 1]}  <- work ONLY on this now"
                 + (f"\n  after: {up}" if up else "")
-                + f"\nWhen the page shows clause {k} is complete, start your reply with 'CLAUSE {k + 1}' "
-                  "to advance. Never work past the current clause; never re-do a ticked one.")
+                + f"\nYour reply still STARTS with the action line, as always. When the page shows "
+                  f"clause {k} is complete, add 'CLAUSE {k + 1}' on a line AFTER your action to "
+                  "advance. Never work past the current clause; never re-do a ticked one.")
 
     # v23: echo the page's REACTION into memory. Feedback tasks (hot/cold, too-high/too-low,
     # score counters) answer every action in page text; a history of bare actions hides the only
