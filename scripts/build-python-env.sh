@@ -140,8 +140,13 @@ rm -rf "$PYTHON_ENV_DIR/include"
 # IDLE editor + Tk GUI toolkit — embedded headless backend has no UI.
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/idlelib"
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/tkinter"
-# Pip bootstrap module — backend never installs packages at runtime.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/ensurepip"
+# ensurepip STAYS. It is what `python -m venv` uses to put pip inside a new
+# venv, and the App Builder builds every app's backend venv from THIS
+# interpreter (view_builder_templates.py p_resolve_python -> sys.executable).
+# Stripping it made every generated venv hollow: bin/ with three symlinks, no
+# pip, no site-packages, so `pip install -e .` died with "No module named pip"
+# and no app could ever boot a backend on a packaged build (Haik, 2026-08-14).
+# It costs ~10MB and it is the difference between apps working and not.
 # Educational drawing examples that ship with stdlib — never imported.
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/turtledemo"
 # turtle itself: a Tk-based graphics module. It imports tkinter (stripped
@@ -149,17 +154,30 @@ rm -rf "$PYTHON_ENV_DIR/lib/python3.13/turtledemo"
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/turtle.py"
 # Man pages / desktop-integration files — embedded Python doesn't read these.
 rm -rf "$PYTHON_ENV_DIR/share"
-# pip itself + launcher shims. Verified the packaged backend never invokes
-# pip: uvx (used by MCPs) is a self-contained installer; the App Builder's
-# view_builder_templates.py:382 picks SYSTEM python via shutil.which, never
-# this bundled one; backend code only mentions "pip install" in error-message
-# strings. `python -m venv` from this bundled env is also dead (ensurepip
-# already stripped above) but nothing calls it.
+# Top-level pip and the editor shims go; ensurepip above carries its own pip
+# wheel, so `python -m venv` still produces a venv WITH pip. The old comment
+# here justified stripping ensurepip too by claiming the App Builder used a
+# system python, which stopped being true when p_resolve_python switched to
+# sys.executable, and nothing re-read this file. That is why the gate below
+# verifies the interpreter instead of trusting a comment.
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/site-packages/pip" \
        "$PYTHON_ENV_DIR/lib/python3.13/site-packages"/pip-*.dist-info
 rm -f "$PYTHON_ENV_DIR/bin/pip" "$PYTHON_ENV_DIR/bin/pip3" "$PYTHON_ENV_DIR/bin/pip3.13" \
       "$PYTHON_ENV_DIR/bin/idle3" "$PYTHON_ENV_DIR/bin/idle3.13" \
       "$PYTHON_ENV_DIR/bin/pydoc3" "$PYTHON_ENV_DIR/bin/pydoc3.13"
+
+# The bundled interpreter MUST be able to create a working venv, or every app
+# backend is dead on arrival. Prove it here, at build time, where the failure
+# is a red build instead of a user's broken app four layers downstream.
+VENV_PROBE="$(mktemp -d)/probe"
+if ! "$PYTHON_BIN" -m venv "$VENV_PROBE" >/dev/null 2>&1 || [ ! -x "$VENV_PROBE/bin/pip" ]; then
+    echo "FATAL: the bundled interpreter cannot create a venv with pip." >&2
+    echo "App backends would all fail with 'No module named pip'. Check the prune block above." >&2
+    rm -rf "$VENV_PROBE"
+    exit 1
+fi
+rm -rf "$VENV_PROBE"
+echo "Verified: bundled python can create a venv with pip."
 # pydoc_data: keyword/topic tables consumed only by stdlib `pydoc` / `help()`.
 # Backend never starts a REPL or calls help().
 rm -rf "$PYTHON_ENV_DIR/lib/python3.13/pydoc_data"

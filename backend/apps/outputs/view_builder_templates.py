@@ -489,6 +489,7 @@ def p_ensure_warm_python_venv() -> str | None:
             )
             if r.returncode != 0:
                 logger.warning("warm-venv create failed: %s", r.stderr[-1500:])
+                shutil.rmtree(venv_dir, ignore_errors=True)
                 return None
 
             # Install the template's dependencies (fastapi[standard], typeguard, swarm-debug, transitives); keep this list in sync with webapp_template/backend/pyproject.toml. NOT the workspace's own backend, which gets editable-installed per-workspace by run.sh after the cache copy. The venv layout differs by platform: POSIX puts executables in `bin/`, Windows in `Scripts/`, and the executable name itself gets `.exe`.
@@ -496,6 +497,15 @@ def p_ensure_warm_python_venv() -> str | None:
                 pip = os.path.join(venv_dir, "Scripts", "pip.exe")
             else:
                 pip = os.path.join(venv_dir, "bin", "pip")
+            # An interpreter with no ensurepip yields a venv with no pip: bin/ holds three symlinks and nothing else, and every app built from it dies on `pip install -e .`. Catch it HERE, where one cache entry is wrong, not four layers down in a user's app (Haik, 2026-08-14).
+            if not os.path.exists(pip):
+                logger.error(
+                    "warm-venv has no pip (interpreter %s cannot bootstrap one); "
+                    "discarding so no app inherits a hollow venv", py,
+                )
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                return None
+
             deps = ["fastapi[standard]", "typeguard==4.4.2", "swarm-debug"]
             r = subprocess.run(
                 [pip, "install", "--disable-pip-version-check", *deps],
@@ -503,6 +513,18 @@ def p_ensure_warm_python_venv() -> str | None:
             )
             if r.returncode != 0:
                 logger.warning("warm-venv pip install failed: %s", r.stderr[-1500:])
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                return None
+
+            # The sentinel means USABLE, not merely attempted, so it is written only after the venv is proven to import what the template needs.
+            probe = subprocess.run(
+                [os.path.join(venv_dir, "Scripts" if os.name == "nt" else "bin", "python"),
+                 "-c", "import fastapi, typeguard, httpx, uvicorn"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if probe.returncode != 0:
+                logger.warning("warm-venv import probe failed: %s", probe.stderr[-800:])
+                shutil.rmtree(venv_dir, ignore_errors=True)
                 return None
 
             with open(sentinel, "w", encoding="utf-8") as fh:
@@ -511,6 +533,7 @@ def p_ensure_warm_python_venv() -> str | None:
             return venv_dir
         except Exception as exc:
             logger.warning("warm python venv failed: %s", exc)
+            shutil.rmtree(venv_dir, ignore_errors=True)
             return None
 
 

@@ -227,6 +227,8 @@ class AppRuntime:
                 return True
 
             self.p_reset_terminal_log()
+            # Every boot re-decides serve mode from scratch; a stale True from the previous boot would make ready/frontend_url claim a processless app is fine after a restart that exists to spawn one.
+            self.serve_static = False
             if self.is_new_mode:
                 # Acquire the module-level boot lock BEFORE the spawn so only one new-mode workspace is mid-bundle at a time. The lock is released by the bind-poll task the moment vite emits "frontend ready" (or its 180s timeout fires), which is the moment the next workspace can start its own vite without competing for the same CPU. See `p_await_frontend_bind` for the release.
                 p_boot_lock = get_vite_boot_lock()
@@ -247,7 +249,11 @@ class AppRuntime:
     async def p_start_new_mode(self) -> bool:
         # Serve-mode (ENG-209): a fresh built bundle + nobody editing = no process at all. Primary
         # instance only (secondaries are explicitly "another independent window", keep them live).
-        if self.instance == 1:
+        # An app with a backend never qualifies: serve mode spawns NOTHING, so the bundle would be
+        # served against an API that was never started, and start() would return True anyway. The
+        # freshness check only stats frontend files, so it cannot see a backend at all.
+        p_declares_backend = (read_env_value(os.path.join(self.workspace_path, ".env"), "BACKEND_PORT") or "NONE") != "NONE"
+        if self.instance == 1 and not p_declares_backend:
             from backend.apps.outputs.static_serve import static_fresh, workspace_being_edited
             if static_fresh(self.workspace_path) and not workspace_being_edited(self.workspace_path):
                 self.serve_static = True
@@ -465,7 +471,9 @@ class AppRuntime:
         """Inherited env minus the install token. Backend.py can hit our
         REST API back via its own creds if it really needs to, but it
         shouldn't inherit the host process's token by default."""
-        env = {k: v for k, v in os.environ.items() if k != "OPENSWARM_AUTH_TOKEN"}
+        # PYTHONPATH goes too: the host's points at the app bundle's own site-packages, which shadows the workspace venv so `pip install` reports success while installing nothing and `import fastapi` resolves to OUR copy. The app then works until it is run cleanly, and its venv was never real (Haik, 2026-08-14).
+        p_stripped = ("OPENSWARM_AUTH_TOKEN", "PYTHONPATH", "PYTHONHOME")
+        env = {k: v for k, v in os.environ.items() if k not in p_stripped}
         # Where the token lives, not the token itself: an app that legitimately calls our REST API reads it from disk and so picks up rotations, without the value sitting in its env for any child to inherit. Dev and packaged builds keep their data roots in different places, so an app hardcoding one of them is silently wrong in the other.
         env["OPENSWARM_HOST_TOKEN_FILE"] = AUTH_TOKEN_FILE
         env["OPENSWARM_OUTPUT_ID"] = self.workspace_id
@@ -661,7 +669,11 @@ class AppRuntimeManager:
                     except OSError:
                         continue
                     for peer in list(self.runtimes.values()):
-                        if peer.workspace_path == ws_path and peer.running and not peer.p_suspended:
+                        # serve_static counts even though `running` is False: it has no process BY
+                        # DESIGN, so gating on running made restart.sh time out on exactly the
+                        # runtimes that most need a restart, then blame a runtime that was fine.
+                        p_restartable = peer.running or peer.serve_static
+                        if peer.workspace_path == ws_path and p_restartable and not peer.p_suspended:
                             peer.announce("[runtime] restart requested from the workspace (restart.sh); restarting...")
                             asyncio.create_task(peer.restart())
             except Exception:

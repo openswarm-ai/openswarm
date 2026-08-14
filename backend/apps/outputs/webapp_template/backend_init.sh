@@ -64,7 +64,14 @@ chmod +x ./backend/run.sh
 # the activate script's VIRTUAL_ENV path is rewritten so `source
 # .venv/bin/activate` resolves to the correct workspace path.
 CACHE_VENV="${OPENSWARM_BACKEND_VENV_CACHE:-}/.venv"
-if [[ -d "$CACHE_VENV" ]]; then
+# Reuse only a venv the builder MARKED usable. Gating on "the directory exists"
+# copied hollow venvs (no pip, no site-packages) into every new app and printed
+# success anyway; the .populated sentinel was sitting right there unread.
+CACHE_SENTINEL="${OPENSWARM_BACKEND_VENV_CACHE:-}/.populated"
+if [[ -d "$CACHE_VENV" && ! -f "$CACHE_SENTINEL" ]]; then
+    echo "Warm backend venv at $CACHE_VENV is unpopulated; building a fresh one instead."
+fi
+if [[ -d "$CACHE_VENV" && -f "$CACHE_SENTINEL" ]]; then
     echo "Reusing warm backend venv from $CACHE_VENV..."
     cp -aR "$CACHE_VENV" ./backend/.venv
     NEW_VENV_ABS="$HERE/backend/.venv"
