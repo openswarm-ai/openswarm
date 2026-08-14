@@ -197,7 +197,7 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 dest = rec.shot_path(arm, task, seed, step)
                 rec_step.shot = save_screenshot(obs, dest)
             if not decision.action:
-                rec_step.action_error = "policy produced no action"
+                rec_step.action_error = ("policy produced no action | RAW: " + getattr(decision, "raw_tail", ""))[:400]
                 ep.add(rec_step)
                 # A no-action turn caused by a dead LLM lane is the harness's problem, not the arm's.
                 if getattr(decision, "llm_error", ""):

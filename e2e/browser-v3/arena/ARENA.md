@@ -320,6 +320,25 @@ blocked clicks. Real-world analogue: cookie banners, modals, sticky headers. Pre
 8 pilot targets (the 5 click-widget+click-dialog compositions are the candidates), controls
 12/12 (mechanism cannot fire on them).
 
+VERDICT (same day): **targets 0/8, controls 12/12 — the blocker path never fired because the
+model sidestepped it into a TRAP ROW.** Labeled trace: step 1 clicked the row named '(widget)'
+— a weak-named clickable WRAPPER div that shadows its single real child; the click lands (no
+timeout, no error), the page ignores it, the clause silently stays undone. The composed pages
+render every widget twice (generic mirror + real element); we showed both. Second finding:
+login-composition targets die to 'policy produced no action' (unparseable replies) — raw
+replies are now captured on no-action turns (LlmDecision.raw_tail) to make that diagnosable.
+
+## PRE-REGISTERED (2026-08-14, before any v31 episode): wrapper-suppression pilot
+
+Mechanism: `suppress_wrappers` (v31 = v30 + this) — a weak-named clickable (empty or
+'(attr-hint)' name) whose subtree holds exactly ONE other picked element is that element's
+wrapper: drop the shell, keep the properly-roled child. Acid test: the trap '(widget)' row and
+all four generic widget mirrors vanish; the five real § widget elements remain (31 -> 25 rows).
+Generic: wrapper-shadowing is how most real pages wire icon buttons and custom controls.
+Prediction: >=3 of 8 targets (click-widget compositions specifically; the blocker rung from v30
+now actually gets exercised when the model clicks the real covered input), controls 12/12
+(suppression only fires on single-child weak-named shells).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained

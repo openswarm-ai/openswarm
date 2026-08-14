@@ -159,7 +159,8 @@ def build_local_context(by_id: dict[str, dict[str, Any]], node: dict[str, Any],
 
 def interactives(obs: dict[str, Any], include_hidden: bool = False,
                  include_clickable: bool = False, attr_hints: bool = False,
-                 include_offscreen: bool = False, local_ctx: bool = False) -> list[RankItem]:
+                 include_offscreen: bool = False, local_ctx: bool = False,
+                 suppress_wrappers: bool = False) -> list[RankItem]:
     """Every actionable node in document order, before any ranking or capping is applied.
 
     include_clickable is the technique ingested from browser-use: elements the page wires for
@@ -205,6 +206,32 @@ def interactives(obs: dict[str, Any], include_hidden: bool = False,
         return nm
 
     inter_ids = {n.get("nodeId") for n, *_ in picked}
+    if suppress_wrappers and picked:
+        # A weak-named clickable whose subtree holds exactly ONE other picked element is that
+        # element's wrapper: a trap row ('(widget)') that looks like the thing and eats the click
+        # the page only counts on the child. Keep the properly-roled child, drop the shell.
+        memo: dict[str, int] = {}
+
+        def pdesc(nid: str) -> int:
+            if nid in memo:
+                return memo[nid]
+            memo[nid] = 0
+            node = by_id.get(nid) or {}
+            c = sum((1 if cid in inter_ids else 0) + pdesc(cid) for cid in node.get("childIds") or [])
+            memo[nid] = c
+            return c
+
+        kept = []
+        for tup in picked:
+            n = tup[0]
+            nm = node_name(n).strip()
+            weak = not nm or nm.startswith("(")
+            if weak and n.get("nodeId") and pdesc(n["nodeId"]) == 1:
+                continue
+            kept.append(tup)
+        if kept:
+            picked = kept
+            inter_ids = {n.get("nodeId") for n, *_ in picked}
     grp = dom_group_hints(obs) if local_ctx else {}
     out: list[RankItem] = []
     for n, role, bid, props, onscreen in picked:

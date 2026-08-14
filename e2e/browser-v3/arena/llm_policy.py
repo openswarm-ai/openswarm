@@ -67,6 +67,8 @@ class LlmDecision(Decision):
     llm_error: str = ""
     retries: int = 0
     vision: int = 0
+    # The model's verbatim reply when no action parsed from it -- the only way to debug WHY.
+    raw_tail: str = ""
 
 
 @dataclass
@@ -134,6 +136,9 @@ class LlmPolicy:
         rows = "\n".join(f"  {i}) {c}" for i, c in enumerate(self.clauses, 1))
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
+
+    # v31: suppress weak-named wrapper rows that shadow exactly one real child.
+    suppress_wrappers: bool = False
 
     # v30: blocked-click intelligence. When a click times out on actionability, run.py names the
     # covering element in last_action_error; the system rung teaches the move-the-cover response.
@@ -318,7 +323,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     def view(self, obs: dict[str, Any], goal: str) -> tuple[str, int]:
         raw_items: list[RankItem] = perception.interactives(
             obs, include_clickable=self.clickable, attr_hints=self.hints,
-            include_offscreen=self.offscreen, local_ctx=self.local_ctx)
+            include_offscreen=self.offscreen, local_ctx=self.local_ctx,
+            suppress_wrappers=self.suppress_wrappers)
         shown, truncated = rank_and_cap(raw_items, goal=goal)
         new = {it.bid for it in shown} - self.prev_bids if self.prev_bids else set()
         self.prev_bids = {it.bid for it in shown}
@@ -706,6 +712,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         if self.scripted_drag:
             translated = [self.decompose_drag(t) for t in translated]
         d.action = "\n".join(translated)
+        if not translated:
+            d.raw_tail = (raw or "")[:300]
         for c in chosen_list:
             self.note(c, obs)
             self.all_actions.append(c)
@@ -891,6 +899,14 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v31":  # v30 + wrapper suppression (trap rows shadowing one real child)
+        v31 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
+                   max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True, **v31)
     if name == "osw-llm-v30":  # v29 + blocked-click intelligence (named blockers + move-the-cover rung)
         v30 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
