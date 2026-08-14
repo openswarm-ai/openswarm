@@ -21,6 +21,8 @@ const p_lastByFingerprint = new Map();
 function init(app, notifyFn) {
   p_app = app;
   p_notify = notifyFn || null;
+  p_written = 0;
+  p_lastByFingerprint.clear();
 }
 
 function reportsDir() {
@@ -58,12 +60,26 @@ function fingerprint(kind, details) {
   return kind + '|' + stack.split('\n').slice(0, 2).join('|').slice(0, 300);
 }
 
+// Why a crash report was NOT written. Silence here is what made ENG-265 undiagnosable: four real
+// renderer crashes produced no file and no line, so nobody could tell a suppressed report from a
+// handler that never ran. Never throws: the logging path is exactly what may already be broken.
+function p_declineLog(reason, detail) {
+  try { console.warn(`[crash-reports] declined (${reason}): ${detail}`); } catch (_) { /* stdout is gone */ }
+}
+
 function writeCrashReport(kind, details) {
   const now = Date.now();
   const fp = fingerprint(kind, details);
   const seen = p_lastByFingerprint.get(fp);
-  if (seen && now - seen.at < DEDUPE_WINDOW_MS) { seen.count += 1; return null; }
-  if (p_written >= MAX_REPORTS_PER_SESSION) return null;
+  if (seen && now - seen.at < DEDUPE_WINDOW_MS) {
+    seen.count += 1;
+    p_declineLog('deduped', `${fp} seen ${seen.count}x within ${DEDUPE_WINDOW_MS}ms`);
+    return null;
+  }
+  if (p_written >= MAX_REPORTS_PER_SESSION) {
+    p_declineLog('capped', `${p_written} reports already written this session`);
+    return null;
+  }
   p_lastByFingerprint.set(fp, { at: now, count: 1 });
   p_written += 1;
   try {
@@ -116,4 +132,4 @@ function unseenReports() {
   }
 }
 
-module.exports = { init, writeCrashReport, unseenReports };
+module.exports = { init, writeCrashReport, unseenReports, DEDUPE_WINDOW_MS, MAX_REPORTS_PER_SESSION };
