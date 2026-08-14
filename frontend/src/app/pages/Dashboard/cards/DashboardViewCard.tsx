@@ -30,6 +30,7 @@ import TerminalPanel, { TerminalLine } from '@/app/pages/Views/TerminalPanel';
 import AppCodePanel from '@/app/pages/Views/AppCodePanel';
 import HistoryPanel from '@/app/pages/Views/HistoryPanel';
 import ShareButton from '@/app/components/share/ShareButton';
+import { CONTENT_OVERLAY_Z, RESIZE_HANDLE_Z } from './cardLayers';
 import ShareModal from '@/app/components/share/ShareModal';
 import { getDefault } from '@/shared/inputSchemaDefaults';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
@@ -885,7 +886,7 @@ const DashboardViewCard: React.FC<Props> = ({
         />
         {/* Code/Terminal overlay the always-mounted preview instead of replacing it: unmounting the webview kills the app's live state and forces a reload on switch-back. */}
         {output.workspace_id && activeView !== 'preview' && (
-          <Box sx={{ position: 'absolute', inset: 0, zIndex: 13, bgcolor: c.bg.surface }}>
+          <Box sx={{ position: 'absolute', inset: 0, zIndex: CONTENT_OVERLAY_Z, bgcolor: c.bg.surface }}>
             {activeView === 'terminal' ? (
               <TerminalPanel lines={terminalLines} />
             ) : activeView === 'history' ? (
@@ -916,7 +917,7 @@ const DashboardViewCard: React.FC<Props> = ({
             position: 'absolute',
             cursor: CURSOR_MAP[dir],
             opacity: 0,
-            zIndex: 10,
+            zIndex: RESIZE_HANDLE_Z,
             ...sx,
           }}
         />
