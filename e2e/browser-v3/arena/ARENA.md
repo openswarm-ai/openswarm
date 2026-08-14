@@ -396,6 +396,17 @@ execution (ours) vs order-opportunistic (theirs). Staged v33: deferred-clause ex
 (attempt stated order; a clause whose target is missing/blocked is DEFERRED and revisited,
 never stalled on) — pre-registration against exactly this 12-task cluster before any episode.
 
+## PRE-REGISTERED (2026-08-14, before any v33 episode): opportunistic-ordering pilot
+
+Mechanism: `defer_nudge` + deferral doctrine rung (v33 = v32 + both). Head-to-head analysis
+showed browser-use's remaining 12 wins over us cluster on reverse-order and dialog-first
+compositions: order-literal execution vs their order-opportunism. v33 teaches: attempt stated
+order; a step whose target is missing or BLOCKED is DEFERRED (do the next doable step, return
+before finishing); mechanically, any failed/blocked action gets a defer-reminder appended in
+history. Targets: exactly the 12 tasks they win and we lose (v33_pilot.json) + 12 standard
+controls. Prediction: >=5 of 12 targets (the 7 reverse-order ones are the core candidates),
+controls 12/12. Pilot runs only after the MiniWoB regression frees the LLM lane.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic

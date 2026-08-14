@@ -137,6 +137,10 @@ class LlmPolicy:
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
 
+    # v33: deferral doctrine (system rung) + a mechanical defer-nudge when an action fails on a
+    # missing/blocked target: the model is reminded to defer and continue, never stall or skip.
+    defer_nudge: bool = False
+
     # v32: when a click is BLOCKED by an overlay, run.py dispatches a synthetic click on the
     # target anyway (the actionability semantics CDP-driven stacks have natively) and says so.
     force_unblock: bool = False
@@ -203,6 +207,9 @@ class LlmPolicy:
         # A named blocker is the actionable half of the message; never truncate it away.
         cap = 240 if "BLOCKED:" in err else 120
         line = f"{action} -> {'ERROR: ' + err[:cap] if err else 'ok'}"
+        if self.defer_nudge and err and ("BLOCKED" in err or "not found" in err.lower()
+                                         or "no node" in err.lower() or "timeout" in err.lower()):
+            line += "  (this step is not doable RIGHT NOW: defer it, do the next doable step, and re-attempt it before finishing)"
         if self.echo_feedback:
             now = ""
             try:
@@ -776,6 +783,14 @@ On the open web you may also navigate: goto("url") | go_back() | go_forward().
 When the goal is a QUESTION, research it and deliver the answer with send_msg_to_user("answer") --
 the answer text alone, no prose around it."""
 
+OSW_SYSTEM_V33 = """
+Instructions state steps in a written order, but pages do not always allow that order (a dialog
+may cover an early target, a form may appear only later). Work OPPORTUNISTICALLY: attempt steps
+in the stated order, but if a step's target is not on the page yet or its click reports BLOCKED,
+DEFER that step -- do the next doable step and return to every deferred step before finishing.
+A deferred step is not a done step: the task is complete only when every step has actually
+registered. Track deferred steps in a DEFERRED line after your action."""
+
 OSW_SYSTEM_V30 = """
 A click that errors with BLOCKED means another element physically covers the target (a dialog,
 banner, or sticky bar). Do NOT retry the same click and do NOT guess coordinates. First get the
@@ -909,6 +924,15 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v33":  # v32 + opportunistic ordering (deferral doctrine + defer-nudge)
+        v33 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V33, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, defer_nudge=True, **v33)
     if name == "osw-llm-v32":  # v31 + forced dispatch on blocked clicks (occlusion parity with CDP stacks)
         v32 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
