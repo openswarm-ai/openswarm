@@ -299,6 +299,27 @@ targets (every one whose FIRST failing clause is an anonymous-among-twins pick �
 click-widget-containing targets are candidates), controls 12/12 unharmed (v22 arm untouched;
 gate is the arm flag).
 
+VERDICT (same day): **targets 0/8, controls 12/12 — prediction failed BUT the labeled trace
+shows the mechanism worked and exposed the next layer.** Step 1 now clicks the RIGHT element
+(the § widget textbox, by name) — and the click TIMES OUT: probe confirms the task's dialog
+physically covers the widget (elementFromPoint = ui-dialog-titlebar), Playwright correctly
+refuses covered clicks, and the model only hears 'TimeoutError', so it guesses coordinates and
+the clause silently stays undone. The composition is adversarial by construction: the goal
+orders dialog-close LAST, so the right move is dragging the dialog aside (order-neutral) — a
+thing the model cannot infer from a bare timeout. v29 ships regardless (controls clean, and
+labeled traces prove correct target selection); it was necessary, not sufficient.
+
+## PRE-REGISTERED (2026-08-14, before any v30 episode): blocked-click intelligence pilot
+
+Mechanism: `blocker_probe` (v30 = v29 + this) — when a click times out on actionability, run.py
+names the covering element in last_action_error ('BLOCKED: DIV.ui-dialog-titlebar is covering
+this element -- move or close the cover first'); history keeps the full blocker text; one system
+rung teaches the response (drag the cover aside if the goal needs it later, close it otherwise,
+then retry). Feature-triggered only on actionability timeouts; zero effect on episodes without
+blocked clicks. Real-world analogue: cookie banners, modals, sticky headers. Prediction: >=3 of
+8 pilot targets (the 5 click-widget+click-dialog compositions are the candidates), controls
+12/12 (mechanism cannot fire on them).
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
