@@ -59,6 +59,7 @@ import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canv
 import { setCardSidecar } from '@/shared/state/workflowsSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
+import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
 
 /** Extract up to 3 substantive user-prompt steps to seed a workflow. */
 function isWorkflowSuggestionTool(toolName: unknown, mcpServer?: unknown): boolean {
@@ -231,32 +232,9 @@ function getToolDisplayName(toolName: string): string {
   return toolName;
 }
 
-type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-const EDGE_THICKNESS = 6;
-const CORNER_SIZE = 14;
 
-const CURSOR_MAP: Record<ResizeDir, string> = {
-  n: 'ns-resize',
-  s: 'ns-resize',
-  e: 'ew-resize',
-  w: 'ew-resize',
-  nw: 'nwse-resize',
-  se: 'nwse-resize',
-  ne: 'nesw-resize',
-  sw: 'nesw-resize',
-};
 
-const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
-  { dir: 'n',  sx: { top: -EDGE_THICKNESS / 2, left: CORNER_SIZE, right: CORNER_SIZE, height: EDGE_THICKNESS } },
-  { dir: 's',  sx: { bottom: -EDGE_THICKNESS / 2, left: CORNER_SIZE, right: CORNER_SIZE, height: EDGE_THICKNESS } },
-  { dir: 'w',  sx: { left: -EDGE_THICKNESS / 2, top: CORNER_SIZE, bottom: CORNER_SIZE, width: EDGE_THICKNESS } },
-  { dir: 'e',  sx: { right: -EDGE_THICKNESS / 2, top: CORNER_SIZE, bottom: CORNER_SIZE, width: EDGE_THICKNESS } },
-  { dir: 'nw', sx: { top: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'ne', sx: { top: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'sw', sx: { bottom: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'se', sx: { bottom: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-];
 
 interface OuterProps {
   sessionId: string;
@@ -1007,7 +985,7 @@ const AgentCard: React.FC<Props> = ({
         }),
       }}
     >
-      {!pillMode && HANDLE_DEFS.map(({ dir, sx }) => (
+      {!pillMode && RESIZE_HANDLE_DEFS.map(({ dir, css }) => (
         <Box
           key={dir}
           onPointerDown={handleResizeDown(dir)}
@@ -1016,8 +994,8 @@ const AgentCard: React.FC<Props> = ({
           onClick={(e) => e.stopPropagation()}
           sx={{
             position: 'absolute',
-            ...sx,
-            cursor: CURSOR_MAP[dir],
+            ...css,
+            cursor: RESIZE_CURSOR[dir],
             zIndex: 20,
             userSelect: 'none',
             touchAction: 'none',

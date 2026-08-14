@@ -88,33 +88,17 @@ const CHROME_TEXT = '#3c3744';
 const CHROME_TEXT_MUTED = '#8a8494';
 
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
+import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
 
-type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 // Pill-preview capture cadence: fast until the card has handed the pill a frame, slow upkeep after.
 const PILL_SHOT_WARMUP_MS = 800;
 const PILL_SHOT_REFRESH_MS = 5000;
 const PILL_SHOT_WARMUP_MAX_MS = 8000;
-const EDGE_THICKNESS = 6;
-const CORNER_SIZE = 14;
 const MIN_W = 400;
 const MIN_H = 300;
 
-const CURSOR_MAP: Record<ResizeDir, string> = {
-  n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
-  nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
-};
 
-const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
-  { dir: 'n',  sx: { top: -EDGE_THICKNESS / 2, left: CORNER_SIZE, right: CORNER_SIZE, height: EDGE_THICKNESS } },
-  { dir: 's',  sx: { bottom: -EDGE_THICKNESS / 2, left: CORNER_SIZE, right: CORNER_SIZE, height: EDGE_THICKNESS } },
-  { dir: 'w',  sx: { left: -EDGE_THICKNESS / 2, top: CORNER_SIZE, bottom: CORNER_SIZE, width: EDGE_THICKNESS } },
-  { dir: 'e',  sx: { right: -EDGE_THICKNESS / 2, top: CORNER_SIZE, bottom: CORNER_SIZE, width: EDGE_THICKNESS } },
-  { dir: 'nw', sx: { top: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'ne', sx: { top: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'sw', sx: { bottom: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'se', sx: { bottom: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-];
 
 // Windows gets the real, agent-controllable <webview> + CDP, same as Mac. History: the <webview> tag mount used to segfault the renderer during Chromium's commit phase on the old CastLabs Electron 40 build (0xC0000005, since 1.1.55, same crash family as the ablated <input type=file> and Framer-Motion subtrees), so Windows fell back to a non-scriptable iframe (no CDP, and most sites send X-Frame-Options) which the agent can't drive. The Electron 42 bump (v42.0.0+wvcus) fixed the segfault: faithful in-process probes on the real 42 binary mount the webview - including two at once inside a transformed/contained canvas, with real HTTPS navigation and reload churn - with zero host-renderer crash. Crash-safe by construction (electron/CLAUDE.md: mitigations must fail quiet in BOTH directions, and crash guards never boot-loop). If some Windows config still segfaults on mount, a pending marker - armed synchronously during the first browser-card render, i.e. before the <webview> commits, see armWindowsWebviewPending - survives the crash. A leftover marker at the next launch means that mount never reached dom-ready, so we count it and stand down to the safe iframe this launch; after WIN_WV_MAX such crashes we stay on the iframe for good. A clean dom-ready clears the marker and the counter. Escape hatch: openswarm_win_webview_off='1' forces the iframe; clear openswarm_win_webview_crashes to retry after a lockout.
 const WIN_WV_OFF = 'openswarm_win_webview_off';
@@ -1973,7 +1957,7 @@ const BrowserCard: React.FC<Props> = ({
       </Box>
 
       {/* Resize handles; a docked mini's size follows the slot, so grabbing an edge used to pop it out of the chat mid-gesture. */}
-      {!dockActive && HANDLE_DEFS.map(({ dir, sx }) => (
+      {!dockActive && RESIZE_HANDLE_DEFS.map(({ dir, css }) => (
         <Box
           key={dir}
           className="resize-handle"
@@ -1982,10 +1966,10 @@ const BrowserCard: React.FC<Props> = ({
           onPointerUp={handleResizeUp}
           sx={{
             position: 'absolute',
-            cursor: CURSOR_MAP[dir],
+            cursor: RESIZE_CURSOR[dir],
             opacity: 0,
             zIndex: 20,
-            ...sx,
+            ...css,
           }}
         />
       ))}

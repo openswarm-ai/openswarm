@@ -40,15 +40,13 @@ import {
   RuntimeLogLine,
 } from '@/shared/hooks/useRuntimePreviewUrl';
 import { postAppConsoleLine, terminalLineFromStream } from '@/shared/appTerminal';
+import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
 
 type AppCardView = 'preview' | 'code' | 'terminal' | 'history';
 
 const TERMINAL_BUFFER_CAP = 5000;
 
-type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-const EDGE_THICKNESS = 6;
-const CORNER_SIZE = 14;
 const MIN_W = 320;
 const MIN_H = 200;
 
@@ -62,21 +60,7 @@ const APP_PREVIEW_MIN_PX = 260;   // below this on-screen width the live page is
 const APP_PREVIEW_MARGIN_PX = 400; // resume once the card is within this of the viewport
 const APP_SUSPEND_SETTLE_MS = 1200;
 
-const CURSOR_MAP: Record<ResizeDir, string> = {
-  n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
-  nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
-};
 
-const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
-  { dir: 'n',  sx: { top: -EDGE_THICKNESS / 2, left: CORNER_SIZE, right: CORNER_SIZE, height: EDGE_THICKNESS } },
-  { dir: 's',  sx: { bottom: -EDGE_THICKNESS / 2, left: CORNER_SIZE, right: CORNER_SIZE, height: EDGE_THICKNESS } },
-  { dir: 'w',  sx: { left: -EDGE_THICKNESS / 2, top: CORNER_SIZE, bottom: CORNER_SIZE, width: EDGE_THICKNESS } },
-  { dir: 'e',  sx: { right: -EDGE_THICKNESS / 2, top: CORNER_SIZE, bottom: CORNER_SIZE, width: EDGE_THICKNESS } },
-  { dir: 'nw', sx: { top: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'ne', sx: { top: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'sw', sx: { bottom: -EDGE_THICKNESS / 2, left: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-  { dir: 'se', sx: { bottom: -EDGE_THICKNESS / 2, right: -EDGE_THICKNESS / 2, width: CORNER_SIZE, height: CORNER_SIZE } },
-];
 
 interface Props {
   output: Output;
@@ -906,7 +890,7 @@ const DashboardViewCard: React.FC<Props> = ({
       </Box>
 
       {/* Resize handles */}
-      {!isMinimized && HANDLE_DEFS.map(({ dir, sx }) => (
+      {!isMinimized && RESIZE_HANDLE_DEFS.map(({ dir, css }) => (
         <Box
           key={dir}
           className="resize-handle"
@@ -915,10 +899,10 @@ const DashboardViewCard: React.FC<Props> = ({
           onPointerUp={handleResizeUp}
           sx={{
             position: 'absolute',
-            cursor: CURSOR_MAP[dir],
+            cursor: RESIZE_CURSOR[dir],
             opacity: 0,
             zIndex: RESIZE_HANDLE_Z,
-            ...sx,
+            ...css,
           }}
         />
       ))}

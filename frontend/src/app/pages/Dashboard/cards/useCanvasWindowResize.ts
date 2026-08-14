@@ -1,24 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
+import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
 
-type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-const EDGE = 6;
-const CORNER = 14;
 
-const CURSOR_MAP: Record<ResizeDir, string> = {
-  n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
-  nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
-};
-const HANDLE_DEFS: { dir: ResizeDir; css: React.CSSProperties }[] = [
-  { dir: 'n', css: { top: -EDGE / 2, left: CORNER, right: CORNER, height: EDGE } },
-  { dir: 's', css: { bottom: -EDGE / 2, left: CORNER, right: CORNER, height: EDGE } },
-  { dir: 'w', css: { left: -EDGE / 2, top: CORNER, bottom: CORNER, width: EDGE } },
-  { dir: 'e', css: { right: -EDGE / 2, top: CORNER, bottom: CORNER, width: EDGE } },
-  { dir: 'nw', css: { top: -EDGE / 2, left: -EDGE / 2, width: CORNER, height: CORNER } },
-  { dir: 'ne', css: { top: -EDGE / 2, right: -EDGE / 2, width: CORNER, height: CORNER } },
-  { dir: 'sw', css: { bottom: -EDGE / 2, left: -EDGE / 2, width: CORNER, height: CORNER } },
-  { dir: 'se', css: { bottom: -EDGE / 2, right: -EDGE / 2, width: CORNER, height: CORNER } },
-];
 
 export interface CanvasWindowResizeHandle {
   dir: string;
@@ -102,9 +86,9 @@ export function useCanvasWindowResize({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   }, [compute, onCommitPosition, onCommitSize]);
 
-  const handles = HANDLE_DEFS.map(({ dir, css }) => ({
+  const handles = RESIZE_HANDLE_DEFS.map(({ dir, css }) => ({
     dir,
-    style: { position: 'absolute' as const, cursor: CURSOR_MAP[dir], zIndex: 25, ...css },
+    style: { position: 'absolute' as const, cursor: RESIZE_CURSOR[dir], zIndex: 25, ...css },
     onPointerDown: onResizeDown(dir),
     onPointerMove: onResizeMove,
     onPointerUp: onResizeUp,
