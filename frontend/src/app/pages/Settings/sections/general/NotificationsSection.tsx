@@ -55,7 +55,7 @@ const NotificationsSection: React.FC<Props> = ({ form, setForm }) => {
   const row = (title: string, body: string, key: NotifyKey, defaultOn = true): React.ReactElement => (
     <Box sx={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2,
-      px: 0.5, py: 2, borderBottom: `1px solid ${c.border.subtle}`, '&:last-of-type': { borderBottom: 'none' },
+      px: 1.25, py: 1.75,
     }}>
       <Box sx={{ minWidth: 0 }}>
         <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>{title}</Typography>
@@ -68,28 +68,45 @@ const NotificationsSection: React.FC<Props> = ({ form, setForm }) => {
       />
     </Box>
   );
+  // One bounded box per section. Without it the dividers ran straight through the headings, so the
+  // labels read as text floating in a single long list instead of titles of anything.
+  const group = (label: string, rows: React.ReactElement[]): React.ReactElement => (
+    <Box key={label} sx={{ mb: 2.5 }}>
+      {heading(label)}
+      <Box sx={{
+        border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.lg}px`, overflow: 'hidden',
+        '& > *:not(:last-child)': { borderBottom: `1px solid ${c.border.subtle}` },
+      }}>
+        {rows}
+      </Box>
+    </Box>
+  );
   const heading = (text: string): React.ReactElement => (
     <Typography sx={{
       fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-      color: c.text.ghost, mt: 2.5, mb: 0.5, px: 0.5,
+      color: c.text.ghost, mb: 0.75, px: 0.25,
     }}>{text}</Typography>
   );
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-      {heading('Agents')}
-      {row('Finished', 'When an agent completes its work.', 'notify_agent_completion')}
-      {row('Errored', 'When an agent stops because something went wrong. Worth keeping on even if you turn the rest off.', 'notify_agent_errors')}
-      {heading('Workflows')}
-      {row('Run succeeded', 'When a scheduled run finishes cleanly, with quick actions.', 'notify_workflow_runs')}
-      {row('Run failed', 'When a scheduled run does not finish.', 'notify_workflow_failures')}
-      {heading('How they arrive')}
-      {row('Play a sound', 'Off makes every notification above silent.', 'notify_sound')}
-      {row('Even when OpenSwarm is in front', 'Normally these are held back while you are already looking at the window.', 'notify_when_focused', false)}
+      {group('Agents', [
+        row('Finished', 'When an agent completes its work.', 'notify_agent_completion'),
+        row('Errored', 'When an agent stops because something went wrong. Worth keeping on even if you turn the rest off.', 'notify_agent_errors'),
+      ])}
+      {group('Workflows', [
+        row('Run succeeded', 'When a scheduled run finishes cleanly, with quick actions.', 'notify_workflow_runs'),
+        row('Run failed', 'When a scheduled run does not finish.', 'notify_workflow_failures'),
+      ])}
+      {group('How they arrive', [
+        row('Play a sound', 'Off makes every notification above silent.', 'notify_sound'),
+        row('Even when OpenSwarm is in front', 'Normally these are held back while you are already looking at the window.', 'notify_when_focused', false),
+      ])}
       {heading('Email')}
+      <Box sx={{ border: `1px solid ${c.border.subtle}`, borderRadius: `${c.radius.lg}px`, overflow: 'hidden' }}>
       {emailPrefs?.available ? (
         <Box sx={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2,
-          px: 0.5, py: 2, borderBottom: `1px solid ${c.border.subtle}`, '&:last-of-type': { borderBottom: 'none' },
+          px: 1.25, py: 1.75,
         }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>Email on cloud runs</Typography>
@@ -105,12 +122,13 @@ const NotificationsSection: React.FC<Props> = ({ form, setForm }) => {
           />
         </Box>
       ) : (
-        <Typography sx={{ fontSize: '0.8125rem', color: c.text.ghost, px: 0.5, pt: 2 }}>
+        <Typography sx={{ fontSize: '0.8125rem', color: c.text.tertiary, px: 1.25, py: 1.75 }}>
           {signedIn
             ? 'Email alerts are not available right now.'
             : 'Sign in to get an email when a cloud workflow run finishes.'}
         </Typography>
       )}
+      </Box>
     </Box>
   );
 };
