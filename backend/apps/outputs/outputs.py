@@ -478,6 +478,8 @@ def runtime_status_payload(workspace_id: str, instance: int = 1) -> dict:
         "frontend_port": rt.frontend_port,
         "frontend_url": rt.frontend_url if rt.running else None,
         "is_new_mode": rt.is_new_mode,
+        # The boot narration used to be WS-only, so a wedged boot left no queryable trace and one 120s field wedge stayed a shrug (ENG-305); the tail makes any status poll name what the boot is doing.
+        "recent_log": [getattr(line, "text", str(line))[-200:] for line in list(rt.log_buffer)[-12:]],
     }
 
 
