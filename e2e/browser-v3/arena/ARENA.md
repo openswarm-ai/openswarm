@@ -195,8 +195,22 @@ the current harness, which is ~12 points above published generic agents on MiniW
 CompWoB, does not yet complete a single full multi-checkpoint realistic workflow. The gap
 matches the CompWoB ≥5-part diagnosis exactly (mid-chain state re-acquisition), which is the
 strongest evidence yet that the missing piece is one product primitive, not benchmark tuning:
-partial credit shows clauses 1–2 execute, then bookkeeping dies. browser-use comparison arm
-runs next on the identical partition (auto-chained); its numbers land here when scored.
+partial credit shows clauses 1–2 execute, then bookkeeping dies.
+
+**Paired result (browser-use 0.5.9, same 100 tasks, same sites, same model cc/claude-opus-5,
+same evaluator): 0/100 fully-solved | 2 tasks partial (0.67 + 0.5 = 1.17 sum) | median wall
+119s | median 101,366 tokens/task | 49 false success claims.** Ours again: 0 strict | 6 partial
+(3.83) | 63s | <10k tokens | 0 false claims. Neither harness solves a full hard-partition
+workflow; on every secondary axis (partial progress 3.3×, speed 1.9×, tokens ~10×, honesty
+0 vs 49) ours leads. The 49% false-claim rate matters beyond the scoreboard: an agent that
+reports success on unfinished multi-step work is unshippable for verified writes, which is a
+goal clause here. Caveats, symmetric: (a) Postmill's stock posting throttle ("You cannot post
+more") blocked write attempts in both arms (ours 1 episode, theirs >=2) — it ships in canonical
+WebArena, so it is benchmark hazard, not local misconfiguration; (b) ~12 of their episodes
+overlapped two aborted (voided) pilot launches of ours on the shared LLM lane — their clean
+rate in that window was 11/12 with no infra_llm, so no correction applied, noted for the
+record; (c) both partials they scored (groups 349, 290) are in the same groups ours scored,
+consistent with those checkpoints being genuinely reachable.
 
 ## PRE-REGISTERED (2026-08-13, before any v26 episode): serialized multi-action pilot
 
