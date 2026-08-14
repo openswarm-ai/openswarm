@@ -241,3 +241,10 @@ async def configure_provider_env(
                 "with a direct API key."
             )
         raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
+    # Fault-injection seam: lets a QA harness front the provider with a local proxy (mid-run 401 drills, ENG-302 family). Absent in prod, so every branch's real base URL stands.
+    p_base_override = os.environ.get("OPENSWARM_ANTHROPIC_BASE_OVERRIDE")
+    if p_base_override and isinstance(options_kwargs.get("env"), dict):
+        # Set, not just replace: the direct-api-key branch ships only ANTHROPIC_API_KEY and leans on
+        # the CLI's built-in default host, so a replace-only seam silently measured nothing.
+        options_kwargs["env"]["ANTHROPIC_BASE_URL"] = p_base_override
+        logger.info(f"[QA] ANTHROPIC_BASE_URL overridden to {p_base_override}")
