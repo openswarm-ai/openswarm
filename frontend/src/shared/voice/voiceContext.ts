@@ -13,6 +13,9 @@ export interface VoiceContextValue {
   // Where the transcript will land right now, in user words plus the surface's icon.
   target: InjectTargetInfo;
   toggle: () => void;
+  // Open and park the mic before the first press, so it is not cold when the user actually
+  // clicks (ENG-300). Safe to call repeatedly; a no-op once armed or while recording.
+  prewarm: () => void;
   // Mic-button press semantics that respect the hold/toggle setting: press starts (or toggles),
   // release stops only in hold mode. Buttons wire onPointerDown/Up to these and stay mode-agnostic.
   pressStart: () => void;
@@ -25,7 +28,7 @@ export interface VoiceContextValue {
 }
 
 const NOOP_REF = { current: 0 };
-const NOOP: VoiceContextValue = { state: 'idle', lastText: '', error: null, pct: 0, feedback: null, partial: null, target: { label: '', icon: null, composerId: null }, toggle: () => {}, pressStart: () => {}, pressEnd: () => {}, confirmRecording: () => {}, cancelRecording: () => {}, holdMode: true, volumeRef: NOOP_REF };
+const NOOP: VoiceContextValue = { state: 'idle', lastText: '', error: null, pct: 0, feedback: null, partial: null, target: { label: '', icon: null, composerId: null }, toggle: () => {}, prewarm: () => {}, pressStart: () => {}, pressEnd: () => {}, confirmRecording: () => {}, cancelRecording: () => {}, holdMode: true, volumeRef: NOOP_REF };
 
 export const VoiceContext = createContext<VoiceContextValue>(NOOP);
 

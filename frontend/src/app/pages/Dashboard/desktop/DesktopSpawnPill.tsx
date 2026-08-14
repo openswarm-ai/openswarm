@@ -40,7 +40,7 @@ function DesktopSpawnPill({
   const [menuOpen, setMenuOpen] = useState(false);
   const newAgentShortcut = useAppSelector((s) => s.settings.data.new_agent_shortcut);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const { state: voiceState, pct: voicePct, pressStart: voicePressStart, pressEnd: voicePressEnd } = useVoice();
+  const { state: voiceState, pct: voicePct, pressStart: voicePressStart, pressEnd: voicePressEnd, prewarm: voicePrewarm } = useVoice();
   const recording = voiceState === 'recording';
   const transcribing = voiceState === 'transcribing';
   const preparing = voiceState === 'preparing';
@@ -166,7 +166,10 @@ function DesktopSpawnPill({
           <Box
             role="button"
             aria-label="Voice dictation"
-            onPointerDown={(e) => { e.stopPropagation(); if (!voiceBusy) voicePressStart(); }}
+            // Open the mic on hover so the FIRST press of a launch is warm. Cold it costs ~2.5s and
+              // silently eats what you say, which reads as "the button did nothing" (ENG-300).
+              onPointerEnter={() => { if (!voiceBusy) voicePrewarm(); }}
+              onPointerDown={(e) => { e.stopPropagation(); if (!voiceBusy) voicePressStart(); }}
             onPointerUp={(e) => { e.stopPropagation(); voicePressEnd(); }}
             onPointerLeave={() => voicePressEnd()}
             onClick={(e) => e.stopPropagation()}

@@ -169,6 +169,25 @@ export function useVoiceDictation() {
 
   useEffect(() => () => releaseWarmMic(), [releaseWarmMic]);
 
+  // ENG-300: the park above only helps AFTER a first session, so the FIRST press of every launch
+  // paid the full ~2.5s cold open and dropped whatever the user said into it. Measured by Eric: the
+  // button "never turns on until I unclick it", every time, right after startup. Arming on hover
+  // makes that first press warm like the rest, and costs nothing until the user reaches for the
+  // control, which is why this is not done at boot: an always-hot mic lights the OS indicator for
+  // people who never dictate.
+  const prewarm = useCallback(async (): Promise<void> => {
+    if (warmMicRef.current || stateRef.current !== 'idle') return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: false },
+      });
+      parkWarmMic(stream, new AudioContext({ sampleRate: VOICE_SAMPLE_RATE }));
+    } catch (_) {
+      // No permission yet, or no device. Stay silent: the real press is what should surface that,
+      // and a hover must never raise an error the user did not ask for.
+    }
+  }, [parkWarmMic]);
+
   const teardown = useCallback((): Float32Array | null => {
     const rec = recRef.current;
     recRef.current = null;
@@ -460,5 +479,5 @@ export function useVoiceDictation() {
     setFeedback({ tone: 'warn', icon: 'info', text, at: Date.now() });
   }, []);
 
-  return { state, lastText, error, pct, feedback, partial, target, toggle, start, stop, cancel, notify, volumeRef };
+  return { state, lastText, error, pct, feedback, partial, target, toggle, start, stop, cancel, notify, prewarm, volumeRef };
 }

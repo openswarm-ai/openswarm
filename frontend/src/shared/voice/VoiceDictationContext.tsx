@@ -12,7 +12,7 @@ import VoiceOverlay from './VoiceOverlay';
 // out-of-sync state. Mounted once near the app root.
 
 export function VoiceDictationProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const { state, lastText, error, pct, feedback, partial, target, toggle, start, stop, cancel, notify, volumeRef } = useVoiceDictation();
+  const { state, lastText, error, pct, feedback, partial, target, toggle, start, stop, cancel, notify, prewarm, volumeRef } = useVoiceDictation();
 
   // fn is the dictation key, but macOS may still have its own Globe action bound (emoji picker on a quick tap); say so once.
   const globeWarnedRef = useRef(false);
@@ -136,7 +136,7 @@ export function VoiceDictationProvider({ children }: { children: React.ReactNode
   const confirmRecording = useCallback((): void => { void stop(); }, [stop]);
 
   return (
-    <VoiceContext.Provider value={{ state, lastText, error, pct, feedback, partial, target, toggle, pressStart, pressEnd, confirmRecording, cancelRecording: cancel, holdMode, volumeRef }}>
+    <VoiceContext.Provider value={{ state, lastText, error, pct, feedback, partial, target, toggle, prewarm: () => { void prewarm(); }, pressStart, pressEnd, confirmRecording, cancelRecording: cancel, holdMode, volumeRef }}>
       {children}
       <VoiceOverlay />
     </VoiceContext.Provider>
