@@ -261,6 +261,16 @@ Ungated (cost is ~1 line) — the pilot's 12 controls decide if that is a tax. P
 8 targets (incl >=1 five-plus-part), controls 12/12. This is the second half of the
 browser-use loop diff (step verdicts); the first half (plan state) is dead.
 
+VERDICT (same day): **fail — targets 1/8 (first-ever pilot target win, but a 3-part; pre-reg
+required >=2 incl a >=5-part), controls 10/12 (both login-popup variants lost).** Both halves
+of the browser-use loop diff are now tested and neither transfers into our loop. Escalation per
+method: stop guessing mechanisms; trace-level diff of their WIN vs our LOSS on the same 6-part
+task. First finding from our side: the loss is 8 confident, error-free clicks scoring 0 — and
+step records did not store WHAT was clicked. Instrumentation fixed (StepRecord.target: resolved
+accessible names per action); labeled diagnostic episode next. Their side shows a self-authored
+running done-list in the memory field, persisted verbatim — possibly the real carrier, but no
+v29 until the labeled trace says where ours actually diverges.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained

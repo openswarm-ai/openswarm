@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import signal
 import sys
 import time
@@ -172,8 +173,14 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
             # The LLM call rides inside act(); urlopen's timeout does not cover every hang mode.
             decision = with_deadline(lambda: policy.act(obs, ep.goal), args.step_timeout + 90)
             perceive_ms = (time.time() - t_perc) * 1000
+            tgt = ""
+            i2b, rnames = getattr(policy, "index_to_bid", None), getattr(policy, "row_names", None)
+            if i2b and rnames:
+                b2n = {b: rnames.get(i, "") for i, b in i2b.items()}
+                hit = [n for n in (b2n.get(m) for m in re.findall(r'"([^"]+)"', decision.action)) if n]
+                tgt = " | ".join(hit)[:160]
             rec_step = StepRecord(
-                step=step, action=decision.action, perceive_ms=perceive_ms,
+                step=step, action=decision.action, target=tgt, perceive_ms=perceive_ms,
                 think_ms=getattr(decision, "think_ms", 0.0),
                 axtree_chars=ax_chars, axtree_nodes=nodes,
                 dom_chars=perception.dom_chars(obs) if args.dom_metrics else 0,

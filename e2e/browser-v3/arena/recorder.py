@@ -24,6 +24,9 @@ class StepRecord:
 
     step: int
     action: str = ""
+    # Accessible name(s) of the element(s) the action targeted, resolved at act time. Added after
+    # a 6-part CompWoB loss read as 8 anonymous clicks -- a trace nobody can diagnose is data lost.
+    target: str = ""
     action_ms: float = 0.0
     perceive_ms: float = 0.0
     think_ms: float = 0.0
