@@ -13,6 +13,9 @@ const DEFAULT_W = 320;
 const FAMILY_WIDTHS: Array<[RegExp, number]> = [
   [/table|chart|gallery|carousel|terminal|code|diff/i, 560],
   [/map|image|video|post/i, 460],
+  // question/ask carries option rows with multi-sentence descriptions plus its own composer; at the
+  // 320 fallback it rendered visibly cut off (Eric's 1.7.8-exp.3 screenshot, 2026-08-14).
+  [/question|ask/i, 560],
   [/stats|plan|links|order|preferences/i, 380],
 ];
 
@@ -85,7 +88,9 @@ function PillArtifactFrame({ name, children }: Props): React.ReactElement {
       onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
       onClick={(e: React.MouseEvent) => e.stopPropagation()}
       onDoubleClick={(e: React.MouseEvent) => e.stopPropagation()}
-      sx={{ position: 'relative', width, maxWidth: '90vw', '&:hover .osw-artifact-grip': { opacity: 1 } }}
+      // minWidth min-content: a stored or family width narrower than what the widget can actually
+      // shrink to must widen the frame, never cut the widget; clipping is not a size option.
+      sx={{ position: 'relative', width, minWidth: 'min-content', maxWidth: '90vw', '&:hover .osw-artifact-grip': { opacity: 1 } }}
     >
       {children}
       <Box
