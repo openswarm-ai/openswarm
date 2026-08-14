@@ -421,6 +421,15 @@ feature-trigger, no task names, no new scaffolding; normal goals keep the script
 (unit-checked both ways). Prediction: >=3 of the 7 reverse-order targets flip (the two 1-step
 losses at minimum), controls 12/12 (no control goal contains the conjunctions).
 
+VERDICT (2026-08-14): **partially confirmed — the two named 1-step losses BOTH flipped (2-step
+wins), plus one non-reverse target; 3/12 targets, reverse 2/8, controls 12/12.** The strict
+>=3-reverse bar missed, booked as such. The gate keeps: measured wins, zero cost, correctness
+over speed on inversion grammar. v34 is the champion config going forward. The remaining 9
+bu-edge tasks fail deep (dialog-first and checkbox+widget combos, 8-24 steps in) — each its own
+dig; deprioritized behind WebChoreArena and the unmeasured goal clauses. CompWoB estimate under
+v34: ~77/95 ≈ 81% (74 + the 3 pilot flips at sweep seed); 12-task delta rerun queued to book it
+properly after the 3-seed rerun frees the lane.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
