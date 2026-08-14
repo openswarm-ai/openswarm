@@ -11,7 +11,7 @@ from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
-from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, capacity_retry_wait, is_router_unreachable_error
+from backend.apps.agents.core.error_classify import CAPACITY_BACKOFFS, auth_resume_wait, capacity_retry_wait, is_router_unreachable_error
 from backend.apps.agents.core import flight_recorder
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.handle_stream_event import handle_stream_event
@@ -194,6 +194,7 @@ class TurnRunner(AgentManagerProtocol):
         p_use_persistent = persistent_client_enabled()
         capacity_retry_attempt = 0
         p_router_retry_attempt = 0
+        p_auth_retry_attempt = 0
         # Baseline crumb so even a first-call failure's envelope names the turn it died in.
         flight_recorder.crumb(session_id, "turn-start", model=resolved_model, api=api_type)
         while True:
@@ -204,12 +205,12 @@ class TurnRunner(AgentManagerProtocol):
                     await p_run_streaming_turn()
                 # The near-miss ledger: a turn that needed retries and still finished is a net that
                 # FIRED, and "how often do the nets fire" needs a denominator in analytics.
-                if p_router_retry_attempt or capacity_retry_attempt:
+                if p_router_retry_attempt or capacity_retry_attempt or p_auth_retry_attempt:
                     flight_recorder.record_recovery(
                         session_id,
-                        net="router-resume" if p_router_retry_attempt else "transient-backoff",
+                        net="router-resume" if p_router_retry_attempt else ("auth-resume" if p_auth_retry_attempt else "transient-backoff"),
                         model=resolved_model,
-                        attempts=p_router_retry_attempt + capacity_retry_attempt,
+                        attempts=p_router_retry_attempt + capacity_retry_attempt + p_auth_retry_attempt,
                         sessions=self.sessions,
                     )
                 settle_provider_retries(session_id, turn, resolved_model, self.sessions)
@@ -239,6 +240,30 @@ class TurnRunner(AgentManagerProtocol):
                         options_kwargs["resume"] = session.sdk_session_id
                         options = ClaudeAgentOptions(**options_kwargs)
                     continue
+                # A token that expired MID-RUN is the auth twin of the router blip: the account is
+                # fine, the credential rotated under a long task (Alexander, 2026-08-14: every big
+                # task died at the reconnect banner). One refresh-and-resume; a real subscription
+                # state (canceled, past_due, trial spent) never qualifies and still dies honestly.
+                p_auth_wait = auth_resume_wait(p_result_err, p_auth_retry_attempt, extra_text="\n".join(p_stderr_buffer[-50:]))
+                if p_auth_wait is not None:
+                    p_auth_retry_attempt += 1
+                    flight_recorder.crumb(session_id, "auth-resume", wait_s=p_auth_wait, err=str(p_result_err)[:160])
+                    logger.warning(
+                        f"Auth-shaped turn failure on session {session_id}; refreshing credentials and "
+                        f"resuming once in {p_auth_wait}s. err={p_result_err!s}"
+                    )
+                    try:
+                        from backend.apps.nine_router.subscription_health import invalidate_health_cache
+                        invalidate_health_cache()
+                    except Exception:
+                        logger.debug("health-cache invalidate before auth resume failed", exc_info=True)
+                    await p_finalize_interrupted_stream()
+                    await asyncio.sleep(p_auth_wait)
+                    p_stderr_buffer.clear()
+                    if session.sdk_session_id:
+                        options_kwargs["resume"] = session.sdk_session_id
+                        options = ClaudeAgentOptions(**options_kwargs)
+                    continue
                 # Any other error-shaped result: the CLI already ran the whole turn (tools executed) and then reported failure; a resume-retry would re-execute side effects, so this goes straight to the error card.
                 raise
             except Exception as e:
@@ -258,6 +283,27 @@ class TurnRunner(AgentManagerProtocol):
                     if "CLIConnection" in p_name or "ProcessError" in p_name or "Transport" in p_name:
                         logger.warning(f"[client-pool] {session_id}: dead client ({p_name}); one transparent respawn retry")
                         wait = 0.0
+                # Same auth twin as the TurnResultError branch: a 401 can also arrive as a raised
+                # exception (ProcessError with the cause only in stderr). One refresh-and-resume,
+                # on its own counter so it neither burns a capacity slot nor logs as transient.
+                if wait is None:
+                    p_auth_wait2 = auth_resume_wait(e, p_auth_retry_attempt, extra_text=stderr_snapshot)
+                    if p_auth_wait2 is not None:
+                        p_auth_retry_attempt += 1
+                        flight_recorder.crumb(session_id, "auth-resume", wait_s=p_auth_wait2, err=str(e)[:160])
+                        logger.warning(f"Auth-shaped exception on session {session_id}; refreshing and resuming once in {p_auth_wait2}s. exc={e!r}")
+                        try:
+                            from backend.apps.nine_router.subscription_health import invalidate_health_cache
+                            invalidate_health_cache()
+                        except Exception:
+                            logger.debug("health-cache invalidate before auth resume failed", exc_info=True)
+                        await p_finalize_interrupted_stream()
+                        await asyncio.sleep(p_auth_wait2)
+                        p_stderr_buffer.clear()
+                        if session.sdk_session_id:
+                            options_kwargs["resume"] = session.sdk_session_id
+                            options = ClaudeAgentOptions(**options_kwargs)
+                        continue
                 if wait is not None:
                     capacity_retry_attempt += 1
                     flight_recorder.crumb(session_id, "transient-retry", attempt=capacity_retry_attempt, wait=wait, err=str(e)[:160])

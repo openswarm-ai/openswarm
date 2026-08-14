@@ -50,6 +50,53 @@ NON_TRANSIENT_PATTERNS = re.compile(
 )
 
 
+# Real account STATES a retry cannot fix: the subscription is gone, not the token. These must keep dying to the banner, or a canceled account silently burns a request per turn forever.
+P_SUBSCRIPTION_STATE_PATTERNS = re.compile(
+    r"(?:no\s+active\s+subscription"
+    r"|subscription\s+(?:canceled|past_due)"
+    r"|free_trial_exhausted|used\s+your\s+free)",
+    re.IGNORECASE,
+)
+
+AUTH_RESUME_WAIT_CAP = 120
+
+
+@typechecked
+def auth_resume_wait(exc: BaseException, attempt: int, extra_text: str = "") -> Optional[int]:
+    """Seconds to wait before ONE refresh-and-resume of an auth-shaped turn failure (expired or
+    rotating token, 401/403), or None when the failure names a real account state (canceled
+    subscription, spent trial) that waiting cannot fix, or the single-attempt budget is spent.
+    Field incident (Alexander, 2026-08-14): a token expiring mid-long-task was classified
+    non-transient and killed the run at the banner; every big task died the same way. A misfire
+    here costs one bounded extra request; a miss is that death."""
+    if attempt >= 1:
+        return None
+    combined = f"{exc!s}\n{extra_text}".strip()
+    if not combined:
+        return None
+    if P_SUBSCRIPTION_STATE_PATTERNS.search(combined):
+        return None
+    if is_translation_error(exc, extra_text):
+        return None
+    if not re.search(
+        r"\b(?:401|403)\b"
+        r"|unauthori[sz]ed"
+        r"|invalid\s+authentication"
+        r"|invalid.*api[_\s-]?key"
+        r"|invalid.*token"
+        r"|missing\s+bearer\s+token"
+        r"|authentication\s+token\s+(?:is|has)\s+expired"
+        r"|token\s+expired",
+        combined,
+        re.IGNORECASE,
+    ):
+        return None
+    hinted = parse_retry_after(exc, extra_text)
+    if hinted is not None:
+        return min(hinted + 5, AUTH_RESUME_WAIT_CAP)
+    return 20
+
+
 @typechecked
 def is_router_unreachable_error(text: str) -> bool:
     """True when a turn-result error is the CLI failing to REACH its endpoint (our localhost
