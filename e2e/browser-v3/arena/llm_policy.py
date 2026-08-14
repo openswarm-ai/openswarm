@@ -135,6 +135,10 @@ class LlmPolicy:
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
 
+    # v30: blocked-click intelligence. When a click times out on actionability, run.py names the
+    # covering element in last_action_error; the system rung teaches the move-the-cover response.
+    blocker_probe: bool = False
+
     # v29: discriminative local-group row context (perception layer). See
     # perception.build_local_context -- same-role nameless twins in different page sections must
     # render distinct, or the model's choice between them is a coin flip it cannot know it's making.
@@ -187,7 +191,9 @@ class LlmPolicy:
         five times. Feeding an agent a memory it cannot read is a harness bug, not an agent failure.
         """
         err = str(obs.get("last_action_error") or "").strip()
-        line = f"{action} -> {'ERROR: ' + err[:120] if err else 'ok'}"
+        # A named blocker is the actionable half of the message; never truncate it away.
+        cap = 240 if "BLOCKED:" in err else 120
+        line = f"{action} -> {'ERROR: ' + err[:cap] if err else 'ok'}"
         if self.echo_feedback:
             now = ""
             try:
@@ -752,6 +758,13 @@ On the open web you may also navigate: goto("url") | go_back() | go_forward().
 When the goal is a QUESTION, research it and deliver the answer with send_msg_to_user("answer") --
 the answer text alone, no prose around it."""
 
+OSW_SYSTEM_V30 = """
+A click that errors with BLOCKED means another element physically covers the target (a dialog,
+banner, or sticky bar). Do NOT retry the same click and do NOT guess coordinates. First get the
+cover out of the way -- drag it aside by its titlebar with drag_and_drop if the goal needs it
+kept open, or close/dismiss it if the goal doesn't -- then retry the original click. If the goal
+says to interact with the covering element LATER, moving it aside now keeps that order intact."""
+
 CALL_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
     r"|mouse_click|mouse_dblclick|mouse_move|mouse_drag_and_drop|keyboard_type|keyboard_press"
@@ -878,6 +891,14 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v30":  # v29 + blocked-click intelligence (named blockers + move-the-cover rung)
+        v30 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
+                   max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, **v30)
     if name == "osw-llm-v29":  # v22 + discriminative local-group row context (perception primitive)
         v29 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

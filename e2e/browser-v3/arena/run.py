@@ -211,7 +211,27 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 lambda: env.step(decision.action), args.step_timeout)
             rec_step.action_ms = (time.time() - t_act) * 1000
             rec_step.reward = float(reward or 0)
-            rec_step.action_error = str(obs.get("last_action_error") or "")[:200]
+            err = str(obs.get("last_action_error") or "")
+            # v30 (gated by the arm): a click that times out on actionability is usually COVERED by
+            # an overlay (dialog, banner, sticky bar). Playwright knows; the model only hears
+            # 'TimeoutError'. Name the blocker so the model can move/close it and retry.
+            if (getattr(policy, "blocker_probe", False) and "Timeout" in err
+                    and re.match(r"(?:dbl)?click\(", decision.action)):
+                m_bid = re.search(r'"([^"]+)"', decision.action)
+                bbox = ((obs.get("extra_element_properties") or {}).get(m_bid.group(1)) or {}).get("bbox") if m_bid else None
+                if bbox:
+                    try:
+                        top = with_deadline(lambda: env.unwrapped.page.evaluate(
+                            "([x,y]) => { const e = document.elementFromPoint(x,y);"
+                            " return e ? e.tagName + (e.id?'#'+e.id:'') +"
+                            " (e.className&&typeof e.className==='string'?'.'+e.className.split(' ')[0]:'') : ''; }",
+                            [bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2]), 8)
+                        if top:
+                            err += f" | BLOCKED: {top} is covering this element -- move or close the cover first (drag its titlebar or dismiss it), then retry"
+                            obs["last_action_error"] = err
+                    except Exception:
+                        pass
+            rec_step.action_error = err[:260]
             ep.add(rec_step)
             ep.reward = max(ep.reward, float(reward or 0))
             ep.steps = step
