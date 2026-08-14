@@ -207,6 +207,14 @@ wins ≥2 of the 8 CompWoB ≥5-part tasks and lifts the 3-part cluster (was 36%
 CompWoB + short MiniWoB) unharmed — known risk is step-budget, since fill+click now costs 2 env
 steps. Out-of-prediction gains will be booked as noise per method. Pilot: 8 target + 12 control.
 
+VERDICT (same day): **prediction failed — targets 0/8, controls 12/12 unharmed.** No full sweep.
+Fourth independent mechanism (runway, ordering, checklist, serialization) to leave the >=5-part
+cluster at zero. The stale-plan hypothesis is now DISCONFIRMED as the binding constraint: queued
+actions re-resolving cleanly means the plans weren't stale — the model's NEXT plan is wrong even
+given a fresh page. Updated diagnosis: the model loses track of which composed sub-goal is
+active (goal-side, not page-side). Mechanism kept (it is correct-by-construction and free), but
+the cluster needs sub-goal tracking, not execution hygiene.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
