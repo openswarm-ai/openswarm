@@ -24,7 +24,7 @@ const dotSx = (color: string): Record<string, unknown> => ({
   width: 12, height: 12, p: 0, m: 0, borderRadius: '50%', border: '0.5px solid rgba(0,0,0,0.06)',
   background: '#cccac4', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center',
   justifyContent: 'center', lineHeight: 1, transition: 'background 150ms',
-  '.osw-card:hover &': { background: color },
+  '.osw-card:hover &, .osw-pill-lights:hover &': { background: color },
   '& > span': { fontSize: 9, fontWeight: 800, lineHeight: 1, color: 'rgba(0,0,0,0.5)', opacity: 0, transition: 'opacity 120ms', pointerEvents: 'none' },
 });
 
@@ -81,7 +81,7 @@ function WindowControls({ onClose, onMinimize, onTile, tiled, closeDataOnboardin
         display: 'flex', gap: '8px', alignItems: 'center', flex: 'none', '&:hover span': { opacity: 1 },
         // Inert until the card is hovered: crossing a card can't hit-test or fire React enter/leave
         // through the dots, and you can't aim at a dot without hovering its card first anyway.
-        pointerEvents: 'none', '.osw-card:hover &': { pointerEvents: 'auto' },
+        pointerEvents: 'none', '.osw-card:hover &, .osw-pill-lights:hover &': { pointerEvents: 'auto' },
       }}>
       {btn(RED, '×', onClose, 'Close', 'close')}
       {btn(YELLOW, '−', onMinimize, 'Minimize', 'minimize')}

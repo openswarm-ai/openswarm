@@ -1042,14 +1042,15 @@ const AgentCard: React.FC<Props> = ({
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}
           className="osw-pill-host"
-          sx={{ position: 'relative', touchAction: 'none', userSelect: 'none', pt: '26px', mt: '-26px', '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' } }}
+          sx={{ position: 'relative', touchAction: 'none', userSelect: 'none', pt: '50px', mt: '-50px', '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' } }}
         >
+          {/* Fully above the capsule: at top -8 the 40px round chip hid behind the ~34px pill and hover revealed only its crown, which read as a deformed corner plus a stray shadow (Eric, 2026-08-14). No osw-card class: wearing it dressed this chip in card selection/shadow chrome. */}
           <Box
-            className="osw-pill-lights osw-card"
+            className="osw-pill-lights"
             onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
             sx={{
               ...ARC_CHIP_SX,
-              position: 'absolute', top: -8, left: 4, zIndex: 2, background: 'rgba(24,14,32,0.85)',
+              position: 'absolute', top: -44, left: 4, zIndex: 2, background: 'rgba(24,14,32,0.85)',
               backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               opacity: 0, pointerEvents: 'none', transition: 'opacity 140ms ease',
             }}
