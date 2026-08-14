@@ -186,6 +186,36 @@ async def read_workspace(workspace_id: str):
     return {"files": files, "meta": meta, "path": os.path.abspath(folder), "truncated": truncated}
 
 
+def write_meta_json_fields(workspace_id: str, fields: dict) -> bool:
+    """Push a rename back onto disk. `meta.json` is what AGENTS read, so a name that only ever
+    reached the record meant the user said "the X app" while the agent saw the old one. Merges
+    into the existing file so nothing else in it is lost, and stays quiet if there is no workspace."""
+    if not workspace_id or not fields:
+        return False
+    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    if not os.path.isdir(folder):
+        return False
+    meta_path = os.path.join(folder, "meta.json")
+    meta: dict = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (OSError, json.JSONDecodeError, ValueError):
+            meta = {}
+    if all(meta.get(k) == v for k, v in fields.items()):
+        return False
+    meta.update(fields)
+    try:
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2)
+        return True
+    except OSError:
+        return False
+
+
 def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = None) -> bool:
     """Sync the Output row's name/description from meta.json (or fallback_name when
     meta.json has no name). Only overwrites placeholder values; user renames win."""
@@ -652,6 +682,11 @@ async def update_output(output_id: str, body: OutputUpdate):
     if body.thumbnail is not None:
         output.preview_updated_at = now
     save(output)
+    # A rename must reach meta.json too, or the UI and the file agents read drift apart (ENG-308).
+    p_sent = body.model_dump(exclude_unset=True)
+    p_meta = {k: getattr(output, k) for k in ("name", "description") if k in p_sent and getattr(output, k)}
+    if p_meta:
+        write_meta_json_fields(getattr(output, "workspace_id", "") or "", p_meta)
     return {"ok": True, "output": output.model_dump()}
 
 
