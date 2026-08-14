@@ -369,6 +369,46 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     def row_name(self, index: int) -> str:
         return self.row_names.get(index, "")
 
+    # v26: serialize multi-action turns through real observations. A queued action is stored with
+    # the NAME+ROLE of its plan-time target and re-resolved against the current page when its turn
+    # comes; a referent that vanished (or an errored step) drops the whole queue and replans. This
+    # makes acting on a stale plan unrepresentable instead of merely unlikely -- the failure class
+    # behind CompWoB >=5-part 0/8 and WebArena partials (clauses 1-2 land, then bookkeeping dies).
+    serial_multi: bool = False
+    pending: list = field(default_factory=list)
+
+    def queue_rest(self, chosen: list[str]) -> list[str]:
+        """Keep the first action for this turn; stash the rest with plan-time target identity."""
+        self.pending = []
+        for c in chosen[1:]:
+            m = re.match(r"(\w+)\s*\(\s*\"?(\d+)\"?", c)
+            has_handle = bool(m) and not (m.group(1) == "scroll" or m.group(1).startswith(
+                ("mouse_", "keyboard_", "go")) or m.group(1) in ("send_msg_to_user", "report_infeasible"))
+            idx = int(m.group(2)) if has_handle else 0
+            self.pending.append((c, self.row_names.get(idx, ""), self.row_roles.get(idx, "")))
+        return chosen[:1]
+
+    def dequeue_pending(self, obs: dict[str, Any]) -> str:
+        """Next queued action iff its plan-time target still exists on the CURRENT page."""
+        if str(obs.get("last_action_error") or "").strip():
+            self.pending.clear()
+            self.history.append("(queued actions dropped: previous step errored, replanning)")
+            return ""
+        call, tgt_name, tgt_role = self.pending.pop(0)
+        m = re.match(r"(\w+)\s*\(\s*\"?(\d+)\"?", call)
+        if not m or not tgt_name and not tgt_role:
+            return call  # no element referent (scroll/keys/press payloads) -- nothing to go stale
+        idx = int(m.group(2))
+        if self.row_names.get(idx) == tgt_name and self.row_roles.get(idx) == tgt_role:
+            return call
+        same = [i for i in self.index_to_bid
+                if self.row_names.get(i) == tgt_name and self.row_roles.get(i) == tgt_role]
+        if len(same) == 1:  # page renumbered but the target survived -- retarget, don't replan
+            return re.sub(r"\d+", str(same[0]), call, count=1)
+        self.pending.clear()
+        self.history.append(f"(queued actions dropped: '{tgt_name}' no longer on page, replanning)")
+        return ""
+
     # v13: scripted drag. One-shot mouse_drag_and_drop fails HTML5 drag handlers that need to SEE
     # intermediate mouseover events; decompose into down -> stepped moves -> up.
     scripted_drag: bool = False
@@ -527,9 +567,18 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.apply_mode(obs, goal)
         fv = self.try_fill_verify()
         if fv:
+            # A fill that didn't stick invalidates everything planned on top of it.
+            self.pending.clear()
             d = LlmDecision(action=self.translate(fv), n_interactive=n, note="fill-verify-retry")
             self.note(fv + "  (mechanical fill retry: value did not stick)", obs)
             return d
+        if self.serial_multi and self.pending:
+            q = self.dequeue_pending(obs)
+            if q:
+                d = LlmDecision(action=self.translate(q), n_interactive=n, note="queued")
+                self.note(q, obs)
+                self.all_actions.append(q)
+                return d
         pk = self.try_native_picker(goal)
         if pk:
             d = LlmDecision(action=self.translate(pk), n_interactive=n, note="native-picker")
@@ -598,6 +647,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         m_cl = re.search(r"CLAUSE\s+(\d+)", raw or "")
         if m_cl and self.checklist:
             self.cur_clause = max(self.cur_clause, int(m_cl.group(1)))
+        if self.serial_multi and len(chosen_list) > 1:
+            chosen_list = self.queue_rest(chosen_list)
         d.n_interactive = n
         translated = [self.translate(c) for c in chosen_list]
         if self.scripted_drag:
@@ -781,6 +832,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v26":  # v22 + serialized multi-action (queued steps re-resolve targets per-obs)
+        v26 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  serial_multi=True, **v26)
     if name == "osw-llm-v25":  # v22 + gated long-goal mode (single-step + compressed full history)
         v25 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

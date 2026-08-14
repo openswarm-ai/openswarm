@@ -198,6 +198,15 @@ strongest evidence yet that the missing piece is one product primitive, not benc
 partial credit shows clauses 1–2 execute, then bookkeeping dies. browser-use comparison arm
 runs next on the identical partition (auto-chained); its numbers land here when scored.
 
+## PRE-REGISTERED (2026-08-13, before any v26 episode): serialized multi-action pilot
+
+Mechanism: `serial_multi` (v26) — multi-action turns execute one env-step at a time; each queued
+action re-resolves its plan-time target by name+role on the CURRENT page; vanished referent or
+errored step drops the queue and replans. Zero extra LLM calls on the happy path. Prediction:
+wins ≥2 of the 8 CompWoB ≥5-part tasks and lifts the 3-part cluster (was 36%); controls (1–2-part
+CompWoB + short MiniWoB) unharmed — known risk is step-budget, since fill+click now costs 2 env
+steps. Out-of-prediction gains will be booked as noise per method. Pilot: 8 target + 12 control.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
