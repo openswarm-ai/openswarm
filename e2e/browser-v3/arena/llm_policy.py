@@ -424,6 +424,12 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         targets = [t for t in quoted(goal) if t and t not in self.fastpath_used]
         if not targets:
             return ""
+        # v34: subordinate order clauses ('X, after doing Y' / 'before' / 'once') make stated
+        # order != execution order. A scripted first-quoted click is then a coin flip at best and
+        # an instant terminal loss at worst (measured: 1-step losses on every reverse variant).
+        # The model parses these sentences correctly when consulted -- so consult it.
+        if re_.search(r"\b(after|before|once)\b", goal, re_.I):
+            return ""
         # ORDER IS PART OF THE TASK: composed goals ("click Ok, then the link") enforce sequence,
         # and skipping to a later quoted target because the first is ambiguous clicked things out
         # of order -- an instant, unrecoverable loss (measured on ordered pairs). The fastpath may
@@ -924,6 +930,15 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v34":  # v32 + fastpath inversion gate (subordinate-clause goals go to the model)
+        v34 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
+                   max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, **v34)
     if name == "osw-llm-v33":  # v32 + opportunistic ordering (deferral doctrine + defer-nudge)
         v33 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V33, max_tokens=800)

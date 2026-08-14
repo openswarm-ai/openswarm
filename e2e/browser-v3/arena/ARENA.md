@@ -407,6 +407,20 @@ history. Targets: exactly the 12 tasks they win and we lose (v33_pilot.json) + 1
 controls. Prediction: >=5 of 12 targets (the 7 reverse-order ones are the core candidates),
 controls 12/12. Pilot runs only after the MiniWoB regression frees the LLM lane.
 
+VERDICT v33 (2026-08-14): **fail — targets 1/12, controls 12/12.** Deferral never fires on
+reverse tasks because nothing ERRORS: the fastpath instantly clicks the goal's first-QUOTED
+target, which under 'X, after doing Y' grammar is the last-executed step — 1-step terminal
+losses, no model call involved. The model, when consulted, parses the inversion correctly
+(it opened the dialog case in the right order unaided). Mechanism withdrawn.
+
+## PRE-REGISTERED (2026-08-14, before any v34 episode): fastpath inversion gate
+
+Mechanism: v34 = v32 + one gate — fastpath stands down when the goal contains subordinate
+order conjunctions (after/before/once), sending those sentences to the model. Linguistic
+feature-trigger, no task names, no new scaffolding; normal goals keep the scripted speed path
+(unit-checked both ways). Prediction: >=3 of the 7 reverse-order targets flip (the two 1-step
+losses at minimum), controls 12/12 (no control goal contains the conjunctions).
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
