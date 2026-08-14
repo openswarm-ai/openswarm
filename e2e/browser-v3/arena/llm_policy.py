@@ -135,6 +135,20 @@ class LlmPolicy:
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
 
+    # v28: per-step self-evaluation. The reply gains one trailing line -- 'EVAL: <verdict on the
+    # previous action, judged from the current page>' -- which rides in history, so every turn
+    # opens with the model's own judgment of whether its last step worked. browser-use's schema
+    # forces the same thing (evaluation_previous_goal); ours trails the action so the
+    # action-first/truncation-proof reply shape is untouched. No extra LLM calls.
+    eval_line: bool = False
+    _last_eval: str = ""
+
+    def eval_block(self) -> str:
+        if not self.eval_line:
+            return ""
+        return ("\nAfter your action line(s), end with one line 'EVAL: <one sentence: did your "
+                "PREVIOUS action achieve its intent, judged from the PAGE above — and if not, why>'.")
+
     # v27: ACTIVE sub-goal ledger. v24's static checklist (all clauses, full text, every turn)
     # taxed attention and moved nothing; v26 proved plans execute cleanly against fresh pages.
     # What dies mid-chain is knowing WHICH clause is live. So: done clauses collapse to ticks,
@@ -188,6 +202,8 @@ class LlmPolicy:
         extra = self.clause_block() if hasattr(self, "clause_block") else ""
         if hasattr(self, "history_block"):
             extra += self.history_block()
+        if getattr(self, "eval_line", False):
+            extra += self.eval_block()
         user = f"GOAL: {goal}{extra}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
         content: Any = user
         if image_b64:
@@ -665,6 +681,10 @@ class OpenSwarmLlmPolicy(LlmPolicy):
                 redo = [c for c in clean_actions(raw2, limit=self.multi_cap) if c]
                 if redo:
                     chosen_list = redo
+        if self.eval_line:
+            m_ev = re.search(r"EVAL:\s*(.+)", raw or "")
+            if m_ev:
+                self.history.append(f"(your step-eval: {m_ev.group(1).strip()[:200]})")
         m_cl = re.search(r"CLAUSE\s+(\d+)", raw or "")
         if m_cl and (self.checklist or self.ledger):
             self.cur_clause = max(self.cur_clause, int(m_cl.group(1)))
@@ -853,6 +873,13 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v28":  # v22 + per-step self-eval line riding in history (eval-memory half)
+        v28 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  eval_line=True, **v28)
     if name == "osw-llm-v27":  # v22 + active sub-goal ledger (focused current-clause anchor, gated >=3 clauses)
         v27 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,

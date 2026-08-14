@@ -241,6 +241,26 @@ nothing. Prediction: >=2 wins on the 8 pilot targets (incl. >=1 of the five >=5-
 12/12 unharmed. browser-use's edge here is an actively-updated plan + step verdicts; this is
 the plan-state half. Same pilot lists as v26 (v26_pilot.json).
 
+VERDICT (2026-08-14): **fail, and harmful — targets 0/8, controls 6/11 (baseline 12/12).** The
+first launch also surfaced a reply-format collision (CLAUSE marker vs action-first replies →
+empty actions), fixed before the counted run; the counted run still failed both prongs. The
+'work ONLY on this clause' constraint evidently fights the fastpath/multi-action machinery that
+wins the short tasks. Plan-state scaffolds are now 0-for-2 (passive v24, active v27): the model
+does not need to be TOLD where it is. Goal integrity also verified intact end-to-end (309-char
+8-part goal arrives whole). Remaining live hypothesis: the model never JUDGES whether its last
+action achieved its intent — browser-use's reply schema forces a per-step self-evaluation that
+rides in memory. That is v28.
+
+## PRE-REGISTERED (2026-08-14, before any v28 episode): per-step self-eval line
+
+Mechanism: `eval_line` (v28) — the reply format gains one trailing line, 'EVAL: <did the
+previous action achieve its intent, judged from the current page>'; the line is parsed and
+rides in history, so each turn opens with the model's own verdict on its last step. No extra
+LLM calls, action-first reply untouched (EVAL trails the action like the CLAUSE marker fix).
+Ungated (cost is ~1 line) — the pilot's 12 controls decide if that is a tax. Prediction: >=2 of
+8 targets (incl >=1 five-plus-part), controls 12/12. This is the second half of the
+browser-use loop diff (step verdicts); the first half (plan state) is dead.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
