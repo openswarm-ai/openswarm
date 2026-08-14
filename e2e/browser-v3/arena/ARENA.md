@@ -430,6 +430,11 @@ dig; deprioritized behind WebChoreArena and the unmeasured goal clauses. CompWoB
 v34: ~77/95 ≈ 81% (74 + the 3 pilot flips at sweep seed); 12-task delta rerun queued to book it
 properly after the 3-seed rerun frees the lane.
 
+DELTA RERUN BOOKED (2026-08-14): the same 3 flips reproduced (both reverse 1-step tasks + the
+login-transition) — **CompWoB champion (v34): 77/95 = 81.1%**, zero false claims. Gap to
+browser-use's 82.0 headline: within the 6 infra-excluded pages; on the 94-task common set the
+remaining deficit is the 9 deep-failure tasks booked at the validator boundary.
+
 ## MiniWoB 3-seed on the v32 stack (2026-08-14, post ctx-uniqueness fix)
 
 **89.0 mean (90.2 / 90.3 / 86.4)** vs the v22 baseline 90.9 (89.6/92.0/91.2). The interim 87.5
