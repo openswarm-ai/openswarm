@@ -271,6 +271,19 @@ accessible names per action); labeled diagnostic episode next. Their side shows 
 running done-list in the memory field, persisted verbatim — possibly the real carrier, but no
 v29 until the labeled trace says where ours actually diverges.
 
+DIAGNOSIS (2026-08-14, labeled trace + page probe): **the model was never lost — it was blind.**
+The labeled 6-part trace shows every NAMED clause executed correctly in order (congue → Cancel →
+yCHnj → umU3W2u → Submit → Close) and reward 0: the one unlabeled action, clause 1's anonymous
+'text widget', is a silent coin flip because the page has multiple nameless same-role rows whose
+rendered ctx is IDENTICAL bag-of-page-words ('e OXn epre Oxc Venenatis...') — context extraction
+collapses to page-level soup on multi-section pages, discriminating nothing. One silent wrong
+click at clause 1 poisons the terminal reward while every later clause executes cleanly — which
+is exactly what 'clean for ~10 steps then 0' looked like from outside. Five mechanism pilots
+(v23–v28) failed because they all treated a perception defect as a reasoning defect. Next:
+v29 = discriminative per-row context (nearest section/heading ancestor + local siblings, unique
+per row where twins exist) — a perception primitive for any multi-section page, nothing
+CompWoB-specific. Pre-registration follows implementation.
+
 ## Positioning vs public generic-harness baselines (user-supplied 2026 survey)
 
 The comparable class is generic agents, NOT MiniWoB-specialized systems (HTML-T5++ 95.2 trained
