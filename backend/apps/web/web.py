@@ -215,10 +215,18 @@ async def search(body: SearchBody) -> Dict:
 
     async def try_keyless_engines() -> Optional[Dict]:
         outcome = await race_keyless(
+            # Order is quality, not alphabet: race_keyless starts these in sequence and only hedges
+            # the next one in if the leader stalls, so whoever sits second inherits every ddg
+            # challenge. Measured 2026-08-13, N=22 fact queries, 12s pacing so nobody is being read
+            # through their own rate limiter: ddg 21/22 (0.955), bing 6/22 (0.273), brave 2/2 of the
+            # 2 it served before throttling, startpage 0/22. Bing answers something 100% of the time
+            # and answers CORRECTLY about a quarter of it, which is the worst shape for a silent
+            # fallback, so it goes last. The dead rungs cost nothing: record_tier_failure cools them
+            # out after their first miss.
             [KeylessEngine(name="ddg", run=try_keyless),
-             KeylessEngine(name="bing", run=try_bing),
              KeylessEngine(name="brave", run=try_brave),
-             KeylessEngine(name="startpage", run=try_startpage)],
+             KeylessEngine(name="startpage", run=try_startpage),
+             KeylessEngine(name="bing", run=try_bing)],
             KEYLESS_TIER_SECONDS,
         )
         keyless_errors.extend(outcome.errors)

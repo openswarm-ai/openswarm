@@ -20,6 +20,7 @@ from backend.tests.web_cascade_fixtures import (  # noqa: F401
     allow_urls,
     bing_refuses,
     bing_returns,
+    brave_refuses,
     brave_returns,
     fresh_breaker,
     patch_browser_bridge,
@@ -210,15 +211,31 @@ async def test_bing_rescues_a_ddg_challenge_before_any_paid_backend(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_brave_rescues_when_ddg_and_bing_both_refuse(monkeypatch):
+async def test_brave_rescues_when_ddg_refuses(monkeypatch):
+    """Brave now sits directly behind ddg, so it is what catches a ddg challenge."""
     ddg_throttled(monkeypatch)
-    bing_refuses(monkeypatch)
     brave_returns(monkeypatch, "[1] Independent index\n    https://brave-hit.example")
 
     res = await search(SearchBody(query="x"))
     assert res["backend"] == "brave"
     assert "brave-hit.example" in res["results"]
-    assert any("Bing" in e for e in res["cascade_errors"])
+
+
+@pytest.mark.asyncio
+async def test_bing_is_the_last_keyless_resort(monkeypatch):
+    """Bing answers something ~100% of the time and answers CORRECTLY ~27% (N=22, 12s pacing,
+    2026-08-13) against ddg's 95.5%, which is the worst possible shape for a silent fallback: the
+    caller cannot tell a good answer from an off-topic one. So it must serve only when every better
+    rung has declined, and that ordering is what this pins."""
+    ddg_throttled(monkeypatch)
+    brave_returns(monkeypatch, "[1] Brave result\n    https://brave-hit.example")
+    bing_returns(monkeypatch, "[1] Bing result\n    https://bing-hit.example")
+
+    res = await search(SearchBody(query="x"))
+    assert res["backend"] == "brave", (
+        f"bing served while brave was also answering, so it is not last: got {res['backend']}"
+    )
+    assert "bing-hit.example" not in res["results"]
 
 
 @pytest.mark.asyncio
