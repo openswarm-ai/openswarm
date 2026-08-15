@@ -106,10 +106,29 @@ def test_read_is_never_gated(p_client, monkeypatch):
     assert "settings" in res.json()
 
 
-def test_the_tool_list_stops_offering_the_write_when_it_is_off(monkeypatch):
-    import backend.apps.agents.manager.permissions.build_effective_tool_lists as mod
+def p_tool_lists(monkeypatch, write_enabled: bool):
+    """The real builder, driven with a core server carrying the always-on modules."""
+    import backend.apps.settings.store as store
+    from backend.apps.agents.core.models import AgentSession
+    from backend.apps.agents.manager.permissions.build_effective_tool_lists import build_effective_tool_lists
 
-    monkeypatch.setattr(mod, "load_settings", lambda: AppSettings(agent_settings_write_enabled=False), raising=False)
-    src = open(mod.__file__).read()
-    assert "agent_settings_write_allowed" in src, "the tool list must consult the same one gate"
-    assert 'p_t == "SettingsWrite"' in src, "SettingsRead must survive; only the write is withheld"
+    # The builder imports load_settings from the store at call time, so patching the module is what
+    # a real Settings change looks like from its point of view.
+    monkeypatch.setattr(store, "load_settings", lambda: AppSettings(agent_settings_write_enabled=write_enabled))
+    session = AgentSession(id="tool-list-test", name="t", model="opus-4-8")
+    servers = {"openswarm-core": {"env": {"OSW_MCP_MODULES": "meta,settings,apps"}}}
+    return build_effective_tool_lists(session, servers, {}, False, [], [])
+
+
+def test_the_tool_list_stops_offering_the_write_when_it_is_off(monkeypatch):
+    allowed, disallowed = p_tool_lists(monkeypatch, write_enabled=False)
+    assert "mcp__openswarm-core__SettingsWrite" not in allowed
+    assert "mcp__openswarm-core__SettingsWrite" in disallowed
+    # SettingsRead survives: reading redacted settings is how an agent answers without changing anything.
+    assert "mcp__openswarm-core__SettingsRead" in allowed
+
+
+def test_the_tool_list_offers_the_write_when_it_is_on(monkeypatch):
+    allowed, disallowed = p_tool_lists(monkeypatch, write_enabled=True)
+    assert "mcp__openswarm-core__SettingsWrite" in allowed
+    assert "mcp__openswarm-core__SettingsWrite" not in disallowed
