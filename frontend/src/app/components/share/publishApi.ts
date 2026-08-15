@@ -39,11 +39,22 @@ export async function publishApp(
   return (await res.json()) as PublishResult;
 }
 
+/** Only an explicit {ok:true} is a takedown. The route answers HTTP 200 with {ok:false,error} when it
+ *  was refused (signed out, offline, cloud error), so reading res.ok alone told the user their app was
+ *  off the internet while it kept serving, and cleared the publish state so they could not retry. */
 export async function unpublishApp(outputId: string): Promise<void> {
   const res = await fetch(`${OUTPUTS_API}/unpublish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ output_id: outputId }),
   });
-  if (!res.ok) throw new Error("We couldn't unpublish this app.");
+  const fallback = "We couldn't unpublish this app. It may still be live.";
+  if (!res.ok) throw new Error(fallback);
+  let body: { ok?: boolean; error?: string } | null = null;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error(fallback);
+  }
+  if (body?.ok !== true) throw new Error(body?.error || fallback);
 }

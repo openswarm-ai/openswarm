@@ -137,7 +137,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
     try {
       await unpublishApp(outputId);
       dispatch(setOutputPublishState({ id: outputId, published_slug: null, published_url: null, publish_status: null }));
-      setToast('App unpublished');
+      setToast('App unpublished. The public link can take a minute or two to go dark.');
       onClose();
     } catch (e: any) {
       setConfirmUnpublish(false);
