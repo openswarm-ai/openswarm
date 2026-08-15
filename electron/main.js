@@ -169,6 +169,7 @@ const getPort = require('get-port');
 const http = require('http');
 const affiliateTracking = require('./affiliateTracking');
 const cdpRoutes = require('./cdp-routes');
+const { releaseAgentPointerLock } = require('./releaseAgentPointerLock');
 const workflowsLifecycle = require('./workflowsLifecycle');
 
 // Squirrel makes the APP create its own shortcuts: on --squirrel-install it must
@@ -4335,6 +4336,8 @@ async function sendCdpCommandSerialized(wcId, method, params, sessionId) {
 ipcMain.handle('send-cdp-command', async (_event, wcId, method, params, sessionId) => {
   try {
     const result = await sendCdpCommandSerialized(wcId, method, params, sessionId);
+    // A synthetic click can leave a canvas app holding the user's real cursor; hand it straight back (ENG-310).
+    releaseAgentPointerLock(sendCdpCommandSerialized, wcId, method, params);
     return { ok: true, result };
   } catch (err) {
     return { ok: false, error: err && err.message ? err.message : String(err) };
