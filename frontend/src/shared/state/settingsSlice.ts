@@ -35,6 +35,7 @@ export interface AppSettings {
   dictation_dictionary?: string;
   dictation_sounds?: boolean;
   memory_enabled?: boolean;
+  agent_settings_write_enabled?: boolean;
   dictation_haptics?: boolean;
   dictation_sound_volume?: number;
   dictation_disabled_surfaces?: string;
@@ -176,6 +177,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dictation_dictionary: '',
   dictation_sounds: true,
   memory_enabled: true,
+  agent_settings_write_enabled: true,
   dictation_haptics: true,
   dictation_sound_volume: 0.7,
   dictation_disabled_surfaces: '',

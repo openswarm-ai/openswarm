@@ -55,7 +55,14 @@ def build_effective_tool_lists(
                 # when each module was its own process. Module list = what registration wired.
                 p_modules = [m for m in mcp_servers[name].get("env", {}).get("OSW_MCP_MODULES", "").split(",") if m]
                 from backend.apps.agents import apps_mcp_server, mcp_meta_server, memory_meta_server, schedule_mcp_server, settings_meta_server
+                from backend.apps.settings.agent_settings_write_allowed import agent_settings_write_allowed
+                from backend.apps.settings.store import load_settings
+                # Don't offer a write the route is going to refuse; the route stays the real gate (ENG-284).
+                p_may_write = agent_settings_write_allowed(load_settings())
                 for p_t in (x["name"] for x in mcp_meta_server.TOOLS + settings_meta_server.TOOLS + apps_mcp_server.TOOLS):
+                    if p_t == "SettingsWrite" and not p_may_write:
+                        effective_disallowed.append(f"mcp__openswarm-core__{p_t}")
+                        continue
                     effective_allowed.append(f"mcp__openswarm-core__{p_t}")
                 # Module presence already encodes the Settings memory toggle; absent module = tools not offered.
                 if "memory" in p_modules:

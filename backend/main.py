@@ -792,6 +792,7 @@ async def settings_meta(action: str, request: Request):
     from backend.apps.settings.models import AppSettings
     from backend.apps.settings.redaction import redact_settings
     from backend.apps.settings.settings import SERVER_OWNED_FIELDS, apply_settings_update, settings_write_lock
+    from backend.apps.settings.agent_settings_write_allowed import REFUSAL_REASON, agent_settings_write_allowed
     from backend.apps.agents.session_credential import (
         ALL_API_KEY_FIELDS, PoweringCredential, resolve_powering_credential, write_would_suicide,
     )
@@ -814,6 +815,10 @@ async def settings_meta(action: str, request: Request):
         # Serialize the read-modify-write: SettingsWrite goes through apply_settings_update, which awaits (so two autonomous agents would interleave and clobber each other's fields while BOTH got an "applied" result). The lock makes agent writes serial so the last load always sees the prior write. (Agent vs the renderer's own PUT stays the pre-existing full-object-replace race.)
         async with settings_write_lock():
             settings = load_settings()
+            # The gate the UI switch draws. It lives HERE, not in the tool list, so a stale tool
+            # list or a hand-rolled client cannot walk past it (ENG-284).
+            if not agent_settings_write_allowed(settings):
+                return JSONResponse({"outcomes": {f: {"status": "refused", "reason": REFUSAL_REASON} for f in changes}})
             session = agent_manager.sessions.get(parent_session_id) if parent_session_id else None
             if session is not None:
                 powering = resolve_powering_credential(session.model, settings)

@@ -85,6 +85,18 @@ const MemorySettings: React.FC<{
         <Switch size="small" checked={form.memory_enabled !== false} onChange={(e) => setForm({ ...form, memory_enabled: e.target.checked })} />
       </Box>
 
+      <Box sx={inlineRowSx} {...settingSelectAttrs('agent_settings_write_enabled', 'Let agents change your settings', 'Interface', 'Whether agents may edit Settings themselves.')}>
+        <Box sx={{ mr: 3 }}>
+          <Typography sx={labelSx}>Let agents change your settings</Typography>
+          <Typography sx={descSx}>Agents can always read your settings with secrets hidden. Off means they can only ask you to change something, never do it.</Typography>
+        </Box>
+        <Switch
+          size="small"
+          checked={form.agent_settings_write_enabled !== false}
+          onChange={(e) => setForm({ ...form, agent_settings_write_enabled: e.target.checked })}
+        />
+      </Box>
+
       <Box sx={{ ...inlineRowSx, alignItems: 'flex-start', flexDirection: 'column', gap: 1.25 }}>
         <Box>
           <Typography sx={labelSx}>What agents know about you</Typography>
