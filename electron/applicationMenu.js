@@ -57,6 +57,8 @@ function applicationMenuTemplate() {
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        // Electron's implicit default carried this; dropping it would quietly take away Cmd+Alt+I.
+        { role: 'toggleDevTools' },
       ],
     },
     {

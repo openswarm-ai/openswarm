@@ -43,6 +43,22 @@ test('no item pins itself to a specific window', () => {
   assert.ok(!json.includes('webContents'), 'roles resolve the target themselves; do not capture one');
 });
 
+test('declaring a menu does not quietly take away what the implicit default gave', () => {
+  // Replacing the default menu replaces ALL of it, so anything it bound and we omit is a capability
+  // silently removed. Cmd+Alt+I is the one that matters here.
+  const all = applicationMenuTemplate().flatMap((m) => m.submenu.map((i) => i.role)).filter(Boolean);
+  for (const role of ['toggleDevTools', 'minimize', 'togglefullscreen', 'quit', 'hide']) {
+    assert.ok(all.includes(role), `dropping the ${role} role removes a shortcut users already have`);
+  }
+});
+
+test('Window has no Close item, because Cmd+W is repurposed', () => {
+  // main.js swallows Cmd+W and turns it into "close the focused card". A Close role here would give
+  // the accelerator back a menu item to fire and reintroduce the 1.2.77 self-quit class.
+  const win = applicationMenuTemplate().find((m) => m.label === 'Window');
+  assert.ok(!win.submenu.some((i) => i.role === 'close'), 'a Close item would undo the Cmd+W guard');
+});
+
 test('the menu is installed on macOS and skipped elsewhere', () => {
   const calls = [];
   const fake = { Menu: { setApplicationMenu: (m) => calls.push(m), buildFromTemplate: (t) => t } };
