@@ -1042,7 +1042,16 @@ const AgentCard: React.FC<Props> = ({
           onPointerMove={handleDragPointerMove}
           onPointerUp={handleDragPointerUp}
           className="osw-pill-host"
-          sx={{ position: 'relative', touchAction: 'none', userSelect: 'none', pt: '50px', mt: '-50px', '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' } }}
+          // The 50px reserved above the capsule is for the hover chip to live in, NOT a grab zone:
+          // without pointerEvents none the empty band would answer clicks and drag the pill from
+          // half a card away. Children opt back in, and their events still bubble to the drag
+          // handlers here, so grabbing the capsule itself works exactly as before.
+          sx={{
+            position: 'relative', touchAction: 'none', userSelect: 'none',
+            pt: '50px', mt: '-50px', pointerEvents: 'none',
+            '& > *': { pointerEvents: 'auto' },
+            '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' },
+          }}
         >
           {/* Fully above the capsule: at top -8 the 40px round chip hid behind the ~34px pill and hover revealed only its crown, which read as a deformed corner plus a stray shadow (Eric, 2026-08-14). No osw-card class: wearing it dressed this chip in card selection/shadow chrome. */}
           <Box
