@@ -447,6 +447,18 @@ MiniWoB, +12.6 CompWoB, +2 more CompWoB tasks under v34** — strongly positive,
 per-benchmark configs. The readonly-picker dead end is a named future primitive (JS value-set
 fallback when a picker fill bounces); the >=95 MiniWoB clause remains open.
 
+## PRE-REGISTERED (2026-08-15, before any v35 episode): readonly-picker fallback pilot
+
+Mechanism: `native_js_fallback` (v35 = v34 + this) — a fill that bounces off a READONLY input
+is applied through the page's OWN widget machinery (jQuery datepicker setDate when present;
+value+input/change events otherwise), and the model is told to verify. Unit-verified against
+the live page WITHOUT any model: fallback + submit scores 1.0 from MiniWoB's own reward.
+Built during the quota outage (all lanes 429 — the plan window; sweeps paused ~9h so far).
+Prediction: choose-date / choose-date-nodelay flip (both lost 2/3 seeds to exactly this dead
+end), book-flight improves; controls (non-picker tasks) untouched — the mechanism fires only
+on readonly fill timeouts. Pilot: the picker-loss cluster + 12 standard controls, when the
+lane returns; then a full 3-seed to re-measure the MiniWoB clause.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic

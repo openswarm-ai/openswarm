@@ -53,6 +53,28 @@ def with_deadline(fn: Any, timeout_s: float) -> Any:
         signal.signal(signal.SIGALRM, prev)
 
 
+def picker_value_fallback(page: Any, bid: str, value: str) -> str:
+    """READONLY pickers reject fill by design -- the page wants you to use its widget. So use its
+    widget: drive the picker's own API with the attempted value. Returns a note or '' if n/a."""
+    try:
+        ok = page.evaluate(
+            """([bid, val]) => {
+                 const el = document.querySelector(`[bid="${bid}"]`);
+                 if (!el || !el.readOnly) return '';
+                 if (typeof jQuery !== 'undefined' && jQuery(el).hasClass('hasDatepicker')) {
+                   const m = val.match(/(\\d{4})-(\\d{2})-(\\d{2})/);
+                   if (m) { jQuery(el).datepicker('setDate', new Date(+m[1], +m[2]-1, +m[3])); return 'datepicker'; }
+                 }
+                 el.value = val;
+                 el.dispatchEvent(new Event('input', {bubbles: true}));
+                 el.dispatchEvent(new Event('change', {bubbles: true}));
+                 return 'value+events';
+               }""", [bid, value])
+        return str(ok or "")
+    except Exception:
+        return ""
+
+
 def classify(exc: BaseException) -> str:
     """Separate a harness/browser failure from a policy failure so infra noise never scores as skill."""
     name = type(exc).__name__
@@ -223,6 +245,15 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
             # v30 (gated by the arm): a click that times out on actionability is usually COVERED by
             # an overlay (dialog, banner, sticky bar). Playwright knows; the model only hears
             # 'TimeoutError'. Name the blocker so the model can move/close it and retry.
+            if (getattr(policy, "native_js_fallback", False) and "Timeout" in err
+                    and re.match(r"fill\(", decision.action)):
+                m_f = re.match(r'fill\(\s*"([^"]+)"\s*,\s*"([^"]*)"', decision.action)
+                if m_f:
+                    how = picker_value_fallback(env.unwrapped.page, m_f.group(1), m_f.group(2))
+                    if how:
+                        err = (f"READONLY input: your value was applied through the page's own "
+                               f"{how} machinery instead -- verify it on the page and continue | {err}")
+                        obs["last_action_error"] = err
             if (getattr(policy, "blocker_probe", False) and "Timeout" in err
                     and re.match(r"(?:dbl)?click\(", decision.action)):
                 m_bid = re.search(r'"([^"]+)"', decision.action)

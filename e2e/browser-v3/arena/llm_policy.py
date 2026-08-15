@@ -137,6 +137,10 @@ class LlmPolicy:
         return (f"\nINSTRUCTION CLAUSES (complete IN ORDER; you last reported clause {self.cur_clause}):\n"
                 f"{rows}\nBegin your PLAN line with 'CLAUSE <n>:' stating the clause you are working on.")
 
+    # v35: readonly-picker value fallback (runner-side). A fill that bounces off a READONLY
+    # picker input is applied through the page's own widget API (jQuery datepicker etc.).
+    native_js_fallback: bool = False
+
     # v33: deferral doctrine (system rung) + a mechanical defer-nudge when an action fails on a
     # missing/blocked target: the model is reminded to defer and continue, never stall or skip.
     defer_nudge: bool = False
@@ -939,6 +943,15 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v35":  # v34 + readonly-picker value fallback
+        v35 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
+                   max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, **v35)
     if name == "osw-llm-v34":  # v32 + fastpath inversion gate (subordinate-clause goals go to the model)
         v34 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
