@@ -242,7 +242,7 @@ class LlmPolicy:
         # Retry transient router faults: a concurrent-sweep run lost 40% of its episodes to 502s that
         # were then booked as policy failures. Retries make the residue rare; the classifier below
         # books what remains as infra, never as skill.
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 payload = {
                     "model": self.model,
@@ -269,7 +269,10 @@ class LlmPolicy:
                 break
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as exc:
                 d.llm_error = f"{type(exc).__name__}: {exc}"[:150]
-                time.sleep(2.0 * (attempt + 1))
+                # Rolling TPM 429s reset in ~15-60s; a 2-6s backoff converts a slow lane into
+                # booked infra episodes (measured: 14 in one chore half-hour). Wait the window out.
+                is_rl = "429" in str(exc) or "rate limit" in str(exc).lower()
+                time.sleep((20.0 if is_rl else 2.0) * (attempt + 1))
         d.think_ms = (time.time() - t0) * 1000
         return str(text).strip(), d
 
