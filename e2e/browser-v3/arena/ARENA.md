@@ -470,6 +470,17 @@ same harness on a different model family is the cleanest test of the goal's core
 cross-model) and social-media-all (ctx fix holds). All Claude numbers stand as the primary
 column; GPT-5.4 becomes a parallel generality column. No fable-5 used (unrelated axis).
 
+## GPT-5.4 cross-model MiniWoB column (2026-08-15, v35 harness)
+
+**86.1% mean (88.0 / 87.2 / 83.2)** — the SAME harness, same 375 episodes, model swapped
+Claude-opus-5 → gpt-5.4. Within ~3 points of the Claude v35 stack (89.0), and ~11 points above
+the best published GPT generic harness (71.5). This is the goal's central claim measured
+directly: the harness carries the result across model families, not one model. v35 picker fix
+transfers cleanly (choose-date family 3/3 on gpt too). Remaining gpt losses mirror Claude's
+(book-flight autocomplete, drag geometry, seed-44 long-form variance) — same failure classes,
+confirming they are harness/task properties, not model quirks. Booked as its own column; the
+Claude numbers remain primary and unmerged.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
