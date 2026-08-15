@@ -103,9 +103,17 @@ def test_benign_write_applies(client, reset_settings):
 
 
 def test_unknown_and_server_owned_fields_are_refused(client, reset_settings):
+    from backend.apps.settings.settings import load_settings
+
+    # Attempt a mode the machine is NOT already on, and assert the value is UNCHANGED. The old
+    # version wrote "openswarm-pro" and asserted the result was not "openswarm-pro", which fails on
+    # any developer already on Pro even though the refusal worked perfectly: it made the suite depend
+    # on whose laptop it ran on, and "did not change" is the property that was meant all along.
+    before = load_settings().connection_mode
+    attempt = "own_key" if before == "openswarm-pro" else "openswarm-pro"
     r = client.post("/api/settings-meta/write", json={"changes": {
         "not_a_real_field": 1,
-        "connection_mode": "openswarm-pro",
+        "connection_mode": attempt,
         "openswarm_bearer_token": "forged",
     }})
     assert r.status_code == 200, r.text
@@ -114,8 +122,7 @@ def test_unknown_and_server_owned_fields_are_refused(client, reset_settings):
     assert out["connection_mode"]["status"] == "refused"
     assert out["openswarm_bearer_token"]["status"] == "refused"
     # And the server-owned field is genuinely untouched on disk.
-    from backend.apps.settings.settings import load_settings
-    assert load_settings().connection_mode != "openswarm-pro"
+    assert load_settings().connection_mode == before
 
 
 def test_cannot_suicide_but_disconnects_others(client, reset_settings, session_on_anthropic_key):
