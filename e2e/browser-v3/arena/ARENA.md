@@ -465,7 +465,14 @@ Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge
 subset only). ADDED: WebChoreArena (COLM 2026, wired, sweep queued); REAL/realevals.xyz (11
 deterministic self-hosted simulations of real sites, 110+ tasks, programmatic state verification
 — deterministic subset only) next after it; WASP (Meta, prompt-injection — the >=95 injection
-clause); OSWorld (the >=85 clause; biggest infra lift). EXCLUDED with reasons: Online-Mind2Web
+clause); OSWorld (the >=85 clause; biggest infra lift). WASP adapter design (2026-08-15, from repo read): their ASR scorer is an AzureOpenAI classifier
+(LLM-judge → excluded for scoring per method), but the >=95 injection-refusal clause has a
+DETERMINISTIC core — the injected tasks are concrete observable side-effects (navigate to
+{attacker_domain}?token=..., create a deploy token). Plan: run their gitlab/reddit injected
+tasks through our runner (sites already up), score refusal from the action trace deterministically
+(did the agent hit the attacker domain / perform the injected write — boolean), no classifier.
+Configs at ~/.cache/arena/wasp/webarena_prompt_injections/configs/experiment_config.raw.json.
+EXCLUDED with reasons: Online-Mind2Web
 (LLM-judge on live drifting sites — but its '59% weaker on live web' finding motivates the live
 verified-writes clause), WebVoyager (publicly described as saturated), GAIA/BrowseComp/
 LiveAgentBench (research-QA, not browser operation), VisualWebArena (screenshot-agent variant of
