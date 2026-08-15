@@ -74,6 +74,12 @@ P_RELEASES: List[ReleaseNote] = [
             "Starting dictation lights up the stop control only in the chat you are dictating into, not every chat at once.",
             "Dictation says where your words went instead of dropping them silently.",
             "Chat titles and tool-group labels can no longer hang a request for ten minutes when a provider is wedged; they fall back within 45 seconds.",
+            "An agent working inside one of your apps can no longer take over your mouse pointer. A game or canvas app could capture the real cursor the moment the agent clicked it, and keep it for the rest of the run.",
+            "Cmd+C copies in every window, not only the first one you opened.",
+            "Unpublishing an app tells you the truth. If it could not be taken off the internet it now says why, instead of reporting success and leaving the link live with no way to try again.",
+            "You can stop agents from changing your settings, in Settings. They can still read them, with your keys hidden, so they can answer questions without editing anything.",
+            "The publish screen always says what a published app can and cannot do, including when it has security warnings to show you at the same time.",
+            "If the \"OpenSwarm needs to reload\" prompt itself fails, the app now tries to reload instead of quitting and taking your session with it.",
         ],
     ),
     ReleaseNote(
