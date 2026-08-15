@@ -18,6 +18,7 @@ from backend.apps.agents.manager.streaming.handle_stream_event import handle_str
 from backend.apps.agents.manager.streaming.handle_assistant_message import handle_assistant_message
 from backend.apps.agents.manager.streaming.handle_result_message import TurnResultError, handle_result_message
 from backend.apps.agents.manager.streaming.note_provider_retry import note_provider_retry, settle_provider_retries
+from backend.apps.agents.manager.streaming.core_mcp_health import note_core_mcp_health
 from backend.apps.agents.manager.run.client_pool import (
     SdkClientLike,
     acquire_client,
@@ -119,6 +120,10 @@ class TurnRunner(AgentManagerProtocol):
                     raw = message.__dict__ if hasattr(message, '__dict__') else str(message)
                     logger.info(f"[MCP-DEBUG] SystemMessage: {raw}")
                     p_subtype = getattr(message, "subtype", "")
+                    if p_subtype == "init":
+                        # The CLI states its MCP connection status here; a core server that never
+                        # connected means a session with none of its tools, forever (ENG-303).
+                        note_core_mcp_health(session, session_id, raw)
                     if p_subtype == "compact_boundary":
                         turn.compact_boundaries += 1
                     elif p_subtype == "api_retry":
