@@ -252,6 +252,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
             ))}
           </Box>
         )}
+        <CapabilityNote color={c.text.secondary} border={c.border.subtle} />
       </Box>
     );
   };
