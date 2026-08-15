@@ -254,6 +254,10 @@ class LlmPolicy:
                 if self.temperature is not None:
                     payload["temperature"] = self.temperature
                 resp = post_json(f"{self.endpoint}/v1/chat/completions", payload)
+                if resp.get("error"):
+                    # The router wraps upstream 429s in a 200 body; surface the message so the
+                    # rate-limit branch of the backoff sees it.
+                    raise ValueError(str(resp["error"].get("message", resp["error"]))[:200])
                 text = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
                 # Thinking models sometimes spend the whole budget before emitting text; an empty
                 # reply must be retried like any fault, never silently booked as a no-action turn.
