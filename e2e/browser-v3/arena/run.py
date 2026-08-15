@@ -169,6 +169,14 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
     try:
         for step in range(1, args.max_steps + 1):
             t_perc = time.time()
+            # Q&A goals are scored on the CHAT ANSWER; an episode that pages forever and never
+            # answers scores 0 no matter what it learned (measured: 1/17 chore episodes sent one).
+            # On the last budgeted step, tell the policy the budget is up so it answers NOW.
+            if (step == args.max_steps and hasattr(policy, "history")
+                    and re.search(r"^(calculate|how many|what|which|find|count|tell me|list|give me)|\?\s*$",
+                                  ep.goal.strip(), re.I)):
+                policy.history.append("(FINAL STEP: budget exhausted -- if the goal asks for "
+                                      "information, reply ONLY send_msg_to_user(\"<your best answer>\") now)")
             nodes, ax_chars = perception.axtree_stats(obs)
             # The LLM call rides inside act(); urlopen's timeout does not cover every hang mode.
             decision = with_deadline(lambda: policy.act(obs, ep.goal), args.step_timeout + 90)
