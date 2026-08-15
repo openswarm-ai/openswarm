@@ -149,4 +149,8 @@ def build(name: str, **kwargs: Any) -> Any:
         return REGISTRY[name]()
     import llm_policy  # imported lazily so the free arms never need a model lane configured
 
-    return llm_policy.build(name, **kwargs)
+    # An arm suffixed '@<lane>' keeps its own data file (so a cross-model run never merges into the
+    # Claude numbers) while building the identical policy config. Used when the Claude subscription
+    # lane is exhausted and measurement continues on another subscription (e.g. gpt) as its own arm.
+    base = name.split("@", 1)[0]
+    return llm_policy.build(base, **kwargs)
