@@ -36,8 +36,48 @@ def test_non_core_tools_are_never_watched():
     assert not is_quick_core_tool("mcp__github__create_issue")
 
 
-def test_the_deadline_is_generous_not_twitchy():
-    assert WEDGE_SECONDS >= 60, "a quick tool answers in ms; anything under a minute risks healthy kills"
+def test_the_deadline_sits_between_twitchy_and_a_hang():
+    # The quick class answers in milliseconds, so the floor is about not shooting a healthy-but-busy
+    # sidecar, and the ceiling is about the user not reading recovery as a hang.
+    assert 10 <= WEDGE_SECONDS <= 45, (
+        f"{WEDGE_SECONDS}s is outside the band: under ~10s risks killing healthy work, "
+        "over ~45s and the user has already given up"
+    )
+
+
+def test_a_retry_is_armed_so_the_lost_step_is_redone():
+    from backend.apps.agents.manager.streaming.unwedge_sidecar import RETRY_PROMPT, arm_retry
+
+    class S:
+        pending_continuation = False
+        pending_continuation_prompt = ""
+
+    s = S()
+    assert arm_retry(s) is True
+    assert s.pending_continuation is True
+    assert s.pending_continuation_prompt == RETRY_PROMPT
+
+
+def test_a_retry_never_stacks_on_an_existing_continuation():
+    from backend.apps.agents.manager.streaming.unwedge_sidecar import arm_retry
+
+    class S:
+        pending_continuation = True
+        pending_continuation_prompt = "something else already queued"
+
+    s = S()
+    assert arm_retry(s) is False
+    assert s.pending_continuation_prompt == "something else already queued"
+
+
+def test_a_missing_session_is_survivable():
+    from backend.apps.agents.manager.streaming.unwedge_sidecar import arm_retry
+    assert arm_retry(None) is False
+
+
+def test_the_watchdog_arms_the_retry_on_the_live_session():
+    src = inspect.getsource(unwedge_sidecar.arm_wedge_watchdog)
+    assert "arm_retry" in src, "killing the sidecar frees the turn but loses the in-flight call"
 
 
 # --------------------------------------------------------------------- the kill choreography

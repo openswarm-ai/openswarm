@@ -18,10 +18,11 @@ from typeguard import typechecked
 
 logger = logging.getLogger(__name__)
 
-# Generous by design: the quick class answers in milliseconds (memory, settings, schedule CRUD),
-# so a minute of silence is not slowness, it is a frozen process. Raising this only lengthens the
-# outage a user sits through; lowering it risks shooting a healthy-but-busy sidecar.
-WEDGE_SECONDS = 75.0
+# The quick class answers in MILLISECONDS (memory, settings, schedule CRUD), so 25s is already a
+# thousandfold margin: long enough that nothing healthy trips it, short enough that a user reads
+# the recovery as a hiccup rather than a hang. Anything that legitimately blocks (a human, a
+# delegated run) is exempt by name below, so this deadline never races real work.
+WEDGE_SECONDS = 25.0
 
 P_CORE_PREFIX = "mcp__openswarm-core__"
 
@@ -68,6 +69,27 @@ def find_sidecar_pids(session_id: str) -> list:
         if f"OPENSWARM_PARENT_SESSION_ID={session_id}" in env:
             pids.append(int(pid))
     return pids
+
+
+RETRY_PROMPT = (
+    "Your last tool call never returned because its server had frozen; that server has been "
+    "restarted and works now. Retry that one step, then carry on where you left off."
+)
+
+
+@typechecked
+def arm_retry(session: object) -> bool:
+    """Queue one hidden continuation so the agent redoes the lost step. Reuses the seam the
+    silent-quit nudge already owns, and never stacks on a continuation that is already pending.
+    Takes the live session the hook holds; there is no global registry to look one up in."""
+    if session is None or getattr(session, "pending_continuation", False):
+        return False
+    try:
+        session.pending_continuation = True          # type: ignore[attr-defined]
+        session.pending_continuation_prompt = RETRY_PROMPT   # type: ignore[attr-defined]
+        return True
+    except Exception:
+        return False
 
 
 @typechecked
@@ -120,7 +142,9 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         session_id = getattr(ctx, "session_id", "")
         if not session_id:
             return
-        # ps + kill are blocking; keep them off the event loop.
+        # ps + kill are blocking; keep them off the event loop. The retry is armed on the LIVE
+        # session object the hook holds, so the agent redoes the step the frozen server swallowed.
         loop.run_in_executor(None, unwedge, session_id, tool_name, time.time() - started)
+        arm_retry(getattr(ctx, "session", None))
 
     loop.call_later(WEDGE_SECONDS, p_check)
