@@ -1817,6 +1817,8 @@ function recreateMainWindow() {
   });
 }
 
+// One shot only, so a recreate that itself throws cannot turn into a crash loop.
+let p_crashDialogFallbackUsed = false;
 // Crash recovery path B: the cap-exceeded fallback. Native dialog (not a BrowserWindow) so we cannot trigger the same observer-double-add DCHECK that motivated this whole change. User-driven Reload runs in a clean call stack outside the render-process-gone handler.
 async function showCrashRecoveryOverlay() {
   try {
@@ -1852,7 +1854,24 @@ async function showCrashRecoveryOverlay() {
       crashCount: rendererCrashTimes.length,
     });
     console.error('[main] showCrashRecoveryOverlay failed:', err && err.message);
-    app.quit();
+    // Quitting because a DIALOG failed threw the user's whole session away for a reason that says
+    // nothing about whether the app could have recovered (ENG-265). Try the recovery we would have
+    // offered, once; quit only if that dies too, so a broken recreate cannot become a crash loop.
+    if (p_crashDialogFallbackUsed) {
+      app.quit();
+      return;
+    }
+    p_crashDialogFallbackUsed = true;
+    try {
+      rendererCrashTimes = [];
+      recreateMainWindow();
+    } catch (again) {
+      crashReports.writeCrashReport('crash-recovery-recreate-failed', {
+        message: String(again && again.message || again),
+        stack: String(again && again.stack || ''),
+      });
+      app.quit();
+    }
   }
 }
 
