@@ -2267,6 +2267,9 @@ ipcMain.handle('haptic:perform', (event, pattern) => {
 });
 
 app.whenReady().then(async () => {
+  // Declare the Edit accelerators instead of inheriting whatever the implicit default bound, so
+  // Cmd+C acts on the focused window rather than only the first one (ENG-289). macOS only.
+  try { require('./applicationMenu').installApplicationMenu(require('electron')); } catch (_) {}
   // We made it here, so any prior update swap finished. Drop a stale updating.lock
   // (the watchdog never deletes it) so a real crash later isn't silently swallowed.
   try { fs.unlinkSync(CRASH_WATCHDOG_UPDATING_LOCK); } catch (_) {}
