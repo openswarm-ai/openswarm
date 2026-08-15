@@ -459,6 +459,17 @@ end), book-flight improves; controls (non-picker tasks) untouched — the mechan
 on readonly fill timeouts. Pilot: the picker-loss cluster + 12 standard controls, when the
 lane returns; then a full 3-seed to re-measure the MiniWoB clause.
 
+## Lane note (2026-08-15): Claude subscription exhausted → GPT-5.4 cross-model column
+
+The cc/ lane (Claude Code OAuth = the Claude subscription, NOT pay-per-token API) 429'd every
+Claude model for ~12h. The ChatGPT/Codex subscription lane (cx/gpt-5.4) is live, so measurement
+continues there under a SEPARATE arm identity ('osw-llm-vNN@gpt', own data file) — GPT results
+are never merged into the booked Claude numbers. This is a feature, not just a workaround: the
+same harness on a different model family is the cleanest test of the goal's core claim (harness
+>> model, no model-specific logic). GPT-5.4 canary: 3/3 incl choose-date (v35 picker fix holds
+cross-model) and social-media-all (ctx fix holds). All Claude numbers stand as the primary
+column; GPT-5.4 becomes a parallel generality column. No fable-5 used (unrelated axis).
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
