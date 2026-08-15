@@ -276,7 +276,9 @@ class LlmPolicy:
                 # Rolling TPM 429s reset in ~15-60s; a 2-6s backoff converts a slow lane into
                 # booked infra episodes (measured: 14 in one chore half-hour). Wait the window out.
                 is_rl = "429" in str(exc) or "rate limit" in str(exc).lower()
-                time.sleep((20.0 if is_rl else 2.0) * (attempt + 1))
+                # Bounded: act() runs under a ~150s step watchdog -- unbounded 429 waits turned
+                # every rate-limited step into a booked step_hang (measured: 10 in 30 min).
+                time.sleep(12.0 if is_rl else 2.0 * (attempt + 1))
         d.think_ms = (time.time() - t0) * 1000
         return str(text).strip(), d
 
