@@ -586,6 +586,15 @@ replacement is strictly safer than the click it replaces).
 
 Order: v37 then v36, sequential, immediately after the Claude chore column finishes (auto-chained).
 
+VERDICTS (2026-08-16):
+- **v36 escape token: PASS — 3/8 targets flipped (click-collapsible-2 AND -nodelay, both
+  never-won hard-cluster residents, + click-dialog-2_login-user-popup), controls 12/12.** First
+  competitor ingestion to clear its gate. PROMOTED: v40 champion = v35 stack + escape_token.
+- v37 note scratchpad: fail on short-horizon proxies (0/8; controls 12/12 — mechanism safe,
+  never harmful). Honest reading: the gate words rarely trigger on these tasks and short tasks
+  don't need durable memory; the REAL test is chore-scale aggregation, which needs an uncapped
+  chore rerun (expensive, deferred). Flag stays off in champion until that evidence exists.
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)

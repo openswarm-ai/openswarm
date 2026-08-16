@@ -999,6 +999,15 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v40":  # CHAMPION: v35 stack + v36 escape token (first passed ingestion)
+        v40 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True, **v40)
     if name == "osw-llm-v39":  # v35 + mutation-diff action feedback (Agent-E observer, text-side)
         v39 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
