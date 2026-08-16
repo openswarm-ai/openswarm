@@ -160,6 +160,60 @@ def build_local_context(by_id: dict[str, dict[str, Any]], node: dict[str, Any],
     return ""
 
 
+def tables_markdown(obs: dict[str, Any], max_rows: int = 40) -> str:
+    """v38 (ingested from AgentOccam action_reformat_table): render table/grid AX subtrees as
+    pipe-markdown. A flat text dump loses row/column alignment, so 'the Gender value' or 'the 2nd
+    column' becomes un-followable; markdown restores the grid the model can actually read. Pure
+    feature-trigger: emits nothing when the page has no table."""
+    ax = obs.get("axtree_object") or {}
+    nodes: list[dict[str, Any]] = ax.get("nodes") or []
+    by_id = {n["nodeId"]: n for n in nodes if "nodeId" in n}
+
+    def cell_text(node: dict[str, Any]) -> str:
+        t = node_name(node).strip()
+        if t:
+            return t
+        parts: list[str] = []
+        for cid in node.get("childIds") or []:
+            c = by_id.get(cid)
+            if c and node_role(c) in TEXT_ROLES | {"gridcell", "cell", "columnheader", "rowheader"}:
+                s = node_name(c).strip() or subtree_text(by_id, c)
+                if s:
+                    parts.append(s)
+        return " ".join(parts)[:40]
+
+    CELL = {"gridcell", "cell", "columnheader", "rowheader", "LayoutTableCell"}
+    ROW = {"row", "LayoutTableRow"}
+    out: list[str] = []
+    for n in nodes:
+        if node_role(n) not in ("table", "LayoutTable", "grid"):
+            continue
+        rows: list[list[str]] = []
+
+        def walk(nid: str) -> None:
+            node = by_id.get(nid)
+            if not node:
+                return
+            if node_role(node) in ROW:
+                cells = [cell_text(by_id[c]) for c in node.get("childIds") or []
+                         if by_id.get(c) and node_role(by_id[c]) in CELL]
+                if cells:
+                    rows.append(cells)
+                return
+            for c in node.get("childIds") or []:
+                walk(c)
+
+        walk(n["nodeId"])
+        if len(rows) < 2:
+            continue
+        w = max(len(r) for r in rows)
+        rows = [r + [""] * (w - len(r)) for r in rows[:max_rows]]
+        md = ["| " + " | ".join(rows[0]) + " |", "|" + "---|" * w]
+        md += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+        out.append("\n".join(md))
+    return ("\n\nTABLES:\n" + "\n\n".join(out)) if out else ""
+
+
 def interactives(obs: dict[str, Any], include_hidden: bool = False,
                  include_clickable: bool = False, attr_hints: bool = False,
                  include_offscreen: bool = False, local_ctx: bool = False,

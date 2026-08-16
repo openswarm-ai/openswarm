@@ -188,6 +188,8 @@ class LlmPolicy:
     # N orders", "sum the top 40"). Gated on collection/multi-page goals so short tasks pay nothing.
     note_pad: bool = False
     notes: list[str] = field(default_factory=list)
+    # v38: table->markdown rendering of table/grid subtrees (perception.tables_markdown).
+    table_md: bool = False
 
     def notes_gated(self, goal: str) -> bool:
         return self.note_pad and bool(re.search(
@@ -402,6 +404,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
             text = perception.page_text(obs)
             if text:
                 view += f"\n\nPAGE TEXT:\n{text}"
+        if self.table_md:
+            view += perception.tables_markdown(obs)
         return view, len(shown)
 
     def translate(self, call: str) -> str:
@@ -991,6 +995,15 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v38":  # v35 + table->markdown page rendering (AgentOccam action_reformat_table)
+        v38 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
+                   max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, table_md=True, **v38)
     if name == "osw-llm-v37":  # v35 + persistent NOTE scratchpad (AgentOccam/Agent-E cross-page memory)
         v37 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V37, max_tokens=800)
