@@ -76,7 +76,7 @@ async def settings_lifespan():
 
 
 async def p_upload_dir_gc_loop():
-    """Daily GC of UPLOAD_DIR. Without this, every PDF/image the user
+    """Daily GC of the upload dir (and the legacy temp-dir location). Without this, every PDF/image the user
     drops sits in the OS temp dir forever, growing unbounded across
     sessions. We keep files for 7 days to make resume-after-restart
     work, then delete. macOS temp under /var/folders/... is auto-purged
@@ -88,9 +88,11 @@ async def p_upload_dir_gc_loop():
         try:
             now = time.time()
             cutoff = now - 7 * 86400
-            if os.path.isdir(UPLOAD_DIR):
-                for entry in os.listdir(UPLOAD_DIR):
-                    p = os.path.join(UPLOAD_DIR, entry)
+            for p_dir in (upload_dir(), p_legacy_upload_dir()):
+                if not os.path.isdir(p_dir):
+                    continue
+                for entry in os.listdir(p_dir):
+                    p = os.path.join(p_dir, entry)
                     try:
                         if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
                             os.remove(p)
@@ -406,8 +408,20 @@ class BrowseResponse(BaseModel):
     files: list[str]
 
 
-UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "self-swarm-uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Uploads live under OUR data dir, not the OS temp dir. Two reasons, both measured on the machine
+# that reported the 22s LCP: tempfile.gettempdir() PROBES the temp dir (create+unlink) and the
+# makedirs stats it, which cost 2.9s + 3.1s AT IMPORT on a temp dir grown to unlistable size (the
+# same monster that killed dictation, ENG-312); and our own dir is GC'd by us, not the OS's whims.
+def upload_dir() -> str:
+    from backend.config.paths import DATA_ROOT
+    d = os.path.join(DATA_ROOT, "uploads")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+# Old location, swept by the GC loop only (never probed at import; one stat when the loop runs).
+def p_legacy_upload_dir() -> str:
+    return os.path.join(tempfile.gettempdir(), "self-swarm-uploads")
 
 
 def sniff_file_kind(contents: bytes, name: str) -> tuple[str, str | None]:
@@ -506,7 +520,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
         # Atomic create-with-collision-retry so two concurrent uploads with the same filename never overwrite each other. The previous exists() then open() pattern had a race window: both callers would observe `dest` free and both would write, with the second winning. O_EXCL fails the create if anyone else got there first.
         base, ext = os.path.splitext(safe_name)
-        dest = os.path.join(UPLOAD_DIR, safe_name)
+        dest = os.path.join(upload_dir(), safe_name)
         counter = 0
         fd = None
         while fd is None:
@@ -516,7 +530,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 counter += 1
                 if counter > 10_000:
                     raise HTTPException(status_code=500, detail="upload dedup exhausted")
-                dest = os.path.join(UPLOAD_DIR, f"{base}_{counter}{ext}")
+                dest = os.path.join(upload_dir(), f"{base}_{counter}{ext}")
         try:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(contents)
@@ -568,7 +582,7 @@ async def summarize_file(req: p_SummarizeRequest):
 
     Called from the chat-input attach handler when one file alone would
     exceed 50% of the selected model's context window. The summary is
-    written to a sibling file with `.summary.txt` suffix in UPLOAD_DIR so
+    written to a sibling file with `.summary.txt` suffix in the upload dir so
     the existing attachment plumbing (paths flow through context_paths)
     works unchanged. Aux model picked via provider-agnostic
     resolve_aux_model, so users on OpenAI/Gemini/OpenRouter get summarized
@@ -577,7 +591,8 @@ async def summarize_file(req: p_SummarizeRequest):
     src = req.path
     if not os.path.isfile(src):
         raise HTTPException(status_code=404, detail="file not found")
-    if not os.path.commonpath([os.path.realpath(src), os.path.realpath(UPLOAD_DIR)]) == os.path.realpath(UPLOAD_DIR):
+    p_updir = upload_dir()
+    if not os.path.commonpath([os.path.realpath(src), os.path.realpath(p_updir)]) == os.path.realpath(p_updir):
         raise HTTPException(status_code=400, detail="path outside upload dir")
 
     try:

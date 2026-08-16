@@ -86,6 +86,7 @@ P_RELEASES: List[ReleaseNote] = [
             "Clicking empty canvas clears a text selection, the way every other text surface does.",
             "Brand-new apps stop dying at birth on busy machines. The first boot installs dependencies, which can take minutes; a fixed 60-second limit was killing exactly those boots.",
             "An agent that sent work to a browser can no longer hang forever when the finished result gets lost on the way back; it notices, recovers, and redoes the step.",
+            "The app opens seconds faster on machines with a crowded system temp folder. File uploads moved into OpenSwarm's own folder, so startup no longer pays a toll that grew with years of temp-file clutter.",
         ],
     ),
     ReleaseNote(
