@@ -538,6 +538,8 @@ const BrowserCard: React.FC<Props> = ({
         const onGuestGone = (e: Event): void => {
           const d = e as Event & { reason?: string; exitCode?: number };
           report('process', 'webview_gone', { reason: d.reason ?? 'crashed', exit_code: d.exitCode ?? null });
+          // Reporting alone left a black rectangle on the board; the guest is dead either way, so a reload can only win (ENG-322).
+          window.setTimeout(() => { try { (wv as unknown as { reload?: () => void }).reload?.(); } catch (_) {} }, 800);
         };
         wv.addEventListener('render-process-gone', onGuestGone);
         wv.addEventListener('crashed', onGuestGone);

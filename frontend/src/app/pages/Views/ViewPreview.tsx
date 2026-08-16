@@ -379,13 +379,27 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
       }, retryDelay);
     };
 
+    // A crashed guest fires NEITHER finish nor fail; the element stays mounted painting solid
+    // black (caught live: 7 dead guests under 7 mounted app cards, ENG-322). Reload on the spot.
+    const onGuestGone = () => {
+      if (retryTimer != null) return;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        try { wv.reload?.(); } catch (_) {}
+        retryDelay = Math.min(retryDelay * 2, MAX_DELAY);
+      }, retryDelay);
+    };
     wv.addEventListener?.('did-finish-load', onFinish);
     wv.addEventListener?.('did-fail-load', onFail);
+    wv.addEventListener?.('render-process-gone', onGuestGone);
+    wv.addEventListener?.('crashed', onGuestGone);
     return () => {
       cancelRetry();
       try {
         wv.removeEventListener?.('did-finish-load', onFinish);
         wv.removeEventListener?.('did-fail-load', onFail);
+        wv.removeEventListener?.('render-process-gone', onGuestGone);
+        wv.removeEventListener?.('crashed', onGuestGone);
       } catch (_e) {}
     };
   }, [useWebview, handleNavigationLoad]);
