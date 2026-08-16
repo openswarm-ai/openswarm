@@ -192,6 +192,8 @@ class LlmPolicy:
     table_md: bool = False
     # v41: scripted freehand-circle geometry (run.py-side ring path). Feature-gated on circle goals.
     draw_circle: bool = False
+    # v42: terminal answer protocol (run.py-side). Force a bare final answer on string-match goals.
+    answer_protocol: bool = False
     # v39: mutation-diff action feedback -- run.py appends the page-text delta after each action
     # (Agent-E's MutationObserver, approximated text-side). Autocomplete popups, error banners,
     # and new rows become explicit feedback instead of something the model must notice unaided.
@@ -1028,6 +1030,16 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   local_ctx=True, blocker_probe=True, suppress_wrappers=True,
                                   force_unblock=True, native_js_fallback=True,
                                   table_md=True, mutation_diff=True, **c)
+    if name == "osw-llm-v42":  # v41 + terminal answer protocol (string-match benchmarks)
+        v42 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True,
+                                  table_md=True, draw_circle=True, answer_protocol=True, **v42)
     if name == "osw-llm-v41":  # v40 champion + scripted draw-circle geometry primitive
         v41 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36, max_tokens=800)
