@@ -558,6 +558,18 @@ TIER 3 (gated/expensive — pilot only if Tier 1-2 leave a gap):
 NOT ingested (out of scope / already have): per-site tips files (task-specific), combobox
 flattening (we have native pickers), fine-tuned transfer weights (specialist).
 
+## WebChoreArena PRIMARY Claude column FINAL (2026-08-16)
+
+**1/89 scoreable solved | partial-sum 1.00 | 39 answers delivered | 0 false claims | median
+408s/task; 2 of 91 excluded (their-evaluator crashes).** Paired with GPT-5.4's 2/86 (154s med,
+21 answers): Claude works tasks ~2.6x longer and answers ~2x more but converts no more of them
+under the same 500s cap — both columns say the binding constraint is BUDGET (chores are designed
+for uncapped, 100k+-token runs; the paper's 20-40% agents ran that way), plus long-horizon
+aggregation (the v37 note scratchpad targets exactly this — delta rerun planned after its
+pilot). Honesty clause: zero false claims across BOTH model columns on the hardest benchmark in
+the set. The one solved chore (30093, both models' solved sets overlap on ratio-computation
+tasks) confirms the evaluator plumbing end-to-end.
+
 ## PRE-REGISTERED (2026-08-15, before any v36/v37 episode): first two ingestion pilots
 
 v37 NOTE SCRATCHPAD pilot — targets (8): form-sequence-3, hot-cold, search-engine, text-editor
