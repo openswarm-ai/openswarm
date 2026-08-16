@@ -123,6 +123,7 @@ export interface Workflow {
 export interface WorkflowRun {
   id: string;
   workflow_id: string;
+  workflow_title?: string | null;
   status: 'running' | 'success' | 'failure' | 'ran_late' | 'skipped';
   scheduled_for: string | null;
   started_at: string;

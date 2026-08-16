@@ -85,7 +85,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
   const recents = useMemo(() => allRuns.slice(0, 8).map((r) => ({
     id: r.id,
     wfId: r.workflow_id,
-    title: items[r.workflow_id]?.title || 'Workflow',
+    title: items[r.workflow_id]?.title || r.workflow_title || 'Workflow',
     status: r.status,
     summary: r.error || r.last_tool_label || (r.status === 'success' ? 'Completed' : r.status),
     when: r.started_at ? new Date(r.started_at) : null,

@@ -241,6 +241,10 @@ def record_run(run: WorkflowRun) -> WorkflowRun:
         if run.workflow_id in p_deleted_ids:
             return run
         _ensure_dirs()
+        if run.workflow_title is None:
+            wf = _workflow_cache.get(run.workflow_id)
+            if wf is not None:
+                run.workflow_title = wf.title
         arr = _runs_cache.setdefault(run.workflow_id, [])
         # Replace prior entry with same id if we're updating an in-flight run.
         for i, prior in enumerate(arr):

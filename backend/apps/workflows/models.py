@@ -137,6 +137,8 @@ class Workflow(BaseModel):
 class WorkflowRun(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     workflow_id: str
+    # Stamped at record time so run history stays readable after the workflow is renamed or deleted.
+    workflow_title: Optional[str] = None
     status: Literal["running", "success", "failure", "ran_late", "skipped"] = "running"
     scheduled_for: Optional[datetime] = None
     started_at: datetime = Field(default_factory=datetime.now)
