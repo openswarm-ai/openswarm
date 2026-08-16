@@ -637,6 +637,16 @@ wins — use-autocomplete pair, choose-list — largely overlap table_md's). Cha
 MiniWoB (the >=95 attempt) launched: book-flight, read-table, autocomplete, collapsible
 clusters all newly winnable vs the 90.5 baseline.
 
+## CompWoB v40 delta (2026-08-16): no change — holds 81.1, still 0.9 behind browser-use 82.0
+
+The v40 ingestions (escape token, table-markdown) flipped 0 net-new of the 12 browser-use-edge
+tasks (3/12, exactly v34's set; 0 regressions). Honest reading: those mechanisms target
+perception/refusal, but the bu-edge cluster is the dialog-first + checkbox+widget DEEP-failure
+set (fails 8-24 steps in, inside the composed pages' own validators) — a different, unsolved
+mechanism. CompWoB champion stays 81.1%; we do NOT pass the browser-use library here, and will
+not manufacture a pass. The remaining 0.9 is genuine and named (the deep-composition cluster +
+6 crash-excluded login pages). Per the standing directive: remain behind and report it.
+
 ## Champion v40 3-seed MiniWoB (2026-08-16): 90.7 (88.0 / 92.8 / 91.2)
 
 +0.2 vs v35 (90.5); best two seeds at 92.8/91.2 show the config ceiling. The ingestion wins
