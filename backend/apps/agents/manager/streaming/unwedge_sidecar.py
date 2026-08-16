@@ -205,14 +205,37 @@ def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> No
         except Exception:
             settled = False
         settled_streak["n"] = settled_streak["n"] + 1 if settled else 0
-        if settled_streak["n"] >= 2:
+        if settled_streak["n"] == 2:
             logger.warning(
                 "delegation result lost: %s outstanding %.0fs on session %s with every child terminal; recovering",
                 tool_name, time.time() - started, session_id[:8],
             )
             loop.run_in_executor(None, unwedge, session_id, tool_name, time.time() - started)
             arm_retry(getattr(ctx, "session", None))
+        elif settled_streak["n"] >= 3:
+            # Stage 3, measured necessary on the live specimen: a CLI blocked 20+ minutes never
+            # noticed the killed sidecar (no respawn, no error on the pending call), so the retry
+            # armed above can never fire; the turn has to be ENDED for anything to move. A
+            # cancelled turn skips the continuation hook by design, so dispatch the retry here.
+            logger.warning("delegation recovery stage 3: force-ending the wedged turn on %s", session_id[:8])
+            loop.create_task(p_force_recover(session_id, getattr(ctx, "session", None)))
             return
         loop.call_later(DELEGATION_CHECK_SECONDS, p_check)
 
     loop.call_later(DELEGATION_CHECK_SECONDS, p_check)
+
+
+async def p_force_recover(session_id: str, session: object) -> None:
+    from backend.apps.agents.agent_manager import agent_manager
+    try:
+        if session is not None:
+            try:
+                session.pending_continuation = False          # type: ignore[attr-defined]
+                session.pending_continuation_prompt = None    # type: ignore[attr-defined]
+            except Exception:
+                pass
+        await agent_manager.stop_agent(session_id)
+        await asyncio.sleep(2)
+        await agent_manager.send_message(session_id, RETRY_PROMPT, hidden=True)
+    except Exception:
+        logger.exception("delegation stage-3 recovery failed for %s", session_id[:8])

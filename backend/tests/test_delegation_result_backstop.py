@@ -57,6 +57,10 @@ async def test_two_settled_checks_fire_the_recovery(monkeypatch):
     monkeypatch.setattr(u, "arm_retry", lambda s: fired.setdefault("retry", s.id if s else None))
     monkeypatch.setattr(u, "delegation_children_settled", lambda sid: True)
     monkeypatch.setattr(u, "DELEGATION_CHECK_SECONDS", 0.05)
+    # The watchdog keeps counting past stage 2; stub stage 3 so no stray task touches the real manager.
+    async def p_noop(sid, session):
+        fired.setdefault("stage3", sid)
+    monkeypatch.setattr(u, "p_force_recover", p_noop)
 
     sess = AgentSession(id="par-2", name="p", model="sonnet")
     ctx = P_Ctx(sess, {"tu-1": 0.0})
@@ -90,3 +94,37 @@ def test_quick_tools_never_arm_the_delegation_watchdog():
     sess = AgentSession(id="par-4", name="p", model="sonnet")
     u.arm_delegation_watchdog(P_Ctx(sess, {"tu-3": 0.0}), "tu-3", "mcp__openswarm-core__MemoryRead")
     # No loop assertions needed: is_delegation_core_tool returned False, nothing scheduled.
+
+
+@pytest.mark.asyncio
+async def test_stage_three_ends_the_turn_and_dispatches_the_retry_itself(monkeypatch):
+    # Live specimen: a CLI blocked 20+ min never noticed the killed sidecar (no respawn, no error on
+    # the pending call), so arm_retry alone can never fire; the turn must be ended and the retry
+    # sent as a fresh hidden message, in that order.
+    from backend.apps.agents import agent_manager as am
+
+    calls = []
+
+    async def p_stop(sid):
+        calls.append(("stop", sid))
+
+    async def p_send(sid, prompt, hidden=False):
+        calls.append(("send", sid, hidden, "redo" in prompt.lower() or "retry" in prompt.lower() or bool(prompt)))
+
+    monkeypatch.setattr(am.agent_manager, "stop_agent", p_stop, raising=False)
+    monkeypatch.setattr(am.agent_manager, "send_message", p_send, raising=False)
+    monkeypatch.setattr(u, "unwedge", lambda *a: None)
+    monkeypatch.setattr(u, "delegation_children_settled", lambda sid: True)
+    monkeypatch.setattr(u, "DELEGATION_CHECK_SECONDS", 0.05)
+    monkeypatch.setattr(u, "arm_retry", lambda s: True)
+
+    sess = AgentSession(id="par-5", name="p", model="sonnet")
+    sess.pending_continuation = True
+    ctx = P_Ctx(sess, {"tu-9": 0.0})
+    u.arm_delegation_watchdog(ctx, "tu-9", "mcp__openswarm-core__CreateBrowserAgent")
+    await asyncio.sleep(2.6)
+    assert ("stop", "par-5") in calls, "stage 3 must end the wedged turn"
+    sends = [c for c in calls if c[0] == "send"]
+    assert sends and sends[0][2] is True, "the retry must be a hidden message"
+    assert calls.index(("stop", "par-5")) < calls.index(sends[0]), "stop before send, or the retry is eaten"
+    assert sess.pending_continuation is False, "a stale pending flag would double-fire later"
