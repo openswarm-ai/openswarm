@@ -43,6 +43,8 @@ function startMemorySensor(app, getMainWindow) {
     let metrics;
     try { metrics = app.getAppMetrics(); } catch (_) { return; }
     const mb = totalMb(metrics);
+    // Detection without action is how sessions climbed to 4GB and died silently; relief acts on the same sample.
+    try { require('./memoryRelief').updateMemoryPressure(mb, TOTAL_MB_CAP); } catch (_) {}
     p_history.push(mb);
     if (p_history.length > GROWTH_WINDOW) p_history.shift();
     const slope = slopeMbPerMin(p_history);

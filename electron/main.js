@@ -170,6 +170,13 @@ const http = require('http');
 const affiliateTracking = require('./affiliateTracking');
 const cdpRoutes = require('./cdp-routes');
 const { releaseAgentPointerLock } = require('./releaseAgentPointerLock');
+const memoryRelief = require('./memoryRelief');
+memoryRelief.initMemoryRelief({
+  clearCaches: async () => {
+    try { await session.defaultSession.clearCache(); } catch (_) {}
+    try { await session.fromPartition(BROWSER_PARTITION).clearCache(); } catch (_) {}
+  },
+});
 const workflowsLifecycle = require('./workflowsLifecycle');
 
 // Squirrel makes the APP create its own shortcuts: on --squirrel-install it must
@@ -4022,6 +4029,9 @@ ipcMain.handle('capture-page', async (event, rect) => {
   // here too: skip a gone/crashed/loading sender and never encode an empty image,
   // returning null so the dashboard keeps its last good preview instead of dying.
   try {
+    // Under memory pressure a composite is exactly the allocation that gets the app SIGKILLed with
+    // no trace (observed live); callers already keep the last preview on null (ENG-320).
+    if (require('./memoryRelief').underMemoryPressure()) return null;
     const wc = event.sender;
     if (!wc || wc.isDestroyed() || wc.isCrashed() || wc.isLoading()) return null;
     const image = await wc.capturePage(rect || undefined);
