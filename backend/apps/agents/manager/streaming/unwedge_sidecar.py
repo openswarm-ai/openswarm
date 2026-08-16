@@ -148,3 +148,71 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         arm_retry(getattr(ctx, "session", None))
 
     loop.call_later(WEDGE_SECONDS, p_check)
+
+
+# Delegation tools legitimately run for minutes, so they are exempt from the 25s deadline above.
+# The exemption assumed the child's result always comes home; measured 2026-08-15 on a packaged
+# build, a CreateBrowserAgent child COMPLETED (backend returned its HTTP 200, sidecar went back to
+# readline) while the parent hung on the outstanding tool call for 20+ minutes: the result died on
+# the sidecar->CLI stdio hop and nothing above it has a deadline. When every child is terminal and
+# stays terminal across two consecutive checks, the wait is provably pointless; recover the same
+# way the quick class does.
+P_DELEGATION_TOOLS: Set[str] = {"CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"}
+DELEGATION_CHECK_SECONDS = 75.0
+
+
+@typechecked
+def is_delegation_core_tool(tool_name: str) -> bool:
+    return tool_name.startswith(P_CORE_PREFIX) and tool_name[len(P_CORE_PREFIX):] in P_DELEGATION_TOOLS
+
+
+@typechecked
+def delegation_children_settled(session_id: str) -> bool:
+    """True when this session HAS delegated children and every one of them is terminal. No children
+    yet is NOT settled: a run queued behind the admission cap can wait minutes legitimately."""
+    from backend.apps.agents.agent_manager import agent_manager
+    kids = [s for s in agent_manager.sessions.values()
+            if getattr(s, "parent_session_id", None) == session_id and getattr(s, "mode", "") == "browser-agent"]
+    if not kids:
+        return False
+    return all(getattr(s, "status", "") in ("completed", "error", "failed", "stopped") for s in kids)
+
+
+@typechecked
+def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
+    """Recurring, slow-cadence sibling of arm_wedge_watchdog for delegation tools. Fires the same
+    unwedge+retry only after TWO consecutive checks (>=75s apart) see every child terminal while
+    the tool call is still outstanding, so a child that is merely slow can never trip it."""
+    if not is_delegation_core_tool(tool_name):
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    started = time.time()
+    settled_streak = {"n": 0}
+
+    def p_check() -> None:
+        times = getattr(ctx, "tool_start_times", None)
+        if not isinstance(times, dict) or tool_use_id not in times:
+            return
+        session_id = getattr(ctx, "session_id", "")
+        if not session_id:
+            return
+        try:
+            settled = delegation_children_settled(session_id)
+        except Exception:
+            settled = False
+        settled_streak["n"] = settled_streak["n"] + 1 if settled else 0
+        if settled_streak["n"] >= 2:
+            logger.warning(
+                "delegation result lost: %s outstanding %.0fs on session %s with every child terminal; recovering",
+                tool_name, time.time() - started, session_id[:8],
+            )
+            loop.run_in_executor(None, unwedge, session_id, tool_name, time.time() - started)
+            arm_retry(getattr(ctx, "session", None))
+            return
+        loop.call_later(DELEGATION_CHECK_SECONDS, p_check)
+
+    loop.call_later(DELEGATION_CHECK_SECONDS, p_check)
