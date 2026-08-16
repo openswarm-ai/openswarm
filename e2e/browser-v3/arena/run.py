@@ -236,9 +236,28 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 break
             if ep.first_action_s == 0.0:
                 ep.first_action_s = time.time() - t0
+            # v39 (gated, ingested from Agent-E's mutation observer): snapshot the page text
+            # before the action so the delta after it can ride into history as feedback.
+            pre_text = ""
+            if getattr(policy, "mutation_diff", False):
+                try:
+                    pre_text = perception.page_text(obs, limit=2000)
+                except Exception:
+                    pass
             t_act = time.time()
             obs, reward, terminated, truncated, _ = with_deadline(
                 lambda: env.step(decision.action), args.step_timeout)
+            if getattr(policy, "mutation_diff", False) and hasattr(policy, "history"):
+                try:
+                    post_text = perception.page_text(obs, limit=2000)
+                    pre_lines = set(pre_text.split("\n"))
+                    fresh = [l.strip() for l in post_text.split("\n")
+                             if l.strip() and l not in pre_lines][:4]
+                    if fresh:
+                        policy.history.append(
+                            "(page reacted: new text appeared -> " + " | ".join(fresh)[:220] + ")")
+                except Exception:
+                    pass
             rec_step.action_ms = (time.time() - t_act) * 1000
             rec_step.reward = float(reward or 0)
             err = str(obs.get("last_action_error") or "")
