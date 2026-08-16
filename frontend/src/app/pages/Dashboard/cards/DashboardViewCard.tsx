@@ -1095,8 +1095,13 @@ const DashboardOutputPreview: React.FC<{
         {suspendSnapshot ? (
           <Box component="img" src={suspendSnapshot} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top left', display: 'block', filter: 'saturate(0.9)' }} />
         ) : (
-          <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Typography sx={{ color: tokens.text.ghost, fontSize: '0.8125rem' }}>{output.name || 'App'}</Typography>
+          // No snapshot means this parked card would render as a bare white rectangle, which reads as a broken app, not a resting one (caught live at 12 open apps); say what it is, like the deferred branch above.
+          <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+            <Box sx={{ width: 40, height: 40, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${tokens.accent.primary}14`, color: tokens.accent.primary }}>
+              <VisibilityRoundedIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Typography sx={{ color: tokens.text.primary, fontSize: '0.875rem', fontWeight: 600 }}>{output.name || 'App'}</Typography>
+            <Typography sx={{ color: tokens.text.muted, fontSize: '0.75rem' }}>Resting to save memory, click to wake</Typography>
           </Box>
         )}
       </Box>
