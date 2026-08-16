@@ -56,40 +56,75 @@ ERROR_PATTERNS = re.compile(
 )
 
 
-def suspend_process_tree(proc) -> None:
-    """Send SIGSTOP to a workspace's subprocess so it consumes 0% CPU
-    while sitting in the LRU idle pool. The signal is delivered to the
-    PROCESS GROUP (negative PID) when the child is a session leader,
-    so vite + uvicorn + their npm/python subchildren all pause together.
+def descendant_pids(root_pid: int) -> list:
+    """Every live descendant of root_pid, children before parents' siblings, via one ps pass.
 
-    No-op on Windows (SIGSTOP has no equivalent; the `OpenProcessToken` +
-    `NtSuspendProcess` route works but isn't worth the win32 surface
-    here; idle Windows runtimes just stay running, which is the current
-    behavior). Failures here are swallowed; if the process already died
-    a stop signal is meaningless."""
+    The runtime tracks ONE pid, `bash run.sh`, but the real work lives in grandchildren (run.sh
+    backgrounds `frontend/run.sh | awk` pipelines which spawn vite/uvicorn). Signalling only the
+    root froze run.sh while vite kept burning CPU in the idle pool, which is ENG-311: the park was
+    a no-op for the processes that matter. Children are walkable here because the frozen root stays
+    alive; a root that DIED reparents them to launchd, and that case belongs to the cwd-scanning
+    reaper, not to this fast path."""
+    try:
+        out = subprocess.run(
+            ["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5
+        ).stdout
+    except Exception:
+        return []
+    children: dict = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append(pid)
+    found: list = []
+    frontier = [root_pid]
+    while frontier:
+        p = frontier.pop()
+        for c in children.get(p, ()):
+            found.append(c)
+            frontier.append(c)
+    return found
+
+
+def p_signal_tree(proc, sig) -> None:
     if proc is None or os.name == "nt":
         return
     try:
         if proc.returncode is not None:
             return
-        os.kill(proc.pid, signal.SIGSTOP)
+        # Root first so run.sh cannot react to its children changing state, then every descendant.
+        pids = [proc.pid] + descendant_pids(proc.pid)
     except (ProcessLookupError, PermissionError, OSError):
-        # Already-dead or out-of-permission; both safe to ignore.
-        pass
+        return
+    for pid in pids:
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            # Already-dead or out-of-permission; both safe to ignore.
+            continue
+
+
+def suspend_process_tree(proc) -> None:
+    """SIGSTOP a workspace's WHOLE process tree so it consumes 0% CPU in the LRU idle pool.
+
+    Root + every descendant, individually: the child is deliberately not a session leader (see
+    background_priority_kwargs on why start_new_session stays off), so a group signal is not
+    available and per-pid delivery is the honest mechanism. Measured before this: only run.sh
+    froze (TN) while vite stayed running (SN, up to 125% CPU). No-op on Windows (idle Windows
+    runtimes just stay running, the pre-existing behavior). Failures are swallowed; a dead
+    process needs no stop signal."""
+    p_signal_tree(proc, signal.SIGSTOP)
 
 
 def resume_process_tree(proc) -> None:
-    """SIGCONT a previously-suspended workspace process. Pair with
-    suspend_process_tree. Microsecond cost; idempotent if the process
-    was never paused."""
-    if proc is None or os.name == "nt":
-        return
-    try:
-        if proc.returncode is not None:
-            return
-        os.kill(proc.pid, signal.SIGCONT)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
+    """SIGCONT the whole previously-suspended tree. Pair with suspend_process_tree.
+    Idempotent if the tree was never paused."""
+    p_signal_tree(proc, signal.SIGCONT)
 
 
 def background_priority_kwargs() -> dict:
