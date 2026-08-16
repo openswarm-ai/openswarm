@@ -7,6 +7,7 @@ import BrowserCard from '../cards/BrowserCard';
 import DashboardWindowCards from './DashboardWindowCards';
 import {
   EXPANDED_CARD_MIN_H,
+  renderedAgentCardHeight,
   DEFAULT_CARD_W,
   GRID_GAP,
   type CardPosition,
@@ -102,9 +103,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
             const srcCard = cards[glow.sourceId];
             if (srcCard) {
               const srcH = measuredHeightsRef.current![glow.sourceId]
-                ?? (expandedSessionIds.includes(glow.sourceId)
-                  ? Math.max(EXPANDED_CARD_MIN_H, srcCard.height)
-                  : srcCard.height);
+                ?? renderedAgentCardHeight(srcCard.height, expandedSessionIds.includes(glow.sourceId));
               origin = {
                 x: srcCard.x + srcCard.width,
                 y: srcCard.y + srcH / 2,
@@ -120,9 +119,7 @@ const DashboardCardLayer: React.FC<DashboardCardLayerProps> = ({
           const srcCard = cards[glow.sourceId];
           if (srcCard) {
             const srcH = measuredHeightsRef.current![glow.sourceId]
-              ?? (expandedSessionIds.includes(glow.sourceId)
-                ? Math.max(EXPANDED_CARD_MIN_H, srcCard.height)
-                : srcCard.height);
+              ?? renderedAgentCardHeight(srcCard.height, expandedSessionIds.includes(glow.sourceId));
             exitTarget = {
               x: srcCard.x + srcCard.width,
               y: srcCard.y + srcH / 2,

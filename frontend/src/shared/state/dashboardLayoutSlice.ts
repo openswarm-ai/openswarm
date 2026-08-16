@@ -37,6 +37,14 @@ export const DEFAULT_MARKETPLACE_CARD_H = DEFAULT_BROWSER_CARD_H;
 export const WORKFLOWS_HUB_ID = 'workflows-hub';
 export const WORKFLOWS_MONITOR_ID = 'workflows-monitor';
 export const EXPANDED_CARD_MIN_H = 620;
+// The floating title bubble rides this far ABOVE an expanded chat's rect; camera fits that ignore it behead the title.
+export const EXPANDED_HEADER_H = 64;
+// The stored rect is a chat's COLLAPSED geometry; expanded it renders at least EXPANDED_CARD_MIN_H
+// tall, so any camera fit, reveal, tidy, or collision math that frames the stored height of an
+// expanded chat frames a lie and leaves the card's bottom off-screen (ENG-318).
+export function renderedAgentCardHeight(storedHeight: number, expanded: boolean): number {
+  return expanded ? Math.max(EXPANDED_CARD_MIN_H, storedHeight) : storedHeight;
+}
 export const GRID_GAP = 24;
 // Gap between the Workflows window and the cards it spawns (run monitor, that monitor's browser). Keeps the hub -> monitor -> browser row evenly spaced.
 export const WORKFLOW_CARD_GAP = 140;
@@ -401,7 +409,7 @@ function collectOccupiedRects(
   const rects: Rect[] = [];
   for (const c of Object.values(state.cards)) {
     if (exclude?.type === 'agent' && exclude.id === c.session_id) continue;
-    const h = expanded.has(c.session_id) ? Math.max(EXPANDED_CARD_MIN_H, c.height) : c.height;
+    const h = renderedAgentCardHeight(c.height, expanded.has(c.session_id));
     rects.push({ x: c.x, y: c.y, w: c.width, h });
   }
   for (const c of Object.values(state.viewCards)) {
@@ -840,10 +848,14 @@ const dashboardLayoutSlice = createSlice({
 
     reconcileSessions(
       state,
-      action: PayloadAction<{ sessionIds: string[]; expandedSessionIds: string[] }>,
+      action: PayloadAction<{ sessionIds: string[]; expandedSessionIds: string[]; keepIds?: string[] }>,
     ) {
-      const { sessionIds, expandedSessionIds } = action.payload;
+      const { sessionIds, expandedSessionIds, keepIds } = action.payload;
       const liveIds = new Set(sessionIds);
+      // Revealed sub-agent cards live OUTSIDE the deserving list, so without this exemption any
+      // unrelated spawn despawned another agent's live subagents (ENG-304). Keep is not create:
+      // these ids never earn a card here, they only stop losing one.
+      for (const id of keepIds ?? []) liveIds.add(id);
 
       for (const id of Object.keys(state.cards)) {
         if (!liveIds.has(id)) {
@@ -911,9 +923,7 @@ const dashboardLayoutSlice = createSlice({
 
       const sizeOf = (item: typeof allItems[number]): { w: number; h: number } => ({
         w: item.storedW,
-        h: item.kind === 'agent' && expanded.has(item.id)
-          ? Math.max(EXPANDED_CARD_MIN_H, item.storedH)
-          : item.storedH,
+        h: renderedAgentCardHeight(item.storedH, item.kind === 'agent' && expanded.has(item.id)),
       });
       const cols = tidyColumnCount(allItems.map(sizeOf));
       const placedRects: Rect[] = [];

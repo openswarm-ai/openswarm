@@ -1,14 +1,20 @@
 import { store } from '@/shared/state/store';
+import { EXPANDED_HEADER_H, renderedAgentCardHeight } from '@/shared/state/dashboardLayoutSlice';
 import type { CardType } from '../hooks/state/useDashboardSelection';
 
-// Reads a card's rect straight from the live Redux store (collapsed height, which is what the zoom math wants). Module-level + store.getState() so the callback can stay stable across renders.
+// Reads a card's RENDERED rect from the live Redux store. Module-level + store.getState() so the callback can stay stable across renders.
 export function getCardRect(id: string, type: CardType):
   { x: number; y: number; width: number; height: number } | undefined {
   const layoutState = store.getState().dashboardLayout;
   if (type === 'agent') {
     const card = layoutState.cards[id];
     if (!card) return undefined;
-    return { x: card.x, y: card.y, width: card.width, height: card.height };
+    const expanded = store.getState().agents.expandedSessionIds.includes(id);
+    if (!expanded) return { x: card.x, y: card.y, width: card.width, height: card.height };
+    // Envelope, not stored rect: expanded chats render >= EXPANDED_CARD_MIN_H tall plus the title
+    // bubble above, and framing anything smaller is exactly the ENG-318 "autofocus missed" bug.
+    const height = renderedAgentCardHeight(card.height, true) + EXPANDED_HEADER_H;
+    return { x: card.x, y: card.y - EXPANDED_HEADER_H, width: card.width, height };
   } else if (type === 'view') {
     const vc = layoutState.viewCards[id];
     if (!vc) return undefined;

@@ -11,14 +11,14 @@ import {
   DEFAULT_VIEW_CARD_H,
   DEFAULT_BROWSER_CARD_W,
   DEFAULT_BROWSER_CARD_H,
-  EXPANDED_CARD_MIN_H,
+  EXPANDED_HEADER_H,
+  renderedAgentCardHeight,
 } from '@/shared/state/dashboardLayoutSlice';
 import type { CardType, useDashboardSelection } from '../state/useDashboardSelection';
 import type { CanvasActions } from '../interaction/useCanvasControls';
 import { useSpawnPlacement } from './useSpawnPlacement';
 
 // Title bubble + cost line, the strip an expanded card floats above itself.
-const EXPANDED_HEADER_H = 64;
 
 type Selection = ReturnType<typeof useDashboardSelection>;
 
@@ -81,15 +81,15 @@ export function useDashboardCardActions({
         dispatch(expandSession(sessionId));
         setAutoFocusSessionId(sessionId);
         setTimeout(() => {
-          const card = store.getState().dashboardLayout.cards[sessionId];
-          if (card) {
-            canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
+          const rect = getCardRect(sessionId, 'agent');
+          if (rect) {
+            canvasActions.revealCards([rect]);
             handleHighlightCard(sessionId);
           }
         }, 200);
       }
     });
-  }, [dispatch, canvasActions, handleHighlightCard, setAutoFocusSessionId]);
+  }, [dispatch, canvasActions, handleHighlightCard, setAutoFocusSessionId, getCardRect]);
 
   // Context-aware fit: if a card is selected, zoom to it; otherwise fit all
   const handleFitToView = useCallback(() => {
@@ -120,7 +120,7 @@ export function useDashboardCardActions({
       ...Object.values(tidied).map((c) => {
         // An expanded card wears its title bubble ABOVE its rect, so the camera has to be told about that strip or Tidy frames the card and beheads it.
         const isExpanded = expandedSet.has(c.session_id);
-        const height = isExpanded ? Math.max(EXPANDED_CARD_MIN_H, c.height) : c.height;
+        const height = renderedAgentCardHeight(c.height, isExpanded);
         return isExpanded
           ? { x: c.x, y: c.y - EXPANDED_HEADER_H, width: c.width, height: height + EXPANDED_HEADER_H }
           : { x: c.x, y: c.y, width: c.width, height };

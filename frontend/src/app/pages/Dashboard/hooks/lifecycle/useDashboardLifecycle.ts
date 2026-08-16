@@ -24,7 +24,7 @@ import {
 } from '@/shared/state/dashboardLayoutSlice';
 import { fetchOutputs, type Output } from '@/shared/state/outputsSlice';
 import { generateDashboardName } from '@/shared/state/dashboardsSlice';
-import { deservesCanvasCard } from '@/shared/state/isUserLaunchedSession';
+import { deservesCanvasCard, isPlumbingSession } from '@/shared/state/isUserLaunchedSession';
 import { REVEAL_MIN_ZOOM } from '../../canvas/revealZoom';
 import { fetchWorkflows, fetchAllRuns, fetchActiveRuns } from '@/shared/state/workflowsSlice';
 import { fetchMissedRuns } from '@/shared/state/missedRunsSlice';
@@ -38,6 +38,7 @@ import { orphanViewCardKeys } from './orphanViewCardKeys';
 import { clearPendingBrowserUrl, clearPendingFocusAgentId } from '@/shared/state/tempStateSlice';
 import { API_BASE } from '@/shared/config';
 import type { CanvasActions } from '../interaction/useCanvasControls';
+import { getCardRect } from '../../geometry/getCardRect';
 
 // Module-level so the missed-runs review pops exactly once per app launch, not again on every dashboard switch.
 let missedRunsCheckedThisSession = false;
@@ -203,9 +204,9 @@ export function useDashboardLifecycle({
     dispatch(clearPendingFocusAgentId());
     hasFittedRef.current = true;
     setTimeout(() => {
-      const card = store.getState().dashboardLayout.cards[agentId];
-      if (card) {
-        canvasActions.revealCards([{ x: card.x, y: card.y, width: card.width, height: card.height }]);
+      const rect = getCardRect(agentId, 'agent');
+      if (rect) {
+        canvasActions.revealCards([rect]);
         handleHighlightCard(agentId);
       }
     }, 350);
@@ -328,10 +329,15 @@ export function useDashboardLifecycle({
     const dashboardSessionIds = Object.values(sessions)
       .filter((s) => s.dashboard_id === dashboardId && deservesCanvasCard(s))
       .map((s) => s.id);
+    // Revealed sub-agent cards are placed outside the deserving list, so reconcile needs told to
+    // keep them or an unrelated spawn despawns another agent's live subagents (ENG-304).
+    const keepIds = Object.values(sessions)
+      .filter((s) => s.dashboard_id === dashboardId && isPlumbingSession(s))
+      .map((s) => s.id);
     const liveIds = dashboardSessionIds.sort().join(',');
     if (liveIds === prevSessionIdsRef.current) return;
     prevSessionIdsRef.current = liveIds;
-    dispatch(reconcileSessions({ sessionIds: dashboardSessionIds, expandedSessionIds }));
+    dispatch(reconcileSessions({ sessionIds: dashboardSessionIds, expandedSessionIds, keepIds }));
   }, [sessions, layoutInitialized, dispatch, dashboardId, expandedSessionIds]);
 
   // Prune orphan view cards whose underlying output was deleted (e.g. via the Views page). Without this, the layout entry persists in the minimap and contentBounds even though DashboardViewCard renders nothing. Gated on outputsRefetched (THIS open's fresh fetch), NOT the sticky global outputsLoaded: on a freshly-imported dashboard the global flag is already true from a prior dashboard, so the old gate pruned the just-imported app card against a stale apps list and the debounced save persisted the wipe.
