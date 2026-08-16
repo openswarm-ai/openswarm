@@ -472,7 +472,15 @@ feedback-search game), form-sequence-3 (deep ordered form), search-engine (resul
 drag-items-grid (2D drag geometry). These are ~6 distinct product primitives, not prompt-tuning;
 each is its own dig. ≥95 clause remains open with the path named.
 
-## Lane note (2026-08-15): Claude subscription exhausted → GPT-5.4 cross-model column
+## Lane note (2026-08-15): Claude lane outage → GPT-5.4 cross-model column
+
+CORRECTION (same day, user evidence): the outage was NOT plan exhaustion — the user's plan
+dashboard showed 2% of the 5-hour limit and 6% weekly. The true signature: ~14h of constant
+429 whose 'reset after 2m' never advanced (a real window would have rolled ~3 times), a 401
+'OAuth access token has expired' mid-outage, and recovery minutes after the router refreshed
+its token. Diagnosis: a STALE OAUTH TOKEN in the router rejected upstream and surfaced as 429.
+Remedy: when a 429 horizon fails to advance for >30min, restart/re-auth the router — do not
+wait out a phantom quota window. Original (wrong) framing kept below for the record:
 
 The cc/ lane (Claude Code OAuth = the Claude subscription, NOT pay-per-token API) 429'd every
 Claude model for ~12h. The ChatGPT/Codex subscription lane (cx/gpt-5.4) is live, so measurement
