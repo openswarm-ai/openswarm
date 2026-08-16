@@ -70,7 +70,15 @@ if [[ "${BACKEND_PORT}" == "NONE" || -z "${BACKEND_PORT}" || ! -f "$ROOT_DIR/bac
     done
 else
     BACKEND_URL="http://localhost:${BACKEND_PORT:-8324}/api/health/check"
-    MAX_WAIT=60
+    # First boot runs a full venv create + pip install, which takes minutes on a loaded machine;
+    # a 60s wall clock killed exactly those boots mid-install (measured live: "Installing build
+    # dependencies" -> "failed to start within 60s" with 10 agents running). The sentinel is only
+    # written after a successful install, so its absence means the slow path is ahead of us.
+    if [ -f "$ROOT_DIR/backend/.venv/.openswarm_installed" ]; then
+        MAX_WAIT=60
+    else
+        MAX_WAIT=600
+    fi
 
     echo "Starting backend..."
     echo ""
