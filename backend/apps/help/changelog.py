@@ -81,6 +81,7 @@ P_RELEASES: List[ReleaseNote] = [
             "The publish screen always says what a published app can and cannot do, including when it has security warnings to show you at the same time.",
             "If the \"OpenSwarm needs to reload\" prompt itself fails, the app now tries to reload instead of quitting and taking your session with it.",
             "Custom system prompts now actually shape the agent from its very first reply. They were being delivered but ignored: buried in the middle of a long prompt, so the model paid them no attention.",
+            "Your conversation survives a backend crash. Chats used to be saved only when a turn finished cleanly, so a crash mid-answer could erase the whole conversation; now every message you send is saved the moment you send it.",
         ],
     ),
     ReleaseNote(
