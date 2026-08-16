@@ -80,6 +80,7 @@ P_RELEASES: List[ReleaseNote] = [
             "You can stop agents from changing your settings, in Settings. They can still read them, with your keys hidden, so they can answer questions without editing anything.",
             "The publish screen always says what a published app can and cannot do, including when it has security warnings to show you at the same time.",
             "If the \"OpenSwarm needs to reload\" prompt itself fails, the app now tries to reload instead of quitting and taking your session with it.",
+            "Custom system prompts now actually shape the agent from its very first reply. They were being delivered but ignored: buried in the middle of a long prompt, so the model paid them no attention.",
         ],
     ),
     ReleaseNote(
