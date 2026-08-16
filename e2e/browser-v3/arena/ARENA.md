@@ -459,6 +459,19 @@ end), book-flight improves; controls (non-picker tasks) untouched — the mechan
 on readonly fill timeouts. Pilot: the picker-loss cluster + 12 standard controls, when the
 lane returns; then a full 3-seed to re-measure the MiniWoB clause.
 
+## MiniWoB 3-seed on the FULL v35 stack (2026-08-15, primary Claude column)
+
+**90.5% mean (89.5 / 91.1 / 91.0)**, infra excluded — vs v22 90.9 (flat, within seed noise) and
++1.5 over the buggy-ctx v34 stack (89.0). The v35 picker fallback recovered choose-date (3/3 all
+seeds) as designed; the ctx-uniqueness fix holds (social-media clean). Net of the entire v29–v35
+dig on MiniWoB: ~flat (the primitives that win CompWoB neither help nor hurt MiniWoB — they fire
+on features MiniWoB's simpler pages rarely present), while CompWoB went 65.3 → 81.1. Residual
+≥95 gap is a stable hard cluster losing 2–3/3 seeds: draw-circle (freehand pixel geometry),
+book-flight/-nodelay (flight-search autocomplete — a NAMED next primitive), hot-cold (pure
+feedback-search game), form-sequence-3 (deep ordered form), search-engine (result pagination),
+drag-items-grid (2D drag geometry). These are ~6 distinct product primitives, not prompt-tuning;
+each is its own dig. ≥95 clause remains open with the path named.
+
 ## Lane note (2026-08-15): Claude subscription exhausted → GPT-5.4 cross-model column
 
 The cc/ lane (Claude Code OAuth = the Claude subscription, NOT pay-per-token API) 429'd every
