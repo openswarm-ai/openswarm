@@ -194,6 +194,9 @@ class LlmPolicy:
     draw_circle: bool = False
     # v42: terminal answer protocol (run.py-side). Force a bare final answer on string-match goals.
     answer_protocol: bool = False
+    # v43: answer-schema conformance gate (run.py-side). Validate send_msg against the task's own
+    # provided JSON schema and bounce non-conforming answers -- generic instruction-following.
+    schema_gate: bool = False
     # v39: mutation-diff action feedback -- run.py appends the page-text delta after each action
     # (Agent-E's MutationObserver, approximated text-side). Autocomplete popups, error banners,
     # and new rows become explicit feedback instead of something the model must notice unaided.
@@ -848,6 +851,11 @@ moving on. In guess-and-check tasks (hot/cold, higher/lower), act FAST: one shor
 keep the running state in your PLAN line, no deliberation. Before any final submit, re-check every
 requirement of the goal against the page."""
 
+OSW_SYSTEM_V43 = """
+If the goal specifies a required response format or JSON schema (e.g. a FinalAgentResponse with
+fields like task_type and status), your FINAL send_msg_to_user MUST be exactly that JSON object
+with all required fields filled -- not prose, not a bare value. Match the schema literally."""
+
 OSW_SYSTEM_V36 = """
 If NO row in the list matches the goal's named target, reply exactly no_match() (a first-class
 choice) instead of clicking a similar-but-wrong row -- a wrong click on a named target is often
@@ -1075,6 +1083,17 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   local_ctx=True, blocker_probe=True, suppress_wrappers=True,
                                   force_unblock=True, native_js_fallback=True,
                                   table_md=True, mutation_diff=True, **c)
+    if name == "osw-llm-v43":  # v42 + answer-schema conformance gate (WebArena FinalAgentResponse)
+        v43 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36 + OSW_SYSTEM_V43, max_tokens=900)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True,
+                                  table_md=True, draw_circle=True, answer_protocol=True,
+                                  schema_gate=True, **v43)
     if name == "osw-llm-v42":  # v41 + terminal answer protocol (string-match benchmarks)
         v42 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36, max_tokens=800)

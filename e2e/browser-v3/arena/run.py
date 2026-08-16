@@ -247,6 +247,33 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 break
             if ep.first_action_s == 0.0:
                 ep.first_action_s = time.time() - t0
+            # v43 (gated): the task may APPEND its own required-answer JSON schema to the goal
+            # ("validated against this schema"). If the agent tries to answer with non-conforming
+            # JSON, bounce the specific validation error back instead of stepping the env -- this is
+            # generic instruction-following (conform to the format the TASK states), not answer
+            # knowledge. Abort-on-failure per the verification-gates rule.
+            if (getattr(policy, "schema_gate", False) and hasattr(policy, "history")
+                    and re.match(r"send_msg_to_user\(", decision.action or "")
+                    and re.search(r"validated against this schema|FinalAgentResponse", full_goal)):
+                m_req = re.search(r'"required"\s*:\s*\[([^\]]*)\]', full_goal)
+                req = re.findall(r'"([^"]+)"', m_req.group(1)) if m_req else []
+                m_pay = re.search(r'send_msg_to_user\(\s*"(.*)"\s*\)\s*$', decision.action, re.S)
+                payload = (m_pay.group(1).encode().decode("unicode_escape") if m_pay else "")
+                ok = False
+                try:
+                    obj = json.loads(payload)
+                    ok = isinstance(obj, dict) and all(k in obj for k in req)
+                except Exception:
+                    ok = False
+                if not ok and step < args.max_steps:
+                    policy.history.append(
+                        "(YOUR ANSWER WAS REJECTED: send_msg_to_user must contain a JSON object with "
+                        f"required keys {req} exactly as the task's schema specifies. You sent "
+                        f"non-conforming text. Re-send send_msg_to_user with valid JSON now.)")
+                    rec_step.action = decision.action
+                    rec_step.action_error = "schema-gate: non-conforming answer bounced"
+                    ep.add(rec_step); ep.steps = step
+                    continue
             # v41 (gated, scripted geometry): a freehand-circle goal is a geometry problem the
             # model cannot trace by hand (measured: random short mouse jitters, never a circle).
             # Detect the SVG center marker and drive a true circular path, then submit. One-shot.

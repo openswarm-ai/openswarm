@@ -674,6 +674,20 @@ mechanism. CompWoB champion stays 81.1%; we do NOT pass the browser-use library 
 not manufacture a pass. The remaining 0.9 is genuine and named (the deep-composition cluster +
 6 crash-excluded login pages). Per the standing directive: remain behind and report it.
 
+## WebArena instrument-bug fixes: canary confirms partial suppression (2026-08-16)
+
+Two harness bugs (goal truncated to 600 chars -> WA's answer-schema was cut off; CALL_RE cut
+action payloads at first ')' -> answers with parens errored) were ZEROING WebArena regardless of
+skill. Canary (15 tasks, v42 with both fixes): **partials rose 0 -> 0.5 on the 4 post-creation
+tasks (12.621/12.623/13.625/13.626)** -- the post-creation mutation checkpoint now registers
+where before the whole episode errored out. Still 0 strict: the 0.5 cap is the ANSWER-SCHEMA
+checkpoint (the task appends a FinalAgentResponse JSON schema, required keys task_type+status,
+and validates send_msg against it). The model now SEES the schema but does not emit conforming
+JSON. RETRACTION (honest): our earlier 'WebArena 0-solved, 6 partials' was partly OUR HARNESS
+suppressing credit -- the true partial score is higher. Next: v43 answer-schema conformance gate
+(validate send_msg against the schema the TASK ITSELF provides; bounce errors back -- generic
+instruction-following, knows no answers) to lift 0.5 -> 1.0.
+
 ## Champion v41 3-seed MiniWoB (2026-08-16): 94.1 (92.0 / 95.2 / 95.2) — +3.4 vs v40
 
 Two capability fixes landed: scripted draw-circle geometry (0/3->3/3) + universal 18-step budget
