@@ -25,6 +25,9 @@ interface AgentNarratorPillProps {
   browserShot: string | null;
   /** The turn's plain-text answer, shown when the turn produced no richer artifact. */
   finalText?: string | null;
+  /** App quit mid-turn and this agent still owes a response; click resumes it (ENG-321). */
+  interrupted?: boolean;
+  onResumeInterrupted?: () => void;
   selected: boolean;
   highlighted: boolean;
 }
@@ -34,7 +37,7 @@ const GLASS_BLUR = GLASS_SURFACE_BLUR;
 const MAX_VISIBLE_TODOS = 4;
 
 /** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: live question > widget > browser shot > plan > live steps > Thinking. */
-function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, finalText, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
+function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, finalText, interrupted, onResumeInterrupted, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
   const visibleTodos = (todos || []).slice(0, MAX_VISIBLE_TODOS);
   const hiddenCount = (todos?.length || 0) - visibleTodos.length;
   // Live tool steps window to the most recent, since earlier ones are history, not plan.
@@ -44,7 +47,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
   const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
   const liveAsk = askPair && sessionId ? askPair : null;
   // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
-  const artifactKey = liveAsk ? `ask-${liveAsk.id}` : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : finalText ? 'final' : 'none';
+  const artifactKey = interrupted ? 'interrupted' : liveAsk ? `ask-${liveAsk.id}` : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : finalText ? 'final' : 'none';
 
   return (
     <Box
@@ -111,7 +114,36 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
         )}
       </Box>
 
-      {liveAsk ? (
+      {interrupted ? (
+        // Interrupted wins the ladder: a chat that owes a response must read that from the BOARD,
+        // not only after opening the card (ENG-321). 'stopped' covers user-stop AND app-restart
+        // cuts with no persisted discriminator, so the copy stays true for both.
+        <Box
+          key={artifactKey}
+          className="osw-artifact"
+          onClick={(e) => { e.stopPropagation(); onResumeInterrupted?.(); }}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 0.75,
+            px: 1.5,
+            py: 0.875,
+            borderRadius: '14px',
+            cursor: 'pointer',
+            background: 'rgba(217,119,6,0.16)',
+            border: '1px solid rgba(245,158,11,0.45)',
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+            '&:hover': { background: 'rgba(217,119,6,0.26)' },
+          }}
+        >
+          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#f59e0b' }} />
+          <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24' }}>
+            Stopped mid-task, click to resume
+          </Typography>
+        </Box>
+      ) : liveAsk ? (
         <PillArtifactFrame key={artifactKey} name="question">
           {/* One glass surface holds the whole ask (options + Confirm + the type-your-own field); without it the widget's footer floated bare on the canvas. */}
           <Box sx={{ borderRadius: '16px', background: GLASS, backdropFilter: GLASS_BLUR, WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 8px 24px rgba(0,0,0,0.32)', px: 1.25, py: 1.25 }}>

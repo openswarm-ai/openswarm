@@ -93,6 +93,7 @@ P_RELEASES: List[ReleaseNote] = [
             "An expired provider login heals itself mid-chat: the first failure rebuilds the connection and retries your message with zero clicks, and only a second failure asks you to reconnect. It used to take six manual steps every time a token aged out.",
             "A newly connected ChatGPT or Gemini subscription works immediately. The routing layer restarts itself the moment a connect completes, so new subscriptions no longer sit dead behind rate-limit errors until you restart the app.",
             "Finished apps opened from the dock no longer sit on \"Starting preview\" forever. Apps served straight from their built files have no server process by design, and the preview was waiting for one that would never exist.",
+            "A chat that was cut off mid-answer now says so right on the board with an amber \"Stopped mid-task, click to resume\" chip, instead of looking idle until you open it and hunt for the resume button.",
             "Heavy sessions no longer vanish without a trace. When memory climbs past the safe line the app now sheds weight itself: preview thumbnails pause and refetchable caches drop, instead of growing until the operating system kills it mid-task.",
         ],
     ),

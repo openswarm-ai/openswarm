@@ -21,6 +21,7 @@ import {
   closeSession,
   fetchSession,
   renameSession,
+  sendMessage as sendMessageThunk,
 } from '@/shared/state/agentsSlice';
 import { displayChatTitle, isLegacyAutoName } from '@/shared/state/sessionDisplay';
 import { Typewriter } from '@/app/components/feedback/Animated';
@@ -747,6 +748,19 @@ const AgentCard: React.FC<Props> = ({
   }, [session.messages, session.status, session.last_message_preview]);
   const pillLabel = session.turn_label?.label || displayChatTitle(session);
   const pillRunning = session.status === 'running';
+  // The boot restore marks a cut-off turn 'stopped' ONLY when the agent still owes a response
+  // (SessionPersistence finalize); surfacing it here is what makes an interrupted chat visible
+  // from the board instead of behind a Resume button inside the card (ENG-321).
+  const pillInterrupted = session.status === 'stopped' && !session.workflow_run_id;
+  const handleResumeInterrupted = React.useCallback(() => {
+    dispatch(sendMessageThunk({
+      sessionId: session.id,
+      prompt: "Continue your previous response from exactly where it was cut off. Do not repeat anything you already wrote; pick up mid-sentence if you need to and keep going.",
+      mode: session.mode,
+      model: session.model,
+      hidden: true,
+    }));
+  }, [dispatch, session.id, session.mode, session.model]);
 
   // Cold-loaded collapsed cards carry no transcript (status frames are slim), so the pill can't pin
   // its widget/checklist artifact; hydrate ONCE per card actually on this dashboard, never in a loop.
@@ -1074,6 +1088,8 @@ const AgentCard: React.FC<Props> = ({
           <AgentNarratorPill
             label={pillLabel}
             running={pillRunning}
+            interrupted={pillInterrupted}
+            onResumeInterrupted={handleResumeInterrupted}
             todos={todos}
             liveSteps={liveSteps}
             artifact={pillArtifact}
