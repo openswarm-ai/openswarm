@@ -723,6 +723,34 @@ BEFORE booking -- a false 'vulnerable' is as bad as a false 'secure', both caugh
 trace. Caveat: injection delivered as page text on a controlled page (WASP's real delivery is
 into live gitlab/reddit content); realism gap disclosed, full-site delivery is the scale-up.
 
+## Benchmark-structure analysis + SOTA-technique scan (2026-08-16, 3 study agents)
+
+FAILURE AXIS (SOTA scan): all our ingestions to date are PERCEPTION work; the long-horizon
+gap-closers are PLANNING/VERIFICATION/MEMORY (our weak side). Top pure-scaffolding candidates:
+checkpoint self-verification 'done' gate (WebJudge/Online-Mind2Web), Falsifiable Commitment
+Planning (FCPAgent, 65% WebArena), WebDART live-replan, Agent Workflow Memory. (WebArena leaders
+WebTactix 74 / OpAgent 72 use RL/SFT + site hints -- only the scaffolding parts transfer, and we
+do not claim the tuned-model portion.)
+
+BENCHMARK EVAL MECHANICS (structure agent, verified at source):
+- WebChoreArena is 84-89% STRING_MATCH -- graded ONLY on the last chat message; NO final message
+  = automatic 0; exact_match dies on any wrapper/markdown text. Most tasks are read-only
+  aggregations whose data is one canonical URL away.
+- WebArena reddit+gitlab: ~51% program_html (persisted server state), 41% string_match, 25%
+  url_match (substring 'gold in pred' -- can't overshoot).
+
+PRINCIPLED SPLIT (honoring the locked /goal 'no benchmark-specific logic, grep-audited'):
+- **TAKE (generic, honest):** TERMINAL ANSWER PROTOCOL -- every episode ends with a bare answer
+  (no markdown/hedging). Output hygiene; helps every string-match benchmark + real sites; knows
+  no answers. Also: the SOTA 'done'-gate (agent self-checks task checkpoints before stopping --
+  internal agent scaffolding, NOT an external judge of the score, so method-compatible).
+- **DECLINE on principle (booked, not built):** gitlab /api/v4 unauthenticated bypass and
+  hardcoded postmill .submission__/.vote__net-score selectors. These would flip many chore tasks
+  but are benchmark-SPECIFIC site knowledge -- exactly what the grep-audit forbids. Found the
+  exploit, chose discipline. The GENERIC version of 'read structured rows' is already v38
+  table-markdown. Honest note: this ceilings our WebChoreArena number below what a benchmark-tuned
+  agent gets -- and that is the correct trade under the standing method.
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
