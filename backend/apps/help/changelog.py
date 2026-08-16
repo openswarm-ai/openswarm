@@ -82,6 +82,10 @@ P_RELEASES: List[ReleaseNote] = [
             "If the \"OpenSwarm needs to reload\" prompt itself fails, the app now tries to reload instead of quitting and taking your session with it.",
             "Custom system prompts now actually shape the agent from its very first reply. They were being delivered but ignored: buried in the middle of a long prompt, so the model paid them no attention.",
             "Your conversation survives a backend crash. Chats used to be saved only when a turn finished cleanly, so a crash mid-answer could erase the whole conversation; now every message you send is saved the moment you send it.",
+            "Parked apps now truly sleep. Closing an app froze only its outermost script while the real dev server kept burning CPU in the background; the whole process tree freezes now and wakes instantly when you reopen it.",
+            "Clicking empty canvas clears a text selection, the way every other text surface does.",
+            "Brand-new apps stop dying at birth on busy machines. The first boot installs dependencies, which can take minutes; a fixed 60-second limit was killing exactly those boots.",
+            "An agent that sent work to a browser can no longer hang forever when the finished result gets lost on the way back; it notices, recovers, and redoes the step.",
         ],
     ),
     ReleaseNote(
