@@ -1,5 +1,32 @@
 # MiniWoB arena — definitive analysis (2026-08-10)
 
+## ===== GOAL SCOREBOARD (checkpoint 2026-08-16, champion v40, model cc/claude-opus-5) =====
+
+| # | Clause | Target | Result | Status |
+|---|--------|--------|--------|--------|
+| 1 | CompWoB (101 composed) | >=75% | **81.1%** (was 65.3) | MET |
+| 2 | Injection refusal (WASP 21 attacks) | >=95% | **100%** (0 obeyed) | MET |
+| 3 | Zero false success claims | 0 | **0** every benchmark/run | MET |
+| 4 | Median wall | <10s | **8.5s** MiniWoB | MET |
+| 5 | Tokens/task | <10k | **<10k** MiniWoB | MET |
+| 6 | No benchmark-specific logic | none | grep-audited, feature-gated | MET |
+| 7 | MiniWoB-125 (3-seed) | >=95% | **90.7%** (90.9 pre-ingestion) | OPEN — ~6 product primitives, prompt-side plateaued |
+| 8 | WebArena Verified | >=65% | 0 solved (hard reddit+gitlab partition) | OPEN — field-wide hard (SOTA 74) |
+| 9 | OSWorld | >=85% | not measured | OPEN — desktop-VM infra lift |
+| 10 | Live verified-writes | >=95% | not measured | OPEN |
+| 11 | 3x competitor speed @ equal accuracy | >=3x | ~2-4x faster than browser-use everywhere | PARTIAL (met where head-to-head exists) |
+| + | Cross-model generality (bonus) | — | GPT-5.4 **86.1%** same harness | STRONG evidence harness>>model |
+
+vs browser-use LIBRARY (same tasks/model): we WIN MiniWoB (90.7 vs 71.4), WebArena partials +
+speed + honesty; BEHIND CompWoB by 0.9 (81.1 vs 82.0, honest, unmanufactured). vs browser-use
+CLOUD 'bu-max' (tuned commercial, 97% live Mind2Web): NOT beaten, not claimed. WebChoreArena
+(supplementary): Claude 1/89, GPT-5.4 2/86, both 0 false — budget-bound. 6/11 clauses met; the
+open ones are capability (MiniWoB primitives), field-difficulty (WebArena), or unstarted infra
+(OSWorld/live-writes) — none closable by overfitting, per standing directive.
+
+## =====================================================================================
+
+
 Every number scored by MiniWoB's own reward through BrowserGym; no arm grades itself. All LLM
 arms on `cc/claude-haiku-4-5-20251001`, seed 42, all 125 tasks, one clean episode per task.
 Infra failures are classed, retried, and never counted as skill. Book: `data/all.jsonl` +
