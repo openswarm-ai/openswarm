@@ -9,7 +9,7 @@ now live under DATA_ROOT, created lazily on first use, and the GC loop sweeps th
 import ast
 import os
 
-from backend.apps.settings.settings import p_legacy_upload_dir, upload_dir
+from backend.apps.settings.settings import legacy_upload_dir, upload_dir
 
 
 def test_no_module_level_tempdir_or_makedirs():
@@ -40,4 +40,4 @@ def test_upload_dir_lives_under_data_root_and_creates_itself(tmp_path, monkeypat
 
 def test_legacy_location_is_still_named_for_the_gc_sweep():
     # The old temp-dir location keeps getting swept so past uploads do not sit there for 7 years.
-    assert p_legacy_upload_dir().endswith("self-swarm-uploads")
+    assert legacy_upload_dir().endswith("self-swarm-uploads")

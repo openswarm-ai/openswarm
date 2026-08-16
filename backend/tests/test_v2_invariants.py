@@ -1284,8 +1284,8 @@ def test_upload_dedup_under_concurrent_uploads():
     """Run N parallel uploads of the same logical filename through threads
     and verify EVERY upload landed at a distinct path (no overwrites)."""
     import os, threading
-    from backend.apps.settings.settings import UPLOAD_DIR
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    from backend.apps.settings.settings import upload_dir
+    UPLOAD_DIR = upload_dir()
     name = f"test_concurrent_{os.getpid()}.txt"
     results: list[str] = []
     lock = threading.Lock()
@@ -1390,8 +1390,8 @@ def test_upload_dedup_handles_filename_collision_atomically():
     racing on the same filename get distinct outputs, not one
     overwriting the other."""
     import os, tempfile, shutil
-    from backend.apps.settings.settings import UPLOAD_DIR
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    from backend.apps.settings.settings import upload_dir
+    UPLOAD_DIR = upload_dir()
     name = f"test_dedup_{os.getpid()}.txt"
     paths = []
     try:
@@ -1502,7 +1502,8 @@ def test_upload_dir_writable_on_macos_temp():
     Windows, tempfile → C:/Users/X/AppData/Local/Temp/ which is always
     writable. Failure here would block every file attachment."""
     import os
-    from backend.apps.settings.settings import UPLOAD_DIR
+    from backend.apps.settings.settings import upload_dir
+    UPLOAD_DIR = upload_dir()
     assert os.path.isdir(UPLOAD_DIR), f"UPLOAD_DIR not a directory: {UPLOAD_DIR}"
     probe = os.path.join(UPLOAD_DIR, ".write_probe")
     try:

@@ -88,7 +88,7 @@ async def p_upload_dir_gc_loop():
         try:
             now = time.time()
             cutoff = now - 7 * 86400
-            for p_dir in (upload_dir(), p_legacy_upload_dir()):
+            for p_dir in (upload_dir(), legacy_upload_dir()):
                 if not os.path.isdir(p_dir):
                     continue
                 for entry in os.listdir(p_dir):
@@ -420,7 +420,7 @@ def upload_dir() -> str:
 
 
 # Old location, swept by the GC loop only (never probed at import; one stat when the loop runs).
-def p_legacy_upload_dir() -> str:
+def legacy_upload_dir() -> str:
     return os.path.join(tempfile.gettempdir(), "self-swarm-uploads")
 
 
