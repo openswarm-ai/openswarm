@@ -182,6 +182,30 @@ class LlmPolicy:
     # Advancement is model-declared ('CLAUSE n') only after the page shows the current one done.
     ledger: bool = False
 
+    # v37: persistent NOTE scratchpad (ingested from AgentOccam take_note + Agent-E planner). A
+    # durable key/value store the model appends to that SURVIVES page navigation and is never
+    # truncated by the history window -- the memory multi-page collection chores need ("check all
+    # N orders", "sum the top 40"). Gated on collection/multi-page goals so short tasks pay nothing.
+    note_pad: bool = False
+    notes: list[str] = field(default_factory=list)
+
+    def notes_gated(self, goal: str) -> bool:
+        return self.note_pad and bool(re.search(
+            r"\b(all|each|every|both|total|sum|count|how many|list|across)\b", goal, re.I))
+
+    def note_block(self) -> str:
+        if not self.notes:
+            return ""
+        rows = "\n".join(f"  - {n}" for n in self.notes[-15:])
+        return ("\nPERSISTENT NOTES (facts you saved; survive navigation, never lost):\n" + rows
+                + "\nAdd a line 'NOTE: <fact>' after your action to save anything you must remember "
+                  "across pages (a running total, items already seen). Do NOT re-save a note.")
+
+    # v36: first-class refusal token (ingested from SeeAct's 'none of these match' option). When no
+    # row matches the goal's named target, an explicit no_match() beats a near-miss click (which is
+    # terminal on tab/section tasks); it maps to a safe exploration step instead of a wrong guess.
+    escape_token: bool = False
+
     def ledger_block(self) -> str:
         k = min(self.cur_clause, len(self.clauses))
         done = " ".join(f"✓{i}" for i in range(1, k))
@@ -235,6 +259,8 @@ class LlmPolicy:
             extra += self.history_block()
         if getattr(self, "eval_line", False):
             extra += self.eval_block()
+        if getattr(self, "note_pad", False) and self.notes_gated(goal):
+            extra += self.note_block()
         user = f"GOAL: {goal}{extra}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
         content: Any = user
         if image_b64:
@@ -347,6 +373,7 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.mode = "standard"
         self.long_goal_active = False
         self.all_actions = []
+        self.notes = []
         self.maybe_gate_long_goal(goal)
         self.verified_once = False
 
@@ -738,11 +765,21 @@ class OpenSwarmLlmPolicy(LlmPolicy):
             m_ev = re.search(r"EVAL:\s*(.+)", raw or "")
             if m_ev:
                 self.history.append(f"(your step-eval: {m_ev.group(1).strip()[:200]})")
+        if self.note_pad:
+            for m_nt in re.finditer(r"NOTE:\s*(.+)", raw or ""):
+                fact = m_nt.group(1).strip()[:160]
+                if fact and fact not in self.notes:
+                    self.notes.append(fact)
         m_cl = re.search(r"CLAUSE\s+(\d+)", raw or "")
         if m_cl and (self.checklist or self.ledger):
             self.cur_clause = max(self.cur_clause, int(m_cl.group(1)))
         if self.serial_multi and len(chosen_list) > 1:
             chosen_list = self.queue_rest(chosen_list)
+        # v36: a no_match() refusal maps to a safe exploration step (scroll down to reveal more)
+        # instead of the near-miss click it replaces -- the whole point is to NOT emit a wrong click.
+        if self.escape_token and any(re.match(r"\s*no_match\s*\(", c) for c in chosen_list):
+            chosen_list = ["scroll(0, 500)"]
+            self.history.append("(no_match: no row matched the goal target; scrolled to reveal more)")
         d.n_interactive = n
         translated = [self.translate(c) for c in chosen_list]
         if self.scripted_drag:
@@ -792,6 +829,17 @@ moving on. In guess-and-check tasks (hot/cold, higher/lower), act FAST: one shor
 keep the running state in your PLAN line, no deliberation. Before any final submit, re-check every
 requirement of the goal against the page."""
 
+OSW_SYSTEM_V36 = """
+If NO row in the list matches the goal's named target, reply exactly no_match() (a first-class
+choice) instead of clicking a similar-but-wrong row -- a wrong click on a named target is often
+irreversible. no_match() reveals more of the page so the exact target can appear."""
+
+OSW_SYSTEM_V37 = """
+For goals that collect or aggregate across pages (all/each/every N, a running total, how many),
+record what you learn with a line 'NOTE: <fact>' after your action -- notes persist even after you
+navigate, so a running count or the items already seen are never lost. Read your PERSISTENT NOTES
+before deciding you are done; the task is complete only when every item is accounted for."""
+
 # v8: the exact-name discipline the tab/section losses demanded -- a wrong click on a goal-named
 # link is TERMINAL on these tasks, so a near-miss is worse than another exploration step.
 OSW_SYSTEM_V8 = OSW_SYSTEM_V7 + """
@@ -820,7 +868,7 @@ says to interact with the covering element LATER, moving it aside now keeps that
 CALL_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
     r"|mouse_click|mouse_dblclick|mouse_move|mouse_drag_and_drop|keyboard_type|keyboard_press"
-    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible)\s*\([^)]*\)")
+    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible|no_match)\s*\([^)]*\)")
 
 
 def clean_action(raw: str) -> str:
@@ -943,6 +991,24 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   scripted_drag=True, auto_complete=True, som=False,
                                   native_pickers=True, verify_terminal=True, post_mouse_vision=True,
                                   multi_cap=6, fill_verify=True, **v17)
+    if name == "osw-llm-v37":  # v35 + persistent NOTE scratchpad (AgentOccam/Agent-E cross-page memory)
+        v37 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V37, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, note_pad=True, **v37)
+    if name == "osw-llm-v36":  # v35 + first-class no_match() refusal token (SeeAct escape option)
+        v36 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True, **v36)
     if name == "osw-llm-v35":  # v34 + readonly-picker value fallback
         v35 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
