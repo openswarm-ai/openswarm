@@ -1093,7 +1093,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   local_ctx=True, blocker_probe=True, suppress_wrappers=True,
                                   force_unblock=True, native_js_fallback=True, escape_token=True,
                                   table_md=True, draw_circle=True, answer_protocol=True,
-                                  schema_gate=True, **v43)
+                                  schema_gate=False, **v43)  # DISABLED: gate falsely bounced valid JSON
     if name == "osw-llm-v42":  # v41 + terminal answer protocol (string-match benchmarks)
         v42 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36, max_tokens=800)

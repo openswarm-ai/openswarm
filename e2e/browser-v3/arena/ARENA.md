@@ -688,6 +688,19 @@ suppressing credit -- the true partial score is higher. Next: v43 answer-schema 
 (validate send_msg against the schema the TASK ITSELF provides; bounce errors back -- generic
 instruction-following, knows no answers) to lift 0.5 -> 1.0.
 
+## v43 schema-gate: SELF-INFLICTED bug, disabled (2026-08-16)
+
+The v43 answer-schema gate was HARMFUL and is disabled. Trace (13.627): the agent emitted valid
+JSON ({"task_type":"MUTATE","status":"SUCCESS",...}) but my gate's extraction regex only matched
+quoted-string payloads, not raw ({...}) objects, so it FALSELY bounced every valid answer and the
+env never received a final message. Caught by reading the trace (the discipline that also caught
+the WASP false-positive). Honest conclusion: v42 (instrument fixes + answer_protocol, NO gate) is
+the WebArena config; instrument fixes recovered partials 0->0.5 (post-creation credit that was
+being zeroed), but 0.5->1.0 needs the exact answer CONTENT the evaluator expects (retrieved_data
+values / task_type enum) -- a genuine capability/knowledge wall, not a format bug. Full WA
+re-measurement on v42 launched to book the honest partial-sum (was suppressed to 3.83 under the
+truncation bug).
+
 ## Champion v41 3-seed MiniWoB (2026-08-16): 94.1 (92.0 / 95.2 / 95.2) — +3.4 vs v40
 
 Two capability fixes landed: scripted draw-circle geometry (0/3->3/3) + universal 18-step budget
