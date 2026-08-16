@@ -190,6 +190,8 @@ class LlmPolicy:
     notes: list[str] = field(default_factory=list)
     # v38: table->markdown rendering of table/grid subtrees (perception.tables_markdown).
     table_md: bool = False
+    # v41: scripted freehand-circle geometry (run.py-side ring path). Feature-gated on circle goals.
+    draw_circle: bool = False
     # v39: mutation-diff action feedback -- run.py appends the page-text delta after each action
     # (Agent-E's MutationObserver, approximated text-side). Autocomplete popups, error banners,
     # and new rows become explicit feedback instead of something the model must notice unaided.
@@ -690,6 +692,13 @@ class OpenSwarmLlmPolicy(LlmPolicy):
     def act(self, obs: dict[str, Any], goal: str) -> LlmDecision:
         page, n = self.view(obs, goal)
         self.apply_mode(obs, goal)
+        # v41: freehand-circle geometry -> a scripted ring in run.py. Emit the token once, on the
+        # first turn of a circle-drawing goal; run.py detects the marker and traces the circle.
+        if (self.draw_circle and not self.history
+                and re.search(r"draw a circle|circle centered|circle around", goal, re.I)):
+            d = LlmDecision(action="draw_circle()", n_interactive=n, note="scripted-circle")
+            self.note("draw_circle()  (scripted circular path)", obs)
+            return d
         fv = self.try_fill_verify()
         if fv:
             # A fill that didn't stick invalidates everything planned on top of it.
@@ -876,7 +885,7 @@ says to interact with the covering element LATER, moving it aside now keeps that
 CALL_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
     r"|mouse_click|mouse_dblclick|mouse_move|mouse_drag_and_drop|keyboard_type|keyboard_press"
-    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible|no_match)\s*\([^)]*\)")
+    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible|no_match|draw_circle)\s*\([^)]*\)")
 
 
 def clean_action(raw: str) -> str:
@@ -1019,6 +1028,16 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   local_ctx=True, blocker_probe=True, suppress_wrappers=True,
                                   force_unblock=True, native_js_fallback=True,
                                   table_md=True, mutation_diff=True, **c)
+    if name == "osw-llm-v41":  # v40 champion + scripted draw-circle geometry primitive
+        v41 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36, max_tokens=800)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True,
+                                  table_md=True, draw_circle=True, **v41)
     if name == "osw-llm-v40":  # CHAMPION: v35 stack + escape_token + table_md (composing set; mutation_diff Tier-2)
         v40 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36, max_tokens=800)

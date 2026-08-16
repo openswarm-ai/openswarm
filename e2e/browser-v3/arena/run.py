@@ -236,6 +236,37 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 break
             if ep.first_action_s == 0.0:
                 ep.first_action_s = time.time() - t0
+            # v41 (gated, scripted geometry): a freehand-circle goal is a geometry problem the
+            # model cannot trace by hand (measured: random short mouse jitters, never a circle).
+            # Detect the SVG center marker and drive a true circular path, then submit. One-shot.
+            if (getattr(policy, "draw_circle", False)
+                    and re.match(r"draw_circle\(", decision.action or "")):
+                try:
+                    center = with_deadline(lambda: env.unwrapped.page.evaluate(
+                        "() => { const c = document.querySelector('svg circle');"
+                        " if(!c) return null; const r = c.getBoundingClientRect();"
+                        " return [r.x + r.width/2, r.y + r.height/2]; }"), 8)
+                    pg = env.unwrapped.page
+                    if center:
+                        import math
+                        cx, cy, rad = center[0], center[1], 22
+                        pts = [(cx + rad * math.cos(2 * math.pi * i / 24),
+                                cy + rad * math.sin(2 * math.pi * i / 24)) for i in range(25)]
+                        pg.mouse.move(pts[0][0], pts[0][1]); pg.mouse.down()
+                        for x, y in pts[1:]:
+                            pg.mouse.move(x, y)
+                        pg.mouse.up()
+                    # submit
+                    obs, reward, terminated, truncated, _ = with_deadline(
+                        lambda: env.step('click("submit")'), args.step_timeout)
+                    rec_step.action = "draw_circle() [scripted ring + submit]"
+                    rec_step.reward = float(reward or 0)
+                    ep.add(rec_step); ep.reward = max(ep.reward, float(reward or 0)); ep.steps = step
+                    if terminated or truncated:
+                        ep.terminated, ep.truncated = bool(terminated), bool(truncated); break
+                    continue
+                except Exception:
+                    pass
             # v39 (gated, ingested from Agent-E's mutation observer): snapshot the page text
             # before the action so the delta after it can ride into history as feedback.
             pre_text = ""
