@@ -619,6 +619,14 @@ champion re-registered as the UNION (escape_token + table_md + mutation_diff). P
 a combined CONFIRMATION pilot (union of the three target sets + 12 controls) runs before the
 champion 3-seed — passed-alone does not guarantee passed-together (interaction risk).
 
+CONFIRM VERDICT (2026-08-16): **interaction regression — gate FAILS.** Targets 11/20 but
+controls 10/12 (login-popup pair lost) and book-flight regressed vs BOTH individual pilots
+(won under v38-alone and v39-alone, lost combined). The union does not compose. Isolation
+running pairwise, cheapest discriminator first: v40c = table_md+mutation_diff (no escape) on
+the same 32-task set — if book-flight loses there, the conflict is the two prompt-additive
+mechanisms crowding each other; if it wins, escape_token is implicated. No promotion until a
+composing set passes with controls 12/12.
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
