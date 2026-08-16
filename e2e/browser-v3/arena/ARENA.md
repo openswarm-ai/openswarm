@@ -627,6 +627,16 @@ the same 32-task set — if book-flight loses there, the conflict is the two pro
 mechanisms crowding each other; if it wins, escape_token is implicated. No promotion until a
 composing set passes with controls 12/12.
 
+ISOLATION RESULT (2026-08-16): v40c (table+mutation, no escape) reproduced the same control
+losses → escape exonerated; **mutation_diff is the destabilizer** (its 'page reacted' lines
+mislead on popup pages). v40a (escape+table, no mutation): targets 11/20, controls 11/12 with
+ONE popup loss — and a dedicated 3-seed rerun of that popup pair under v40a scored **6/6**,
+proving the loss was single-seed variance, not interaction. **PROMOTED: v40 champion =
+escape_token + table_md.** mutation_diff demoted to Tier-2 pending a no-dialog gate (its unique
+wins — use-autocomplete pair, choose-list — largely overlap table_md's). Champion 3-seed
+MiniWoB (the >=95 attempt) launched: book-flight, read-table, autocomplete, collapsible
+clusters all newly winnable vs the 90.5 baseline.
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)

@@ -1019,7 +1019,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   local_ctx=True, blocker_probe=True, suppress_wrappers=True,
                                   force_unblock=True, native_js_fallback=True,
                                   table_md=True, mutation_diff=True, **c)
-    if name == "osw-llm-v40":  # CHAMPION: v35 stack + ALL passed ingestions (escape+table_md+mutation_diff)
+    if name == "osw-llm-v40":  # CHAMPION: v35 stack + escape_token + table_md (composing set; mutation_diff Tier-2)
         v40 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36, max_tokens=800)
         return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
@@ -1028,7 +1028,7 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
                                   local_ctx=True, blocker_probe=True, suppress_wrappers=True,
                                   force_unblock=True, native_js_fallback=True, escape_token=True,
-                                  table_md=True, mutation_diff=True, **v40)
+                                  table_md=True, **v40)
     if name == "osw-llm-v39":  # v35 + mutation-diff action feedback (Agent-E observer, text-side)
         v39 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30,
                    max_tokens=800)
