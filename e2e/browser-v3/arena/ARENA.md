@@ -515,6 +515,49 @@ follow-up). Honesty clause holds on a hard live benchmark: zero false success cl
 solved chores (30140, 30161) are multi-hop search+compute tasks — capability exists; scale of
 budget is the binding constraint. Claude primary column completes next.
 
+## Competitor ingestion ledger (2026-08-15, from AgentOccam / Agent-E / SeeAct source study)
+
+Three SOTA open-source agents studied at source; three independent studies CONVERGE on our gap:
+strong perception + single-action recovery (why we win MiniWoB/CompWoB), thin on DURABLE MEMORY
+and CONTENT SUMMARIZATION (why long-horizon chore/WebArena tasks fail). All candidates below are
+generic + feature-triggered (NO fine-tuned weights — those are 'specialist', out of scope). Each
+gets pre-registered feature-trigger + predicted win-set + 8-target/12-control pilot BEFORE any
+sweep, one mechanism at a time (no batching — the v24 ungated lesson). Ranked by value×(1/cost):
+
+TIER 1 (implement + pilot first — highest value, lowest cost, attacks MEASURED failures):
+- v36 ESCAPE/REFUSAL TOKEN (SeeAct format_options): a first-class 'none of these match' reply
+  option so an ambiguous turn refuses instead of near-miss clicking. Trigger: always available;
+  fires only when model chooses it. Predicts: fewer terminal wrong-click losses (tab/section
+  tasks). ~near-zero cost.
+- v37 PERSISTENT NOTE SCRATCHPAD (AgentOccam take_note + Agent-E planner): durable cross-page
+  key/value store that SURVIVES navigation, model-appended. Trigger: multi-page/collection goals
+  (>=2 navigations OR 'all/each/every/total/how many' in goal). Predicts: the multi-page
+  aggregation chores we scored 0 on. Both competitors have a version — clearest shared gap.
+- v38 TABLE->MARKDOWN (AgentOccam action_reformat_table): rewrite AX table/gridcell subtrees to
+  pipe-markdown. Trigger: page contains a table/grid role. Predicts: 'sum top-N', listing,
+  order-history chores + WebArena data pages.
+- v39 MUTATION-DIFF ACTION FEEDBACK (Agent-E dom_mutation_observer): 100ms post-action observer;
+  new visible text (autocomplete, error banner, new rows) summarized into next-turn history.
+  Trigger: always (cheap); generalizes our value-only fill-verify. Predicts: autocomplete +
+  dynamic-form tasks (book-flight cluster).
+
+TIER 2 (after Tier 1 verdicts):
+- aria-expanded sensing on click (Agent-E T5, one-line, dropdown-stale-click fix).
+- Agent-selected observation modes text_only/input_fields (Agent-E T2, helps QA chores).
+- Modal flagging + inline <select> options (Agent-E T3).
+- press_enter_after arg on fill (WebArena fused type-submit — matches our 'design out failure
+  classes' doctrine; the 'typed but never submitted' class becomes unrepresentable).
+- Open-tabs header line + tab_focus action (WebArena, cheap situational awareness).
+- scroll-must-state-a-reason nudge; pre-execution hallucinated-id validation (AgentOccam).
+
+TIER 3 (gated/expensive — pilot only if Tier 1-2 leave a gap):
+- Two-stage generate-then-ground (SeeAct), GATED on our existing stuck/ambiguous detection (not
+  always-on — it doubles calls, violating token discipline otherwise).
+- Actor-Judge-Critic ensemble (AgentOccam) — 2-3x calls/step; likely fails our <10k-token clause.
+
+NOT ingested (out of scope / already have): per-site tips files (task-specific), combobox
+flattening (we have native pickers), fine-tuned transfer weights (specialist).
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
