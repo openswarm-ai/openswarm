@@ -115,9 +115,13 @@ def test_prompt_block_carries_meter_and_tool_guidance():
     assert "1/60 facts" in block and "MemoryWrite" in block and "decaf" in block
 
 
-def test_memory_snapshot_freezes_per_session():
+def test_memory_snapshot_freezes_per_session(monkeypatch):
     from backend.apps.agents.core.models import AgentSession
     from backend.apps.agents.manager.prompt.compose_turn_system_prompt import compose_turn_system_prompt
+    # The composer reads the REAL settings store; without this pin the test fails on any machine whose user turned memory off.
+    import backend.apps.settings.settings as settings_mod
+    real = settings_mod.load_settings()
+    monkeypatch.setattr(settings_mod, "load_settings", lambda: real.model_copy(update={"memory_enabled": True}))
     store.add_fact("Names every dashboard after a national park")
     session = AgentSession(name="t")
     first = compose_turn_system_prompt(session, None, None, None, None, None)
