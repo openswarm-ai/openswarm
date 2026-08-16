@@ -895,3 +895,13 @@ MINIWOB_URL=http://localhost:8099/miniwob/ \
 python report.py --model cc/claude-haiku-4-5-20251001
 python diffs.py --ours osw-llm-v10 --theirs bu-real
 ```
+
+## Grep audit (2026-08-16, post-ingestion checkpoint)
+Ran the no-benchmark-specific-logic audit across llm_policy.py champion paths: no api/v4,
+submission__, vote__net, /f/, reddit, gitlab, magento, or port literals appear as LOGIC (only in
+site-routing/env-setup infra + the generic draw-circle goal-phrase gate). Every mechanism this
+session is feature-triggered on universal page properties (SVG center marker, ambiguous row list,
+table role, question-word goal, quoted target) or is pure harness correctness (goal not
+truncated, quote-aware action parser). Test applied to each: "would it help on a website the
+agent has never seen?" — YES for all shipped; NO (hence DECLINED, prose-only) for the api/selector
+bypasses. Overfitting boundary holds; real-world generalization preserved.
