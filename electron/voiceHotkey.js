@@ -155,10 +155,21 @@ function installVoiceHotkey(getMainWindow) {
       }
     } catch (_) { /* a machine where ps is restricted must still arm the watcher */ }
   };
+  // Focus re-arms the watcher's tap: a tap another app registered after ours head-inserts AHEAD of
+  // ours and can eat fn with no disable event delivered, so this is the only recovery (ENG-317).
+  let lastFnPokeMs = 0;
+  const pokeFnWatcher = () => {
+    if (!fnProc || !fnProc.stdin || !fnProc.stdin.writable) return;
+    const now = Date.now();
+    if (now - lastFnPokeMs < 1000) return;
+    lastFnPokeMs = now;
+    try { fnProc.stdin.write('r\n'); } catch (_) {}
+  };
   const startFnWatcherWith = (bin) => {
     sweepStrayFnWatchers(bin);
     try {
-      fnProc = spawn(bin, [], { stdio: ['ignore', 'pipe', 'ignore'] });
+      // stdin stays open on purpose: "r\n" re-arms the tap, and EOF tells an orphaned watcher to die.
+      fnProc = spawn(bin, [], { stdio: ['pipe', 'pipe', 'ignore'] });
     } catch (e) {
       console.log('[voice] fn watcher spawn failed:', e && e.message);
       fnProc = null;
@@ -279,7 +290,7 @@ function installVoiceHotkey(getMainWindow) {
   tryStartNativeTap();
   startFnWatcher();
   registerVoiceShortcut();
-  app.on('browser-window-focus', unregisterFallbackShortcut);
+  app.on('browser-window-focus', () => { unregisterFallbackShortcut(); pokeFnWatcher(); });
   app.on('browser-window-blur', registerVoiceShortcut);
 
   // The focused-window relay matches the FALLBACK chord: special primaries (fn, Ctrl+Win) are

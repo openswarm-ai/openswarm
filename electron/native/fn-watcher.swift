@@ -5,6 +5,8 @@ import CoreGraphics
 import Foundation
 
 var fnDown = false
+var tapRef: CFMachPort?
+var srcRef: CFRunLoopSource?
 
 let callback: CGEventTapCallBack = { _, type, event, _ in
     if type == .flagsChanged {
@@ -24,20 +26,50 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     return Unmanaged.passUnretained(event)
 }
 
-var tapRef: CFMachPort?
 let mask = (CGEventMask(1) << CGEventType.flagsChanged.rawValue)
-guard let tap = CGEvent.tapCreate(
-    tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
-    eventsOfInterest: mask, callback: callback, userInfo: nil
-) else {
+
+// New tap first, old tap down after: a failed re-arm keeps the working tap instead of going deaf.
+// The fnDown de-dupe above makes the brief two-tap overlap print nothing twice.
+func armTap() -> Bool {
+    guard let tap = CGEvent.tapCreate(
+        tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+        eventsOfInterest: mask, callback: callback, userInfo: nil
+    ) else { return false }
+    let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+    CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+    CGEvent.tapEnable(tap: tap, enable: true)
+    if let old = tapRef { CGEvent.tapEnable(tap: old, enable: false); CFMachPortInvalidate(old) }
+    if let oldSrc = srcRef { CFRunLoopRemoveSource(CFRunLoopGetMain(), oldSrc, .commonModes) }
+    tapRef = tap
+    srcRef = src
+    return true
+}
+
+guard armTap() else {
     print("e tap-failed")
     fflush(stdout)
     exit(1)
 }
-tapRef = tap
-let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
-CGEvent.tapEnable(tap: tap, enable: true)
+
+// The parent pokes "r\n" when the app gains focus: another app's tap registered after ours sits
+// AHEAD of ours (head-insert) and can eat fn before we see it, with no disable event to catch, so
+// re-arming is the only way to win the key back (ENG-317). stdin EOF means the parent is gone;
+// exiting then stops a crashed OpenSwarm from stranding a process holding a global keyboard tap.
+DispatchQueue.global().async {
+    while let line = readLine(strippingNewline: true) {
+        if line == "r" {
+            CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+                if !armTap() {
+                    print("e rearm-failed")
+                    fflush(stdout)
+                }
+            }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
+        }
+    }
+    exit(0)
+}
+
 print("r")
 fflush(stdout)
 CFRunLoopRun()
