@@ -88,7 +88,11 @@ export function useDashboardSelection(
 
   const isSelected = useCallback((id: string) => selectedIds.has(id), [selectedIds]);
 
-  const deselectAll = useCallback(() => setSelectedIds(new Map()), []);
+  const deselectAll = useCallback(() => {
+    setSelectedIds(new Map());
+    // Empty-canvas presses preventDefault to own the drag, which suppresses the browser's native clear-selection-on-mousedown, so stale text highlights survived every click-away (ENG-316).
+    try { window.getSelection()?.removeAllRanges(); } catch { /* no DOM selection API in tests */ }
+  }, []);
 
   // Cmd/Ctrl+A: select every card on the canvas so the user can wipe the board in one keystroke. Mirrors the per-type id keys the marquee uses.
   const selectAll = useCallback(() => {
