@@ -515,6 +515,26 @@ follow-up). Honesty clause holds on a hard live benchmark: zero false success cl
 solved chores (30140, 30161) are multi-hop search+compute tasks — capability exists; scale of
 budget is the binding constraint. Claude primary column completes next.
 
+## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
+
+- WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
+- OSWorld: SOTA Claude-Mythos submission 85.4%; BEST OPEN-SOURCE UltraCUA-32B 41.0% (beats
+  Claude-3.7-CUA 27, OpenAI-CUA 26); human 72.
+- Online-Mind2Web (live, LLM-judged — not in our scored set): browser-use CLOUD 'bu-max' 97.0%;
+  best open-source Avenir-Web 53.7% (Gemini-3-Pro); fully-open 25.7% (Qwen-3-VL-8B); browser-use
+  LIBRARY 26.0%.
+- CompWoB: best published = HTML-T5++ 61.5% (fine-tuned transfer); best PROMPTED 28.7% (RCI).
+  **Ours 81.1% exceeds every published CompWoB number, tuned or prompted.**
+
+CRITICAL DISTINCTION for the 'beat browser-use everywhere' directive: 'browser-use' = TWO
+products. (1) The open-source LIBRARY (what we run head-to-head in-arena: ~71 MiniWoB, 82
+CompWoB, 26 Mind2Web) — we beat/match it everywhere except CompWoB -0.9. (2) browser-use CLOUD
+'bu-max' — a heavily-tuned commercial product topping live Online-Mind2Web at 97%. Our clean
+generic harness does NOT beat bu-max, and claiming so would be dishonest (their cloud = retries
++ custom scaffolding + proprietary tuning; ours is deliberately generic/audited). Beating the
+LIBRARY generically is the honest, in-scope goal; matching a tuned cloud product is not, and is
+not claimed.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
