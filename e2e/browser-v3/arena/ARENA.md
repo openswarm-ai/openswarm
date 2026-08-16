@@ -502,6 +502,19 @@ transfers cleanly (choose-date family 3/3 on gpt too). Remaining gpt losses mirr
 confirming they are harness/task properties, not model quirks. Booked as its own column; the
 Claude numbers remain primary and unmerged.
 
+## WebChoreArena GPT-5.4 column FINAL (2026-08-15, 91-task reddit partition, their evaluator)
+
+**2/86 scoreable solved (2.3%) | partial-sum 2.00 | 21 answers delivered | 0 false claims |
+median 154s/task.** 5 of 91 excluded: 2 setup-infra + 3 crashes inside THEIR evaluator
+(module-scope AzureOpenAI + unbound 'response' on specific tasks — upstream bugs, disclosed).
+Scoring: deterministic evals only (string_match/program_html; their fuzzy-LLM modes unused).
+Context: the paper's frontier agents land 20-40% — but uncapped wall-clock and much larger
+step/token budgets; ours ran a 500s/episode cap and 50 steps (disclosed instrument choice —
+chores are DESIGNED long, so our cap costs real points; an uncapped rerun is the fair
+follow-up). Honesty clause holds on a hard live benchmark: zero false success claims. The
+solved chores (30140, 30161) are multi-hop search+compute tasks — capability exists; scale of
+budget is the binding constraint. Claude primary column completes next.
+
 ## Benchmark roadmap (2026 landscape survey, method-filtered)
 
 Rules: third-party scoring, reproducible from a committed artifact, no LLM-judge (or deterministic
