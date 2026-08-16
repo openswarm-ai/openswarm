@@ -23,10 +23,24 @@ def parse_frontmatter(raw: str) -> tuple[dict, str]:
     fm_block = raw[3:end].strip()
     body = raw[end + 3:].strip()
     meta: dict = {}
-    for line in fm_block.splitlines():
-        m = re.match(r"^(\w[\w_-]*)\s*:\s*(.+)$", line)
-        if m:
-            meta[m.group(1).strip()] = m.group(2).strip().strip('"').strip("'")
+    lines = fm_block.splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"^(\w[\w_-]*)\s*:\s*(.*)$", lines[i])
+        i += 1
+        if not m:
+            continue
+        key, val = m.group(1).strip(), m.group(2).strip()
+        if re.fullmatch(r"[|>][+-]?", val):
+            # YAML block scalar: the text is the indented lines below; the bare indicator once shipped as a card's whole description (ENG-307).
+            block: list[str] = []
+            while i < len(lines) and (not lines[i].strip() or lines[i][0] in (" ", "\t")):
+                block.append(lines[i].strip())
+                i += 1
+            joiner = "\n" if val[0] == "|" else " "
+            meta[key] = joiner.join(b for b in block if b).strip()
+        else:
+            meta[key] = val.strip('"').strip("'")
     return meta, body
 
 

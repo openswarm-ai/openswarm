@@ -12,6 +12,7 @@ import time
 import zipfile
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
+from backend.apps.skill_registry.skill_registry_github import parse_frontmatter
 from backend.config.Apps import SubApp
 from backend.apps.skills.models import Skill, SkillCreate, SkillLoadRequest, SkillUpdate, SkillUpload, SkillWorkspaceSeedRequest
 
@@ -339,18 +340,7 @@ async def load_skill(body: SkillLoadRequest):
 
 def p_parse_skill_frontmatter(raw: str) -> dict:
     """Extract YAML frontmatter fields from a SKILL.md file."""
-    if not raw.startswith("---"):
-        return {}
-    end = raw.find("---", 3)
-    if end == -1:
-        return {}
-    fm_block = raw[3:end].strip()
-    meta: dict = {}
-    for line in fm_block.splitlines():
-        m = re.match(r"^(\w[\w_-]*)\s*:\s*(.+)$", line)
-        if m:
-            meta[m.group(1).strip()] = m.group(2).strip().strip('"').strip("'")
-    return meta
+    return parse_frontmatter(raw)[0]
 
 
 @skills.router.post("/workspace/seed")
