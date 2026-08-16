@@ -137,17 +137,6 @@ async def search(body: SearchBody) -> Dict:
             return None
         return {"query": body.query, "results": text, "backend": "ddg"}
 
-    async def try_startpage() -> Optional[Dict]:
-        # Google's index, when its proof-of-work wall is down; benched by the breaker while it isn't.
-        from backend.apps.agents.tools.search.search_startpage import search_startpage
-        answer = await search_startpage(body.query, body.num_results)
-        # Raise rather than return None: a refusal is the engine failing, and the breaker must count it so a closed Startpage stops costing its budget too.
-        if answer.refused:
-            raise RuntimeError("Startpage answered with a challenge instead of results")
-        if not answer.results:
-            return None
-        return {"query": body.query, "results": answer.results, "backend": "startpage"}
-
     async def try_bing() -> Optional[Dict]:
         # The index DuckDuckGo mostly serves, reachable directly even while DDG's challenge wall is up; went 50/50 on a zero-delay burst that tripped both DDG and Brave.
         from backend.apps.agents.tools.search.search_bing import search_bing
@@ -219,13 +208,13 @@ async def search(body: SearchBody) -> Dict:
             # the next one in if the leader stalls, so whoever sits second inherits every ddg
             # challenge. Measured 2026-08-13, N=22 fact queries, 12s pacing so nobody is being read
             # through their own rate limiter: ddg 21/22 (0.955), bing 6/22 (0.273), brave 2/2 of the
-            # 2 it served before throttling, startpage 0/22. Bing answers something 100% of the time
-            # and answers CORRECTLY about a quarter of it, which is the worst shape for a silent
-            # fallback, so it goes last. The dead rungs cost nothing: record_tier_failure cools them
-            # out after their first miss.
+            # 2 it served before throttling. Bing answers something 100% of the time and answers
+            # CORRECTLY about a quarter of it, which is the worst shape for a silent fallback, so it
+            # goes last. Startpage was removed 2026-08-16: every endpoint now serves a ~10KB Anubis
+            # proof-of-work wall to POST as well as GET (0/22 answered), so the rung only made the
+            # fallback list look longer than it is (ENG-302).
             [KeylessEngine(name="ddg", run=try_keyless),
              KeylessEngine(name="brave", run=try_brave),
-             KeylessEngine(name="startpage", run=try_startpage),
              KeylessEngine(name="bing", run=try_bing)],
             KEYLESS_TIER_SECONDS,
         )

@@ -5,7 +5,6 @@ import pytest
 import backend.apps.agents.tools.fetch.wayback as WB
 import backend.apps.agents.tools.search.search_bing as SBI
 import backend.apps.agents.tools.search.search_brave as SBR
-import backend.apps.agents.tools.search.search_startpage as SP
 from backend.apps.agents.tools.search.engine_answer import EngineAnswer
 import backend.apps.web.web as W
 from backend.apps.agents.tools.web import DDGRateLimited, WebSearchTool
@@ -39,7 +38,6 @@ def no_network(monkeypatch):
 
     async def p_engine_closed(query, num):
         return EngineAnswer()
-    monkeypatch.setattr(SP, "search_startpage", p_engine_closed)
     monkeypatch.setattr(SBR, "search_brave", p_engine_closed)
     monkeypatch.setattr(SBI, "search_bing", p_engine_closed)
 
@@ -65,18 +63,6 @@ def ddg_throttled(monkeypatch):
     async def p_f(query, num):
         raise DDGRateLimited(query)
     monkeypatch.setattr(WebSearchTool, "search_ddg", staticmethod(p_f))
-
-
-def startpage_returns(monkeypatch, text):
-    async def p_f(query, num):
-        return EngineAnswer(results=text)
-    monkeypatch.setattr(SP, "search_startpage", p_f)
-
-
-def startpage_refuses(monkeypatch):
-    async def p_f(query, num):
-        return EngineAnswer(refused=True)
-    monkeypatch.setattr(SP, "search_startpage", p_f)
 
 
 def bing_returns(monkeypatch, text):

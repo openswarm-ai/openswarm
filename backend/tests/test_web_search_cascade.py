@@ -27,8 +27,6 @@ from backend.tests.web_cascade_fixtures import (  # noqa: F401
     ddg_returns,
     ddg_throttled,
     no_network,
-    startpage_refuses,
-    startpage_returns,
 )
 
 
@@ -66,22 +64,6 @@ async def test_ddg_throttled_falls_over_to_openai(monkeypatch):
     assert "u.example" in res["results"]
     # DDG's throttle is recorded so the caller knows why we fell through
     assert any("ddg" in e for e in res.get("cascade_errors", []))
-
-
-@pytest.mark.asyncio
-async def test_startpage_rescues_a_ddg_challenge(monkeypatch):
-    """Two independent engines: one operator's bot challenge must not close free search."""
-    ddg_throttled(monkeypatch)
-    startpage_returns(monkeypatch, "[1] Rescued\n    https://sp.example")
-
-    async def p_boom(*a, **k):
-        raise AssertionError("a paid backend must not run while a free engine still answers")
-    monkeypatch.setattr(W, "gemini_grounded_call", p_boom)
-
-    res = await search(SearchBody(query="x"))
-    assert res["backend"] == "startpage"
-    assert "sp.example" in res["results"]
-    assert any("ddg" in e for e in res["cascade_errors"])
 
 
 @pytest.mark.asyncio
@@ -239,28 +221,28 @@ async def test_bing_is_the_last_keyless_resort(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_refusing_startpage_counts_against_it(monkeypatch):
+async def test_a_refusing_engine_counts_against_it(monkeypatch):
     """A challenge and a genuinely empty web look identical on the wire, and treating a
-    refusal as 'no hits' meant a closed Startpage kept costing its full budget forever."""
+    refusal as 'no hits' meant a closed engine kept costing its full budget forever."""
     from backend.apps.web.tier_breaker import FAILURES_TO_OPEN, tier_cooldown_left
     ddg_throttled(monkeypatch)
-    startpage_refuses(monkeypatch)
+    brave_refuses(monkeypatch)
     for _ in range(FAILURES_TO_OPEN):
         out = await search(SearchBody(query="anything", num_results=5))
         assert out["backend"] == "none"
-    assert tier_cooldown_left("startpage") > 0
+    assert tier_cooldown_left("brave") > 0
     assert any("challenge" in e for e in out["cascade_errors"])
 
 
 @pytest.mark.asyncio
-async def test_an_honestly_empty_startpage_does_not_count_against_it(monkeypatch):
+async def test_an_honestly_empty_engine_does_not_count_against_it(monkeypatch):
     """Nonsense queries must not slowly cool down a perfectly healthy engine."""
     from backend.apps.web.tier_breaker import FAILURES_TO_OPEN, tier_cooldown_left
     ddg_throttled(monkeypatch)
     for _ in range(FAILURES_TO_OPEN + 2):
         out = await search(SearchBody(query="zxqvbnmklwertyuiopasdfg", num_results=5))
         assert out["backend"] == "none"
-    assert tier_cooldown_left("startpage") == 0.0
+    assert tier_cooldown_left("brave") == 0.0
 
 
 @pytest.mark.asyncio
@@ -268,7 +250,6 @@ async def test_a_genuinely_empty_search_does_not_claim_an_outage(monkeypatch):
     """Both engines answering 'no matches' is an answer; calling it a refusal sends the model
     hunting for an outage that isn't there."""
     ddg_returns(monkeypatch, "")
-    startpage_returns(monkeypatch, "")
     out = await search(SearchBody(query="xyzzyplughnothinghere1234567", num_results=5))
     assert out["backend"] == "none"
     assert "had no matches" in out["results"]
@@ -279,7 +260,8 @@ async def test_a_genuinely_empty_search_does_not_claim_an_outage(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_real_outage_still_says_so(monkeypatch):
     ddg_throttled(monkeypatch)
-    startpage_refuses(monkeypatch)
+    brave_refuses(monkeypatch)
+    bing_refuses(monkeypatch)
     out = await search(SearchBody(query="capital of Burkina Faso", num_results=5))
     assert out["backend"] == "none"
     assert "refused" in out["results"]

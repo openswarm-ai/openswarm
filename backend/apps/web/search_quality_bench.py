@@ -138,9 +138,6 @@ async def p_run_engine(name: str, query: str, expected: str, limit: int) -> Dict
         elif name == "brave":
             from backend.apps.agents.tools.search.search_brave import search_brave
             text = (await search_brave(query, limit)).results
-        elif name == "startpage":
-            from backend.apps.agents.tools.search.search_startpage import search_startpage
-            text = (await search_startpage(query, limit)).results
         else:
             raise ValueError(f"unknown engine {name}")
     except Exception as exc:
@@ -158,7 +155,7 @@ async def p_run_engine(name: str, query: str, expected: str, limit: int) -> Dict
 
 @typechecked
 async def run_per_engine(engines: Optional[List[str]] = None, limit: int = 5) -> Dict:
-    names = engines or ["ddg", "bing", "brave", "startpage"]
+    names = engines or ["ddg", "bing", "brave"]
     out: Dict[str, Dict] = {}
     for name in names:
         rows: List[Dict] = []
