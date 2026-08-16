@@ -11,6 +11,12 @@ export interface SessionOrigin {
 /** A run that is still working, so its card is worth having on screen. */
 const LIVE_STATUSES: ReadonlySet<string> = new Set(['running', 'waiting_approval']);
 
+/** True for a helper session (sub/browser/invoked agent) whose card can only exist by an explicit
+ * reveal click; reconcile must never delete such a card while its session lives (ENG-304). */
+export function isPlumbingSession(session: SessionOrigin): boolean {
+  return PLUMBING_MODES.has(session.mode);
+}
+
 /** True for a chat the user started themselves, which is the only kind that earns a notification. */
 export function isUserLaunchedSession(session: SessionOrigin): boolean {
   return !session.workflow_run_id && !session.workflow_edit_id && !PLUMBING_MODES.has(session.mode);

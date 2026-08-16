@@ -88,6 +88,7 @@ P_RELEASES: List[ReleaseNote] = [
             "An agent that sent work to a browser can no longer hang forever when the finished result gets lost on the way back; it notices, recovers, and redoes the step.",
             "The app opens seconds faster on machines with a crowded system temp folder. File uploads moved into OpenSwarm's own folder, so startup no longer pays a toll that grew with years of temp-file clutter.",
             "Clicking a chat in the sidebar or history now frames the whole card. The camera used to aim at the chat's collapsed footprint, so an opened chat could land with its bottom half off-screen and need a manual pan after every autofocus.",
+            "Starting a new chat no longer makes another agent's revealed subagents disappear from the canvas. Their cards were being cleaned up as strays by the same pass that places the new one.",
             "Heavy sessions no longer vanish without a trace. When memory climbs past the safe line the app now sheds weight itself: preview thumbnails pause and refetchable caches drop, instead of growing until the operating system kills it mid-task.",
         ],
     ),
