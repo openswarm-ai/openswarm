@@ -558,6 +558,22 @@ TIER 3 (gated/expensive — pilot only if Tier 1-2 leave a gap):
 NOT ingested (out of scope / already have): per-site tips files (task-specific), combobox
 flattening (we have native pickers), fine-tuned transfer weights (specialist).
 
+## PRE-REGISTERED (2026-08-15, before any v36/v37 episode): first two ingestion pilots
+
+v37 NOTE SCRATCHPAD pilot — targets (8): form-sequence-3, hot-cold, search-engine, text-editor
+(MiniWoB losses needing running state) + 4 unsolved long CompWoB compositions (7-8-part +
+checkbox-transfer chains, cross-section bookkeeping). Prediction: >=2/8 flip, controls 12/12
+(gate: collection/aggregate goal words — controls' goals lack them, so the block never renders).
+The REAL payoff target is chore/WebArena aggregation (measured later via delta reruns); this
+pilot verifies mechanism safety + short-horizon lift.
+
+v36 NO_MATCH REFUSAL pilot — targets (8): click-menu, search-engine, click-collapsible-2 pair
+(near-miss-prone MiniWoB losses) + 4 dialog-first/widget CompWoB losses where a wrong click is
+terminal. Prediction: >=2/8 flip, controls 12/12 (no_match only fires when chosen; wrong-click
+replacement is strictly safer than the click it replaces).
+
+Order: v37 then v36, sequential, immediately after the Claude chore column finishes (auto-chained).
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
