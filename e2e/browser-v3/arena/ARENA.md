@@ -674,6 +674,17 @@ mechanism. CompWoB champion stays 81.1%; we do NOT pass the browser-use library 
 not manufacture a pass. The remaining 0.9 is genuine and named (the deep-composition cluster +
 6 crash-excluded login pages). Per the standing directive: remain behind and report it.
 
+## WebArena v40 rerun on reddit+gitlab partition (2026-08-16): still 0 strict
+
+**0/~85 solved, partial-sum ~2.1, 0 false, ~50s median** — vs v22's 0 strict / 6 partials
+(3.83). The v40 ingestions (table-markdown, escape token) did NOT help WebArena; if anything
+slightly fewer partials (noise). Honest conclusion: WebArena's binding constraint is long-horizon
+multi-step task COMPLETION (find→navigate→act→verify across many pages), which no perception or
+refusal tweak addresses — same wall as WebChoreArena (1-2/91). Goal >=65 stays OPEN and is
+field-hard (SOTA 74, generic agents mostly far below, our hard reddit+gitlab partition is the
+punishing end). Shopping phase-2 blocked on ~20-30GB magento images (absent, disclosed). We do
+match/beat the browser-use LIBRARY here (both 0 solved; ours leads partials + speed + 0-false).
+
 ## Champion v40 3-seed MiniWoB (2026-08-16): 90.7 (88.0 / 92.8 / 91.2)
 
 +0.2 vs v35 (90.5); best two seeds at 92.8/91.2 show the config ceiling. The ingestion wins
