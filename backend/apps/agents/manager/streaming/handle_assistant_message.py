@@ -118,42 +118,46 @@ async def handle_assistant_message(
             or ("provided authentication token" in lower_text and ("401" in lower_text or "expired" in lower_text))
         )
         if looks_like_router_auth_error:
-            if "codex/" in lower_text or "[codex" in lower_text:
-                friendly = (
-                    "GPT subscription token expired. Open Settings → Models and click "
-                    "Reconnect on the OpenAI / GPT row to refresh, should take ~10s, "
-                    "then send your message again."
+            from backend.apps.agents.manager.streaming.auth_retry import try_auth_self_heal
+            # First expiry in this ask heals silently (fresh CLI + hidden retry); the banner is
+            # reserved for the second failure, when the credential is genuinely dead (ENG-294).
+            if not try_auth_self_heal(session):
+                if "codex/" in lower_text or "[codex" in lower_text:
+                    friendly = (
+                        "GPT subscription token expired. Open Settings → Models and click "
+                        "Reconnect on the OpenAI / GPT row to refresh, should take ~10s, "
+                        "then send your message again."
+                    )
+                    reason = "codex_token_expired"
+                elif "gemini-cli/" in lower_text or "[gemini" in lower_text:
+                    friendly = (
+                        "Gemini subscription token expired. Open Settings → Models and click "
+                        "Reconnect on the Google / Gemini row, then send your message again."
+                    )
+                    reason = "gemini_token_expired"
+                else:
+                    friendly = (
+                        "Provider authentication expired. Open Settings → Models and "
+                        "reconnect, then send your message again."
+                    )
+                    reason = "router_auth_expired"
+                err_msg = Message(
+                    id=uuid4().hex,
+                    role="system",
+                    content=friendly,
+                    branch_id=session.active_branch_id,
                 )
-                reason = "codex_token_expired"
-            elif "gemini-cli/" in lower_text or "[gemini" in lower_text:
-                friendly = (
-                    "Gemini subscription token expired. Open Settings → Models and click "
-                    "Reconnect on the Google / Gemini row, then send your message again."
-                )
-                reason = "gemini_token_expired"
-            else:
-                friendly = (
-                    "Provider authentication expired. Open Settings → Models and "
-                    "reconnect, then send your message again."
-                )
-                reason = "router_auth_expired"
-            err_msg = Message(
-                id=uuid4().hex,
-                role="system",
-                content=friendly,
-                branch_id=session.active_branch_id,
-            )
-            session.messages.append(err_msg)
-            await ws_manager.send_to_session(session_id, "agent:auth_error", {
-                "session_id": session_id,
-                "reason": reason,
-                "message": friendly,
-                "model": session.model,
-            })
-            await ws_manager.send_to_session(session_id, "agent:message", {
-                "session_id": session_id,
-                "message": err_msg.model_dump(mode="json"),
-            })
+                session.messages.append(err_msg)
+                await ws_manager.send_to_session(session_id, "agent:auth_error", {
+                    "session_id": session_id,
+                    "reason": reason,
+                    "message": friendly,
+                    "model": session.model,
+                })
+                await ws_manager.send_to_session(session_id, "agent:message", {
+                    "session_id": session_id,
+                    "message": err_msg.model_dump(mode="json"),
+                })
         else:
             asst_msg = Message(
                 id=turn.stream_text_msg_id or uuid4().hex,

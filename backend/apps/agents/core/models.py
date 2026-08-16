@@ -139,6 +139,8 @@ class AgentSession(BaseModel):
     pending_continuation_toolless: bool = False
     # Silent-quit nudges spent since the user's last real message; hard-capped so an agent that keeps ending empty can't loop.
     empty_finish_nudges: int = 0
+    # One transparent expired-token retry per user ask; the second failure earns the honest banner (ENG-294).
+    auth_retry_used: bool = False
     # Tool-call count at the last nudge: a re-nudge is only earned by NEW tool work since then.
     empty_finish_progress_mark: int = 0
     # One honest "stopped without a report" line per exhausted nudge budget; resets with the budget.

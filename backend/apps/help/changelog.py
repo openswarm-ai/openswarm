@@ -90,6 +90,7 @@ P_RELEASES: List[ReleaseNote] = [
             "Clicking a chat in the sidebar or history now frames the whole card. The camera used to aim at the chat's collapsed footprint, so an opened chat could land with its bottom half off-screen and need a manual pan after every autofocus.",
             "Starting a new chat no longer makes another agent's revealed subagents disappear from the canvas. Their cards were being cleaned up as strays by the same pass that places the new one.",
             "Workflow run history shows each run's workflow name instead of the word \"Workflow\" on every row. The name now travels with the run, so it survives renames and deleted workflows.",
+            "An expired provider login heals itself mid-chat: the first failure rebuilds the connection and retries your message with zero clicks, and only a second failure asks you to reconnect. It used to take six manual steps every time a token aged out.",
             "Heavy sessions no longer vanish without a trace. When memory climbs past the safe line the app now sheds weight itself: preview thumbnails pause and refetchable caches drop, instead of growing until the operating system kills it mid-task.",
         ],
     ),
