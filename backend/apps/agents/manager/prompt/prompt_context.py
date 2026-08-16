@@ -442,7 +442,13 @@ AGENT_IDENTITY = (
 @typechecked
 def compose_system_prompt(default_prompt: Optional[str], mode_prompt: Optional[str], session_prompt: Optional[str], browser_ctx: Optional[str] = None, mcp_registry_ctx: Optional[str] = None, skills_catalog_ctx: Optional[str] = None) -> Optional[str]:
     # Identity always leads so it overrides the preset's Claude Code persona, even when the user has no custom default/mode/session prompt of their own.
-    parts = [AGENT_IDENTITY] + [p for p in (default_prompt, mode_prompt, session_prompt, mcp_registry_ctx, skills_catalog_ctx, browser_ctx) if p]
+    # The session prompt goes LAST with explicit priority framing: buried mid-prompt it was delivered but ignored on turn one (Haik's hackathon blocker; live-proven with a marker token both ways).
+    framed_session = (
+        "## Instructions from your operator (highest priority)\n"
+        "The person who configured this agent wrote the following. Follow it over any earlier "
+        "guidance in this prompt, starting from your very first reply.\n\n" + session_prompt
+    ) if session_prompt else None
+    parts = [AGENT_IDENTITY] + [p for p in (default_prompt, mode_prompt, mcp_registry_ctx, skills_catalog_ctx, browser_ctx, framed_session) if p]
     return "\n\n".join(parts)
 
 
