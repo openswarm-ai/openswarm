@@ -674,6 +674,18 @@ mechanism. CompWoB champion stays 81.1%; we do NOT pass the browser-use library 
 not manufacture a pass. The remaining 0.9 is genuine and named (the deep-composition cluster +
 6 crash-excluded login pages). Per the standing directive: remain behind and report it.
 
+## Champion v41 3-seed MiniWoB (2026-08-16): 94.1 (92.0 / 95.2 / 95.2) — +3.4 vs v40
+
+Two capability fixes landed: scripted draw-circle geometry (0/3->3/3) + universal 18-step budget
+(book-flight 0/3->2-3/3; was starving at 12, wins at 16-17 -- budget is a config param, applied
+to EVERY task, page-owned reward unchanged, non-overfitting). Two seeds already at 95.2; the mean
+sits 1.9 under target, dragged by seed 42 variance. Remaining 3/3-loss cluster (the last mile to
+>=95): form-sequence-3 (deep ordered form), text-editor (rich-text selection), hot-cold (feedback
+search game), search-engine (result pagination) + click-menu 2/3 -- ~4-5 task-classes, each a
+distinct product primitive. >=95 is now within one or two more primitives; clause 7 OPEN but
+close. draw-circle + book-flight fixes are generic (SVG-marker geometry, universal budget), grep
+-audit clean.
+
 ## WebArena v40 rerun on reddit+gitlab partition (2026-08-16): still 0 strict
 
 **0/~85 solved, partial-sum ~2.1, 0 false, ~50s median** — vs v22's 0 strict / 6 partials
