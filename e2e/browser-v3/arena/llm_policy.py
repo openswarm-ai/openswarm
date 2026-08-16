@@ -884,29 +884,74 @@ cover out of the way -- drag it aside by its titlebar with drag_and_drop if the 
 kept open, or close/dismiss it if the goal doesn't -- then retry the original click. If the goal
 says to interact with the covering element LATER, moving it aside now keeps that order intact."""
 
-CALL_RE = re.compile(
+_VERB_RE = re.compile(
     r"\b(click|dblclick|fill|clear|select_option|hover|focus|press|scroll|drag_and_drop|noop"
     r"|mouse_click|mouse_dblclick|mouse_move|mouse_drag_and_drop|keyboard_type|keyboard_press"
-    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible|no_match|draw_circle)\s*\([^)]*\)")
+    r"|goto|go_back|go_forward|send_msg_to_user|report_infeasible|no_match|draw_circle)\s*\(")
+# Kept for callers that only need the verb set; payload capture is now the quote-aware scanner.
+CALL_RE = _VERB_RE
 
 
-def clean_action(raw: str) -> str:
-    """Pull the one action call out of whatever the model wrapped it in; empty means unparseable."""
-    if not raw:
-        return ""
-    text = raw.strip().strip("`")
-    text = re.sub(r"^(python|json|tool_code)\s*", "", text)
-    m = CALL_RE.search(text)
-    return m.group(0) if m else ""
+def _scan_call(text: str, start: int) -> tuple[str, int] | None:
+    """From the '(' at/after `start`, return (full_call, end_index) scanning to the matching ')'
+    while respecting quoted strings -- so an answer like send_msg_to_user("...(empathy-prompts)...")
+    is captured whole instead of truncated at the first inner ')' (measured: 134/201 WA send
+    attempts died to the old first-')' regex)."""
+    op = text.find("(", start)
+    if op < 0:
+        return None
+    depth, i, quote, esc = 0, op, "", False
+    while i < len(text):
+        c = text[i]
+        if quote:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == quote:
+                quote = ""
+        else:
+            if c in "\"'":
+                quote = c
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1], i + 1
+        i += 1
+    # Unterminated (model ran out of budget mid-string): close it so the call still parses.
+    return text[start:] + '")' if quote else text[start:] + ")", len(text)
 
 
-def clean_actions(raw: str, limit: int = 3) -> list[str]:
-    """All action calls in the reply, in order, capped -- the multi-action variant of clean_action."""
+def _extract_calls(raw: str, limit: int) -> list[str]:
     if not raw:
         return []
     text = raw.strip().strip("`")
     text = re.sub(r"^(python|json|tool_code)\s*", "", text)
-    return [m.group(0) for m in CALL_RE.finditer(text)][:limit]
+    out, pos = [], 0
+    while len(out) < limit:
+        m = _VERB_RE.search(text, pos)
+        if not m:
+            break
+        scanned = _scan_call(text, m.start())
+        if not scanned:
+            break
+        call, end = scanned
+        out.append(call)
+        pos = max(end, m.end())
+    return out
+
+
+def clean_action(raw: str) -> str:
+    """Pull the one action call out of whatever the model wrapped it in; empty means unparseable."""
+    calls = _extract_calls(raw, 1)
+    return calls[0] if calls else ""
+
+
+def clean_actions(raw: str, limit: int = 3) -> list[str]:
+    """All action calls in the reply, in order, capped -- the multi-action variant of clean_action."""
+    return _extract_calls(raw, limit)
 
 
 SPATIAL_HINTS = re.compile(r"circle|angle|midpoint|draw|drag|shape|slider|point|pie|line|grid|color\b", re.I)

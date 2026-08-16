@@ -184,8 +184,15 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                 pass
         return ep
     ep.setup_s = time.time() - t_setup
-    ep.goal = str(obs.get("goal") or "")[:600]
-    policy.reset(ep.goal)
+    # The FULL goal drives the policy -- WebArena Verified appends a ~2-4KB required-answer JSON
+    # schema that a 600-char cut destroyed, so the model never saw the fields the evaluator checks
+    # and every WA episode was capped below 1.0 regardless of browsing (instrument bug, not skill).
+    # Only the recorded copy is truncated, to keep the book compact.
+    full_goal = str(obs.get("goal") or "")
+    ep.goal = full_goal[:600]
+    policy.reset(full_goal)
+    # Route the untruncated goal to act(); ep.goal stays the short record copy.
+    goal_for_policy = full_goal
 
     t0 = time.time()
     try:
@@ -205,7 +212,7 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                     "NO units unless the goal asked. If genuinely unknown, answer your best guess.)")
             nodes, ax_chars = perception.axtree_stats(obs)
             # The LLM call rides inside act(); urlopen's timeout does not cover every hang mode.
-            decision = with_deadline(lambda: policy.act(obs, ep.goal), args.step_timeout + 90)
+            decision = with_deadline(lambda: policy.act(obs, goal_for_policy), args.step_timeout + 90)
             perceive_ms = (time.time() - t_perc) * 1000
             tgt = ""
             i2b, rnames = getattr(policy, "index_to_bid", None), getattr(policy, "row_names", None)
