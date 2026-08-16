@@ -312,7 +312,8 @@ async def websocket_runtime_logs(websocket: WebSocket, workspace_id: str, instan
                 "port": rt.port,
                 "backend_url": f"http://127.0.0.1:{rt.port}" if rt.running and rt.port else None,
                 "frontend_port": rt.frontend_port,
-                "frontend_url": rt.frontend_url if rt.running else None,
+                # The property is the one honest gate (crashed/suspended vite -> None, static -> serve URL); a duplicate running check here nulled every serve-static app's URL, whose card then waited forever on a process that never exists (the "Starting preview" wedge).
+                "frontend_url": rt.frontend_url,
                 "is_new_mode": rt.is_new_mode,
             },
         }
