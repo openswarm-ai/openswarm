@@ -534,6 +534,9 @@ async def subscriptions_poll(body: dict):
             p_sync(load_settings().model_dump())
             from backend.apps.subscription.free_trial import clear_free_trial_on_connect
             await clear_free_trial_on_connect()
+            # Background so the UI's "Connected" lands instantly; the bounce takes ~5-10s (ENG-315).
+            from backend.apps.nine_router.bounce_after_connect import bounce_router_after_connect
+            asyncio.create_task(bounce_router_after_connect(provider))
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
