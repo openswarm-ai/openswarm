@@ -637,6 +637,18 @@ wins — use-autocomplete pair, choose-list — largely overlap table_md's). Cha
 MiniWoB (the >=95 attempt) launched: book-flight, read-table, autocomplete, collapsible
 clusters all newly winnable vs the 90.5 baseline.
 
+## Champion v40 3-seed MiniWoB (2026-08-16): 90.7 (88.0 / 92.8 / 91.2)
+
++0.2 vs v35 (90.5); best two seeds at 92.8/91.2 show the config ceiling. The ingestion wins
+GENERALIZED across seeds — read-table, choose-list, click-collapsible-2, social-media-all all
+3/3 (each was a loss or partial before) — but seed 42 gave back the gains via one-off variance
+in unrelated tasks (click-shape, daily-calendar, form-sequence, number-checkboxes, tic-tac-toe:
+the flaky tail, none ingestion-related). use-autocomplete 1/3 (mutation_diff, its winner, is
+demoted). book-flight stays budget-bound (wins at 24 steps, standard budget is 12 — booked as
+a runway question, not capability). The >=95 clause still requires the named product primitives
+(draw-circle geometry, drag-items-grid, click-menu, hot-cold) plus variance suppression on the
+flaky tail — prompt-side ingestion has likely plateaued at ~91-93.
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
