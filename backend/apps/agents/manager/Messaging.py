@@ -14,7 +14,7 @@ from backend.apps.agents.core.models import AgentSession, Message, MessageBranch
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.agents.manager.run_browser_fast_path import run_browser_fast_path
-from backend.apps.agents.manager.session.session_store import load_session_data
+from backend.apps.agents.manager.session.session_store import snapshot_session_now, load_session_data
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
 from backend.apps.agents.manager.prompt.prompt_context import resolve_mode
@@ -128,6 +128,7 @@ class Messaging(AgentManagerProtocol):
             client_message_id=client_message_id,
         )
         session.messages.append(user_msg)
+        snapshot_session_now(session)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": user_msg.model_dump(mode="json"),
@@ -269,6 +270,7 @@ class Messaging(AgentManagerProtocol):
             attached_skills=target_msg.attached_skills,
         )
         session.messages.append(edited_msg)
+        snapshot_session_now(session)
 
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,

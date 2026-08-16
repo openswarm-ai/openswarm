@@ -16,7 +16,7 @@ from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
-from backend.apps.agents.manager.session.session_store import load_session_data
+from backend.apps.agents.manager.session.session_store import snapshot_session_now, load_session_data
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,7 @@ class SpawnAgentRun(AgentManagerProtocol):
             branch_id=child.active_branch_id,
         )
         child.messages.append(user_msg)
+        snapshot_session_now(child)
         await ws_manager.send_to_session(child.id, "agent:message", {
             "session_id": child.id,
             "message": user_msg.model_dump(mode="json"),

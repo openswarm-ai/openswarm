@@ -55,3 +55,19 @@ def build_search_text(session: AgentSession, max_len: int = 5000) -> str:
             parts.append(msg.content)
     text = " ".join(parts)
     return text[:max_len]
+
+
+@typechecked
+def snapshot_session_now(session: AgentSession) -> None:
+    """Write the session to disk immediately, swallowing failure. Called the moment a user message
+    is appended: sessions used to reach disk only at turn END, so a backend death mid-turn destroyed
+    the whole conversation (404, zero bytes) if it was the first turn, and ate the turn's user
+    message otherwise (ENG-313). One bounded whole-file write per send, same cost as the existing
+    end-of-turn save; a disk hiccup must never break the send itself."""
+    try:
+        doc = session.model_dump(mode="json")
+        doc["search_text"] = build_search_text(session)
+        save_session(session.id, doc)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("snapshot_session_now failed for %s", session.id, exc_info=True)

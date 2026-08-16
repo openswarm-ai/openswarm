@@ -17,7 +17,7 @@ from backend.apps.agents.core.models import (
 )
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
-from backend.apps.agents.manager.session.session_store import load_session_data
+from backend.apps.agents.manager.session.session_store import snapshot_session_now, load_session_data
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.session.workspace_git import (
     detect_git_identity,
@@ -245,6 +245,7 @@ class AgentLaunch(AgentManagerProtocol):
             branch_id=fork.active_branch_id,
         )
         fork.messages.append(user_msg)
+        snapshot_session_now(fork)
         await ws_manager.send_to_session(fork.id, "agent:message", {
             "session_id": fork.id,
             "message": user_msg.model_dump(mode="json"),
