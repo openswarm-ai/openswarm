@@ -4,7 +4,6 @@ indicator as the value and dropped the indented block below it. One parser now s
 registry and the upload path, and it reads block scalars.
 """
 from backend.apps.skill_registry.skill_registry_github import parse_frontmatter
-from backend.apps.skills.skills import p_parse_skill_frontmatter
 
 
 def test_literal_block_scalar_reads_the_indented_text():
@@ -31,5 +30,9 @@ def test_empty_block_scalar_yields_empty_not_the_indicator():
 
 
 def test_upload_path_uses_the_same_parser():
-    meta = p_parse_skill_frontmatter("---\ndescription: |-\n  Uploaded skill.\n---\n")
-    assert meta["description"] == "Uploaded skill."
+    # p_parse_skill_frontmatter is file-private to skills.py; assert the delegation in source so
+    # the two paths can never drift back into separate parsers (the bug was exactly that fork).
+    import backend.apps.skills.skills as skills_mod
+    src = open(skills_mod.__file__).read()
+    body = src[src.index("def p_parse_skill_frontmatter"):]
+    assert "parse_frontmatter(raw)[0]" in body.split("def ", 2)[1]

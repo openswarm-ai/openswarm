@@ -17,7 +17,7 @@ import logging
 
 from typeguard import typechecked
 
-from backend.apps.nine_router import process as p_router
+from backend.apps.nine_router import process as router_process
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,10 @@ async def bounce_router_after_connect(provider: str) -> bool:
     token family to death); never raises, a failed bounce leaves the watchdog to revive."""
     try:
         logger.info(f"bouncing 9Router after {provider} connect so its dispatch state is rebuilt")
-        p_router.stop()
+        router_process.stop()
         await asyncio.sleep(0.5)
-        await p_router.ensure_running()
-        return p_router.is_running()
+        await router_process.ensure_running()
+        return router_process.is_running()
     except Exception:
         logger.warning("post-connect router bounce failed; watchdog will revive", exc_info=True)
         return False

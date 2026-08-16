@@ -9,7 +9,7 @@ now live under DATA_ROOT, created lazily on first use, and the GC loop sweeps th
 import ast
 import os
 
-from backend.apps.settings.settings import legacy_upload_dir, upload_dir
+from backend.apps.settings.settings import legacy_upload_dir
 
 
 def test_no_module_level_tempdir_or_makedirs():
