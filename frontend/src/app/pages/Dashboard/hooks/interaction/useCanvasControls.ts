@@ -8,6 +8,7 @@ import { getWebview } from '@/shared/browserRegistry';
 import { applyBrowserZoom } from '@/shared/browserZoom';
 import { syncTiledGeometry } from '../../canvas/tiledGeometry';
 import { revealZoom, REVEAL_MIN_ZOOM } from '../../canvas/revealZoom';
+import { classifyWheelDevice } from './classifyWheelDevice';
 
 // Surfaces that are WINDOWS, not canvas cards: they behave like an OS window, so a wheel inside one
 // belongs to it whether or not you clicked in first. Canvas cards (agent, browser, view) keep the
@@ -39,7 +40,6 @@ const WHEEL_ZOOM_DELTA_CAP = 24;
 // big integer no-X delta = mouse); events inside a burst inherit the previous verdict because a
 // physical device can't change mid-gesture, which keeps momentum-glide events panning.
 const WHEEL_STREAM_GAP_MS = 150;
-const MOUSE_NOTCH_MIN_DELTA = 40;
 
 // Maps the 1 to 100 user setting to an internal multiplier. Recentered twice (Eric): 2026-07-24
 // made the old max the new 50, and 2026-08-08 turned it up again so 50 feels like the old 75; the
@@ -301,15 +301,8 @@ export function useCanvasControls(
       const inStream = e.timeStamp - lastWheelDeviceAt < WHEEL_STREAM_GAP_MS;
       lastWheelDeviceAt = e.timeStamp;
       if (inStream) return lastWheelWasTrackpad;
-      // Chromium stamps discrete wheel notches with legacy wheelDeltaY = ticks*120; trackpads report 3x the pixel delta. This catches slow mouse notches that macOS acceleration shrinks below any pixel threshold.
-      const legacy = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0;
-      let trackpad: boolean;
-      if (e.deltaMode !== 0) trackpad = false;
-      else if (legacy !== 0 && legacy % 120 === 0 && dx === 0) trackpad = false;
-      else if (dx !== 0 || !Number.isInteger(dy)) trackpad = true;
-      else trackpad = Math.abs(dy) < MOUSE_NOTCH_MIN_DELTA;
-      lastWheelWasTrackpad = trackpad;
-      return trackpad;
+      lastWheelWasTrackpad = classifyWheelDevice(e as WheelEvent & { wheelDeltaY?: number }, dx, dy);
+      return lastWheelWasTrackpad;
     };
 
     const flushWheel = () => {
