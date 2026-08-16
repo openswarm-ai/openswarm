@@ -595,6 +595,20 @@ VERDICTS (2026-08-16):
   don't need durable memory; the REAL test is chore-scale aggregation, which needs an uncapped
   chore rerun (expensive, deferred). Flag stays off in champion until that evidence exists.
 
+## PRE-REGISTERED (2026-08-16, before any v38/v39 episode): remaining Tier-1 pilots
+
+v38 TABLE->MARKDOWN pilot — targets (8): read-table, read-table-2, social-media, book-flight
+pair, order-food, stock-market, phone-book (table/list-heavy pages). Prediction: >=2/8 flip
+(read-table family + one flight/list task), controls 12/12 (no table on the page -> block
+renders nothing).
+
+v39 MUTATION-DIFF pilot — targets (8): book-flight pair, use-autocomplete pair, choose-list,
+form-sequence-3, search-engine, click-menu (pages that REACT to actions with popups/new rows).
+Prediction: >=2/8 flip (autocomplete family especially), controls 12/12 (delta line is small and
+only appears when the page actually changed).
+
+Order: v38 then v39, sequential, auto-chained.
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
