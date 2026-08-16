@@ -609,6 +609,16 @@ only appears when the page actually changed).
 
 Order: v38 then v39, sequential, auto-chained.
 
+VERDICTS (2026-08-16): **both PASS decisively, controls 12/12 each.**
+- v38 table->markdown: **7/8** — book-flight AND book-flight-nodelay (3-seed losers in every
+  regression run), read-table, read-table-2, order-food, phone-book, social-media.
+- v39 mutation-diff: **5/8** — book-flight pair AGAIN independently, use-autocomplete pair,
+  choose-list. The flight-search cluster is now winnable by two separate mechanisms.
+Three of four Tier-1 ingestions passed (v36, v38, v39); v37 deferred to chore-scale. v40
+champion re-registered as the UNION (escape_token + table_md + mutation_diff). Per method,
+a combined CONFIRMATION pilot (union of the three target sets + 12 controls) runs before the
+champion 3-seed — passed-alone does not guarantee passed-together (interaction risk).
+
 ## Open-source / SOTA reference points (2026 leaderboards, for honest comparison)
 
 - WebArena: SOTA WebTactix/DeepSeek-v3.2 74.3%; frontier models 64-68%; human 78. (leaderboard.steel.dev)
