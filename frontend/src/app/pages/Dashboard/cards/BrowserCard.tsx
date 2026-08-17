@@ -1176,8 +1176,11 @@ const BrowserCard: React.FC<Props> = ({
   // browser and drags that instead of the chat. Follow the parent's live rect while it is collapsed.
   const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !dockParked
     && !dragging && !localResize && !isTiled && !isMinimized && !keepAliveHidden;
-  const followX = followsParent && dockParentCard ? dockParentCard.x + dockParentCard.width + GRID_GAP * 12 : null;
-  const followY = followsParent && dockParentCard ? dockParentCard.y : null;
+  // Under the pill, not beside it: beside-at-pill-height read as a detached window fighting the
+  // pill's ring and shadow (Eric, 2026-08-17); tucked below the collapsed pill it reads as the
+  // chat's own attachment, the same visual contract as the docked mini inside an expanded chat.
+  const followX = followsParent && dockParentCard ? dockParentCard.x : null;
+  const followY = followsParent && dockParentCard ? dockParentCard.y + 52 : null;
   const tiledSize = useTiledCard({ cardId: browserId, zone: tileZone, active: !keepAliveHidden && !isMinimized && !dockParked, originX: displayX, originY: displayY, getCamera: getCanvasState });
   const pillShotPaintable = !!pillShotOwner && !dockParked && !isMinimized && !keepAliveHidden && !suspendedSnap;
   useEffect(() => {
@@ -1267,9 +1270,9 @@ const BrowserCard: React.FC<Props> = ({
         height: tiledSize ? tiledSize.height : displayH,
         borderRadius: tileZone === 'fullscreen' ? '12px' : dockActive ? '12px' : `${c.radius.lg}px`,
         // Docked = an embedded block, not a floating window: a drop shadow and heavy accent frame read as a detached card pasted over the chat.
-        border: dockActive ? `1px solid ${c.border.medium}` : agentBorder,
+        border: dockActive || followsParent ? `1px solid ${c.border.medium}` : agentBorder,
         bgcolor: c.bg.surface,
-        boxShadow: dockActive ? 'none' : agentShadow,
+        boxShadow: dockActive || followsParent ? 'none' : agentShadow,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
