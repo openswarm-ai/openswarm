@@ -1,0 +1,18 @@
+# Runner pool app: one MACHINE per published backend app, created by openswarm-cloud via the
+# Machines API; this toml exists for the initial `fly deploy` that builds/pushes the image and
+# for staging smoke. Machines are addressed by fly-force-instance-id from the edge.
+app = "openswarm-apprunner"
+primary_region = "sjc"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
