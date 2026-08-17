@@ -11,6 +11,8 @@ writes route through here so there's a single source of truth.
 """
 
 # browser_id -> cached Anthropic message list for resume.
+from typeguard import typechecked
+
 BROWSER_HISTORY: dict[str, list[dict]] = {}
 # Cap history to prevent unbounded growth on long-lived browsers.
 MAX_HISTORY_MESSAGES = 30
@@ -30,6 +32,26 @@ def set_domain_note(domain: str, note: str) -> None:
     if not domain or not note or not note.strip():
         return
     DOMAIN_NOTES[domain] = note.strip()[:MAX_DOMAIN_NOTE_CHARS]
+
+
+REFUSAL_MARKERS = (
+    "i cannot execute",
+    "i can't execute",
+    "i am a text-based ai",
+    "i'm a text-based ai",
+    "i do not have access to tools",
+    "i don't have access to tools",
+    "i can only execute synchronous",
+    "cannot perform tool calls",
+)
+
+
+@typechecked
+def refusal_shaped_summary(summary: str) -> bool:
+    """A summary claiming toollessness is a self-belief no later agent should inherit: cached, it
+    became the next dispatch's own memory and locked a card into refusing forever."""
+    lowered = summary.lower()
+    return any(m in lowered for m in REFUSAL_MARKERS)
 
 
 def clear_browser_history(browser_id: str) -> None:

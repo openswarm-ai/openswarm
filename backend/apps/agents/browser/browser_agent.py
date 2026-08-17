@@ -31,6 +31,7 @@ from backend.apps.agents.browser.browser_history import (
     trim_history_by_turns,
     validate_message_pairing,
     clear_browser_history,
+    refusal_shaped_summary,
     PAGE_STATE_MARKER,
 )
 from backend.apps.agents.browser.browser_loop import (
@@ -3108,9 +3109,14 @@ async def run_browser_agent(
                 pass
 
         # Persist conversation history so the next BrowserAgent call on this browser can resume rather than re-orient. Trim to the most recent MAX_HISTORY_MESSAGES turns to keep token usage bounded; but never split a tool_use ↔ tool_result pair across the cut, or the next API request will 400.
-        browser_history.BROWSER_HISTORY[browser_id] = trim_history_by_turns(
-            messages, MAX_HISTORY_MESSAGES,
-        )
+        # UNLESS the run was a refusal: a cached "I'm a text-based AI, I cannot call tools" transcript becomes the NEXT agent's own memory, and same-host reuse hands every retry the same poisoned card, which made one bad run permanently unrecoverable (Haik, 2026-08-16).
+        if refusal_shaped_summary(summary):
+            clear_browser_history(browser_id)
+            logger.warning(f"[browser-agent {session_id}] refusal-shaped run; cleared {browser_id} history so the next dispatch starts clean")
+        else:
+            browser_history.BROWSER_HISTORY[browser_id] = trim_history_by_turns(
+                messages, MAX_HISTORY_MESSAGES,
+            )
 
         # Honesty gate: the model declaring done is not proof the goal happened. If the run did no real work (zero actions, all actions errored, or only looked around), report the truth instead of a ghost "completed". A gone card gets its own precise reason instead of the generic verdict.
         if card_gone_streak >= CARD_GONE_LIMIT:
@@ -3128,6 +3134,8 @@ async def run_browser_agent(
                 f"[browser-agent {session_id}] completion gate caught a ghost: "
                 f"model declared done but {dishonest_reason}; reporting as error"
             )
+            # A ghost run's transcript is exactly the memory the next agent must not inherit.
+            clear_browser_history(browser_id)
 
         session.status = final_status
         logger.info(
@@ -3573,10 +3581,12 @@ async def run_browser_agents(
             # very first request can already carry the session. Outside the pick lock: it can touch
             # the keychain, and holding a lock across that would serialize every card creation.
             await borrow_signin_before_nav(host_src, "")
+            p_fresh = bool(task_def.get("fresh"))
             async with p_card_pick_lock:
                 # Before allocating, collect what earlier runs left behind, else a session's cards only ever grow.
                 await reap_idle_agent_cards(dashboard_id)
-                browser_id = find_reusable_card(dashboard_id, host_src, parent_session_id)
+                # fresh=true is the caller's escape hatch from a misbehaving same-site card (a refused/poisoned run); reuse is still the default so webviews don't stack.
+                browser_id = None if p_fresh else find_reusable_card(dashboard_id, host_src, parent_session_id)
                 if browser_id:
                     reused = True
                 else:
@@ -3586,6 +3596,10 @@ async def run_browser_agents(
                 ACTIVE_AGENT_CARDS.add(browser_id)
             if reused:
                 logger.info(f"[browser-agent] reusing same-host card {browser_id} instead of stacking another webview")
+                task_def["p_reused_note"] = (
+                    f"[note: reused existing browser {browser_id} with its prior conversation; "
+                    "pass fresh=true to CreateBrowserAgent if you need a clean one]"
+                )
                 if url:
                     # a retry starts from the task's entry URL, never the failed attempt's leftover page state
                     try:

@@ -52,6 +52,14 @@ TOOLS = [
                         "before beginning the task."
                     ),
                 },
+                "fresh": {
+                    "type": "boolean",
+                    "description": (
+                        "Force a brand-new browser card with no memory of prior runs. Use after "
+                        "a previous agent on this site misbehaved or refused; by default a "
+                        "same-site card and its conversation history are reused."
+                    ),
+                },
             },
             "required": ["task"],
         },
@@ -359,6 +367,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             "task": arguments.get("task", ""),
             "browser_id": "",
             "url": arguments.get("url", ""),
+            "fresh": bool(arguments.get("fresh", False)),
         })
 
     elif tool_name == "BrowserAgent":
