@@ -55,6 +55,7 @@ import { useClaudeTokens, DarkTokensScope } from '@/shared/styles/ThemeContext';
 import { GLASS_SURFACE, GLASS_SURFACE_BLUR, GLASS_SURFACE_TEXT } from '@/shared/styles/glassSurface';
 import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
+import { useRenderRing } from '../hooks/interaction/useRenderRing';
 import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
 import { setCardSidecar } from '@/shared/state/workflowsSlice';
@@ -723,6 +724,8 @@ const AgentCard: React.FC<Props> = ({
   );
   // Drafts collapse to the pill like everything else; only a pending approval keeps the full card, since you have to see what you are approving.
   const pillMode = !expanded && !hasPending && !tileZone;
+  // Pre-render a ring of canvas around the camera so a pan lands on already-drawn pills (ENG-301).
+  const ringNear = useRenderRing(cardX, cardY, cardWidth, cardHeight, getCanvasState, pillMode && !isFullscreen);
 
   // Two-phase expand: mounting a long transcript synchronously inside the expand click blocked its paint for ~630ms (the measured INP worst case), so the click paints the expanded shell first and the chat mounts on the next frame.
   // Keep-alive: once mounted, the chat STAYS mounted across collapse (hidden, not unmounted). The transcript windowing bounds its kept DOM to ~a screen of bubbles, and re-expand becomes a display toggle instead of a full subtree rebuild + WS reconnect.
@@ -872,7 +875,9 @@ const AgentCard: React.FC<Props> = ({
         // expanded card is the one you are reading. contain-intrinsic-size keeps a skipped card's
         // box the size it would have been, so tethers and fit-to-view still measure it correctly.
         ...(pillMode && !expanded && !isFullscreen && !tiledSize ? {
-          contentVisibility: 'auto',
+          // Inside the camera ring: force-render so arriving pans hit pre-drawn pixels (ENG-301,
+          // Eric's render-ahead call); outside it: keep the ENG-261 skip that holds big boards.
+          contentVisibility: ringNear ? 'visible' : 'auto',
           // `auto` = remember the size this card last really rendered at, falling back to the guess
           // only before its first paint. A pill is fit-content/auto sized, so a fixed guess is wrong
           // for every card and costs a relayout each time one scrolls in: measured 27.8ms p95 with a
