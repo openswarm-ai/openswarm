@@ -129,11 +129,16 @@ class ConnectionManager:
                     await ws.send_text(payload_str)
                 except Exception:
                     logger.debug("send_to_session: send failed (will retry on reconnect)", exc_info=True)
-            for ws in list(self.global_connections):
-                try:
-                    await ws.send_text(payload_str)
-                except Exception:
-                    logger.debug("send_to_session: global send failed", exc_info=True)
+            # Stream frames never ride the dashboard socket: its only client drops them unread
+            # (skipStreamEvents), so fanning them out just taxed the renderer with a parse per
+            # token, twice for an expanded chat. Session sockets carry the stream; /ws/dashboard
+            # has no replay protocol, so nothing downstream misses them.
+            if event not in ("agent:stream_start", "agent:stream_delta", "agent:stream_end"):
+                for ws in list(self.global_connections):
+                    try:
+                        await ws.send_text(payload_str)
+                    except Exception:
+                        logger.debug("send_to_session: global send failed", exc_info=True)
             # Persist under the lock so a concurrent running status can't race past and overwrite with stale state.
             if event == "agent:status" and data.get("status") in TERMINAL_STATUSES:
                 seq_log.persist_terminal(session_id, payload_str)

@@ -30,6 +30,7 @@ import {
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
+import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
 import { addBrowserCardFromBackend, setBrowserDocked, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, placeBrowserBesideChat, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeBrowserCard, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp, openWorkflowMonitor } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { setCardPosition } from '../state/dashboardLayoutSlice';
@@ -88,6 +89,9 @@ class WebSocketManager {
   private ws: WebSocket | null = null;
   private url: string;
   private skipStreamEvents: boolean;
+  private backgrounded = false;
+  private bgBuffer = new BackgroundDeltaBuffer();
+  private bgFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionId: string | null;
 
   // Resume state. lastSeq is the highest server-assigned seq this client has applied; it's sent on every (re)connect so the server can replay missed events. Persists for the lifetime of this WebSocketManager instance, when the user navigates away and a new createSessionWs() is constructed, lastSeq starts at 0 and we get a full replay.
@@ -179,7 +183,39 @@ class WebSocketManager {
       firstAgentResponseMarked = true;
       try { (window as any).openswarm?.markFirstAgentResponse?.(); } catch { /* not in Electron */ }
     }
+    if (this.backgrounded) {
+      const evicted = this.bgBuffer.add(messageId, delta);
+      if (evicted) store.dispatch(streamDelta({ sessionId, messageId: evicted.messageId, delta: evicted.text }));
+      this.armBgFlush();
+      return;
+    }
     store.dispatch(streamDelta({ sessionId, messageId, delta }));
+  }
+
+  // Backgrounded = kept alive across a chat hop with nobody watching; deltas batch to 1Hz there
+  // (ENG-329). Reopen flushes synchronously BEFORE the transcript remounts, so no text is lost.
+  setBackgrounded(value: boolean) {
+    this.backgrounded = value;
+    if (!value) this.flushBgDelta();
+  }
+
+  private armBgFlush() {
+    if (this.bgFlushTimer !== null) return;
+    this.bgFlushTimer = setTimeout(() => {
+      this.bgFlushTimer = null;
+      this.flushBgDelta();
+    }, 1000);
+  }
+
+  private flushBgDelta() {
+    if (this.bgFlushTimer !== null) {
+      clearTimeout(this.bgFlushTimer);
+      this.bgFlushTimer = null;
+    }
+    const p = this.bgBuffer.take();
+    if (p && this.sessionId) {
+      store.dispatch(streamDelta({ sessionId: this.sessionId, messageId: p.messageId, delta: p.text }));
+    }
   }
 
   connect() {
@@ -253,6 +289,7 @@ class WebSocketManager {
   }
 
   disconnect() {
+    this.flushBgDelta();
     this.explicitlyClosed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -403,6 +440,13 @@ class WebSocketManager {
       if (event === 'agent:stream_start' || event === 'agent:stream_delta' || event === 'agent:stream_end') {
         return;
       }
+    }
+
+    // A buffered background delta must land BEFORE any other event for this socket, or a
+    // stream_end / finalized message could overtake its own text and truncate the transcript.
+    if (this.bgBuffer.hasPending
+        && !(event === 'agent:stream_delta' && data?.message_id === this.bgBuffer.pendingMessageId)) {
+      this.flushBgDelta();
     }
 
     switch (event) {
@@ -1032,6 +1076,7 @@ export function acquireSessionWs(sessionId: string): WebSocketManager {
   if (_backgroundedSessionWs?.sessionId === sessionId) {
     const ws = _backgroundedSessionWs.ws;
     _backgroundedSessionWs = null;
+    ws.setBackgrounded(false);
     return ws;
   }
   warnIfNotCanonicalSessionId(sessionId, 'acquireSessionWs');
@@ -1045,6 +1090,7 @@ export function releaseSessionWs(sessionId: string, ws: WebSocketManager, keepAl
     _backgroundedSessionWs = null;
   }
   if (keepAlive) {
+    ws.setBackgrounded(true);
     _backgroundedSessionWs = { sessionId, ws };
   } else {
     ws.disconnect();
