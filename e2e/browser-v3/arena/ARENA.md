@@ -1005,3 +1005,11 @@ score-inflation lever, not a measurement. These
 stay SUPPLEMENTARY, never a primary goal clause (the 11 clauses are deterministic, judge-free).
 Note: Polar's gemini-self-judge + 'stricter than others' claim is the same vendor-picks-own-grader
 pattern we avoid.
+
+
+## CompWoB suppression spot-check (2026-08-16): no suppression, 81.1 stands
+Reran 12 bu-edge CompWoB tasks under v41 (has the quote-aware parser fix). 3/12 won -- IDENTICAL
+to v34. The paren-parser bug did NOT suppress CompWoB (its goals are MiniWoB-style with short
+answers, no long JSON answer channel where parens appeared). 81.1 stands honest, no correction.
+The instrument bug was WebArena-specific (that benchmark appends a JSON answer schema + long
+answers with parens).
