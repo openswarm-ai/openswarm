@@ -112,11 +112,46 @@ def p_is_secret_file(rel_path: str) -> bool:
     )
 
 
+P_BACKEND_SKIP_DIRS = ("__pycache__", ".venv", "node_modules", "openswarm_backend.egg-info", ".git")
+
+
+def workspace_backend_dir(output: Output) -> Optional[str]:
+    """The webapp workspace's FastAPI backend dir, when the app has one (ENG-293)."""
+    if not is_webapp(output):
+        return None
+    b = os.path.join(workspace_dir(output), "backend")
+    return b if os.path.isfile(os.path.join(b, "main.py")) else None
+
+
+def p_add_backend_tree(tar: "tarfile.TarFile", backend_dir: str) -> None:
+    """Pack the app's own backend under backend/ in the tar (source only, no caches,
+    no venv), so the hosted runner can boot the same API the preview ran locally."""
+    for root, dirs, files in os.walk(backend_dir):
+        dirs[:] = [d for d in dirs if d not in P_BACKEND_SKIP_DIRS]
+        for fn in files:
+            full = os.path.join(root, fn)
+            if os.path.islink(full):
+                continue
+            rel = "backend/" + os.path.relpath(full, backend_dir).replace(os.sep, "/")
+            if p_is_secret_file(rel) or fn.endswith((".pyc", ".pyo")):
+                continue
+            try:
+                if os.path.getsize(full) > P_MAX_BUNDLE_FILE:
+                    continue
+            except OSError:
+                continue
+            tar.add(full, arcname=rel)
+
+
 def collect_bundle(output: Output, dist_dir: Optional[str]) -> bytes:
-    """tar.gz of what the cloud should host. Webapp -> the built dist tree.
-    Flat -> the files dict, including backend.py (the edge runs it on the shared
-    sandbox; the edge refuses to serve .py as a static file). Secret-shaped files
-    (.env, private keys) are dropped: a published bundle is world-readable."""
+    """tar.gz of what the cloud should host. Webapp -> the built dist tree, PLUS the
+    app's own backend/ tree and a runspec.json when one exists, so the hosted copy
+    can run its real API instead of serving frontend-only (ENG-293). Flat -> the
+    files dict, including backend.py (the edge runs it on the shared sandbox; the
+    edge refuses to serve .py as a static file). Secret-shaped files (.env, private
+    keys) are dropped: a published bundle is world-readable."""
+    import json as p_json
+
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         if dist_dir:
@@ -134,6 +169,13 @@ def collect_bundle(output: Output, dist_dir: Optional[str]) -> bytes:
                     except OSError:
                         continue
                     tar.add(full, arcname=rel)
+            backend_dir = workspace_backend_dir(output)
+            if backend_dir:
+                p_add_backend_tree(tar, backend_dir)
+                spec = p_json.dumps({"has_backend": True, "start": "uvicorn backend.main:app"}).encode("utf-8")
+                info = tarfile.TarInfo(name="runspec.json")
+                info.size = len(spec)
+                tar.addfile(info, io.BytesIO(spec))
         else:
             for name, content in (output.files or {}).items():
                 rel = name.replace(os.sep, "/")

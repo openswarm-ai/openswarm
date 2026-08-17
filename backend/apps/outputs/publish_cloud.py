@@ -21,7 +21,8 @@ def p_safe_detail(resp: httpx.Response, fallback: str) -> str:
 
 
 async def upload_to_cloud(
-    settings, *, output_id: str, name: str, slug_hint: str, bundle: bytes, override: bool
+    settings, *, output_id: str, name: str, slug_hint: str, bundle: bytes, override: bool,
+    has_backend: bool = False,
 ) -> dict:
     token, base = account_auth(settings)
     if not token:
@@ -32,7 +33,9 @@ async def upload_to_cloud(
                 f"{base}/api/apps/publish",
                 headers={"Authorization": f"Bearer {token}"},
                 # output_id lets the cloud reuse this app's slug on republish instead of minting a duplicate; override marks a publish past a non-clean scan.
-                data={"name": name, "slug": slug_hint, "output_id": output_id, "override": "1" if override else "0"},
+                data={"name": name, "slug": slug_hint, "output_id": output_id, "override": "1" if override else "0",
+                      # Tells the cloud to provision the per-app runner VM without unpacking the tar (ENG-293).
+                      "has_backend": "1" if has_backend else "0"},
                 files={"bundle": ("app.tar.gz", bundle, "application/gzip")},
             )
     except httpx.HTTPError:

@@ -938,6 +938,7 @@ async def publish_output(body: PublishRequest):
         dist = await build_static(output)
         bundle = collect_bundle(output, dist)
         slug_hint = slugify(body.slug or output.name)
+        from backend.apps.outputs.publish_build import workspace_backend_dir
         res = await upload_to_cloud(
             settings,
             output_id=output.id,
@@ -945,6 +946,7 @@ async def publish_output(body: PublishRequest):
             slug_hint=slug_hint,
             bundle=bundle,
             override=body.force,
+            has_backend=bool(dist and workspace_backend_dir(output)),
         )
     except PublishError as e:
         output.publish_status = "error"
