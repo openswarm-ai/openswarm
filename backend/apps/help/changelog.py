@@ -196,7 +196,11 @@ def help_context_block(app_version: str) -> str:
     shown = app_version if release_notes(app_version) is note and app_version else note.version
     body = [f"Version {shown}: {note.headline}"]
     body += [f"- new: {h}" for h in note.highlights]
-    body += [f"- fixed: {f}" for f in note.fixes]
+    # The Help agent's context rides a token budget; the full list stays in the changelog UI.
+    p_shown_fixes = note.fixes[:30]
+    body += [f"- fixed: {f}" for f in p_shown_fixes]
+    if len(note.fixes) > len(p_shown_fixes):
+        body.append(f"- ...plus {len(note.fixes) - len(p_shown_fixes)} more fixes in this release.")
     return "\n".join(body)
 
 
