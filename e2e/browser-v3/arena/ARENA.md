@@ -1108,3 +1108,18 @@ writes stays HARD-OPEN at ~7-9%; a prompt-level mechanism cannot close it -- it 
 write-completion capability the model doesn't reliably have on these workflows. Booked as a
 negative result (not every mechanism works; prompt fixes can't close a capability gap). Artifact
 number (~7%) stands.
+
+## Capability-wall mechanism ledger + a caught pilot flaw (2026-08-17)
+Pursuing WebArena long-horizon COMPLETION (user chose capability path). Mechanisms tried, all
+generic scaffolding (no fine-tuning): v45 read-your-writes (verified-writes: 9% vs 7%, FLAT);
+v46 done-gate / checkpoint self-verification (WebArena: 0 strict/20, NEGATIVE — deliberation
+overhead); v47 within-episode note scratchpad (AgentOccam study #1); v48 plan-state + reflective
+compaction (Hermes/Devin convergent design — never-evicted task-state block, evidence-gated
+subgoals, the study's best-designed completion mechanism).
+CAUGHT PILOT FLAW (booked to avoid a false conclusion): v47/v48 first ran on the first-20 WA
+tasks and both scored 0 strict — but v42 ALSO scores 0 strict on that same first-20 (it is a hard
+subset; v42's 15% came from OTHER tasks in the 100). So the pilot was UNINFORMATIVE — no solvable
+tasks to lift; booking 'memory flat' off it would have been dishonest. Rebuilt a FAIR pilot: 16
+near-miss (partial-credit) tasks + 4 strict controls where v42 baseline = 11.8 partial-sum / 4
+strict -- tasks with genuine room for a completion mechanism to push 0.5->1.0. v48 running on it
+now; THAT result is the decisive, honest test of whether plan-state moves completion.
