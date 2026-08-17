@@ -1096,3 +1096,15 @@ per our judge policy, labeled SUPPLEMENTARY, never folded into the 11 clauses. E
 outcome: our clean generic harness scores below a tuned cloud product -- that IS the result, and
 being close as a no-tuning generic agent is the stronger story. Status: scoped, awaiting user
 go/no-go on the live-site/ToS question.
+
+## v45 read-your-writes: NEGATIVE result (2026-08-17)
+Hypothesis: a 'read-your-writes' system rung (after a state-change action, re-read + confirm +
+retry) would lift verified-write persistence. RESULT: 1/11 = 9% vs v42's 1/15 ~7% -- within noise,
+NO meaningful gain. The agent DOES re-read and retry, but the complex multi-step writes (create
+repo with content, edit post, start private project) still don't complete -- the write-completion
+is CAPABILITY-gated, not prompt-gated. (One new write persisted: add-users-to-time-tracking, so
+SOME writes work; the wall is multi-step create/edit workflows.) Honest verdict: clause 5 verified-
+writes stays HARD-OPEN at ~7-9%; a prompt-level mechanism cannot close it -- it needs genuine
+write-completion capability the model doesn't reliably have on these workflows. Booked as a
+negative result (not every mechanism works; prompt fixes can't close a capability gap). Artifact
+number (~7%) stands.
