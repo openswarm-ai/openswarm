@@ -1045,3 +1045,19 @@ MINIWOB last-mile: 94.1 is the honest near-ceiling for the scripted-primitive ap
 MiniWoB's own reward machinery (search-engine pick_result tried 2 ways, 0/3 -- disabled). Remaining
 0.9pt to 95 needs framework-native primitives with diminishing returns; deprioritized BELOW the
 higher-ROI verified-writes clause. Two seeds already hit 95.2; 94.1 mean is variance-dragged.
+
+## Verified-writes: independent re-read measurement (2026-08-16, clause 5)
+Built vw_verify.py -- independent server-state re-read per write task (program_html url +
+required_contents), decoupled from WebArena's composite reward. KEY HONEST FINDING: the composite
+reward MISLED toward optimism -- 11/15 write tasks scored 0.5+ (looked like persisted writes) but
+independent re-read shows only ~8% (1/13 clean) ACTUALLY persisted. The 0.5 was navigation/partial
+credit, NOT write success. Manual spot-check: simple MR-comment writes DO persist (confirmed
+'Thanks, working on reviews' on MR 450); but complex/multi-step writes (create repo, edit post,
+private project, add file) mostly fail -- a genuine capability wall, NOT an instrument bug. This is
+the independent-channel verification pattern catching a FALSE-POSITIVE (opposite of the WebArena
+instrument bug which caused false-negatives) -- the discipline works both directions. Clause 5
+(>=95) is FAR OPEN: verified-write ~8-15% on this sample; the agent handles atomic comments but not
+multi-step create/edit writes. Scorer caveats: a few url=last tasks need the episode's final page
+(not independently checkable), and the write-filter caught a couple read tasks -- number will
+tighten with a cleaned write-only partition, but the signal (far below 95) is unambiguous.
+Honest verdict: verified-writes is capability-gated for complex writes, not a quick clause to close.
