@@ -51,9 +51,6 @@ export interface OnboardingStep {
   index: number;
   title: string;
   description: string;
-  videoSrc?: string;
-  /** Shown in the panel preview chip, e.g. "0:24". */
-  videoDurationLabel?: string;
   ops: ACOp[];
   dependsOn?: StepDependency[];
   /** Mark a step already-done at launch / Show me click without running its flow. */

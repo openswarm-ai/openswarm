@@ -9,8 +9,6 @@ export const step01: OnboardingStep = {
   index: 2,
   title: 'Keep going: connect your model',
   description: 'Your free runs are limited. Add your own model to keep building.',
-  videoSrc: './onboarding-videos/v2/01.mp4',
-  videoDurationLabel: '0:24',
   skipIf: (s) => hasModelConnected(s) || (hasFreeTrialActive(s) && !freeRunsLow(s)),
   ops: [
     { kind: 'move_to', target: S.sidebarSettingsButton },

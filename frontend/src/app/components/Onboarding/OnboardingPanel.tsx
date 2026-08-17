@@ -1,14 +1,12 @@
 /** Docked top-right panel; states: pill, expanded, roadmap, hidden. */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from './_motionWin';
 import { Box, Typography, IconButton, Button, ButtonBase } from '@mui/material';
 import RemoveIcon from '@mui/icons-material/Remove';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CloseIcon from '@mui/icons-material/Close';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useOnboardingProgress } from './hooks/useOnboardingProgress';
@@ -410,11 +408,6 @@ const StepCardBody: React.FC<StepCardProps> = ({
   onToggleInfo,
   running,
 }) => {
-  // Auto-collapses on step change so a leftover overlay from step N doesn't linger into step N+1.
-  const [videoExpanded, setVideoExpanded] = useState(false);
-  useEffect(() => {
-    setVideoExpanded(false);
-  }, [step?.id]);
   if (!step) return null;
   return (
     <>
@@ -440,52 +433,6 @@ const StepCardBody: React.FC<StepCardProps> = ({
       >
         {step.description}
       </Typography>
-
-      <Box
-        onClick={step.videoSrc ? () => setVideoExpanded(true) : undefined}
-        sx={{
-          position: 'relative',
-          borderRadius: `${c.radius.md}px`,
-          overflow: 'hidden',
-          aspectRatio: '16 / 9',
-          mb: 1.5,
-          background: `linear-gradient(135deg, ${c.accent.primary}22, ${c.accent.primary}08)`,
-          border: `1px solid ${c.border.subtle}`,
-          cursor: step.videoSrc ? 'zoom-in' : 'default',
-          transition: 'transform 0.18s ease-out, box-shadow 0.18s ease-out',
-          '&:hover': step.videoSrc
-            ? {
-                transform: 'scale(1.015)',
-                boxShadow: `0 8px 22px ${c.accent.primary}33`,
-              }
-            : undefined,
-        }}
-      >
-        {step.videoSrc ? (
-          <Box
-            component="video"
-            src={step.videoSrc}
-            autoPlay={typeof navigator === 'undefined' || !navigator.userAgent.includes('Windows')}
-            muted
-            loop
-            playsInline
-            onError={(e: React.SyntheticEvent<HTMLVideoElement>) => {
-              (e.currentTarget as HTMLVideoElement).style.display = 'none';
-            }}
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              // Source recordings have baked-in black side bars; scale + parent overflow:hidden crops them off.
-              transform: 'scale(1.0)',
-              transformOrigin: 'center',
-              pointerEvents: 'none',
-            }}
-          />
-        ) : null}
-      </Box>
 
       <Box
         sx={{
@@ -555,71 +502,6 @@ const StepCardBody: React.FC<StepCardProps> = ({
         </IconButton>
       </Box>
     </Box>
-    {videoExpanded && step.videoSrc
-      ? createPortal(
-          <Box
-            onClick={() => setVideoExpanded(false)}
-            sx={{
-              position: 'fixed',
-              inset: 0,
-              bgcolor: 'rgba(0,0,0,0.78)',
-              backdropFilter: 'blur(4px)',
-              zIndex: 2000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'zoom-out',
-              p: 4,
-            }}
-          >
-            <Box
-              onClick={(e) => e.stopPropagation()}
-              sx={{
-                position: 'relative',
-                width: 'min(960px, 92vw)',
-                aspectRatio: '16 / 9',
-                borderRadius: `${c.radius.lg}px`,
-                overflow: 'hidden',
-                boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
-                bgcolor: '#000',
-              }}
-            >
-              <Box
-                component="video"
-                src={step.videoSrc}
-                autoPlay={typeof navigator === 'undefined' || !navigator.userAgent.includes('Windows')}
-                muted
-                loop
-                playsInline
-                controls
-                sx={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  transform: 'scale(1.0)',
-                  transformOrigin: 'center',
-                  display: 'block',
-                }}
-              />
-              <IconButton
-                onClick={() => setVideoExpanded(false)}
-                aria-label="Close video"
-                sx={{
-                  position: 'absolute',
-                  top: 10,
-                  right: 10,
-                  bgcolor: 'rgba(0,0,0,0.55)',
-                  color: '#fff',
-                  '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-            </Box>
-          </Box>,
-          document.body,
-        )
-      : null}
     </>
   );
 };

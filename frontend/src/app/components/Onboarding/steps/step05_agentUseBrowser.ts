@@ -7,8 +7,6 @@ export const step05: OnboardingStep = {
   index: 5,
   title: 'Have an agent use the browser',
   description: 'Let an agent take control of your browser.',
-  videoSrc: './onboarding-videos/v2/05.mp4',
-  videoDurationLabel: '0:30',
   requiresDashboard: true,
   dependsOn: [{ stepId: 'use_browser', reopen: 'walk_again' }],
   ops: [

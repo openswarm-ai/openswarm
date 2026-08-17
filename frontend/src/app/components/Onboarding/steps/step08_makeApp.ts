@@ -10,8 +10,6 @@ export const step08: OnboardingStep = {
   index: 8,
   title: 'Make an App',
   description: 'Prompt interactive applications into existence.',
-  videoSrc: './onboarding-videos/v2/08.mp4',
-  videoDurationLabel: '0:42',
   ops: [
     { kind: 'move_to', target: S.chatInput },
     {
