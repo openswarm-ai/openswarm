@@ -200,6 +200,46 @@ class LlmPolicy:
     read_your_writes: bool = False
     # v46: checkpoint self-verification done-gate (FCPAgent-style). Confirm each requirement before finishing.
     done_gate: bool = False
+    # v48: plan-state + reflective compaction (convergent Hermes/Devin design). A structured task
+    # state (goal + subgoal checklist with evidence + facts) that is re-injected VERBATIM every
+    # turn and NEVER evicted -- the fix for goal-state decay as context fills. done requires
+    # evidence (verification gate, not narration). Within-episode -> no independence caveat.
+    plan_state: bool = False
+    ps_goal: str = ""
+    ps_steps: list = field(default_factory=list)   # [{"d":desc,"s":"todo|doing|done"}]
+    ps_facts: list = field(default_factory=list)
+
+    def ps_block(self) -> str:
+        if not self.plan_state or not self.ps_steps:
+            return ""
+        rows = []
+        for i, st in enumerate(self.ps_steps, 1):
+            mark = {"done": "[x]", "doing": "[>]", "todo": "[ ]"}.get(st["s"], "[ ]")
+            rows.append(f"  {mark} {i}. {st['d']}")
+        facts = "\n".join(f"  - {f}" for f in self.ps_facts[-12:])
+        return ("\nTASK STATE (your durable plan -- always here, never lost as the page history "
+                "scrolls):\nGOAL: " + self.ps_goal + "\nSUBGOALS:\n" + "\n".join(rows)
+                + (("\nFACTS:\n" + facts) if self.ps_facts else "")
+                + "\nMaintain it: 'STEP n: doing|done' to move a subgoal (done ONLY once its evidence "
+                  "is visible on the page); 'FACT: <x>' to save a value/id you'll need. Finish ONLY "
+                  "when every subgoal is done.")
+
+    def ps_init(self, goal: str) -> None:
+        # Decompose the goal ONCE into subgoals from its clause structure (no extra model call).
+        self.ps_goal = goal[:240]
+        parts = re.split(r",\s+(?:and\s+|then\s+)?|\bthen\b|\band\b|;", goal)
+        self.ps_steps = [{"d": p.strip()[:80], "s": "todo"} for p in parts if len(p.strip()) > 6][:8]
+        self.ps_facts = []
+
+    def ps_ingest(self, raw: str) -> None:
+        for m in re.finditer(r"STEP\s+(\d+)\s*:\s*(doing|done)", raw or "", re.I):
+            i = int(m.group(1)) - 1
+            if 0 <= i < len(self.ps_steps):
+                self.ps_steps[i]["s"] = m.group(2).lower()
+        for m in re.finditer(r"FACT:\s*(.+)", raw or ""):
+            f = m.group(1).strip()[:120]
+            if f and f not in self.ps_facts:
+                self.ps_facts.append(f)
     # v43: answer-schema conformance gate (run.py-side). Validate send_msg against the task's own
     # provided JSON schema and bounce non-conforming answers -- generic instruction-following.
     schema_gate: bool = False
@@ -293,6 +333,8 @@ class LlmPolicy:
         if getattr(self, "done_gate", False) and len(re.findall(r",|\band\b|;", goal)) >= 2:
             extra += ("\nDONE-CHECK required before finishing: restate each requirement + its visible "
                       "evidence; if any lacks evidence and steps remain, keep working, do not finish.")
+        if getattr(self, "plan_state", False):
+            extra += self.ps_block()
         user = f"GOAL: {goal}{extra}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
         content: Any = user
         if image_b64:
@@ -406,6 +448,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
         self.long_goal_active = False
         self.all_actions = []
         self.notes = []
+        if getattr(self, "plan_state", False):
+            self.ps_init(goal)
         self.maybe_gate_long_goal(goal)
         self.verified_once = False
 
@@ -811,6 +855,8 @@ class OpenSwarmLlmPolicy(LlmPolicy):
             m_ev = re.search(r"EVAL:\s*(.+)", raw or "")
             if m_ev:
                 self.history.append(f"(your step-eval: {m_ev.group(1).strip()[:200]})")
+        if getattr(self, "plan_state", False):
+            self.ps_ingest(raw or "")
         if self.note_pad:
             for m_nt in re.finditer(r"NOTE:\s*(.+)", raw or ""):
                 fact = m_nt.group(1).strip()[:160]
@@ -1132,6 +1178,16 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   force_unblock=True, native_js_fallback=True, escape_token=True,
                                   table_md=True, draw_circle=True, answer_protocol=True,
                                   schema_gate=False, **v43)  # DISABLED: gate falsely bounced valid JSON
+    if name == "osw-llm-v48":  # v42 + plan-state + reflective compaction (Hermes/Devin convergent)
+        v48 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36, max_tokens=950)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True,
+                                  table_md=True, answer_protocol=True, plan_state=True, **v48)
     if name == "osw-llm-v47":  # v42 + within-episode note scratchpad (AgentOccam memory, study #1)
         v47 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36, max_tokens=900)
