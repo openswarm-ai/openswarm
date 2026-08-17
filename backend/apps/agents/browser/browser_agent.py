@@ -86,6 +86,7 @@ from backend.apps.agents.browser import browser_metrics
 from backend.apps.agents.browser import browser_send_script
 from backend.apps.agents.browser import browser_send_parse
 from backend.apps.agents.browser import browser_login_handoff
+from backend.apps.agents.browser.wait_for_user_signin import wait_for_user_signin
 from backend.apps.agents.browser import browser_session_import
 from backend.apps.agents.browser import browser_delivery_check
 from backend.apps.agents.browser import browser_submit_click
@@ -1368,6 +1369,7 @@ async def run_browser_agent(
     card_gone_streak = 0  # consecutive "card is gone" results -> fail fast, don't spin
     route_hinted_hosts: set[str] = set()  # surface the fast network tier once per host
     p_login_attempted: set[str] = set()  # login-once handoff: at most one silent borrow attempt per domain per run
+    p_signin_wait_used = False  # at most ONE user-signin pause per run, so stacked walls can't stall it for 3min each
 
     # Stagnation state: busy-but-stuck detection (no URL change + failures across a run of actions), distinct from the exact-repeat loop above.
     stagnation_streak = 0
@@ -1936,10 +1938,41 @@ async def run_browser_agent(
                 last_seen_url, "\n".join(attached_state_seen), allow_soft=(turn >= 2))
             if p_wall_dom and p_wall_dom not in p_login_attempted:
                 p_login_attempted.add(p_wall_dom)
+                p_signed_note = None
                 if await try_borrow_signin(p_wall_dom, browser_id, tab_id, last_seen_url):
                     browser_login_handoff.record_login(p_wall_dom)
                     p_signed_note = (f"You are now signed in to {p_wall_dom}. The page has changed; "
                                      "look at it fresh and continue the task.")
+                elif (not p_signin_wait_used and ws_manager.global_connections
+                      and browser_login_handoff.login_wall_domain(last_seen_url, "\n".join(attached_state_seen))):
+                    # No session to borrow and a HARD wall (soft signed-out pages stay browsable, no
+                    # pause). The card is on the user's screen (a renderer is attached), so hand off:
+                    # tell them, watch the page, resume the moment the wall clears (ENG-279).
+                    p_signin_wait_used = True
+                    p_wait_msg = Message(role="assistant", content=(
+                        f"⏸ {p_wall_dom} needs you to sign in. Use the browser card directly; "
+                        "I'll continue automatically once you're in (waiting up to 3 minutes)."))
+                    session.messages.append(p_wait_msg)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id,
+                        "message": p_wait_msg.model_dump(mode="json"),
+                    })
+
+                    async def p_signin_probe() -> tuple:
+                        p_gt = await execute_browser_tool("BrowserGetText", {}, browser_id, tab_id)
+                        if not isinstance(p_gt, dict):
+                            return ("", "")
+                        return (str(p_gt.get("url") or ""), str(p_gt.get("text") or ""))
+
+                    if await wait_for_user_signin(p_wall_dom, p_signin_probe, cancel_event):
+                        browser_login_handoff.record_login(p_wall_dom)
+                        p_signed_note = (f"The user just signed in to {p_wall_dom} themselves. The page "
+                                         "has changed; look at it fresh and continue the task.")
+                    else:
+                        p_signed_note = (f"The user did not sign in to {p_wall_dom} within the wait "
+                                         "window. Do what is possible without it, and say plainly in "
+                                         "Done what still needs the sign-in.")
+                if p_signed_note:
                     if messages and messages[-1].get("role") == "user":
                         p_prev = messages[-1]["content"]
                         if isinstance(p_prev, list):
