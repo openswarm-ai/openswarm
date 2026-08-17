@@ -47,7 +47,8 @@ export function useRenderRing(
   rectRef.current = { x: cardX, y: cardY, w: cardWidth, h: cardHeight };
 
   useEffect(() => {
-    if (!active) return undefined;
+    // Measurement escape hatch: lets the perf harness A/B ring-on vs ring-off on identical bits.
+    if (!active || localStorage.getItem('osw-render-ring') === 'off') return undefined;
     let raf = 0;
     const evaluate = (): void => {
       raf = 0;
