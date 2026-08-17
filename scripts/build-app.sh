@@ -550,8 +550,23 @@ if $PUBLISH_MODE; then
 elif $SIGN_MODE; then
     npx electron-builder --mac "${EB_ARCH_FLAGS[@]}" --publish never
 else
+    # Unsigned local build. electron-builder falls back to an ad-hoc signature but still applies the
+    # release entitlements + provisioning profile; the restricted keychain-access-groups entitlement
+    # is not honoured for an ad-hoc identity, so macOS SIGKILLs the app at exec (silently: no
+    # window, nothing on stderr). Pack first, then re-sign the outer bundle with the same
+    # entitlements minus that group and no profile (passkeys stay off in a dev build anyway), then
+    # build the dmg/zip from the app that actually launches.
     export CSC_IDENTITY_AUTO_DISCOVERY=false
-    npx electron-builder --mac "${EB_ARCH_FLAGS[@]}" --publish never
+    npx electron-builder --mac "${EB_ARCH_FLAGS[@]}" --dir --publish never
+    for A in "${BUILD_ARCHS[@]}"; do
+        APP_DIR="dist/mac-$A"
+        [[ "$A" == "x64" && ! -d "$APP_DIR" ]] && APP_DIR="dist/mac"
+        APP="$APP_DIR/OpenSwarm.app"
+        [[ -d "$APP" ]] || { echo "ERROR: packed app not found at $APP" >&2; exit 1; }
+        rm -f "$APP/Contents/embedded.provisionprofile"
+        codesign --force --sign - --options runtime --entitlements build/entitlements.mac.dev.plist "$APP"
+        npx electron-builder --mac "--$A" --prepackaged "$APP" --publish never
+    done
 fi
 
 rm -rf "$PROJECT_ROOT/electron/build-staging"

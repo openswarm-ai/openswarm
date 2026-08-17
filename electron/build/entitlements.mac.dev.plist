@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Entitlements for the UNSIGNED local build (scripts/build-app.sh without a signing identity):
+     entitlements.mac.plist minus keychain-access-groups. That group is a restricted entitlement
+     tied to the team's provisioning profile; on an ad-hoc signature macOS refuses it and kills the
+     app at exec. Passkey sign-in via the shared keychain group is therefore off in a dev build; every
+     other capability (JIT, unsigned executable memory, library validation off for native addons,
+     network, microphone, user-selected files) is unchanged. -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.inherit</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>
