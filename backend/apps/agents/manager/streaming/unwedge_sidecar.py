@@ -11,6 +11,7 @@ block (a human answering AskUI, a delegated browser run) are exempt by name, nev
 import asyncio
 import logging
 import subprocess
+import threading
 import time
 from typing import Set
 
@@ -142,9 +143,10 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         session_id = getattr(ctx, "session_id", "")
         if not session_id:
             return
-        # ps + kill are blocking; keep them off the event loop. The retry is armed on the LIVE
-        # session object the hook holds, so the agent redoes the step the frozen server swallowed.
-        loop.run_in_executor(None, unwedge, session_id, tool_name, time.time() - started)
+        # ps + kill are blocking; keep them off the event loop. A daemon thread, not the loop's
+        # default executor: executor workers are non-daemon and a per-test loop that closes without
+        # shutdown leaks them parked forever (the suite's flaky hang at interpreter exit).
+        threading.Thread(target=unwedge, args=(session_id, tool_name, time.time() - started), daemon=True, name="unwedge").start()
         arm_retry(getattr(ctx, "session", None))
 
     loop.call_later(WEDGE_SECONDS, p_check)
@@ -223,7 +225,7 @@ def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> No
                 "delegation result lost: %s outstanding %.0fs on session %s with every child terminal; recovering",
                 tool_name, time.time() - started, session_id[:8],
             )
-            loop.run_in_executor(None, unwedge, session_id, tool_name, time.time() - started)
+            threading.Thread(target=unwedge, args=(session_id, tool_name, time.time() - started), daemon=True, name="unwedge").start()
             arm_retry(getattr(ctx, "session", None))
         elif settled_streak["n"] >= 3:
             # Stage 3, measured necessary on the live specimen: a CLI blocked 20+ minutes never
