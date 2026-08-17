@@ -97,6 +97,7 @@ P_RELEASES: List[ReleaseNote] = [
             "An app or browser card whose page process dies now reloads itself instead of sitting as a solid black rectangle. The crash fired no load event at all, so nothing ever repainted it.",
             "The mouse-wheel Zoom/Scroll setting works on real mice now. Accelerated wheels (Magic Mouse, Logitech smooth scrolling) report fractional scroll amounts that were being mistaken for a trackpad, so the wheel always panned no matter what the setting said.",
             "A browser helper that talks itself into refusing (\"I\u2019m a text-based AI\") no longer poisons its browser for every later task. Refused and fabricated runs are forgotten instead of remembered, and agents can ask for a completely fresh browser when one misbehaves.",
+            "Agents no longer claim \"the user told me to stop\" when it was OpenSwarm\u2019s own housekeeping talking. Internal wrap-up and retry messages now identify themselves, so an agent\u2019s explanation of why it stopped reflects what actually happened.",
             "Heavy sessions no longer vanish without a trace. When memory climbs past the safe line the app now sheds weight itself: preview thumbnails pause and refetchable caches drop, instead of growing until the operating system kills it mid-task.",
         ],
     ),
