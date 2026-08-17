@@ -31,7 +31,7 @@ import {
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
 import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
-import { addBrowserCardFromBackend, setBrowserDocked, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, placeBrowserBesideChat, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeBrowserCard, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp, openWorkflowMonitor } from '../state/dashboardLayoutSlice';
+import { addBrowserCardFromBackend, setBrowserDocked, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, placeBrowserBesideChat, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeBrowserCard, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { setCardPosition } from '../state/dashboardLayoutSlice';
 import { fetchSettings } from '../state/settingsSlice';
@@ -74,9 +74,6 @@ interface WSManagerOptions {
 // Heartbeat tuning. 25s is below typical aggressive NAT idle timeouts (some enterprise firewalls drop after 30s of silence), and well below browser-tab background throttling thresholds. 10s pong timeout is a balance: long enough to tolerate flaky cellular RTT spikes, short enough that a real dead socket reconnects fast.
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
-
-// Manual runs whose monitor card we've already popped open, so the repeated "workflow:run" updates that stream during a run don't re-pin or re-stack the card.
-const autoOpenedRunIds = new Set<string>();
 
 interface QueuedFrame {
   event: string;
@@ -859,11 +856,10 @@ class WebSocketManager {
         if (data.run) {
           const run = data.run;
           store.dispatch(upsertRun(run));
-          // A manual run (the Run button OR the edit agent's RunWorkflowNow) should surface its live card the moment it starts. Fire once per run so the run's later tool-call updates don't keep re-pinning the monitor; scheduled runs stay quiet so they never hijack the canvas.
-          if (run.status === 'running' && run.triggered_by === 'manual' && run.id && !autoOpenedRunIds.has(run.id)) {
-            autoOpenedRunIds.add(run.id);
-            store.dispatch(openWorkflowMonitor({ workflowId: run.workflow_id, runId: run.id }));
-          }
+          // Manual runs surface as the run's REAL agent card (the session lands on the board via
+          // the normal flow), never the special monitor pane; auto-opening the monitor here was the
+          // "workflow runs aren't real agents" jank (Eric, 2026-08-17). The monitor stays reachable
+          // from the hub's own Viewing controls for people who want the run timeline.
         }
         break;
 

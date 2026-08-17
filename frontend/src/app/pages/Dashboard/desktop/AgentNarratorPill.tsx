@@ -318,14 +318,18 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           key={artifactKey}
           className="osw-artifact"
           sx={{
+            // A width floor: without one a narrow card column squeezed the answer into a skinny
+            // four-line tower (Eric's "incredibly ugly" pill, 2026-08-17); a calm card, not a blob.
+            minWidth: 200,
             maxWidth: 320,
             px: 1.5,
-            py: 0.875,
-            borderRadius: '14px',
+            py: 1,
+            borderRadius: '12px',
             background: GLASS,
+            border: '1px solid rgba(255,255,255,0.08)',
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
           }}
         >
           <Typography
