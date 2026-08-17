@@ -142,6 +142,38 @@ async def get_bundle(slug: str) -> Optional[Bundle]:
     return bundle
 
 
+_runtime_cache: dict[str, tuple[float, Optional[dict]]] = {}
+_RUNTIME_TTL = 30.0
+
+
+def _runtime_key(slug: str) -> str:
+    return f"apps/{slug}/runtime.json"
+
+
+async def get_runtime_spec(slug: str) -> Optional[dict]:
+    """The app's runner-VM pointer, written by the cloud at publish (ENG-293). Lives NEXT TO the
+    bundle, never inside it, so resolve_file can't serve it. Missing object = frontend-only app;
+    cached briefly either way so per-request cost is one dict hit."""
+    import asyncio, json as _json
+    now = time.time()
+    hit = _runtime_cache.get(slug)
+    if hit and now - hit[0] < _RUNTIME_TTL:
+        return hit[1]
+
+    def _fetch() -> Optional[dict]:
+        try:
+            obj = _s3().get_object(Bucket=_BUCKET, Key=_runtime_key(slug))
+            return _json.loads(obj["Body"].read())
+        except Exception:
+            return None
+
+    spec = await asyncio.get_running_loop().run_in_executor(None, _fetch)
+    if len(_runtime_cache) > 512:
+        _runtime_cache.clear()
+    _runtime_cache[slug] = (now, spec if isinstance(spec, dict) else None)
+    return _runtime_cache[slug][1]
+
+
 def resolve_file(bundle: Bundle, path: str) -> Optional[tuple[bytes, str]]:
     """Map a request path to a bundle file, SPA-falling back to index.html. Refuses
     traversal and Python source (served as index.html instead, never as code)."""

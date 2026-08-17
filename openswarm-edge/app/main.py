@@ -16,7 +16,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from .bundles import get_bundle, resolve_file
+from .bundles import get_bundle, get_runtime_spec, resolve_file
 from .fallback import apex_page, not_found_page
 from .inject import inject_runtime
 from .ratelimit import RateLimiter
@@ -137,6 +137,59 @@ async def edge_llm(request: Request) -> Response:
             {"type": "error", "error": {"type": "upstream_unreachable", "message": "This app's AI is unavailable."}},
             status_code=502,
         )
+
+    async def relay():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        relay(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/json"),
+    )
+
+
+APPS_RUNNER_URL = os.environ.get("APPS_RUNNER_URL", "")  # e.g. https://openswarm-apprunner.fly.dev
+
+_api_limiter = RateLimiter(limit=int(os.environ.get("APP_API_RPM", "240")), window_seconds=60)
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def edge_app_api(path: str, request: Request) -> Response:
+    """A backend app's own API (ENG-293). Forwarded to the app's PRIVATE runner VM, addressed by
+    fly-force-instance-id from the storage-side runtime spec: the edge can wake/route to a machine
+    but holds no Machines token, so popping the edge buys 'call an app's API', never create or
+    destroy infrastructure. Frontend-only apps 404 here honestly."""
+    slug = slug_from_host(request.headers.get("host", ""))
+    if not slug:
+        return JSONResponse({"error": "unknown app"}, status_code=404)
+    if not _api_limiter.allow(client_ip(request)):
+        return JSONResponse({"error": "Too many requests."}, status_code=429)
+    spec = await get_runtime_spec(slug)
+    machine_id = (spec or {}).get("machine_id")
+    if not APPS_RUNNER_URL or not machine_id:
+        return JSONResponse({"error": "this app has no backend"}, status_code=404)
+    body = await request.body()
+    fwd_headers = {
+        "content-type": request.headers.get("content-type", "application/octet-stream"),
+        "accept": request.headers.get("accept", "*/*"),
+        # Route to THIS app's machine; Fly auto-starts it if stopped (the scale-to-zero wake).
+        "fly-force-instance-id": str(machine_id),
+    }
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=60.0))
+    upstream_req = client.build_request(
+        request.method, f"{APPS_RUNNER_URL}/api/{path}",
+        headers=fwd_headers, content=body, params=dict(request.query_params),
+    )
+    try:
+        upstream = await client.send(upstream_req, stream=True)
+    except httpx.HTTPError:
+        await client.aclose()
+        return JSONResponse({"error": "this app's backend is unavailable"}, status_code=502)
 
     async def relay():
         try:

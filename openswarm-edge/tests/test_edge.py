@@ -245,3 +245,52 @@ def _run_all():
 
 if __name__ == "__main__":
     _run_all()
+
+
+def test_app_api_proxy_routes_by_machine_and_404s_frontend_only(monkeypatch):
+    """ENG-293: /api/* on an app host forwards to the app's OWN machine via fly-force-instance-id;
+    an app with no runtime spec answers an honest 404, and no Machines credential exists here."""
+    from app import bundles as edge_bundles
+
+    seen = {}
+
+    async def fake_spec(slug):
+        return {"machine_id": "mach-42"} if slug == "hasapi" else None
+
+    monkeypatch.setattr(edge_main, "get_runtime_spec", fake_spec)
+    monkeypatch.setattr(edge_main, "APPS_RUNNER_URL", "https://runner.test")
+
+    class FakeStream:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        async def aiter_raw(self):
+            yield b'{"ok": true}'
+
+        async def aclose(self):
+            return None
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def build_request(self, method, url, headers=None, content=None, params=None):
+            seen.update({"method": method, "url": url, "headers": headers or {}})
+            return object()
+
+        async def send(self, req, stream=False):
+            return FakeStream()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(edge_main.httpx, "AsyncClient", FakeClient)
+    client = TestClient(edge_main.app)
+
+    r = client.post("/api/todos", headers={"host": "hasapi.openswarm.host"}, json={"a": 1})
+    assert r.status_code == 200
+    assert seen["url"] == "https://runner.test/api/todos"
+    assert seen["headers"]["fly-force-instance-id"] == "mach-42"
+
+    r2 = client.get("/api/todos", headers={"host": "staticonly.openswarm.host"})
+    assert r2.status_code == 404
