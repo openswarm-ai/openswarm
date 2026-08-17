@@ -34,13 +34,13 @@ def test_settled_requires_children_and_all_terminal(monkeypatch):
     done_child.status = "completed"
 
     monkeypatch.setattr(am.agent_manager, "sessions", {"par-1": parent}, raising=False)
-    assert u.delegation_children_settled("par-1") is False, "no children = maybe queued behind admission, NOT settled"
+    assert u.delegation_children_settled("par-1", since=0.0) is False, "no children = maybe queued behind admission, NOT settled"
 
     monkeypatch.setattr(am.agent_manager, "sessions", {"par-1": parent, "kid-1": running_child, "kid-2": done_child}, raising=False)
-    assert u.delegation_children_settled("par-1") is False, "one live child means the wait is legitimate"
+    assert u.delegation_children_settled("par-1", since=0.0) is False, "one live child means the wait is legitimate"
 
     running_child.status = "completed"
-    assert u.delegation_children_settled("par-1") is True
+    assert u.delegation_children_settled("par-1", since=0.0) is True
 
 
 class P_Ctx:
@@ -55,7 +55,7 @@ async def test_two_settled_checks_fire_the_recovery(monkeypatch):
     fired = {}
     monkeypatch.setattr(u, "unwedge", lambda sid, tool, age: fired.setdefault("unwedge", (sid, tool)))
     monkeypatch.setattr(u, "arm_retry", lambda s: fired.setdefault("retry", s.id if s else None))
-    monkeypatch.setattr(u, "delegation_children_settled", lambda sid: True)
+    monkeypatch.setattr(u, "delegation_children_settled", lambda sid, since: True)
     monkeypatch.setattr(u, "DELEGATION_CHECK_SECONDS", 0.05)
     # The watchdog keeps counting past stage 2; stub stage 3 so no stray task touches the real manager.
     async def p_noop(sid, session):
@@ -83,7 +83,7 @@ async def test_a_finished_call_disarms_and_a_live_child_resets_the_streak(monkey
 
     # Oscillating child (settles once, then a new child appears): the streak must reset, never fire.
     seq = iter([True, False, True, False, True, False])
-    monkeypatch.setattr(u, "delegation_children_settled", lambda sid: next(seq, False))
+    monkeypatch.setattr(u, "delegation_children_settled", lambda sid, since: next(seq, False))
     u.arm_delegation_watchdog(P_Ctx(sess, {"tu-2": 0.0}), "tu-2", "mcp__openswarm-core__CreateBrowserAgent")
     await asyncio.sleep(0.4)
     assert "unwedge" not in fired, "a merely-slow delegation must never be recovered out from under itself"
@@ -114,7 +114,7 @@ async def test_stage_three_ends_the_turn_and_dispatches_the_retry_itself(monkeyp
     monkeypatch.setattr(am.agent_manager, "stop_agent", p_stop, raising=False)
     monkeypatch.setattr(am.agent_manager, "send_message", p_send, raising=False)
     monkeypatch.setattr(u, "unwedge", lambda *a: None)
-    monkeypatch.setattr(u, "delegation_children_settled", lambda sid: True)
+    monkeypatch.setattr(u, "delegation_children_settled", lambda sid, since: True)
     monkeypatch.setattr(u, "DELEGATION_CHECK_SECONDS", 0.05)
     monkeypatch.setattr(u, "arm_retry", lambda s: True)
 
