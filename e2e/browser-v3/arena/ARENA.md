@@ -993,10 +993,12 @@ competitor comparison, clearly labeled, never counted toward the 11 goal clauses
 ## Judge policy for supplementary LLM-judged benchmarks (2026-08-16)
 When running LLM-judged evals (Online-Mind2Web etc.), NEVER a same-family judge (our agent is
 Claude opus-5 -> a Claude/Sonnet-5 judge grading a Claude agent is self-judging, inflates,
-violates audit-the-auditor). RULE: run TWO judges and disclose both -- (a) the OFFICIAL published
-judge (for leaderboard comparability with browser-use/Avenir/Polar numbers), and (b) a strong
-CROSS-FAMILY independent judge (GPT-5.6) as a sanity check. Agreement -> trustworthy; divergence ->
-report the gap. A single self-picked judge is a score-inflation lever, not a measurement. These
+violates audit-the-auditor). RULE: RECIPROCAL CROSS-FAMILY JUDGING -- the Claude-opus-5 agent is judged by GPT-5.6, the
+GPT agent is judged by Claude. Symmetric: no agent ever grades its own family, and any residual
+judge-family bias applies EQUALLY to both columns rather than favoring one. Plus run the OFFICIAL
+published judge for leaderboard comparability (browser-use/Avenir/Polar). Disclose all; agreement
+-> trustworthy, divergence -> report the gap. A single self-picked or same-family judge is a
+score-inflation lever, not a measurement. These
 stay SUPPLEMENTARY, never a primary goal clause (the 11 clauses are deterministic, judge-free).
 Note: Polar's gemini-self-judge + 'stricter than others' claim is the same vendor-picks-own-grader
 pattern we avoid.
