@@ -184,7 +184,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
               </div>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(expandedDays.has(g.key) ? g.runs : g.runs.slice(0, COMING_CAP)).map((r, i) => (
-                  <div key={`${r.wfId}-${i}`} onClick={() => nav.selectWorkflow(r.wfId)} onContextMenu={menuFor(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '12px 15px', cursor: 'pointer' }}>
+                  <div key={`${r.wfId}-${i}`} role="button" onClick={() => nav.selectWorkflow(r.wfId)} onContextMenu={menuFor(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.08)`, borderRadius: WC.radius.md, padding: '12px 15px', cursor: 'pointer' }}>
                     <div style={{ width: 3, height: 30, borderRadius: 3, background: r.color, flex: 'none' }} />
                     <WorkflowTitle value={r.title} animate={animateOf(r.wfId)}>
                       {(t) => <span style={{ fontSize: 14, fontWeight: 600, color: WC.ink, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</span>}
@@ -211,7 +211,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
           {recents.length === 0 && <div style={{ fontSize: 13, color: WC.muted }}>No runs yet.</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {recents.map((r) => (
-              <div key={r.id} onClick={() => nav.selectWorkflow(r.wfId)} onContextMenu={menuFor(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 4px', borderBottom: `1px solid rgba(${WC.inkRGB},0.05)`, cursor: 'pointer' }}>
+              <div key={r.id} role="button" onClick={() => nav.selectWorkflow(r.wfId)} onContextMenu={menuFor(r.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 4px', borderBottom: `1px solid rgba(${WC.inkRGB},0.05)`, cursor: 'pointer' }}>
                 <div style={statusDot(r.status, WC)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <WorkflowTitle value={r.title} animate={animateOf(r.wfId)}>
