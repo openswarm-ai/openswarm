@@ -4,8 +4,6 @@ import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
 import Collapse from '@mui/material/Collapse';
 import Switch from '@mui/material/Switch';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -15,14 +13,12 @@ import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MapIcon from '@mui/icons-material/Map';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import BlockIcon from '@mui/icons-material/Block';
 import SecurityIcon from '@mui/icons-material/Security';
-import PanToolIcon from '@mui/icons-material/PanTool';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { BuiltinTool } from '@/shared/state/toolsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import PermToggle from '@/app/components/PermToggle';
 import { CATEGORY_ORDER } from '../toolsHelpers';
 
 interface ToolSectionProps {
@@ -63,14 +59,6 @@ const ToolSection: React.FC<ToolSectionProps> = ({
     agents: { label: 'Agents', color: '#f97316', icon: <CallSplitIcon sx={{ fontSize: 16 }} /> },
     skills: { label: 'Skills', color: '#7B61BD', icon: <AutoAwesomeIcon sx={{ fontSize: 16 }} /> },
   };
-
-  const PermToggle = ({ value, onChange, size = 16 }: { value: string; onChange: (v: string) => void; size?: number }) => (
-    <Box sx={{ display: 'flex', gap: 0.25 }} onClick={(e) => e.stopPropagation()}>
-      <Tooltip title="Always allow"><IconButton size="small" onClick={() => onChange('always_allow')} sx={{ p: 0.4, borderRadius: 1, bgcolor: value === 'always_allow' ? `${c.status.success}20` : 'transparent', color: value === 'always_allow' ? c.status.success : c.text.ghost, '&:hover': { bgcolor: `${c.status.success}15`, color: c.status.success } }}><CheckCircleIcon sx={{ fontSize: size }} /></IconButton></Tooltip>
-      <Tooltip title="Ask permission"><IconButton size="small" onClick={() => onChange('ask')} sx={{ p: 0.4, borderRadius: 1, bgcolor: value === 'ask' ? `${c.status.warning}20` : 'transparent', color: value === 'ask' ? c.status.warning : c.text.ghost, '&:hover': { bgcolor: `${c.status.warning}15`, color: c.status.warning } }}><PanToolIcon sx={{ fontSize: size }} /></IconButton></Tooltip>
-      <Tooltip title="Always deny"><IconButton size="small" onClick={() => onChange('deny')} sx={{ p: 0.4, borderRadius: 1, bgcolor: value === 'deny' ? `${c.status.error}20` : 'transparent', color: value === 'deny' ? c.status.error : c.text.ghost, '&:hover': { bgcolor: `${c.status.error}15`, color: c.status.error } }}><BlockIcon sx={{ fontSize: size }} /></IconButton></Tooltip>
-    </Box>
-  );
 
   const getCatGroupPolicy = (tools: BuiltinTool[]) => {
     const policies = tools.map((t) => builtinPermissions[t.name] || 'always_allow');

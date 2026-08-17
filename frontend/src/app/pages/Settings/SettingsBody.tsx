@@ -18,6 +18,7 @@ import CanvasSettings from './sections/general/CanvasSettings';
 import AgentBehaviorSettings from './sections/general/AgentBehaviorSettings';
 import GeneralAdvanced from './sections/general/GeneralAdvanced';
 import DataPrivacySection from './sections/general/DataPrivacySection';
+import ToolsSettings from './sections/ToolsSettings';
 import ModelsTab from './sections/models/ModelsTab';
 import UsageStats from './sections/usage/UsageStats';
 import SettingsRail, { railLabelFor } from './sections/SettingsRail';
@@ -31,7 +32,7 @@ import { PROVIDER_COLORS, OPENSWARM_GRADIENT, useModelOptions } from './settings
 // Module-scope: remember the last open tab across closes (System Settings style).
 let lastOpenTab: string | null = null;
 
-const TAB_VALUES = ['account', 'general', 'appearance', 'dictation', 'memory', 'canvas', 'agents', 'notifications', 'privacy', 'advanced', 'models', 'commands', 'usage'] as const;
+const TAB_VALUES = ['account', 'general', 'appearance', 'dictation', 'memory', 'canvas', 'agents', 'notifications', 'privacy', 'advanced', 'models', 'tools', 'commands', 'usage'] as const;
 type SettingsTab = typeof TAB_VALUES[number];
 const isValidTab = (t: string | null | undefined): t is SettingsTab =>
   !!t && (TAB_VALUES as readonly string[]).includes(t);
@@ -157,6 +158,10 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({ active }) => {
           setShowApiKey={setShowApiKey}
           styles={styles}
         />
+      ) : activeTab === 'tools' ? (
+      <Box sx={{ pt: 0.5, pb: 2, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
+        <ToolsSettings />
+      </Box>
       ) : activeTab === 'usage' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
         <UsageStats />

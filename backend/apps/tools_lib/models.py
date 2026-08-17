@@ -39,6 +39,9 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="Agent", display_name="CreateAgent", description="Spawn a sub-agent to handle a complex subtask", category="agents"),
     BuiltinTool(name="InvokeAgent", description="Invoke a copy of an existing agent with a new message, preserving full conversation context", category="agents"),
     BuiltinTool(name="CanvasCommand", display_name="Canvas control", description="Move, collapse, tile, close, or tidy cards on the canvas after spawn", category="agents"),
+    # These two always had real deny-gates at dispatch (register_builtin_mcp_servers), but were missing here, so the permissions API refused to store a policy for them and the gates were unreachable (ENG-284).
+    BuiltinTool(name="ShowUI", display_name="Rich UI", description="Render rich inline components in chat, and ask questions through interactive UI", category="interaction"),
+    BuiltinTool(name="Skill", description="Load an installed skill's instructions into the conversation", category="skills"),
     # Browser delegation tools (Layer 1, what the main agent calls)
     BuiltinTool(name="CreateBrowserAgent", description="Create a new browser and run a task on it", category="browser_delegation"),
     BuiltinTool(name="BrowserAgent", description="Delegate a browser task to an existing browser agent", category="browser_delegation"),
