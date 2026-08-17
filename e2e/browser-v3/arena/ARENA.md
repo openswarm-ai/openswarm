@@ -975,3 +975,17 @@ UI tools, agent orchestration, model-mixing, durable memory) = the planning/memo
 scan flagged as our weak side; their memory system == the durable cross-page memory gap we found
 (v37 note-scratchpad, deferred). Does NOT change our standing or warrant chasing a self-graded
 number by overfitting.
+
+## TEST ROADMAP add (2026-08-16): Polar-comparable public benchmarks
+Polar's own benchmarks (Odysseys, BU Bench V1) are NOT runnable -- polar-evals is results-only
+(scores.json + LLM-judge verdicts), tasks proprietary, gemini-judge scored. Cannot test directly.
+BUT BU Bench V1 repackages PUBLIC benchmarks we CAN run: Online-Mind2Web (OM2W2), GAIA, BrowseComp,
+WebBench-READ, InteractionTests. QUEUE (labeled SUPPLEMENTARY -- LLM-judged, not primary-scoreboard
+per no-LLM-judge rule; score deterministic subsets our way where they exist):
+- Online-Mind2Web (300 live-web tasks, WebJudge) -- highest value; the number browser-use Cloud
+  (97) and Avenir-Web (53.7 open-SOTA) are measured on; the honest Polar-comparable.
+- GAIA / BrowseComp -- research-QA (answer-match, partially deterministic).
+- WebBench-READ -- read/extract tasks.
+Priority: after OSWorld + live-writes (the remaining PRIMARY goal clauses). Rationale: primary
+clauses (deterministic, third-party) come first; supplementary LLM-judged numbers are for
+competitor comparison, clearly labeled, never counted toward the 11 goal clauses.
