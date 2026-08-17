@@ -2628,7 +2628,7 @@ app.whenReady().then(async () => {
     // steady-state speed instead of waiting out a cold model load under the user's keypress.
     const warmDelay = setTimeout(() => {
       const started = whisperService.warmInBackground(voiceResourceDir(), voiceUserDataDir());
-      console.log(started ? '[voice] warming whisper in background' : '[voice] no model yet, skipping boot warm');
+      console.log(started ? '[voice] warming whisper in background' : '[voice] skipping boot warm (no model, or dictation never used on this install)');
     }, 8000);
     if (warmDelay.unref) warmDelay.unref();
     powerMonitor.on('resume', () => { whisperService.reprimeAfterWake().catch(() => {}); });

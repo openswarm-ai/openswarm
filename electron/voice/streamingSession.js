@@ -33,6 +33,10 @@ function wavFromPcm16(pcm) {
 }
 
 function createStreamingSession({ resourceDir, userDataDir, onPartial, previewIntervalMs = PREVIEW_INTERVAL_MS }) {
+  // Dictating IS using dictation: stamp the boot-warm marker and start the model load at session
+  // open, so a cold load overlaps the user speaking instead of landing after their first phrase.
+  whisperService.markUsed(userDataDir);
+  whisperService.ensureServer(resourceDir, userDataDir).catch(() => {});
   let open = [];
   let openBytes = 0;
   const committed = [];

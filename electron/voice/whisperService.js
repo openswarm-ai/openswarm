@@ -241,6 +241,7 @@ async function ensureServer(resourceDir, userDataDir) {
 // never crosses a CORS boundary; we POST from the main process where there is none.
 async function transcribe(resourceDir, userDataDir, wavBuffer) {
   const p = await ensureServer(resourceDir, userDataDir);
+  markUsed(userDataDir);
   p_touchIdle();
   const form = new FormData();
   form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav');
@@ -256,12 +257,28 @@ async function transcribe(resourceDir, userDataDir, wavBuffer) {
   return text;
 }
 
+// A user who has never dictated should not pay a model-resident whisper-server for 10 minutes
+// after every boot; the marker appears on the first real transcription and unlocks boot-warm for
+// every boot after. Their one cold load lands under the first-ever phrase, same as VoiceInk.
+function p_usedMarkerPath(userDataDir) {
+  return path.join(userDataDir, 'dictation-used');
+}
+
+function markUsed(userDataDir) {
+  try { fs.writeFileSync(p_usedMarkerPath(userDataDir), '1'); } catch (_) {}
+}
+
+function hasBeenUsed(userDataDir) {
+  try { return fs.existsSync(p_usedMarkerPath(userDataDir)); } catch (_) { return false; }
+}
+
 // Boot the model in the background at app start so the expensive FIRST load (cold page cache, and on
 // a packaged build the OS's first-exec check of the bundled binary) never lands under a keypress.
 // Deliberately refuses to download: a user who never dictates should not silently pull 148MB.
 // Returns whether a warm was actually started, so the caller can log the honest reason.
 function warmInBackground(resourceDir, userDataDir) {
   if (proc || readyPromise) return true; // already warm or warming; ensureServer dedupes anyway
+  if (!hasBeenUsed(userDataDir)) return false;
   if (!resolveModel(resourceDir, userDataDir)) return false;
   ensureServer(resourceDir, userDataDir).catch(() => {});
   return true;
@@ -310,4 +327,4 @@ async function reprimeAfterWake() {
   return true;
 }
 
-module.exports = { ensureServer, warmInBackground, reprimeAfterWake, transcribe, stopServer, isWarm, setModel, setDictionary, selectedModel, resolveBinary, resolveModel, modelStatus };
+module.exports = { ensureServer, warmInBackground, reprimeAfterWake, transcribe, stopServer, isWarm, setModel, setDictionary, selectedModel, resolveBinary, resolveModel, modelStatus, markUsed, hasBeenUsed };
