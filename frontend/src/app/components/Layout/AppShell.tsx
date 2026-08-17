@@ -25,6 +25,7 @@ import { ackRun, runWorkflowNow } from '@/shared/state/workflowsSlice';
 import { setPendingBrowserUrl } from '@/shared/state/tempStateSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import UpdateReadyPill from '@/app/components/Layout/UpdateReadyPill';
+import ModelErrorPill from '@/app/components/Layout/ModelErrorPill';
 import ReconnectingPill from '@/app/components/Layout/ReconnectingPill';
 import SafeModePill from '@/app/components/Layout/SafeModePill';
 import WhatsNewCard from '@/app/components/Layout/WhatsNewCard';
@@ -37,7 +38,6 @@ import { useClaudeTokens, useThemeAccent, useThemeWash } from '@/shared/styles/T
 import SpacesStrip from '@/app/pages/Dashboard/desktop/SpacesStrip';
 import { washBackgroundLayers, washUnderlayColor, effectiveWashStops } from '@/shared/styles/washBackground';
 import { useGrainTileUrl } from '@/shared/styles/useGrainTileUrl';
-import { ErrorSlime } from '@/app/components/feedback/ErrorSlime';
 
 const AppShell: React.FC = () => {
   const c = useClaudeTokens();
@@ -71,8 +71,6 @@ const AppShell: React.FC = () => {
     };
   }, []);
 
-  const modelsLoaded = useAppSelector((s) => s.models.loaded && !s.models.failed);
-  // The models list is marked loaded even when its fetch fails, so it alone can't tell "no model" from "couldn't ask". Settings is where the user's own key/sub lives, so the banner waits for it.
   const settingsKnown = useAppSelector((s) => s.settings.loaded);
   // "Connected" = the user's OWN model (key/sub/pro/custom), NOT a non-empty /models list: the free-trial Haiku is always in that list now, so a byProvider-length check would falsely read as connected and hide the out-of-runs banner.
   const hasModelConnected = useAppSelector(selectHasModelConnected);
@@ -131,12 +129,6 @@ const AppShell: React.FC = () => {
     const h = Math.floor(secs / 3600);
     return h >= 1 ? `~${h}h` : `~${Math.max(1, Math.round(secs / 60))}m`;
   }, [proUsage]);
-  // Hold the banner until the boot free-trial mint settles, else a brand-new user sees it flash red for the ~1-3s the trial takes to arm. (Offline shows immediately, it's its own signal.)
-  const freeTrialArmSettled = useAppSelector((s) => s.settings.freeTrialArmSettled);
-  // The red wall is for genuine "no way to run" only; the free-trial states get the quiet nudge below.
-  const settingsSettled = useAppSelector((s) => s.settings.settled);
-  const backendUnreachable = settingsSettled && !settingsKnown;
-  const showWarningBanner = !isOnline || backendUnreachable || (settingsKnown && modelsLoaded && freeTrialArmSettled && !hasModelConnected && !freeTrialActive && !freeTrialSpent);
   const [ftNudgeDismissed, setFtNudgeDismissed] = useState<boolean>(() => {
     try { return localStorage.getItem('os_ft_nudge_dismissed') === '1'; } catch { return false; }
   });
@@ -462,53 +454,6 @@ const AppShell: React.FC = () => {
         <DynamicIsland />
       </Box>
 
-      <Collapse in={showWarningBanner && !fsHideChrome} timeout={350} unmountOnExit>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            px: 2,
-            py: 0.6,
-            bgcolor: 'rgba(239, 68, 68, 0.08)',
-            borderBottom: '1px solid rgba(239, 68, 68, 0.18)',
-            flexShrink: 0,
-            animation: showWarningBanner ? 'warning-fade-in 0.4s ease-out' : undefined,
-            '@keyframes warning-fade-in': {
-              from: { opacity: 0 },
-              to: { opacity: 1 },
-            },
-          }}
-        >
-          <ErrorSlime size={22} />
-          <Typography sx={{ fontSize: '0.875rem', color: '#ef4444', flex: 1, fontWeight: 500, letterSpacing: '0.01em' }}>
-            {!isOnline
-              ? 'No internet connection; agents cannot reach AI models or external services'
-              : backendUnreachable
-              ? 'Cannot reach the OpenSwarm backend; your settings and agents are unavailable until it comes back'
-              : (
-                <>
-                  No AI model connected.{' '}
-                  <Box
-                    component="span"
-                    onClick={() => dispatch(openSettingsCard({ tab: 'models' }))}
-                    sx={{
-                      textDecoration: 'underline',
-                      cursor: 'pointer',
-                      fontWeight: 600,
-                      '&:hover': { opacity: 0.8 },
-                      transition: 'opacity 0.15s',
-                    }}
-                  >
-                    Configure models
-                  </Box>
-                  {' '}to get started
-                </>
-              )}
-          </Typography>
-        </Box>
-      </Collapse>
-
       <Collapse in={showFreeTrialNudge && !fsHideChrome} timeout={300} unmountOnExit>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 0.5, flexShrink: 0 }}>
           <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, flex: 1, letterSpacing: '0.01em' }}>
@@ -562,6 +507,7 @@ const AppShell: React.FC = () => {
       </Collapse>
 
       {!fsHideChrome && <UpdateReadyPill />}
+      {!fsHideChrome && <ModelErrorPill />}
       {/* Deliberately NOT behind fsHideChrome: a dead backend must be visible even in fullscreen, or the app reads as frozen (ENG-242). */}
       <ReconnectingPill />
       {!fsHideChrome && <SafeModePill />}
