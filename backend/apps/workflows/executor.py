@@ -8,6 +8,7 @@ routing, retries, and history all aligned with the rest of the app.
 
 import asyncio
 import time
+from uuid import uuid4
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -84,6 +85,44 @@ def _resolve_allowed_tools(wf: Workflow) -> Optional[list[str]]:
     if not wf.actions.freeze:
         return None
     return list(wf.actions.configured_sets)
+
+
+def rescue_missing_steps(wf: Workflow) -> bool:
+    """A run on a stepless workflow used to be a guaranteed failure, and the builder agent could
+    manufacture that state by answering the user's request without ever staging steps (ENG-335:
+    "Ran 3 steps", saved zero, scheduled every 15 minutes into a wall). Prompt rules did not hold,
+    so the seal is mechanical, at the one gate every run passes: promote an uncommitted draft
+    (activating a workflow IS committing to it), else synthesize one step from the build chat's
+    first real user message, which is a perfectly runnable workflow (the runner is a full agent).
+    Returns whether live steps now exist."""
+    from backend.apps.workflows.models import WorkflowStep
+    try:
+        if wf.draft_steps:
+            live = [s for s in wf.draft_steps if s.enabled and s.text and s.text.strip()]
+            if live:
+                wf.steps = list(wf.draft_steps)
+                wf.draft_steps = None
+                storage.save_workflow(wf)
+                logger.warning(f"[workflow {wf.id}] rescued stepless run by committing the pending draft ({len(live)} steps)")
+                return True
+        edit_sid = getattr(wf, "edit_agent_session_id", None)
+        if edit_sid:
+            from backend.apps.agents.manager.session.session_store import load_session_data
+            data = load_session_data(edit_sid) or {}
+            first = next(
+                (m for m in data.get("messages", [])
+                 if m.get("role") == "user" and not m.get("hidden") and str(m.get("content") or "").strip()),
+                None,
+            )
+            if first:
+                text = str(first["content"]).strip()
+                wf.steps = [WorkflowStep(id=uuid4().hex, text=text, label=text[:48], enabled=True)]
+                storage.save_workflow(wf)
+                logger.warning(f"[workflow {wf.id}] rescued stepless run by synthesizing a step from the build chat's request")
+                return True
+    except Exception:
+        logger.exception(f"[workflow {wf.id}] stepless-rescue failed; the honest no-steps error stands")
+    return False
 
 
 def resolve_workflow_dashboard_id(wf: Workflow) -> Optional[str]:
@@ -323,6 +362,8 @@ async def execute(
             pass
 
         steps = [s for s in wf.steps if s.enabled and s.text and s.text.strip()]
+        if not steps and rescue_missing_steps(wf):
+            steps = [s for s in wf.steps if s.enabled and s.text and s.text.strip()]
         if not steps:
             raise ValueError("Workflow has no steps")
 
