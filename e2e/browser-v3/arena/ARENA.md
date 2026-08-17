@@ -1073,6 +1073,14 @@ points from the >=95 target, the furthest-open clause we have. The agent navigat
 place and often composes the right content, but the write does not persist. Not closable by
 scaffolding; needs write-completion capability work (submit-confirm loops, post-write read-back
 retries). Booked as OPEN-hard.
+NUANCE (2026-08-17): verified-writes is WRITE-TYPE-SPECIFIC, not a uniform 7%. gitlab MR comments
+DO persist (task 389 confirmed on MR 450 -- fill box + Ctrl+Enter submit). reddit UPVOTES do NOT
+(the vote click doesn't register -- a concrete UI-interaction bug, potentially fixable like the
+blocked-click work). reddit POSTS mostly not independently checkable (eval url=last). So the 7%
+atomic number was UPVOTE-DOMINATED and understates comment-type writes. Honest state: partial,
+type-dependent capability -- reliable on some write classes, failing on others. A precise clause-5
+number needs a balanced independently-checkable partition per write-type; the signal is 'partial,
+not near 95'.
 
 ## Online-Mind2Web head-to-head scoping (2026-08-16) — the honest bu-max comparison
 Runnable in principle: 300 tasks / 136 live sites, CC-BY-4.0, HuggingFace osunlp/Online-Mind2Web.
