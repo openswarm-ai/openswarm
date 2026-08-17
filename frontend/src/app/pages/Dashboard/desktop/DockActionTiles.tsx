@@ -36,6 +36,7 @@ function DockActionTiles({ tile, onAddBrowser, onApplications, onHoverAway }: Do
           <Tooltip title={a.label} placement="right">
             <Box
               className="osw-dock-tile"
+              data-dock-group="actions"
               onClick={a.act}
               onMouseEnter={onHoverAway}
               sx={{

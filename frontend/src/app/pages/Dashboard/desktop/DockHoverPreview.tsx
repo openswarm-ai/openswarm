@@ -8,17 +8,22 @@ const PREVIEW_W = 190;
 interface DockHoverPreviewProps {
   entry: DockEntry;
   top: number;
+  railHeight: number;
   image?: string;
 }
 
 /** The card that floats beside a hovered dock tile: a live shot when we have one, title + snippet otherwise. */
-function DockHoverPreview({ entry, top, image }: DockHoverPreviewProps): React.ReactElement {
+function DockHoverPreview({ entry, top, railHeight, image }: DockHoverPreviewProps): React.ReactElement {
+  // A low tile's preview used to hang past the rail bottom into the canvas clip and get cut (ENG-331); the lower half anchors from the bottom and grows upward instead.
+  const fromBottom = railHeight > 0 && top > railHeight / 2;
   return (
     <Box
       sx={{
         position: 'absolute',
         left: 'calc(100% + 10px)',
-        top: Math.max(0, top - 34),
+        ...(fromBottom
+          ? { bottom: Math.max(0, railHeight - top - 44) }
+          : { top: Math.max(0, top - 34) }),
         width: PREVIEW_W,
         borderRadius: '10px',
         overflow: 'hidden',

@@ -44,6 +44,7 @@ function columnHeight(tile: number, tiles: number, dividers: number): number {
 interface DockGeom {
   els: HTMLElement[];
   bases: number[];
+  groups: string[];
   rootTop: number;
   written: string[];
 }
@@ -56,9 +57,48 @@ function beginGesture(root: HTMLElement, box: HTMLDivElement | null): DockGeom {
   return {
     els,
     bases: els.map((t) => (box?.contains(t) ? boxShift : 0) + t.offsetTop + t.offsetHeight / 2),
+    groups: els.map((t) => t.dataset.dockGroup || ''),
     rootTop: root.getBoundingClientRect().top,
     written: els.map(() => ''),
   };
+}
+
+/** The dock's bell-curve magnify as pure math. The rail holds two species (chat entries above the
+ * divider, action buttons below) and the curve must never cross that divider: hovering Browsers
+ * used to inflate the neighboring chat (ENG-331). Tiles outside the cursor's group get '' (reset). */
+export function computeMagnifyTransforms(
+  bases: number[], groups: string[], cy: number, size: number,
+): { transforms: string[]; scales: number[] } {
+  const transforms: string[] = bases.map(() => '');
+  const scales: number[] = bases.map(() => 1);
+  if (bases.length === 0) return { transforms, scales };
+  const boost = MAGNIFY_TARGET / size - 1;
+  const falloff = size * FALLOFF_RATIO;
+  let nearest = 0;
+  for (let i = 1; i < bases.length; i += 1) {
+    if (Math.abs(cy - bases[i]) < Math.abs(cy - bases[nearest])) nearest = i;
+  }
+  const activeGroup = groups[nearest];
+  const idx: number[] = [];
+  groups.forEach((g, i) => { if (g === activeGroup) idx.push(i); });
+  const sub = idx.map((i) => 1 + boost * Math.exp(-(((cy - bases[i]) / falloff) ** 2)));
+  const extra = sub.map((s) => size * (s - 1));
+  const total = extra.reduce((a, b) => a + b, 0);
+  // Bases run in DOM order, top to bottom, so "everything before me" is a running sum, not an inner loop.
+  const head = (extra[0] - total) / 2;
+  const tail = (total - extra[extra.length - 1]) / 2;
+  const span = bases[idx[idx.length - 1]] - bases[idx[0]];
+  // Apple's Dock never grows longer than its rail: pin both ends and let the spread squeeze the middle.
+  const slope = span > 0 ? (tail - head) / span : 0;
+  let before = 0;
+  idx.forEach((elI, k) => {
+    const raw = before - (total - before - extra[k]);
+    const shift = raw / 2 - head - slope * (bases[elI] - bases[idx[0]]);
+    before += extra[k];
+    transforms[elI] = `translateY(${shift.toFixed(1)}px) scale(${sub[k].toFixed(3)})`;
+    scales[elI] = sub[k];
+  });
+  return { transforms, scales };
 }
 
 /** macOS Dock sizing: tiles shrink to fit the column and only scroll once they hit the floor. */
@@ -145,30 +185,20 @@ export function useDockLayout({ cardCount, actionCount, dividerCount }: DockLayo
     }
     const geom = geomRef.current ?? beginGesture(root, scrollRef.current);
     geomRef.current = geom;
-    const { els, bases } = geom;
+    const { els, bases, groups } = geom;
     if (els.length === 0) return;
-    const size = tileRef.current;
-    const boost = MAGNIFY_TARGET / size - 1;
-    const falloff = size * FALLOFF_RATIO;
     const cy = clientY - geom.rootTop;
-    const scales = bases.map((b) => 1 + boost * Math.exp(-(((cy - b) / falloff) ** 2)));
-    const extra = scales.map((s) => size * (s - 1));
-    const total = extra.reduce((a, b) => a + b, 0);
-    // Bases run in DOM order, top to bottom, so "everything before me" is a running sum, not an inner loop.
-    const head = (extra[0] - total) / 2;
-    const tail = (total - extra[els.length - 1]) / 2;
-    const span = bases[els.length - 1] - bases[0];
-    // Apple's Dock never grows longer than its rail: pin both ends and let the spread squeeze the middle.
-    const slope = span > 0 ? (tail - head) / span : 0;
-    let before = 0;
+    const { transforms, scales } = computeMagnifyTransforms(bases, groups, cy, tileRef.current);
     els.forEach((t, i) => {
-      const raw = before - (total - before - extra[i]);
-      const shift = raw / 2 - head - slope * (bases[i] - bases[0]);
-      before += extra[i];
-      const next = `translateY(${shift.toFixed(1)}px) scale(${scales[i].toFixed(3)})`;
+      const next = transforms[i];
       // Tiles outside the bell curve land on the same transform move after move, and a no-op style write is not free.
       if (geom.written[i] === next) return;
       geom.written[i] = next;
+      if (next === '') {
+        t.style.transform = '';
+        t.style.zIndex = '';
+        return;
+      }
       t.style.transform = next;
       t.style.zIndex = String(10 + Math.round((scales[i] - 1) * 100));
     });

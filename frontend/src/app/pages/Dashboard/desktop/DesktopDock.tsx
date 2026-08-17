@@ -192,6 +192,7 @@ function DesktopDock({
               <Box
                 key={entry.id}
                 className="osw-dock-tile"
+                data-dock-group="entries"
                 role="button"
                 // The hover card carries the name for the eye; this carries it for everything else (screen readers, tests).
                 aria-label={entry.label}
@@ -260,7 +261,9 @@ function DesktopDock({
         </Box>
       ))}
 
-      {hoveredEntry && <DockHoverPreview entry={hoveredEntry} top={hovered!.top} image={previewImage} />}
+      {hoveredEntry && (
+        <DockHoverPreview entry={hoveredEntry} top={hovered!.top} railHeight={dockRef.current?.offsetHeight ?? 0} image={previewImage} />
+      )}
     </Box>
   );
 }
