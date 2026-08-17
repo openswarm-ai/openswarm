@@ -1062,6 +1062,18 @@ multi-step create/edit writes. Scorer caveats: a few url=last tasks need the epi
 tighten with a cleaned write-only partition, but the signal (far below 95) is unambiguous.
 Honest verdict: verified-writes is capability-gated for complex writes, not a quick clause to close.
 
+ATOMIC-WRITE MEASUREMENT (2026-08-16, precise): I predicted atomic writes (post-comment / change-
+bio / upvote) would score MUCH higher than the 8% complex-write number. **That prediction was
+WRONG: 1/15 = 7% (Wilson95 lo 1%).** Upvote tasks fail the vote-class check outright; only a
+single MR-comment write verifiably persisted. (Verifier bugs found+fixed first -- func:-prefixed
+and url=last evals need episode context and are marked not-independently-checkable rather than
+scored 0; a broken instrument must never book a 0, per the twice-learned rule.) CLAUSE 5 HONEST
+STATE: verified writes ~7-8% overall, atomic and complex alike -- a REAL capability wall, ~88
+points from the >=95 target, the furthest-open clause we have. The agent navigates to the right
+place and often composes the right content, but the write does not persist. Not closable by
+scaffolding; needs write-completion capability work (submit-confirm loops, post-write read-back
+retries). Booked as OPEN-hard.
+
 ## Online-Mind2Web head-to-head scoping (2026-08-16) — the honest bu-max comparison
 Runnable in principle: 300 tasks / 136 live sites, CC-BY-4.0, HuggingFace osunlp/Online-Mind2Web.
 This is where browser-use Cloud claims 97 and open-source SOTA (Avenir-Web) is 53.7 — the only

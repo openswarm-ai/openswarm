@@ -15,21 +15,22 @@ def check(pg, task) -> tuple[bool, str]:
         url = c.get("url", "")
         for k, v in SUB.items():
             url = url.replace(k, v)
-        if url in ("last", ""):
-            return None, "url=last (needs episode final page, skipped)"
+        if url in ("last", "") or url.startswith("func:"):
+            return None, "url needs episode context (last/func:) — not independently checkable"
         try:
             pg.goto(url, timeout=15000, wait_until="domcontentloaded"); pg.wait_for_timeout(1200)
         except Exception as e:
             return False, f"fetch-fail {str(e)[:40]}"
-        loc = c.get("locator", "")
+        loc = c.get("locator") or ""
         if loc and loc.startswith("document."):
             try:
-                text = pg.evaluate(f"() => {{ const e = {loc}; return e ? (e.textContent||e.outerHTML) : ''; }}")
+                text = pg.evaluate(f"() => {{ try {{ const e = {loc}; return e ? (e.textContent||e.outerHTML||'') : ''; }} catch(x) {{ return ''; }} }}") or ""
             except Exception:
                 text = pg.content()
         else:
             text = pg.content()
-        req = c.get("required_contents", {})
+        req = c.get("required_contents") or {}
+        text = text or ""
         if "must_include" in req:
             if not all(str(x) in text for x in req["must_include"]):
                 return False, "must_include absent"
