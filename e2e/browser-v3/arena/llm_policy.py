@@ -198,6 +198,8 @@ class LlmPolicy:
     answer_protocol: bool = False
     # v45: read-your-writes doctrine (system rung, gated on state-change goals). Re-read + retry.
     read_your_writes: bool = False
+    # v46: checkpoint self-verification done-gate (FCPAgent-style). Confirm each requirement before finishing.
+    done_gate: bool = False
     # v43: answer-schema conformance gate (run.py-side). Validate send_msg against the task's own
     # provided JSON schema and bounce non-conforming answers -- generic instruction-following.
     schema_gate: bool = False
@@ -282,6 +284,9 @@ class LlmPolicy:
                 r"\b(post|comment|upvote|down ?vote|vote|create|add|edit|submit|reply|open an issue|change|update|delete|remove)\b", goal, re.I):
             extra += ("\nSTATE-CHANGE TASK: after your write action, RE-READ and CONFIRM the change "
                       "is visible before finishing; if not visible, repeat the write.")
+        if getattr(self, "done_gate", False) and len(re.findall(r",|\band\b|;", goal)) >= 2:
+            extra += ("\nDONE-CHECK required before finishing: restate each requirement + its visible "
+                      "evidence; if any lacks evidence and steps remain, keep working, do not finish.")
         user = f"GOAL: {goal}{extra}\n\nACTIONS YOU ALREADY TOOK:\n{past}\n\nPAGE:\n{page}\n\nYour single next action:"
         content: Any = user
         if image_b64:
@@ -869,6 +874,13 @@ If the goal specifies a required response format or JSON schema (e.g. a FinalAge
 fields like task_type and status), your FINAL send_msg_to_user MUST be exactly that JSON object
 with all required fields filled -- not prose, not a bare value. Match the schema literally."""
 
+OSW_SYSTEM_V46 = """
+Before you FINISH a multi-part task, run an explicit completion check: restate EACH requirement the
+task named, and for each state the concrete evidence on the page that it is done (the record exists,
+the value shows, the count matches). If ANY requirement lacks evidence and you have steps left, DO
+NOT finish -- go satisfy it. Only send your final answer once every requirement has visible evidence.
+List the check as 'DONE-CHECK: [req1: evidence] [req2: evidence] ...' before finishing."""
+
 OSW_SYSTEM_V45 = """
 If the task CHANGES state (post, comment, vote, create, edit, submit, upload), a single click is
 not enough -- the write often does not register on the first try. After the action, RE-READ: look
@@ -1114,6 +1126,16 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   force_unblock=True, native_js_fallback=True, escape_token=True,
                                   table_md=True, draw_circle=True, answer_protocol=True,
                                   schema_gate=False, **v43)  # DISABLED: gate falsely bounced valid JSON
+    if name == "osw-llm-v46":  # v42 + checkpoint self-verification done-gate (FCPAgent-style)
+        v46 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36 + OSW_SYSTEM_V46, max_tokens=900)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True,
+                                  table_md=True, answer_protocol=True, done_gate=True, **v46)
     if name == "osw-llm-v45":  # v42 + read-your-writes (state-change tasks: re-read + retry)
         v45 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36 + OSW_SYSTEM_V45, max_tokens=900)
