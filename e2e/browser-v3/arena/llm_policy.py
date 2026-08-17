@@ -209,16 +209,22 @@ class LlmPolicy:
     mutation_diff: bool = False
 
     def notes_gated(self, goal: str) -> bool:
-        return self.note_pad and bool(re.search(
-            r"\b(all|each|every|both|total|sum|count|how many|list|across)\b", goal, re.I))
+        # Study (AgentOccam #note): within-episode scratchpad helps ANY multi-step task, not just
+        # collection goals. Gate on collection words OR a multi-requirement goal (>=2 clauses).
+        if not self.note_pad:
+            return False
+        return bool(re.search(r"\b(all|each|every|both|total|sum|count|how many|list|across)\b", goal, re.I)
+                    or len(re.findall(r",|\band\b|\bthen\b|;", goal)) >= 2)
 
     def note_block(self) -> str:
+        head = ("\nSCRATCHPAD (persists across pages, never lost -- your working memory for this "
+                "multi-step task). Save any fact you'll need later with a line 'NOTE: <fact>' after "
+                "your action: a running total, an id/name you found, a sub-step you finished. Read "
+                "these before deciding you are done.")
         if not self.notes:
-            return ""
-        rows = "\n".join(f"  - {n}" for n in self.notes[-15:])
-        return ("\nPERSISTENT NOTES (facts you saved; survive navigation, never lost):\n" + rows
-                + "\nAdd a line 'NOTE: <fact>' after your action to save anything you must remember "
-                  "across pages (a running total, items already seen). Do NOT re-save a note.")
+            return head + "\n  (empty -- save your first fact when you find one)"
+        rows = "\n".join(f"  - {n}" for n in self.notes[-18:])
+        return head + "\nSaved so far:\n" + rows + "\n(do not re-save an existing note)"
 
     # v36: first-class refusal token (ingested from SeeAct's 'none of these match' option). When no
     # row matches the goal's named target, an explicit no_match() beats a near-miss click (which is
@@ -1126,6 +1132,16 @@ def build(name: str, model: str = "", endpoint: str = "", **_: Any) -> Any:
                                   force_unblock=True, native_js_fallback=True, escape_token=True,
                                   table_md=True, draw_circle=True, answer_protocol=True,
                                   schema_gate=False, **v43)  # DISABLED: gate falsely bounced valid JSON
+    if name == "osw-llm-v47":  # v42 + within-episode note scratchpad (AgentOccam memory, study #1)
+        v47 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
+                   + OSW_SYSTEM_V36, max_tokens=900)
+        return OpenSwarmLlmPolicy(name=name, multi=True, vision="progressive", fastpath=True,
+                                  scripted_drag=True, auto_complete=True, som=False,
+                                  native_pickers=True, verify_terminal=True, post_mouse_vision=True,
+                                  multi_cap=6, fill_verify=True, dispatch=True, offscreen=True,
+                                  local_ctx=True, blocker_probe=True, suppress_wrappers=True,
+                                  force_unblock=True, native_js_fallback=True, escape_token=True,
+                                  table_md=True, answer_protocol=True, note_pad=True, **v47)
     if name == "osw-llm-v46":  # v42 + checkpoint self-verification done-gate (FCPAgent-style)
         v46 = dict(v7, system=OSW_SYSTEM_V8 + OSW_SYSTEM_V9_WIDGETS + OSW_SYSTEM_V16 + OSW_SYSTEM_V30
                    + OSW_SYSTEM_V36 + OSW_SYSTEM_V46, max_tokens=900)
