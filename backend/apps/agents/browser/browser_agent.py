@@ -1150,8 +1150,25 @@ async def run_browser_agent(
             nav_result = await execute_browser_tool(
                 "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
             )
-            logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
-            preloaded_perception, current_url, preloaded_reads = await p_perceive(initial_url)
+            p_nav_err = str(nav_result.get("error") or "") if isinstance(nav_result, dict) else ""
+            if p_nav_err:
+                # One retry: right after spawn the webview may still be mounting, and that transient must not become a run on the wrong page.
+                nav_result = await execute_browser_tool(
+                    "BrowserNavigate", {"url": initial_url}, browser_id, tab_id,
+                )
+                p_nav_err = str(nav_result.get("error") or "") if isinstance(nav_result, dict) else ""
+            if p_nav_err:
+                # This used to log "navigated to" and run anyway, which is how an agent asked for /wiki/Helium answered about Argon (Haik's field report).
+                logger.warning(f"Browser agent {session_id}: navigation to {initial_url} FAILED: {p_nav_err[:200]}")
+                preloaded_perception, current_url, preloaded_reads = await p_perceive("")
+                preloaded_perception = (
+                    f"\n\n[IMPORTANT: opening {initial_url} FAILED ({p_nav_err[:200]}). "
+                    f"The page actually loaded right now is {current_url or 'unknown'}. Never answer from this wrong page: "
+                    "retry BrowserNavigate yourself first, and if it still fails, report the navigation failure as your result.]"
+                ) + preloaded_perception
+            else:
+                logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', '')}")
+                preloaded_perception, current_url, preloaded_reads = await p_perceive(initial_url)
         elif not p_resumed:
             # Fresh task on an existing card: perceive the current page to learn its host (for replay) and front-load turn 1 (this path used to start cold).
             preloaded_perception, current_url, preloaded_reads = await p_perceive("")
@@ -3635,11 +3652,24 @@ async def run_browser_agents(
                 )
                 if url:
                     # a retry starts from the task's entry URL, never the failed attempt's leftover page state
+                    p_nav: dict = {}
                     try:
-                        await execute_browser_tool("BrowserNavigate", {"url": url}, browser_id)
-                    except Exception:
-                        pass
-            elif os.environ.get("OSW_PRELUDE_TRIM", "1") != "0":
+                        p_nav = await execute_browser_tool("BrowserNavigate", {"url": url}, browser_id)
+                    except Exception as p_nav_exc:
+                        p_nav = {"error": f"{type(p_nav_exc).__name__}: {p_nav_exc}"}
+                    if isinstance(p_nav, dict) and p_nav.get("error"):
+                        # A reused card that cannot move would answer confidently about the OLD page; swap it for a fresh card instead of running on a lie (Haik's field report).
+                        logger.warning(
+                            f"[browser-agent] reused card {browser_id} refused navigation to {url[:80]} "
+                            f"({str(p_nav['error'])[:140]}); evicting it and spawning a fresh card")
+                        DEAD_CARDS.add(browser_id)
+                        await evict_dead_card(dashboard_id, browser_id)
+                        async with p_card_pick_lock:
+                            browser_id = await p_create_browser_card(dashboard_id, url or entry_url, parent_session_id)
+                            ACTIVE_AGENT_CARDS.add(browser_id)
+                        reused = False
+                        task_def.pop("p_reused_note", None)
+            if not reused and os.environ.get("OSW_PRELUDE_TRIM", "1") != "0":
                 # Poll until the mounting card serves real page text instead of a blind 2s; capped, so the worst case is the old wait plus one probe.
                 p_mount_t0 = time.monotonic()
                 p_mounted = False
@@ -3668,7 +3698,7 @@ async def run_browser_agents(
                         await asyncio.sleep(0.4)
                     logger.info(f"[browser-spawn-ack] {browser_id} rebroadcast after silent mount; alive={p_mounted}")
                 logger.info(f"[browser-cold] mount poll {int((time.monotonic() - p_mount_t0) * 1000)}ms for {browser_id}")
-            else:
+            elif not reused:
                 await asyncio.sleep(2.0)
         elif browser_id and not app_mode:
             ACTIVE_AGENT_CARDS.add(browser_id)

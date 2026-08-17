@@ -11,6 +11,7 @@ import { resolveInput } from './resolveUrl';
 import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
 import { shouldStopWaiting, SETTLE_POLL_MS, settleProbeJs } from './browserSettle';
 import { unwrapCdpEval } from './cdpEval';
+import { navigationOutcome, sameDoc } from './navigationOutcome';
 import { typeChars, type TypedKeys } from './typeChars';
 
 let initialized = false;
@@ -369,6 +370,8 @@ async function handleNavigate(wv: BrowserWebview, params: Record<string, any>): 
   const raw = params.url as string;
   if (!raw) return { error: 'url parameter is required' };
   const url = resolveInput(raw);
+  let before = '';
+  try { before = wv.getURL(); } catch { /* mid-mount; landed check degrades gracefully */ }
   // loadURL resolves only on the full 'load' event, which heavy SPAs (LinkedIn, Gmail) hold open with persistent connections long past our timeout even though the page is usable in a second. Return the moment the DOM is ready and let the agent's next wait settle the rest, the way a person clicks before every background request has finished.
   let removeReady = () => {};
   const domReady = new Promise<void>((resolve) => {
@@ -376,9 +379,10 @@ async function handleNavigate(wv: BrowserWebview, params: Record<string, any>): 
     wv.addEventListener('dom-ready', onReady, { once: true });
     removeReady = () => wv.removeEventListener('dom-ready', onReady);
   });
+  let aborted = false;
   const fullyLoaded = wv.loadURL(url).catch((err: any) => {
-    // A superseded navigation aborts the old load; that's normal, not a failure.
-    if (err?.message?.includes('ERR_ABORTED')) return;
+    // ERR_ABORTED can be a benign supersede OR a nav the guest refused outright; the landed-URL check below tells them apart.
+    if (err?.message?.includes('ERR_ABORTED')) { aborted = true; return; }
     throw err;
   });
   fullyLoaded.catch(() => {}); // a late load failure shouldn't throw once dom-ready returned
@@ -399,6 +403,27 @@ async function handleNavigate(wv: BrowserWebview, params: Record<string, any>): 
       url: wv.getURL(),
       data_document: true,
     };
+  }
+  // "Navigated to" used to be unconditional, so a wedged guest whose load was silently aborted reported success while still parked on the old page (Haik's 2-of-4 repro). Only claim success once the document provably moved.
+  if (before && !sameDoc(url, before)) {
+    let landed = before;
+    const settleDeadline = Date.now() + (aborted ? 1500 : 400);
+    for (;;) {
+      try { landed = wv.getURL(); } catch { /* keep last */ }
+      if (landed && !sameDoc(landed, before)) break;
+      if (Date.now() >= settleDeadline) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    const verdict = navigationOutcome(url, before, landed);
+    if (verdict.kind === 'stuck') {
+      return {
+        error: `Navigation to ${url} did NOT happen; the page is still on ${before}. The webview may be wedged: retry once, and if it fails again report the failure instead of answering from the current page.`,
+        url: verdict.url,
+      };
+    }
+    if (verdict.kind === 'redirected') {
+      return { text: `Navigated to ${landed} (redirected from requested ${url})`, url: landed };
+    }
   }
   // Route-count is sampled on the next READ (handleGetText), not here: at navigate-return the SPA's XHRs haven't fired yet, so this would always be ~0.
   return { text: `Navigated to ${url}`, url };
