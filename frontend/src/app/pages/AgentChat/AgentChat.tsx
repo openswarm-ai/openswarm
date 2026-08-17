@@ -452,6 +452,31 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     };
   }, [id, isDraft, dispatch]);
 
+  // An OPEN chat whose card sits off screen still streamed at frame rate for nobody; downshift its
+  // socket to the 1Hz background buffer while invisible, and flush synchronously the moment it
+  // scrolls back in (the buffer's reopen contract), so a visible transcript is never behind.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries.some((e) => e.isIntersecting);
+      if (visible) {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        wsRef.current?.setBackgrounded(false);
+      } else if (!hideTimer) {
+        // 2s of hysteresis so a pan that clips the card for a beat never churns the mode.
+        hideTimer = setTimeout(() => { hideTimer = null; wsRef.current?.setBackgrounded(true); }, 2000);
+      }
+    }, { threshold: 0 });
+    io.observe(el);
+    return () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      io.disconnect();
+      wsRef.current?.setBackgrounded(false);
+    };
+  }, [id]);
+
   useEffect(() => {
     if (initialContextApplied.current || !initialContextPaths?.length) return;
     const timer = setTimeout(() => {
