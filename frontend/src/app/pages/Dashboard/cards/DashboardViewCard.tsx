@@ -696,14 +696,21 @@ const DashboardViewCard: React.FC<Props> = ({
         // Minimized apps live in the right-edge rail, so the card itself parks off-canvas at full size
         // (same trick as browser cards) and restores to exactly the geometry it left.
         pointerEvents: isMinimized ? 'none' : undefined,
-        left: isMinimized ? -100000 : (dockActive ? dockRect!.x : (dragging ? cardX : displayX)),
-        top: isMinimized ? -100000 : (dragging ? cardY : displayY),
+        // Docked = a TRUE miniature, same as BrowserCard: keep the full-size layout and shrink by a
+        // uniform transform centered in the chat's slot, so the app never reflows and agent clicks
+        // stay valid. Only `left` was ported originally, so a docked app rendered at the slot's x
+        // with its own y and FULL size, a giant overlay covering the chat it lives in (ENG-324).
+        left: isMinimized ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardX : displayX)),
+        top: isMinimized ? -100000 : (dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardY : displayY)),
         width: tiledSize ? tiledSize.width : displayW,
         height: tiledSize ? tiledSize.height : displayH,
-        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : undefined),
-        transformOrigin: tiledSize ? '0 0' : undefined,
+        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : undefined),
+        transformOrigin: tiledSize || dockActive ? '0 0' : undefined,
         borderRadius: isFullscreen ? '12px' : `${c.radius.lg}px`,
-        border: isHighlighted
+        // Docked = an embedded block, not a floating window (same call as BrowserCard): glow and shadow read as a detached card pasted over the chat.
+        border: dockActive
+          ? `1px solid ${c.border.medium}`
+          : isHighlighted
           ? `2px solid ${c.accent.primary}`
           : showAgentGlow
             ? `2px solid ${c.accent.primary}`
@@ -711,7 +718,9 @@ const DashboardViewCard: React.FC<Props> = ({
               ? `2px solid ${c.accent.primary}`
               : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
         bgcolor: c.bg.surface,
-        boxShadow: isHighlighted
+        boxShadow: dockActive
+          ? 'none'
+          : isHighlighted
           ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
           : showAgentGlow
             ? `0 0 0 2px ${c.accent.primary}40, 0 0 18px ${c.accent.primary}30, 0 0 40px ${c.accent.primary}15, inset 0 0 30px ${c.accent.primary}25`
