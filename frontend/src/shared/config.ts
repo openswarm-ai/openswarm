@@ -1,4 +1,5 @@
 import { noteBackendFailure, noteBackendSuccess, noteRequestStalled, setBackendProber } from '@/shared/backendConnection';
+import { bypassesGetCache, mutationClearsGetCache } from '@/shared/getCachePolicy';
 
 const _w = window as any;
 // Prefer the preload-injected port; if it's missing (preload raced the backend port being picked), re-query the live value before falling back to 8324. The bare 8324 guess is wrong on any machine where the backend landed on a fallback port (e.g. 8324 was held by a leftover backend); see the self-heal below.
@@ -141,6 +142,11 @@ function _installAuthFetchInterceptor() {
         try {
           const resp = await withStallWatch(() => originalFetch(input, finalInit));
           noteBackendSuccess();
+          // A refresh right after a save must see the save: a list GET cached moments before the
+          // mutation (a panel's mount fetch, a poll) would otherwise answer the refresh with the
+          // pre-save list, and the UI sits stale until something else refetches (Settings > Memory
+          // showed "Nothing saved yet" for a fact the store already held).
+          if (mutationClearsGetCache(method)) _cachedFetches.clear();
           return resp;
         } catch (err) {
           noteBackendFailure();
@@ -151,15 +157,20 @@ function _installAuthFetchInterceptor() {
 
       const cacheKey = `GET ${url}`;
 
+      // A caller that asked for no-store/reload gets the network; the dedupe cache is for bursts of
+      // identical default reads (twenty cards mounting), not for a read that wants fresh truth.
+      const wantsFresh = bypassesGetCache(finalInit?.cache ?? (input instanceof Request ? input.cache : undefined));
       const cached = _cachedFetches.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now()) {
+      if (cached && cached.expiresAt > Date.now() && !wantsFresh) {
         return cached.resp.clone();
-      } else if (cached) {
+      } else if (cached && (wantsFresh || cached.expiresAt <= Date.now())) {
         _cachedFetches.delete(cacheKey);
       }
 
+      // Same for an identical GET already in flight: joining one that started before a mutation
+      // would hand a fresh-wanting caller the pre-mutation answer.
       const inflight = _inflightFetches.get(cacheKey);
-      if (inflight) {
+      if (inflight && !wantsFresh) {
         const resp = await inflight;
         return resp.clone();
       }
