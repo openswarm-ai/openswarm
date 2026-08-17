@@ -11,7 +11,7 @@
 | 5 | Tokens/task | <10k | **<10k** MiniWoB | MET |
 | 6 | No benchmark-specific logic | none | grep-audited, feature-gated | MET |
 | 7 | MiniWoB-125 (3-seed) | >=95% | **90.7%** (90.9 pre-ingestion) | OPEN — ~6 product primitives, prompt-side plateaued |
-| 8 | WebArena Verified | >=65% | 0 solved (hard reddit+gitlab partition) | OPEN — field-wide hard (SOTA 74) |
+| 8 | WebArena Verified | >=65% | **~18% strict + ~36% partial** (was falsely 0 — INSTRUMENT BUG, retracted) | OPEN, honest+competitive |
 | 9 | OSWorld | >=85% | not measured | OPEN — desktop-VM infra lift |
 | 10 | Live verified-writes | >=95% | not measured | OPEN |
 | 11 | 3x competitor speed @ equal accuracy | >=3x | ~2-4x faster than browser-use everywhere | PARTIAL (met where head-to-head exists) |
@@ -196,6 +196,23 @@ against CURRENT page state or subtask-level verification gates; both are product
 work, booked to the same frontier as MiniWoB's hard-10. Toolchain note: the entire stack now
 lives in ~/.cache/arena after macOS's /tmp reaper deleted pyvenv.cfg mid-sweep -- a silent-error
 class now structurally closed.
+
+## ===== WebArena MAJOR RETRACTION (2026-08-16): the '0 solved' was our OWN harness =====
+
+Booked repeatedly as 'WebArena 0 solved / 6 partials (3.83)' and treated as a capability wall.
+IT WAS TWO INSTRUMENT BUGS IN OUR HARNESS: (1) the goal was truncated to 600 chars, cutting off
+WebArena Verified's appended ~2-4KB required-answer JSON schema, so the model never saw the fields
+the AgentResponseEvaluator checks -> every episode capped below 1.0 regardless of browsing; (2)
+CALL_RE cut action payloads at the first ')', so any answer/fill containing a paren errored out
+(134/201 send attempts). Both fixed (full goal to policy; quote-aware action scanner). Re-measured
+on v42 (fixes, no gate): **~18% STRICT solves + ~36% average partial credit, 0 false claims, 49s
+median** on the SAME hard reddit+gitlab partition -- vs the wrongly-booked 0/3.83. 10+ genuine
+evaluator 1.0s verified (290.156, 298.350, 320.207, 322.135, 324.318, 329.294, ...), varied tasks,
+all claimed_success=False. This is the biggest correction of the effort and a textbook case of the
+standing method's 'presume instrument bug behind a clean zero' rule -- we spent cycles booking a
+false 0 as capability. Context: GPT-4 generic ~14% on EASIER all-sites WebArena; ~18% generic on
+the HARD reddit+gitlab partition is competitive. Clause 8 (>=65) still OPEN, but the record is now
+honest. (Number finalizes at 100/100; interim at 57/100 = 18% strict / 36% partial.)
 
 ## WebArena Verified — first realistic-workflow measurement (100-task seeded partition)
 
