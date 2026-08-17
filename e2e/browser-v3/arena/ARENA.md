@@ -961,3 +961,17 @@ table role, question-word goal, quoted target) or is pure harness correctness (g
 truncated, quote-aware action parser). Test applied to each: "would it help on a website the
 agent has never seen?" — YES for all shipped; NO (hence DECLINED, prose-only) for the api/selector
 bypasses. Overfitting boundary holds; real-world generalization preserved.
+
+## Competitor note: Polar / Recursive Intelligence (2026-07-29 launch, reviewed 2026-08-16)
+Claims 'world's most powerful browser agent', 98.0 on 'Odysseys' + 95.0 on 'BU Bench V1' beating
+Browser Use / GPT-5.4 / Claude Opus 4.6. ASSESSMENT: both benchmarks are Polar's OWN (self-scored
+via their polar-evals repo) -- vendor-graded, the category our method excludes. Tell: on the
+non-home 'BU Bench V1' the field compresses (Polar 95 vs Aside 93 vs Browser Use 89.5) vs the
+98-vs-70 blowout on their own 'Odysseys'. Polar is a TUNED MULTI-MODEL PRODUCT (their words: agent
+orchestration, model mixing, per-user memory, 15h tasks) -- same class as browser-use Cloud, NOT a
+generic single-harness agent. Not comparable to our third-party-scored generic numbers; a neutral
+WebArena/MiniWoB run of Polar would be. LEARN-FROM (not a number): their 4 pillars (generalizable
+UI tools, agent orchestration, model-mixing, durable memory) = the planning/memory axis our SOTA
+scan flagged as our weak side; their memory system == the durable cross-page memory gap we found
+(v37 note-scratchpad, deferred). Does NOT change our standing or warrant chasing a self-graded
+number by overfitting.
