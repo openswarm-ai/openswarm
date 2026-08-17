@@ -1264,11 +1264,14 @@ const BrowserCard: React.FC<Props> = ({
         // Resizing the webview to the slot re-rendered the page as a narrow window, which is wrong.
         left: keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardX : (followX ?? displayX))),
         top: dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardY : (followY ?? displayY)),
-        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : undefined),
-        transformOrigin: tiledSize || dockActive ? '0 0' : undefined,
+        // Following a collapsed pill = a TRUE 320px miniature (uniform scale, no reflow, agent
+        // coordinates stay valid), the same contract as the in-chat dock; full-size beside a pill
+        // read as a detached window and buried the pill (Eric's 1.7.7 comparison).
+        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : followsParent ? `scale(${Math.min(1, 320 / displayW)})` : undefined),
+        transformOrigin: tiledSize || dockActive || followsParent ? '0 0' : undefined,
         width: tiledSize ? tiledSize.width : displayW,
         height: tiledSize ? tiledSize.height : displayH,
-        borderRadius: tileZone === 'fullscreen' ? '12px' : dockActive ? '12px' : `${c.radius.lg}px`,
+        borderRadius: tileZone === 'fullscreen' ? '12px' : dockActive || followsParent ? '12px' : `${c.radius.lg}px`,
         // Docked = an embedded block, not a floating window: a drop shadow and heavy accent frame read as a detached card pasted over the chat.
         border: dockActive || followsParent ? `1px solid ${c.border.medium}` : agentBorder,
         bgcolor: c.bg.surface,
