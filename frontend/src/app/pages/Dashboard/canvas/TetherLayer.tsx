@@ -13,6 +13,7 @@ const TetherLayer: React.FC<TetherLayerProps> = ({ tethers, c }) => {
   if (tethers.length === 0) return null;
   return (
     <svg
+      data-canvas-overlay="1"
       style={{
         position: 'absolute',
         left: 0,

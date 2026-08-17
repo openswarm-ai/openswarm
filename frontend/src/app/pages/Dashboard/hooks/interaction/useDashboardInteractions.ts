@@ -6,7 +6,6 @@ import { isAgentDrivenBrowser } from '@/shared/isAgentDrivenBrowser';
 import { expandSession } from '@/shared/state/agentsSlice';
 import { bringToFront } from '@/shared/state/dashboardLayoutSlice';
 import { setScrollFocusedCard } from '@/shared/cardScrollFocus';
-import { REVEAL_MIN_ZOOM } from '../../canvas/revealZoom';
 import type { CardType, useDashboardSelection } from '../state/useDashboardSelection';
 import type { useCanvasControls } from './useCanvasControls';
 
@@ -229,9 +228,9 @@ export function useDashboardInteractions({
     report('dashboard', 'canvas_double_clicked');
     // Double-tap on empty space = show me everything (Eric's call): the same animated fit the
     // overview affordances use, instead of the old blind 0.55x zoom-out that just lost people.
-    // Floored like tidy and reveal, because unfloored it clamped at MIN_ZOOM and a spread-out canvas
-    // landed at 15%, every card a postage stamp. That is the same "lost people" this was meant to fix.
-    canvas.actions.fitToView(REVEAL_MIN_ZOOM);
+    // UNfloored on purpose: the 0.5 floor made a spread board unfittable, and centering a too-big
+    // box put EVERY card off screen (measured: 0 of 4 visible), which is worse than small cards.
+    canvas.actions.fitToView();
   }, [canvas.actions]);
 
   // Double-click a card → always expand + center + zoom (cancels pending collapse from single-click)

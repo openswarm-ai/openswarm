@@ -752,6 +752,8 @@ export function useCanvasControls(
       const child = children[i] as HTMLElement;
       // Skip a kept-alive browser card from another dashboard (parked off-screen): fitting to it pans the canvas right onto it, which is the cross-dashboard bleed. On an empty dashboard this leaves nothing to fit, so the !isFinite reset below restores an identity transform and the off-screen card stays off-screen.
       if (child.getAttribute?.('data-keepalive-hidden') === '1' || child.querySelector?.('[data-keepalive-hidden="1"]')) continue;
+      // Overlays (the 1x1 tether SVG anchored at the canvas origin) are not content: counting one dragged every fit toward (0,0) whenever a sub-agent tether existed.
+      if (child.getAttribute?.('data-canvas-overlay') === '1') continue;
       const r = children[i].getBoundingClientRect();
       if (r.width === 0 && r.height === 0) continue;
       const sx = (r.left - vRect.left - prev.panX) / prev.zoom;
