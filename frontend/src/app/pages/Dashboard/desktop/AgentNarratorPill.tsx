@@ -121,26 +121,33 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
         <Box
           key={artifactKey}
           className="osw-artifact"
+          role="button"
+          aria-label="Resume this chat"
           onClick={(e) => { e.stopPropagation(); onResumeInterrupted?.(); }}
           sx={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 0.75,
-            px: 1.5,
-            py: 0.875,
-            borderRadius: '14px',
+            px: 1.25,
+            py: 0.5,
+            borderRadius: '999px',
             cursor: 'pointer',
-            background: 'rgba(217,119,6,0.16)',
-            border: '1px solid rgba(245,158,11,0.45)',
+            whiteSpace: 'nowrap',
+            background: 'rgba(30,27,24,0.85)',
+            border: '1px solid rgba(245,158,11,0.55)',
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
-            '&:hover': { background: 'rgba(217,119,6,0.26)' },
+            boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+            transition: 'background 0.15s ease, transform 0.15s ease',
+            '&:hover': { background: 'rgba(48,40,28,0.95)', transform: 'translateY(-1px)' },
           }}
         >
-          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#f59e0b' }} />
-          <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24' }}>
-            Stopped mid-task, click to resume
+          <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#f59e0b', flexShrink: 0 }} />
+          <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24', lineHeight: 1.6 }}>
+            Interrupted
+          </Typography>
+          <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'rgba(251,191,36,0.75)', lineHeight: 1.6 }}>
+            · Resume
           </Typography>
         </Box>
       ) : liveAsk ? (

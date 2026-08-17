@@ -754,7 +754,16 @@ const AgentCard: React.FC<Props> = ({
   // The boot restore marks a cut-off turn 'stopped' ONLY when the agent still owes a response
   // (SessionPersistence finalize); surfacing it here is what makes an interrupted chat visible
   // from the board instead of behind a Resume button inside the card (ENG-321).
-  const pillInterrupted = session.status === 'stopped' && !session.workflow_run_id;
+  // Interrupted = stopped while still OWING a reply (last real message is the user's). Bare
+  // status==='stopped' lit the chip on every deliberately-stopped or ancient session at once
+  // (Eric's board, 2026-08-17); a chat whose last word was the assistant's owes nothing.
+  const pillInterrupted = React.useMemo(() => {
+    if (session.status !== 'stopped' || session.workflow_run_id) return false;
+    const branch = session.active_branch_id || 'main';
+    const msgs = (session.messages || []).filter((m) => (m.branch_id || 'main') === branch && !m.hidden);
+    const last = msgs[msgs.length - 1];
+    return !!last && last.role === 'user';
+  }, [session.status, session.workflow_run_id, session.messages, session.active_branch_id]);
   const handleResumeInterrupted = React.useCallback(() => {
     dispatch(sendMessageThunk({
       sessionId: session.id,

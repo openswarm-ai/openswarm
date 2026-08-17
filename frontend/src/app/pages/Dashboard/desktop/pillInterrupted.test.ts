@@ -20,11 +20,17 @@ test('the chip resumes with one click and does not select the card', () => {
   const chip = pill.slice(pill.indexOf('{interrupted ? ('), pill.indexOf(') : liveAsk ? ('));
   assert.ok(chip.includes('onResumeInterrupted?.()'), 'a signal without the action is half the fix');
   assert.ok(chip.includes('stopPropagation'), 'the click must not fall through to card-select');
-  assert.ok(chip.includes('Stopped mid-task'), "copy must stay true for user-stop too; 'stopped' has no persisted cause");
+  assert.ok(chip.includes('Interrupted'), 'the compact chip names the state in one word (Eric: the wrapping box read ugly)');
+  assert.ok(chip.includes('whiteSpace'), 'one line, never a wrapping paragraph');
 });
 
-test('the card derives interrupted from stopped, workflow sidecars excluded', () => {
-  assert.ok(card.includes("session.status === 'stopped' && !session.workflow_run_id"), 'run sidecars own pause/resume from the workflow card');
+test('the card derives interrupted from stopped AND an unanswered user message', () => {
+  const cond = card.slice(card.indexOf('const pillInterrupted'), card.indexOf('const handleResumeInterrupted'));
+  assert.ok(cond.includes("session.status !== 'stopped' || session.workflow_run_id"), 'run sidecars own pause/resume from the workflow card');
+  // The 2026-08-17 board: bare status==stopped lit the chip on EVERY old/deliberately-stopped
+  // session at once; only a chat whose last visible word is the USER'S owes a resume.
+  assert.ok(cond.includes("last.role === 'user'"), 'a chat the assistant finished answering owes nothing');
+  assert.ok(cond.includes('!m.hidden'), 'hidden harness nudges must not make a finished chat look owed');
   assert.ok(card.includes('interrupted={pillInterrupted}'), 'wire-check: the flag must reach the pill');
   assert.ok(card.includes('onResumeInterrupted={handleResumeInterrupted}'));
 });
