@@ -1061,3 +1061,18 @@ multi-step create/edit writes. Scorer caveats: a few url=last tasks need the epi
 (not independently checkable), and the write-filter caught a couple read tasks -- number will
 tighten with a cleaned write-only partition, but the signal (far below 95) is unambiguous.
 Honest verdict: verified-writes is capability-gated for complex writes, not a quick clause to close.
+
+## Online-Mind2Web head-to-head scoping (2026-08-16) — the honest bu-max comparison
+Runnable in principle: 300 tasks / 136 live sites, CC-BY-4.0, HuggingFace osunlp/Online-Mind2Web.
+This is where browser-use Cloud claims 97 and open-source SOTA (Avenir-Web) is 53.7 — the only
+public benchmark that would settle "are we the best" vs tuned commercial products. BLOCKERS (all
+real, none principled-dodge): (1) 300 LIVE EXTERNAL sites -- non-reproducible (tasks change as
+sites change), bot-blocking/CAPTCHA, many need real accounts; (2) a share of tasks are real WRITE
+actions on live commercial services -- ToS + side-effect exposure, needs explicit user
+authorization before running unattended; (3) WebJudge LLM-scored -> supplementary only under our
+no-LLM-judge rule, and comparability to bu-max's 97 needs their exact judge config. RECOMMENDED
+SCOPE if pursued: 50-task READ-ONLY subset (no purchases/writes), reciprocal GPT<->Claude judging
+per our judge policy, labeled SUPPLEMENTARY, never folded into the 11 clauses. Expected honest
+outcome: our clean generic harness scores below a tuned cloud product -- that IS the result, and
+being close as a no-tuning generic agent is the stronger story. Status: scoped, awaiting user
+go/no-go on the live-site/ToS question.
