@@ -167,12 +167,25 @@ def is_delegation_core_tool(tool_name: str) -> bool:
 
 
 @typechecked
-def delegation_children_settled(session_id: str) -> bool:
-    """True when this session HAS delegated children and every one of them is terminal. No children
-    yet is NOT settled: a run queued behind the admission cap can wait minutes legitimately."""
+def delegation_children_settled(session_id: str, since: float) -> bool:
+    """True when this session has delegated children born AFTER this tool call started and every one
+    of them is terminal. No children yet is NOT settled: a run queued behind the admission cap can
+    wait minutes legitimately. The `since` scope is load-bearing: a parent's SECOND delegation used
+    to read its first run's terminal children as 'settled' while the new run was still queued, and
+    the watchdog shot a healthy sidecar mid-run (39 kills + 40 force-ended turns in one afternoon
+    of concurrent load, measured 2026-08-16 on the packaged build)."""
     from backend.apps.agents.agent_manager import agent_manager
-    kids = [s for s in agent_manager.sessions.values()
-            if getattr(s, "parent_session_id", None) == session_id and getattr(s, "mode", "") == "browser-agent"]
+    kids = []
+    for s in agent_manager.sessions.values():
+        if getattr(s, "parent_session_id", None) != session_id or getattr(s, "mode", "") != "browser-agent":
+            continue
+        born = getattr(s, "created_at", None)
+        try:
+            if born is None or born.timestamp() < since:
+                continue
+        except Exception:
+            continue
+        kids.append(s)
     if not kids:
         return False
     return all(getattr(s, "status", "") in ("completed", "error", "failed", "stopped") for s in kids)
@@ -201,7 +214,7 @@ def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> No
         if not session_id:
             return
         try:
-            settled = delegation_children_settled(session_id)
+            settled = delegation_children_settled(session_id, started)
         except Exception:
             settled = False
         settled_streak["n"] = settled_streak["n"] + 1 if settled else 0

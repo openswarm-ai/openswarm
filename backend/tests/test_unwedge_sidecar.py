@@ -132,3 +132,65 @@ def test_a_blocking_tool_arms_nothing_at_all():
         arm_wedge_watchdog(ctx, "tu-2", "mcp__openswarm-core__AskUI")
         assert len(loop._scheduled) == before, "an exempt tool must not even schedule a timer"
     asyncio.run(run())
+
+
+# ------------------------------------------------- stale children must never read as settled
+
+
+def p_fake_kid(parent: str, status: str, born_ts: float):
+    from datetime import datetime
+
+    class Kid:
+        parent_session_id = parent
+        mode = "browser-agent"
+
+    k = Kid()
+    k.status = status
+    k.created_at = datetime.fromtimestamp(born_ts)
+    return k
+
+
+def test_stale_terminal_children_do_not_settle_a_new_delegation(monkeypatch):
+    # The packaged-log failure (2026-08-16): a parent's second AppAgent call queued behind the
+    # admission cap while its FIRST run's children sat terminal; the old check read that as
+    # settled and shot a healthy sidecar. Children born before `since` must be invisible.
+    import time as t
+    from backend.apps.agents import agent_manager as am_mod
+    now = t.time()
+    kids = {"a": p_fake_kid("parent1", "completed", now - 600),
+            "b": p_fake_kid("parent1", "stopped", now - 300)}
+    monkeypatch.setattr(am_mod.agent_manager, "sessions", kids)
+    assert unwedge_sidecar.delegation_children_settled("parent1", since=now - 10) is False
+    # Negative control: with the scope disabled (since=0 sees every child), the old verdict comes
+    # back, proving the filter is the thing doing the work.
+    assert unwedge_sidecar.delegation_children_settled("parent1", since=0.0) is True
+
+
+def test_fresh_terminal_child_settles_and_fresh_running_child_does_not(monkeypatch):
+    import time as t
+    from backend.apps.agents import agent_manager as am_mod
+    now = t.time()
+    call_started = now - 120
+    monkeypatch.setattr(am_mod.agent_manager, "sessions",
+                        {"a": p_fake_kid("parent1", "completed", now - 60)})
+    assert unwedge_sidecar.delegation_children_settled("parent1", since=call_started) is True
+    monkeypatch.setattr(am_mod.agent_manager, "sessions",
+                        {"a": p_fake_kid("parent1", "running", now - 60)})
+    assert unwedge_sidecar.delegation_children_settled("parent1", since=call_started) is False
+
+
+def test_no_children_is_not_settled(monkeypatch):
+    # A run queued behind the admission cap has no child yet; waiting is legitimate.
+    from backend.apps.agents import agent_manager as am_mod
+    monkeypatch.setattr(am_mod.agent_manager, "sessions", {})
+    assert unwedge_sidecar.delegation_children_settled("parent1", since=0.0) is False
+
+
+def test_mixed_stale_terminal_and_fresh_running_is_not_settled(monkeypatch):
+    import time as t
+    from backend.apps.agents import agent_manager as am_mod
+    now = t.time()
+    monkeypatch.setattr(am_mod.agent_manager, "sessions",
+                        {"old": p_fake_kid("parent1", "completed", now - 900),
+                         "new": p_fake_kid("parent1", "running", now - 30)})
+    assert unwedge_sidecar.delegation_children_settled("parent1", since=now - 60) is False
