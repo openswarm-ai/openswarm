@@ -202,6 +202,18 @@ contextBridge.exposeInMainWorld('openswarm', {
     return () => ipcRenderer.removeListener('webview-new-window', listener);
   },
 
+  // ENG-279: native popups (window.open from a browser card) announce themselves so agent tools can drive them by webContents id.
+  onBrowserPopupCreated: (cb) => {
+    const listener = (_event, payload) => cb(payload);
+    ipcRenderer.on('browser-popup-created', listener);
+    return () => ipcRenderer.removeListener('browser-popup-created', listener);
+  },
+  onBrowserPopupClosed: (cb) => {
+    const listener = (_event, payload) => cb(payload);
+    ipcRenderer.on('browser-popup-closed', listener);
+    return () => ipcRenderer.removeListener('browser-popup-closed', listener);
+  },
+
   // Cmd/Ctrl+R, intercepted in main (kills the default-menu reload), so the renderer can reload the focused browser instead of the whole app.
   onReloadShortcut: (cb) => {
     const listener = () => cb();

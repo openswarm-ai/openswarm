@@ -3025,6 +3025,26 @@ app.on('web-contents-created', (_event, contents) => {
     // place; without this a site's "Continue with Google" was unreachable inside a card (ENG-238).
     if (contents.getType() === 'webview' && !childWindow.isDestroyed()) {
       try { childWindow.webContents.setUserAgent(contents.getUserAgent()); } catch (_) { /* popup already gone */ }
+      // ENG-279: agents were blind to auth popups (a native window has no <webview>, so no
+      // browser_id). Hand the renderer the child's webContents id keyed by the opener's, so the
+      // command layer can drive the popup over CDP while it lives. The popup stays a REAL popup,
+      // preserving window.opener (how OAuth returns its code), which is why it is not a tab.
+      try {
+        const popupWcId = childWindow.webContents.id;
+        const openerWcId = contents.id;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('browser-popup-created', {
+            openerWebContentsId: openerWcId,
+            childWebContentsId: popupWcId,
+            url: childWindow.webContents.getURL() || '',
+          });
+        }
+        childWindow.on('closed', () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('browser-popup-closed', { childWebContentsId: popupWcId });
+          }
+        });
+      } catch (_) { /* popup raced its own close */ }
     }
   });
 

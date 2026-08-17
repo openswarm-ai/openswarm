@@ -1,4 +1,5 @@
-import { getWebview, findWebviewByDomain, hasDomReady, markDomReady, isPendingLoad, wakePendingLoad, clearPendingLoad, type BrowserWebview } from './browserRegistry';
+import { getWebview, findWebviewByDomain, findBrowserIdByWebContentsId, hasDomReady, markDomReady, isPendingLoad, wakePendingLoad, clearPendingLoad, type BrowserWebview } from './browserRegistry';
+import { registerPopup, unregisterPopupByWcId, activePopupShim } from './browserPopupRegistry';
 import { scheduleCaretHandback } from './caretHandback';
 import { shouldSelfHealClick } from './selfHealClick';
 import { focusGuestForKeys } from './focusGuestForKeys';
@@ -2174,6 +2175,10 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
 
 // The registry is renderer-local and a card briefly unregisters on remount / tab-switch; a command landing in that gap shouldn't hard-fail. Wait a bounded window for (re)registration before giving up, so the error stays a real "card is gone" signal rather than a transient race.
 async function awaitWebview(browserId: string, tabId?: string, action?: string): Promise<BrowserWebview | undefined> {
+  // A live auth popup OWNS its card's commands (ENG-279): the user-visible action is in the popup,
+  // so tools drive it there until it closes, then fall back to the card's webview automatically.
+  const popup = activePopupShim(browserId);
+  if (popup) return popup;
   // A suspended (snapshot-swapped) card has no webview at all; wake it and wait out the remount + page reload before the command touches it.
   const wasSuspended = !!store.getState().dashboardLayout.suspendedBrowserCards[browserId];
   if (wasSuspended) store.dispatch(resumeBrowserCard(browserId));
@@ -2468,8 +2473,20 @@ export function initBrowserCommandHandler(): () => void {
   if (initialized) return () => {};
   initialized = true;
   const unsub = dashboardWs.on('browser:command', handleBrowserCommand);
+  // ENG-279: native auth popups announce themselves from main; map them to the opener's card so
+  // agent tools can see and drive the sign-in window instead of going blind at it.
+  const bridge = (window as unknown as { openswarm?: { onBrowserPopupCreated?: (cb: (p: { openerWebContentsId: number; childWebContentsId: number; url: string }) => void) => () => void; onBrowserPopupClosed?: (cb: (p: { childWebContentsId: number }) => void) => () => void } }).openswarm;
+  const offCreated = bridge?.onBrowserPopupCreated?.((p) => {
+    const browserId = findBrowserIdByWebContentsId(p.openerWebContentsId);
+    if (browserId) registerPopup(browserId, p.childWebContentsId, p.url);
+  });
+  const offClosed = bridge?.onBrowserPopupClosed?.((p) => {
+    unregisterPopupByWcId(p.childWebContentsId);
+  });
   return () => {
     unsub();
+    offCreated?.();
+    offClosed?.();
     initialized = false;
   };
 }

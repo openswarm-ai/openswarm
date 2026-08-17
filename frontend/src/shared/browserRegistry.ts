@@ -140,6 +140,16 @@ export function findBrowserByWebContentsId(wcId: number): string | undefined {
 // Find the live webview currently on `domain` (e.g. tiktok.com). The session-borrow shims use
 // this to drive the user's own already-open, logged-in card for that site, resolving by the
 // LIVE url (not a stale persisted card.url) so the action lands on the real tab.
+/** The card that owns a live webContents id, for mapping a native popup back to its opener (ENG-279). */
+export function findBrowserIdByWebContentsId(wcId: number): string | null {
+  for (const [key, wv] of registry) {
+    try {
+      if (wv.getWebContentsId() === wcId) return key.split(':')[0];
+    } catch { /* a mid-teardown webview throws; skip it */ }
+  }
+  return null;
+}
+
 export function findWebviewByDomain(domain: string): BrowserWebview | undefined {
   const d = domain.toLowerCase().replace(/^\./, '');
   const matchesHost = (u: string): boolean => {
