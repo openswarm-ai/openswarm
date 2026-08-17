@@ -393,6 +393,13 @@ async def websocket_electron_main(websocket: WebSocket):
         ws_manager.disconnect_main(websocket)
 
 
+@app.get("/api/health")
+async def health() -> dict:
+    """Auth-exempt liveness for the frontend's reachability prober; it used to probe `/` and the
+    401 answer spammed the renderer console on every probe tick."""
+    return {"ok": True}
+
+
 @app.get("/api/dev/token")
 async def dev_token():
     """Hand the per-install token to the dev frontend, which has no Electron

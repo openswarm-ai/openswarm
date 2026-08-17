@@ -85,9 +85,10 @@ function _installAuthFetchInterceptor() {
   (window as any).__OPENSWARM_FETCH_PATCHED__ = true;
 
   const originalFetch = window.fetch.bind(window);
-  // Reachability probe uses the RAW fetch: any HTTP response (401 included) proves the backend
-  // is back, and it must never recurse into the retry/dedupe logic below.
-  setBackendProber(() => originalFetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(2000), cache: 'no-store' }));
+  // Reachability probe uses the RAW fetch: any HTTP response proves the backend is back, and it
+  // must never recurse into the retry/dedupe logic below. /api/health is auth-exempt and 200s;
+  // probing `/` answered 401 and Chromium logged every probe tick as a console error.
+  setBackendProber(() => originalFetch(`http://${host}:${port}/api/health`, { signal: AbortSignal.timeout(2000), cache: 'no-store' }));
 
   // Loopback calls answer in ms; anything past this is a dead/wedged backend, and an unbounded
   // hang here is exactly the silent forever-spinner class (ENG-241). Generous enough for a big
