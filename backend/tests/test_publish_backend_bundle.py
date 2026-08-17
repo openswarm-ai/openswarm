@@ -4,10 +4,7 @@ the cloud can trust has_backend without unpacking the tar."""
 
 import io
 import json
-import os
 import tarfile
-
-import pytest
 
 from backend.apps.outputs.models import Output
 from backend.apps.outputs import publish_build

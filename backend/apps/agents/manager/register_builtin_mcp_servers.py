@@ -75,6 +75,10 @@ def register_builtin_mcp_servers(
     # Schedule module: ScheduleWorkflow + CRUD + step editing so the agent (and the workflow Edit Agent) can build and schedule recurring work via the native scheduler. The 4 scheduling tools are force-gated in path_gate; Cron* is denied in build_effective_tool_lists.
     modules.append("schedule")
 
+    # Canvas control after spawn (ENG-334): move/collapse/tile/close/tidy; close is scoped server-side to the caller's own cards.
+    if builtin_perms.get("CanvasCommand", "always_allow") != "deny":
+        modules.append("canvas")
+
     # Only the card the user actually picked in select-mode gets claimed for the task, so the sub drives that one instead of opening its own duplicate. Passing EVERY dashboard card here (the old behavior) made the sub force-grab a random, usually-parked card and never navigate it, which broke the bulk of browser tasks.
     pre_selected_bids = [b for b in (selected_browser_ids or []) if b]
     # Apps the user selected this turn; the AppAgent tool may only target these (anti-hallucination gate in the MCP server, which reads this at startup).

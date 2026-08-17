@@ -32,6 +32,7 @@ P_MODULE_FILES = {
     "schedule": "schedule_mcp_server",
     "web": "web_mcp_server",
     "browser": "browser_agent_mcp_server",
+    "canvas": "canvas_mcp_server",
 }
 
 P_ENABLED = [m.strip() for m in os.environ.get("OSW_MCP_MODULES", "meta,settings,apps").split(",") if m.strip()]

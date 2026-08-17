@@ -921,6 +921,49 @@ async def spawn_agent_run(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+P_CANVAS_ACTIONS = {"move", "collapse", "expand", "tile", "close", "tidy"}
+
+
+@app.post("/api/canvas/command")
+async def canvas_command(request: Request):
+    """Relay a CanvasCommand tool call to the renderer over the browser-command bridge (ENG-334).
+    Called by the canvas module in the per-session sidecar. Close is enforced HERE, not in the
+    renderer: only the caller's own card, or a card the caller spawned, may be closed."""
+    body = await request.json()
+    action = str(body.get("action") or "")
+    parent_session_id = str(body.get("parent_session_id") or "")
+    card_id = str(body.get("card_id") or "") or parent_session_id
+    if action not in P_CANVAS_ACTIONS:
+        return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
+    if not parent_session_id:
+        return JSONResponse({"error": "parent_session_id is required"}, status_code=400)
+    if action == "close" and card_id != parent_session_id:
+        from backend.apps.agents.agent_manager import agent_manager
+        p_sess = agent_manager.get_session(card_id)
+        owned = p_sess is not None and getattr(p_sess, "parent_session_id", None) == parent_session_id
+        if not owned:
+            p_dash_id = str(body.get("dashboard_id") or "")
+            try:
+                from backend.apps.dashboards.dashboards import load as p_dash_load
+                p_card = p_dash_load(p_dash_id).layout.browser_cards.get(card_id) if p_dash_id else None
+                owned = p_card is not None and getattr(p_card, "spawned_by", None) == parent_session_id
+            except Exception:
+                owned = False
+        if not owned:
+            return JSONResponse(
+                {"error": "close is limited to your own card or cards you spawned"}, status_code=403)
+    params = {
+        "action": action,
+        "card_id": card_id,
+        "x": body.get("x"),
+        "y": body.get("y"),
+        "zone": body.get("zone"),
+    }
+    result = await ws_manager.send_browser_command(uuid4().hex, "canvas_command", card_id, params)
+    ok = isinstance(result, dict) and not result.get("error")
+    return JSONResponse(result, status_code=200 if ok else 502)
+
+
 @app.post("/api/ui-requests/wait")
 async def ui_request_wait(request: Request):
     """AskUI's blocking half: parks until the user answers the interactive component in the

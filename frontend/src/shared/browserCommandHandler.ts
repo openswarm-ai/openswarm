@@ -12,6 +12,7 @@ import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
 import { shouldStopWaiting, SETTLE_POLL_MS, settleProbeJs } from './browserSettle';
 import { unwrapCdpEval } from './cdpEval';
 import { navigationOutcome, sameDoc } from './navigationOutcome';
+import { handleCanvasCommand } from './canvasCommandHandler';
 import { typeChars, type TypedKeys } from './typeChars';
 
 let initialized = false;
@@ -2367,6 +2368,11 @@ async function runBrowserCommand(
   }
   if (action === 'import_session') {
     const result = await handleImportSession(params);
+    dashboardWs.send('browser:result', { request_id, ...result });
+    return;
+  }
+  if (action === 'canvas_command') {
+    const result = await handleCanvasCommand(params);
     dashboardWs.send('browser:result', { request_id, ...result });
     return;
   }
