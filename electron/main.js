@@ -2294,6 +2294,19 @@ ipcMain.handle('haptic:perform', (event, pattern) => {
 });
 
 app.whenReady().then(async () => {
+  // Backend first: python needs ~2.2s to reach listening and NOTHING below depends on it, so every
+  // millisecond of menu/watchdog/hotkey setup that used to run ahead of the spawn was pure serial
+  // boot tax. Measured on packaged: spawn at T+2.1s before, backend-ready ~4.3s (ENG-312).
+  let backendBootEarly = null;
+  if (!isDev) {
+    backendBootEarly = (async () => {
+      backendPort = await pickBackendPort();
+      await startBackend();
+    })().catch((err) => {
+      console.error('[boot] backend startup failed:', err && err.message);
+      emitSplashStatus({ text: 'Backend failed to start', level: 'error', logs: recentBackendStderr.slice(-20).join('') });
+    });
+  }
   // Declare the Edit accelerators instead of inheriting whatever the implicit default bound, so
   // Cmd+C acts on the focused window rather than only the first one (ENG-289). macOS only.
   try { require('./applicationMenu').installApplicationMenu(require('electron')); } catch (_) {}
@@ -2534,8 +2547,8 @@ app.whenReady().then(async () => {
       // poller's setBackend() gets a real token instead of '' (else it 401s).
       await loadAuthToken();
       markBackendReady();
-    } else {
-      // Kick off backend without awaiting so the window can paint while Python is still cold-starting. Renderer fetches lazy-await markBackendReady() via the get-auth-token IPC; splash status updates still fire from inside startBackend.
+    } else if (!backendBootEarly) {
+      // Fallback only: the top-of-whenReady kick above is the normal path (ENG-312); never awaited so the window paints while Python cold-starts.
       backendPort = await pickBackendPort();
       const _backendBoot = startBackend().catch((err) => {
         console.error('[boot] backend startup failed:', err && err.message);
