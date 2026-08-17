@@ -40,6 +40,13 @@ interface Slot {
 
 const live = new Map<string, Slot>();
 const listeners = new Set<() => void>();
+// Anti-flap (the 2+ min zoom-out park/unpark storm): priorities are squared distances recomputed
+// per tick, so near-equal cards stole the slot back and forth as the camera drifted, rebooting a
+// webview on every steal. An eviction now needs BOTH a meaningfully closer challenger and a slot
+// old enough to have been worth booting.
+const grantedAt = new Map<string, number>();
+export const EVICT_COOLDOWN_MS = 10_000;
+export const EVICT_MARGIN = 0.8;
 
 // Deferred: an eviction firing inside one card's render must not synchronously poke another card's state.
 function notify(): void {
@@ -68,19 +75,25 @@ export function requestAppSlot(key: string, priority: number, pinned: boolean): 
   }
   if (pinned || (evictableLiveCount() < MAX_LIVE_APP_WEBVIEWS && guestBudgetHasRoom())) {
     live.set(key, { priority, pinned });
+    grantedAt.set(key, Date.now());
     return true;
   }
   let worstKey: string | null = null;
   let worstPriority = -Infinity;
+  const now = Date.now();
   for (const [k, s] of live) {
-    if (!s.pinned && s.priority > worstPriority) {
+    if (s.pinned) continue;
+    if (now - (grantedAt.get(k) ?? 0) < EVICT_COOLDOWN_MS) continue;
+    if (s.priority > worstPriority) {
       worstPriority = s.priority;
       worstKey = k;
     }
   }
-  if (worstKey !== null && priority < worstPriority) {
+  if (worstKey !== null && priority < worstPriority * EVICT_MARGIN) {
     live.delete(worstKey);
+    grantedAt.delete(worstKey);
     live.set(key, { priority, pinned });
+    grantedAt.set(key, now);
     notify(); // the evicted card must re-evaluate and drop to a placeholder
     return true;
   }
@@ -89,6 +102,7 @@ export function requestAppSlot(key: string, priority: number, pinned: boolean): 
 
 /** A card that suspends or unmounts MUST release, or its slot leaks and a capped card never wakes. */
 export function releaseAppSlot(key: string): void {
+  grantedAt.delete(key);
   if (live.delete(key)) notify(); // a freed slot lets a capped card come alive
 }
 

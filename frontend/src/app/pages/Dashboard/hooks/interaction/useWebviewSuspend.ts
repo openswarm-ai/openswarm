@@ -44,6 +44,13 @@ const MAX_LIVE_WEBVIEWS = 8;
 // Grace after terminal so an agent whose status blips completed->running between back-to-back turns can't lose its browser in the gap.
 const WORKING_GRACE_MS = 20_000;
 const lastWorkingAt = new Map<string, number>();
+// Anti-flap twin of the app budget's cooldown: a card geometry-parked seconds ago must not be
+// passively re-woken, and a card just woken must not be geometry/cap-parked, or boundary jitter
+// reboots webviews in a loop (the zoom-out storm). Explicit intent (un-minimize, working agents,
+// hide-the-app parks) bypasses both stamps on purpose.
+const FLAP_COOLDOWN_MS = 10_000;
+const parkedAt = new Map<string, number>();
+const wokeAt = new Map<string, number>();
 
 function sessionIsWorking(s: { id?: string; status?: string } | undefined): boolean {
   if (!s) return false;
@@ -194,7 +201,9 @@ export function useWebviewSuspend(
       const bigEnough = card.width * zoom >= RESUME_MIN_CARD_PX;
       // Passive wake also asks the GLOBAL budget: a free browser slot means nothing if apps already
       // hold the machine at its ceiling. Explicit restores and working agents above never ask.
-      if (bigEnough && cardIntersectsViewport(card, vpRef.current, RESUME_MARGIN_PX) && guestBudgetHasRoom()) {
+      if (bigEnough && cardIntersectsViewport(card, vpRef.current, RESUME_MARGIN_PX) && guestBudgetHasRoom()
+          && Date.now() - (parkedAt.get(id) ?? 0) > FLAP_COOLDOWN_MS) {
+        wokeAt.set(id, Date.now());
         dispatch(resumeBrowserCard(id));
         budget--;
       }
@@ -203,13 +212,14 @@ export function useWebviewSuspend(
     const timer = setTimeout(async () => {
       const isSuspended = (id: string) => !!store.getState().dashboardLayout.suspendedBrowserCards[id];
       // Read live, not off the effect's closure: this re-runs after an await, and the user can restore a card mid-capture.
+      const outsideWakeCooldown = (id: string) => Date.now() - (wokeAt.get(id) ?? 0) > FLAP_COOLDOWN_MS;
       const wantsPark = (id: string, card: BrowserCardPosition): boolean =>
         appHidden
         || isMinimized(id)
         // Read zoom off the ref, never the closure: this fires 800ms after the effect ran, and
         // zooming out is exactly the gesture that should be parking these.
-        || (!withinRestoreGrace(id) && card.width * vpRef.current.zoom < SUSPEND_MAX_CARD_PX)
-        || (!withinRestoreGrace(id) && !cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX));
+        || (!withinRestoreGrace(id) && outsideWakeCooldown(id) && card.width * vpRef.current.zoom < SUSPEND_MAX_CARD_PX)
+        || (!withinRestoreGrace(id) && outsideWakeCooldown(id) && !cardIntersectsViewport(card, vpRef.current, SUSPEND_MARGIN_PX));
       await refreshVisibleFrames(browserCards, isSuspended, vpRef.current);
       for (const [id, card] of Object.entries(browserCards)) {
         if (isSuspended(id)) continue;
@@ -219,18 +229,21 @@ export function useWebviewSuspend(
         const dataUrl = await captureForSuspend(id, card);
         // The capture await yielded; conditions may have changed under us.
         if (!wantsPark(id, card) || mustStayLive(id, card)) continue;
+        // Hide/minimize parks skip the stamp: returning to the app must wake in-view cards instantly.
+        if (!appHidden && !isMinimized(id)) parkedAt.set(id, Date.now());
         dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
       }
 
       const countLive = () => Object.keys(browserCards).filter((id) => !isSuspended(id)).length;
       if (countLive() > MAX_LIVE_WEBVIEWS) {
         const candidates = Object.entries(browserCards)
-          .filter(([id, card]) => !isSuspended(id) && !mustStayLive(id, card))
+          .filter(([id, card]) => !isSuspended(id) && !mustStayLive(id, card) && outsideWakeCooldown(id))
           .sort((a, b) => distFromCenter(b[1], vpRef.current) - distFromCenter(a[1], vpRef.current));
         for (const [id, card] of candidates) {
           if (countLive() <= MAX_LIVE_WEBVIEWS) break;
           const dataUrl = await captureForSuspend(id, card);
           if (mustStayLive(id, card)) continue;
+          parkedAt.set(id, Date.now());
           dispatch(suspendBrowserCard({ browserId: id, dataUrl }));
         }
       }

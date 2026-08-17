@@ -34,13 +34,42 @@ test('denies a farther card once the cap is full', () => {
   release([...keys, 'b-far']);
 });
 
-test('a closer card evicts the farthest, and the evicted one is then denied', () => {
+// Cooldown + margin guard the evictions now; tests age the grants by shifting the module's clock.
+function aged<T>(fn: () => T): T {
+  const realNow = Date.now;
+  (Date as unknown as { now: () => number }).now = () => realNow() + 60_000;
+  try { return fn(); } finally { (Date as unknown as { now: () => number }).now = realNow; }
+}
+
+test('a MEANINGFULLY closer card evicts the farthest once grants have aged', () => {
   const keys = fill('c', MAX, 100); // priorities 100..100+MAX-1; farthest is the last
-  assert.equal(requestAppSlot('c-near', 1, false), true, 'a closer card takes a slot by eviction');
-  // The farthest original (highest priority) was evicted; re-requesting it now fails (still full, still farthest).
-  const evicted = `c${MAX - 1}`;
-  assert.equal(requestAppSlot(evicted, 100 + MAX - 1, false), false, 'the evicted farthest card cannot re-enter');
+  aged(() => {
+    assert.equal(requestAppSlot('c-near', 1, false), true, 'a much closer card takes a slot by eviction');
+    const evicted = `c${MAX - 1}`;
+    assert.equal(requestAppSlot(evicted, 100 + MAX - 1, false), false, 'the evicted farthest card cannot re-enter');
+  });
   release([...keys, 'c-near']);
+});
+
+test('anti-flap: fresh grants are cooldown-protected from eviction', () => {
+  const keys = fill('f', MAX, 100);
+  assert.equal(requestAppSlot('f-near', 1, false), false, 'even a closer card cannot boot a slot granted seconds ago');
+  release([...keys, 'f-near']);
+});
+
+test('anti-flap: near-equal priorities never steal the slot (the zoom-out storm)', () => {
+  const keys = fill('g', MAX, 100); // worst has priority 100+MAX-1
+  aged(() => {
+    // 10% closer is inside the 20% margin: denied, no reboot.
+    assert.equal(requestAppSlot('g-near', Math.round((100 + MAX - 1) * 0.9), false), false,
+      'a card only slightly closer must not reboot a live webview');
+    // 30% closer clears the margin: granted.
+    assert.equal(requestAppSlot('g-vnear', Math.round((100 + MAX - 1) * 0.7), false), true);
+  });
+  // Outside aged(): real clock, the winner's grant is seconds old, so a challenger CLOSER than the
+  // winner cannot steal it back (it is cooldown-protected and every older slot fails the margin).
+  assert.equal(requestAppSlot('g-steal', 1, false), false, 'no immediate counter-steal: the oscillation is dead');
+  release([...keys, 'g-near', 'g-vnear', 'g-steal']);
 });
 
 test('pinned cards bypass the cap and are never evicted', () => {
