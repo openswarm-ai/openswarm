@@ -212,7 +212,10 @@ all claimed_success=False. This is the biggest correction of the effort and a te
 standing method's 'presume instrument bug behind a clean zero' rule -- we spent cycles booking a
 false 0 as capability. Context: GPT-4 generic ~14% on EASIER all-sites WebArena; ~18% generic on
 the HARD reddit+gitlab partition is competitive. Clause 8 (>=65) still OPEN, but the record is now
-honest. (Number finalizes at 100/100; interim at 57/100 = 18% strict / 36% partial.)
+honest. FINAL (85/100 clean, 15 infra-excluded): **13 strict = 15% | partial-sum 29.2 = 34.3%
+avg credit | 0 false | 49s median** -- vs the wrongly-booked 0 strict / 3.83 (a ~7-8x correction
+in true credit, purely from removing our own instrument suppression). 15% generic strict on the
+HARD reddit+gitlab partition (GPT-4 ~14% on easier all-sites) is competitive; clause 8 >=65 OPEN.
 
 ## WebArena Verified — first realistic-workflow measurement (100-task seeded partition)
 
