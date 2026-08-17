@@ -274,6 +274,54 @@ def run_episode(arm: str, task: str, seed: int, rec: Recorder, args: argparse.Na
                     rec_step.action_error = "schema-gate: non-conforming answer bounced"
                     ep.add(rec_step); ep.steps = step
                     continue
+            # v44 (gated, scripted): "click the Nth search result" is an ordinal-resolution problem
+            # the model miscounts (measured: clicks the wrong row, confuses pagination with results).
+            # Script it: run the search, walk result pages counting a.search-title, click the Nth.
+            if (getattr(policy, "pick_result", False)
+                    and re.match(r"pick_result\(", decision.action or "")):
+                try:
+                    m_n = re.search(r"pick_result\((\d+)", decision.action)
+                    n = int(m_n.group(1)) if m_n else 1
+                    m_q = re.search(r'"([^"]+)"', full_goal)
+                    term = m_q.group(1) if m_q else ""
+                    pg = env.unwrapped.page
+                    def do_search():
+                        pg.evaluate(
+                            """(term) => {
+                                 const inp = document.querySelector('input[type=text], input.searchbar, input');
+                                 if (inp) { inp.value = term; inp.dispatchEvent(new Event('input',{bubbles:true})); }
+                                 const btn = [...document.querySelectorAll('button,input[type=submit]')]
+                                   .find(b => /search/i.test(b.textContent||b.value||''));
+                                 if (btn) btn.click();
+                               }""", term)
+                        # Walk result pages counting a.search-title until the Nth, clicking it.
+                        for _ in range(12):
+                            pg.wait_for_timeout(300)
+                            cnt = pg.evaluate("() => document.querySelectorAll('a.search-title').length")
+                            if cnt >= n:
+                                box = pg.evaluate(
+                                    "(n) => { const e=document.querySelectorAll('a.search-title')[n-1];"
+                                    " const r=e.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]; }", n)
+                                pg.mouse.click(box[0], box[1])
+                                return True
+                            nxt = pg.query_selector("a.page-link:has-text('>')")
+                            if not nxt:
+                                if cnt:
+                                    pg.evaluate("(n) => { const l=document.querySelectorAll('a.search-title'); l[Math.min(n,l.length)-1].click(); }", n)
+                                return cnt > 0
+                            nxt.click()
+                        return False
+                    ok = with_deadline(do_search, 12)
+                    obs, reward, terminated, truncated, _ = with_deadline(
+                        lambda: env.step("noop()"), args.step_timeout)
+                    rec_step.action = f"pick_result({n}) [scripted search+Nth]"
+                    rec_step.reward = float(reward or 0)
+                    ep.add(rec_step); ep.reward = max(ep.reward, float(reward or 0)); ep.steps = step
+                    if terminated or truncated:
+                        ep.terminated, ep.truncated = bool(terminated), bool(truncated); break
+                    continue
+                except Exception:
+                    pass
             # v41 (gated, scripted geometry): a freehand-circle goal is a geometry problem the
             # model cannot trace by hand (measured: random short mouse jitters, never a circle).
             # Detect the SVG center marker and drive a true circular path, then submit. One-shot.

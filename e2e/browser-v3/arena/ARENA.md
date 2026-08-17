@@ -1013,3 +1013,35 @@ to v34. The paren-parser bug did NOT suppress CompWoB (its goals are MiniWoB-sty
 answers, no long JSON answer channel where parens appeared). 81.1 stands honest, no correction.
 The instrument bug was WebArena-specific (that benchmark appends a JSON answer schema + long
 answers with parens).
+
+## De-risk research verdicts (2026-08-16): OSWorld + verified-writes -- PRIORITIES RE-ORDERED
+
+Studied the frontier's actual code/infra before committing (per user directive). Both decisive:
+
+OSWORLD (clause 4, >=85): **SMOKE-TEST-ONLY / effectively skip.** (a) Our macOS+colima stack
+CANNOT run it -- needs KVM/x86; only VMware-Fusion-ARM works and only for a serial smoke run;
+full sweeps need AWS(~$90) or HUD. (b) SOTA is now 85-86% but via OFF-THE-SHELF models on MINIMAL
+harnesses (screenshot->computer-use-tool->pixel coords) -- it's MODEL-gated, not fine-tuning or
+harness-gated. Anthropic's published Opus/Sonnet = 81-83.5% on the reference loop; with our
+Opus/Sonnet ceiling (no fable-5) ~83% is the realistic max, and the reference harness already
+captures it -- our marginal add is +2-4pt (bBoN/hybrid-actions) at real desktop-infra cost. (c)
+MiniWoB skill doesn't transfer (OSWorld = LibreOffice/GIMP/OS, not web DOM). VERDICT: 2-3 day
+capped smoke test at most (control=reference loop vs treatment=+our layer, invest only if +>=3pt);
+otherwise SKIP -- paying desktop-infra cost to reproduce a free baseline. Booked as low-ROI.
+
+VERIFIED-WRITES (clause 5, >=95): **BUILD NOW -- feasible + deterministic on EXISTING infra,
+higher ROI than assumed.** No frontier benchmark verifies writes on real EXTERNAL sites (Web Bench
+uses $3k human review) -- so 'live' need not mean external; postmill/gitlab are real production
+software, the reproducible analogue. We ALREADY HAVE the tasks: config_files/test_reddit.raw.json
+(15 program_html write tasks) + test_gitlab.raw.json (14) -- create post/comment/license, verified
+by server-state re-read, NO LLM judge. Clean pattern (independent-channel read-your-writes):
+pre-assert absence -> agent writes -> fresh-session re-read + type-aware match -> GitLab REST API
+cross-check. Build: extract program_html write subset, webarena-verified evaluator, pre-assert +
+container-reset (design out false positives), abort-on-fail scoring, Wilson CI (>=95 needs
+~103/108). This is a whole unmeasured clause we can honestly measure -- PIVOT here.
+
+MINIWOB last-mile: 94.1 is the honest near-ceiling for the scripted-primitive approach. draw-circle
+(geometry) + book-flight (budget) worked; search-engine/hot-cold/text-editor primitives FIGHT
+MiniWoB's own reward machinery (search-engine pick_result tried 2 ways, 0/3 -- disabled). Remaining
+0.9pt to 95 needs framework-native primitives with diminishing returns; deprioritized BELOW the
+higher-ROI verified-writes clause. Two seeds already hit 95.2; 94.1 mean is variance-dragged.
