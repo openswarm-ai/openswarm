@@ -110,6 +110,9 @@ P_RELEASES: List[ReleaseNote] = [
             "Agents can tidy up after themselves on the canvas: move, shrink, tile or close their own cards after creating them. Closing is limited to cards they own.",
             "Settings gains a Tools tab where you can allow, ask, or block any built-in tool. The backend enforces it, so blocked means blocked everywhere.",
             "The app is ready sooner after launch: the backend now starts the instant the app opens instead of waiting behind window setup.",
+            "Collapsed chat pills render clean everywhere: no shadow slabs, no doubled browser preview, no cropped ring corners, and opening a pill no longer flies the camera across the canvas.",
+            "A browser task whose control link dropped used to keep driving the browser as a ghost; it now stops the moment its controller disappears, so a retry always gets a free browser.",
+            "The app cleans up after itself: update downloads you have already installed are deleted (hundreds of megabytes back) and oversized browsing caches are trimmed every few hours; your logins are never touched.",
         ],
     ),
     ReleaseNote(

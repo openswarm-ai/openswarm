@@ -523,14 +523,30 @@ async def browser_agent_run(request: Request):
     if not tasks:
         return JSONResponse({"error": "tasks array is required"}, status_code=400)
 
-    results = await run_browser_agents(
+    run_task = asyncio.create_task(run_browser_agents(
         tasks=tasks,
         model=model,
         dashboard_id=dashboard_id or None,
         pre_selected_browser_ids=pre_selected_browser_ids,
         parent_session_id=parent_session_id or None,
-    )
-    return JSONResponse({"results": results})
+    ))
+    # The caller is the per-session MCP sidecar. If it dies mid-run (the disconnect class of
+    # ENG-327/303), nobody can ever read this result, yet the orphaned run kept driving the card
+    # while the parent's recovery re-dispatched onto it: two drivers, one wedged browser (ENG-338).
+    while True:
+        done, p_pending = await asyncio.wait({run_task}, timeout=2.0)
+        if done:
+            return JSONResponse({"results": run_task.result()})
+        if await request.is_disconnected():
+            run_task.cancel()
+            try:
+                await run_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            logger.warning(
+                f"[browser-agent] caller (sidecar) for session {parent_session_id or '?'} disconnected mid-run; "
+                "aborted the orphaned browser run so the card is free for the retry")
+            return JSONResponse({"error": "caller disconnected; browser run aborted"}, status_code=499)
 
 
 # Allowlisted social platforms whose own-session MCP shims may borrow partition cookies. The allowlist is the real scope: even an authenticated localhost caller can only ever read these sites' cookies, never an arbitrary domain, so this can't become a general cookie-theft oracle.
