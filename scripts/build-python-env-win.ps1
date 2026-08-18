@@ -11,12 +11,15 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 $ElectronDir = Join-Path $ProjectRoot 'electron'
 $PythonEnvDir = Join-Path $ElectronDir 'python-env'
 
-$PythonVersion     = '3.13'
-$PythonFullVersion = '3.13.2'
-$ReleaseTag        = '20250212'
+$PythonVersion     = '3.14'
+$PythonFullVersion = '3.14.6'
+$ReleaseTag        = '20260623'
+# The archive is pinned by digest so a moved or replaced release asset cannot ship a different interpreter.
+$ArchiveSha256     = 'ec05b628ad749682d06d225780fbc02e7bbb5ce2146c9bd8e74a3659b14b693a'
 $PlatformTag       = 'x86_64-pc-windows-msvc-shared'
 $Tarball           = "cpython-$PythonFullVersion+$ReleaseTag-$PlatformTag-install_only_stripped.tar.gz"
-$DownloadUrl       = "https://github.com/indygreg/python-build-standalone/releases/download/$ReleaseTag/$Tarball"
+# python-build-standalone now lives under astral-sh; the '+' in the asset name must be URL-encoded.
+$DownloadUrl       = "https://github.com/astral-sh/python-build-standalone/releases/download/$ReleaseTag/$($Tarball -replace '\+', '%2B')"
 
 Write-Host "=== Building Windows Python Environment ==="
 Write-Host "Architecture: x64 ($PlatformTag)"
@@ -33,6 +36,11 @@ try {
     Write-Host "Downloading standalone Python..."
     Write-Host "URL: $DownloadUrl"
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $ArchivePath -UseBasicParsing
+    $ActualSha256 = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($ActualSha256 -ne $ArchiveSha256) {
+        throw "standalone Python archive SHA-256 mismatch: expected $ArchiveSha256, got $ActualSha256"
+    }
+    Write-Host "Standalone Python SHA-256 verified: $ActualSha256"
 
     Write-Host "Extracting..."
     # tar is built-in on Windows 10+ (bsdtar) and handles .tar.gz natively.
@@ -70,7 +78,7 @@ if ($LASTEXITCODE -ne 0) {
 # Install from the fully-pinned, hash-locked file so the shipped python-env is
 # byte-for-byte reproducible (pillar 3). requirements.txt is the human-edited
 # source; regenerate the lock after editing it with:
-#   uv pip compile backend/requirements.txt --python-version 3.13 `
+#   uv pip compile backend/requirements.txt --python-version 3.14 `
 #       --generate-hashes --output-file backend/requirements.lock
 # --require-hashes is implied because every entry carries a hash.
 Write-Host "Installing backend dependencies (from requirements.lock)..."
@@ -98,19 +106,19 @@ Get-ChildItem -Path $PythonEnvDir -Recurse -Force -Filter '*.pyc' `
 Write-Host "Stripping unused Python distribution files..."
 $ToStrip = @(
     (Join-Path $PythonEnvDir 'include'),                          # C headers — never used at runtime
-    (Join-Path $PythonEnvDir 'lib\python3.13\idlelib'),           # IDLE editor — headless backend has no GUI
-    (Join-Path $PythonEnvDir 'lib\python3.13\tkinter'),           # Tk GUI toolkit — same
-    (Join-Path $PythonEnvDir 'lib\python3.13\ensurepip'),         # Pip bootstrap — backend never installs at runtime
-    (Join-Path $PythonEnvDir 'lib\python3.13\turtledemo'),        # Educational drawing examples
-    (Join-Path $PythonEnvDir 'lib\python3.13\turtle.py'),         # Tk-based turtle graphics; imports stripped tkinter, backend never uses it
-    (Join-Path $PythonEnvDir 'lib\python3.13\pydoc_data'),        # pydoc topics/keywords; only `help()` reads them
-    (Join-Path $PythonEnvDir 'lib\python3.13\_pyrepl'),           # Python 3.13 interactive REPL, never started in packaged app
+    (Join-Path $PythonEnvDir 'lib\python3.14\idlelib'),           # IDLE editor — headless backend has no GUI
+    (Join-Path $PythonEnvDir 'lib\python3.14\tkinter'),           # Tk GUI toolkit — same
+    (Join-Path $PythonEnvDir 'lib\python3.14\ensurepip'),         # Pip bootstrap — backend never installs at runtime
+    (Join-Path $PythonEnvDir 'lib\python3.14\turtledemo'),        # Educational drawing examples
+    (Join-Path $PythonEnvDir 'lib\python3.14\turtle.py'),         # Tk-based turtle graphics; imports stripped tkinter, backend never uses it
+    (Join-Path $PythonEnvDir 'lib\python3.14\pydoc_data'),        # pydoc topics/keywords; only `help()` reads them
+    (Join-Path $PythonEnvDir 'lib\python3.14\_pyrepl'),           # interactive REPL (new in 3.13), never started in packaged app
     (Join-Path $PythonEnvDir 'share')                             # Man pages / desktop integration
 )
 foreach ($p in $ToStrip) {
     if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
 }
-$Sp = Join-Path $PythonEnvDir 'lib\python3.13\site-packages'
+$Sp = Join-Path $PythonEnvDir 'lib\python3.14\site-packages'
 # pip itself: nothing in the packaged backend invokes it. uvx (used by
 # MCPs) is a self-contained installer; the App Builder picks SYSTEM
 # python via shutil.which (view_builder_templates.py:382), never this
@@ -120,7 +128,7 @@ Get-ChildItem -Path $Sp -Directory -Filter 'pip-*.dist-info' -ErrorAction Silent
     | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 # Launcher .exe shims for the now-removed tools. Windows installs them under
 # Scripts\; ignore missing.
-foreach ($exe in @('pip.exe','pip3.exe','pip3.13.exe','idle3.exe','idle3.13.exe','pydoc3.exe','pydoc3.13.exe')) {
+foreach ($exe in @('pip.exe','pip3.exe','pip3.14.exe','idle3.exe','idle3.14.exe','pydoc3.exe','pydoc3.14.exe')) {
     $p = Join-Path $PythonEnvDir "Scripts\$exe"
     if (Test-Path $p) { Remove-Item -Force $p -ErrorAction SilentlyContinue }
 }
@@ -128,7 +136,7 @@ foreach ($exe in @('pip.exe','pip3.exe','pip3.13.exe','idle3.exe','idle3.13.exe'
 # ----- Babel locale-data trim (~30 MB / ~900 files) -----
 # Babel ships 1,084 CLDR locale .dat files. Trafilatura's transitive dep
 # courlan/filters.py:184 calls Locale.parse(seg) on URL path segments. UnknownLocaleError IS caught at line 188, so stripped locales just skip language-filtering for that URL.
-$Sp = Join-Path $PythonEnvDir 'lib\python3.13\site-packages'
+$Sp = Join-Path $PythonEnvDir 'lib\python3.14\site-packages'
 $LocaleDir = Join-Path $Sp 'babel\locale-data'
 if (Test-Path $LocaleDir) {
     Write-Host "Trimming babel/locale-data..."

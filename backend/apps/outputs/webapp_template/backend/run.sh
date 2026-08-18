@@ -40,9 +40,9 @@ if [[ -n "${OPENSWARM_PYTHON:-}" ]] && "${OPENSWARM_PYTHON}" -c "import sys; sys
     PYTHON="${OPENSWARM_PYTHON}"
 else
     if [[ "$IS_WIN" == "1" ]]; then
-        CANDIDATES="python python3 python3.13 python3.12 python3.11 python3.10"
+        CANDIDATES="python python3 python3.14 python3.13 python3.12 python3.11 python3.10"
     else
-        CANDIDATES="python3.13 python3.12 python3.11 python3.10 python3 python"
+        CANDIDATES="python3.14 python3.13 python3.12 python3.11 python3.10 python3 python"
     fi
     for candidate in $CANDIDATES; do
         if command -v "$candidate" &>/dev/null && "$candidate" -c "import sys; sys.exit(0 if sys.version_info[0]==3 else 1)" &>/dev/null; then

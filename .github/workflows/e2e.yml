@@ -94,7 +94,7 @@ jobs:
             frontend/package-lock.json
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - name: Cache bundled Python env
         uses: actions/cache@v4
         with:
@@ -133,7 +133,7 @@ jobs:
             e2e/package-lock.json
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - name: Cache bundled Python env
         uses: actions/cache@v4
         with:
@@ -202,7 +202,7 @@ jobs:
             frontend/package-lock.json
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - name: Cache bundled Python env
         uses: actions/cache@v4
         with:
@@ -242,7 +242,7 @@ jobs:
           node-version: '20.18.1'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - name: Gate selftest (mutation)
         shell: bash
         run: node scripts/ci/selftest-gate.js

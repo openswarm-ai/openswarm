@@ -89,7 +89,7 @@ jobs:
       - name: Setup Python (for building bundled python-env)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       # Widevine VMP signing tool. The afterPack hook invokes `castlabs_evs.vmp
       # sign-pkg` with the EVS_* secrets; without this the build aborts (publish

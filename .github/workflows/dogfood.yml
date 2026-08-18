@@ -56,7 +56,7 @@ jobs:
             electron/package-lock.json
             frontend/package-lock.json
       - uses: actions/setup-python@v5
-        with: { python-version: '3.13' }
+        with: { python-version: '3.14' }
 
       # Reuse the heavy build inputs (shares keys with e2e.yml so the two warm
       # each other's caches); the build script skips any input already on disk.
