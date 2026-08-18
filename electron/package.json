@@ -15,7 +15,7 @@
     "dist:win": "electron-builder --win --x64 --publish never",
     "dist:win:publish": "electron-builder --win --x64 --publish always",
     "dist:all": "electron-builder --mac --win --linux",
-    "test": "node --test affiliateTracking.test.js updateErrorMessage.test.js selectWebauthnAccount.test.js voice/streamingVoice.test.js",
+    "test": "node --test affiliateTracking.test.js backend-readiness.test.js boot-telemetry.test.js frontend-server.test.js port-manager.test.js runtime-paths.test.js updateErrorMessage.test.js selectWebauthnAccount.test.js voice/streamingVoice.test.js",
     "test:mouseclamp": "bash native/mouseclamp/run-tests.sh"
   },
   "dependencies": {

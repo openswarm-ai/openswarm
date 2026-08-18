@@ -144,10 +144,13 @@ const fs = require('fs');
 const hiddenBrowser = require('./hiddenBrowser');
 const usageHarvest = require('./usageHarvest');
 const { installVoiceHotkey } = require('./voiceHotkey');
-const getPort = require('get-port');
 const http = require('http');
 const affiliateTracking = require('./affiliateTracking');
+const backendReadiness = require('./backend-readiness');
 const cdpRoutes = require('./cdp-routes');
+const { createFrontendServer } = require('./frontend-server');
+const { pickBackendPort } = require('./port-manager');
+const { createRuntimePaths } = require('./runtime-paths');
 const workflowsLifecycle = require('./workflowsLifecycle');
 
 // Squirrel makes the APP create its own shortcuts: on --squirrel-install it must
@@ -211,24 +214,17 @@ if (process.platform === 'win32' && process.argv.includes('--squirrel-firstrun')
 // Format is load-bearing: `[perf] <name> t=<ms-since-launch>` one per line.
 // APP_LAUNCH_T is captured at module load so t=0 is genuinely process start.
 const APP_LAUNCH_T = Date.now();
-const _perfSeen = new Set();
-const _perfValues = {};   // name -> ms; read by the boot beacon below.
+const { createBootTelemetry } = require('./boot-telemetry');
+const bootTelemetry = createBootTelemetry({
+  launchTime: APP_LAUNCH_T,
+  onBeaconReady: () => sendBootBeacon(),
+});
 function perfMark(name) {
-  // One-shot per milestone: first-paint etc. can re-fire on crash-recovery
-  // window recreation, but the baseline we care about is the cold boot.
-  if (_perfSeen.has(name)) return;
-  _perfSeen.add(name);
-  const t = Date.now() - APP_LAUNCH_T;
-  _perfValues[name] = t;
-  try { console.log(`[perf] ${name} t=${t}`); } catch (_) {}
+  bootTelemetry.markPerformance(name);
 }
 
 // Preflight: log the usual "works on mine, not theirs" causes (python is already covered by the exists-log + spawn handler; this adds the rest). Log-only, guarded, no PII (lengths/flags, never paths).
-let _preflightInfo = {};
-let _preflightVerdict = null;
-
 // Comprehensive preflight (electron/preflight.js): fans out checks under hard per-check timeouts, emits a [preflight2] verdict line, defers cache write until BOTH preflight finished AND backend-http-ready so a mid-boot kill cannot poison the next launch's cached verdict. Kill switch via OPENSWARM_DISABLE_PREFLIGHT=1.
-let _preflightPendingCache = null;
 // Cheap deterministic hash of installation_id into [0,99]; used by the cohort gate so the same install always falls in the same bucket regardless of when it boots.
 function installIdBucket(id) {
   if (!id) return 0;
@@ -258,14 +254,13 @@ function runComprehensivePreflight() {
   const version = (() => { try { return app.getVersion(); } catch { return '0.0.0'; } })();
   if (dataDir) { try { pf.pruneOldCaches(pf.defaultEnv(), dataDir, version); } catch {} }
   const cached = dataDir ? pf.readCache(pf.defaultEnv(), dataDir, version) : null;
-  if (cached) { console.log(`[preflight2] cached verdict=${cached.verdict} (skipping fresh probes)`); _preflightVerdict = cached; return; }
+  if (cached) { console.log(`[preflight2] cached verdict=${cached.verdict} (skipping fresh probes)`); bootTelemetry.setPreflightVerdict(cached); return; }
   pf.run(pf.defaultEnv(), { dataDir, gpu: { app } }).then((result) => {
-    _preflightVerdict = result;
+    bootTelemetry.setPreflightVerdict(result);
     const reasons = result.results.filter((r) => r.status !== 'ok').map((r) => `${r.name}:${r.status}(${r.reason})`).join('; ');
     console.log(`[preflight2] verdict=${result.verdict} totalMs=${result.totalMs} ${reasons || 'all-checks-ok'}`);
     if (dataDir && result.verdict === 'ok') {
-      _preflightPendingCache = { pf, dataDir, version, result };
-      maybeCommitPreflightCache();
+      bootTelemetry.stagePreflightCache({ pf, dataDir, version, result });
     }
   }).catch((e) => { console.log(`[preflight2] threw: ${e && e.message}`); });
 }
@@ -274,12 +269,7 @@ function runComprehensivePreflight() {
 // window between preflight-finish and backend-actually-serving cannot leave a
 // "verdict=ok" token that masks a real boot break on the next launch.
 function maybeCommitPreflightCache() {
-  if (!_preflightPendingCache) return;
-  if (_perfValues['backend-http-ready'] == null) return;
-  const { pf, dataDir, version, result } = _preflightPendingCache;
-  _preflightPendingCache = null;
-  try { pf.writeCache(pf.defaultEnv(), dataDir, version, result); console.log(`[preflight2] cache committed for v${version}`); }
-  catch (e) { console.log(`[preflight2] cache write failed: ${e && e.message}`); }
+  bootTelemetry.commitPreflightCacheIfReady();
 }
 
 function logPreflight(backendPort) {
@@ -293,8 +283,8 @@ function logPreflight(backendPort) {
     probe('oneDriveProfile', () => /onedrive/i.test(userData));
     probe('portInPreferredRange', () => backendPort >= 8324 && backendPort <= 8424);
     probe('freeDiskMB', () => Math.round((fs.statfsSync(userData).bavail * fs.statfsSync(userData).bsize) / 1048576));
-    if (isPackaged) for (const bit of ['router', 'node', 'app.asar', 'frontend', 'backend', 'python-env']) probe(bit, () => fs.existsSync(getResourcePath(bit)));
-    _preflightInfo = info;
+    if (isPackaged) for (const bit of ['router', 'node', 'app.asar', 'frontend', 'backend', 'python-env']) probe(bit, () => fs.existsSync(runtimePaths.resourcePath(bit)));
+    bootTelemetry.setPreflightInfo(info);
     console.log(`[preflight] ${Object.entries(info).map(([k, v]) => `${k}=${v}`).join(' | ')}`);
   } catch (_) { /* never break boot */ }
 }
@@ -338,13 +328,14 @@ function sendBootBeacon() {
   try {
     if (!isPackaged || !backendPort) return;
     const bi = getBuildInfo();
+    const telemetry = bootTelemetry.beaconSnapshot();
     const body = JSON.stringify({
       surface: 'boot',
       action: 'ready',
       props: {
         sha: bi.shortSha, channel: bi.channel, version: app.getVersion(),
         os: process.platform, arch: process.arch,
-        perf: _perfValues, preflight: _preflightInfo, preflight2: _preflightVerdict ? { verdict: _preflightVerdict.verdict, totalMs: _preflightVerdict.totalMs, names: (_preflightVerdict.results || []).map((r) => `${r.name}:${r.status}`) } : null, crash_dumps: countCrashDumps(), new_crashes: newCrashDumps(),
+        perf: telemetry.perf, preflight: telemetry.preflight, preflight2: telemetry.preflight2, crash_dumps: countCrashDumps(),
       },
     });
     const req = http.request({
@@ -364,15 +355,14 @@ function sendBootBeacon() {
 }
 
 // Fire the beacon once first-paint AND backend-http-ready have both landed (the POST needs the backend listening); a touch later so it stays off the critical path.
-let _beaconScheduled = false;
 function maybeSendBootBeacon() {
-  if (_beaconScheduled) return;
-  if (_perfValues['first-paint'] == null || _perfValues['backend-http-ready'] == null) return;
-  _beaconScheduled = true;
-  setTimeout(() => sendBootBeacon(), 1500);
+  bootTelemetry.scheduleBeaconIfReady();
 }
 
-// Defender warmup: NSIS runs us with --prewarm right after install so Windows scans the bundled binaries while the user is already watching the installer instead of staring at a slow first launch.
+// Defender warmup: NSIS runs us with --prewarm right after install so Windows
+// scans both the bundled binaries and the real backend import graph while the
+// user is already watching the installer instead of staring at a slow first
+// launch. Best-effort: a failure only moves this work back to first launch.
 if (process.argv.includes('--prewarm') && process.platform === 'win32') {
   const touchExe = (rel) => {
     const full = path.join(process.resourcesPath, rel);
@@ -385,6 +375,38 @@ if (process.argv.includes('--prewarm') && process.platform === 'win32') {
   touchExe(path.join('python-env', 'python.exe'));
   touchExe(path.join('node', 'x64', 'node.exe'));
   touchExe(path.join('node', 'arm64', 'node.exe'));
+  let scratchRoot = null;
+  try {
+    scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openswarm-backend-warmup-'));
+    const pythonPath = path.join(process.resourcesPath, 'python-env', 'python.exe');
+    const warmup = backendReadiness.createBackendImportWarmup({
+      pythonPath,
+      projectRoot: process.resourcesPath,
+      debuggerDir: path.join(process.resourcesPath, 'debugger'),
+      pythonSitePackages: path.join(process.resourcesPath, 'python-env', 'Lib', 'site-packages'),
+      scratchRoot,
+      platform: process.platform,
+      env: process.env,
+    });
+    execFileSync(warmup.file, warmup.args, {
+      ...warmup.options,
+      timeout: 300000,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } catch (_) {
+  } finally {
+    if (scratchRoot) {
+      try {
+        fs.rmSync(scratchRoot, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 200,
+        });
+      } catch (_) {}
+    }
+  }
   process.exit(0);
 }
 
@@ -523,92 +545,13 @@ let splashWindow = null;
 let mainWindowReady = false;
 let isQuittingFromSplash = false;  // guards against double-quit during error shutdown
 let rendererCrashTimes = [];       // timestamps of recent render-process-gone events; caps the auto-reload retry storm
-const recentBackendStderr = [];   // ring buffer (last ~60 lines) for splash error UI
 let splashDataUrlCache = null;
 // Set to true around `new BrowserWindow()` for the top-level main window so the popup-UA spoofer in app.on('web-contents-created') doesn't accidentally rewrite the main window's UA. The web-contents-created event fires synchronously inside the BrowserWindow constructor, before mainWindow assignment returns; without this flag, the previous identity check (contents !== mainWindow.webContents) is racy across recreateMainWindow() because mainWindow still points to the OLD window during construction of the NEW one.
 let isCreatingMainWindow = false;
 
 // Embedded HTTP server that serves the packaged frontend bundle. The previous loadFile(...) path used file:// which on Windows Electron 40 CastLabs triggered a STATUS_ACCESS_VIOLATION (0xC0000005) renderer crash on every chat / dashboard mount; dev mode using http://localhost:3000 never crashed. Serving over http://127.0.0.1:<random> from the same in-process Node http server keeps the same packaged asset layout, costs no measurable perf (in-process loopback), and avoids the file:// quirk that Chromium 144 segfaults on.
 let frontendServerPort = null;
-async function startFrontendServer() {
-  const frontendDir = path.join(process.resourcesPath, 'frontend');
-  const mimeTypes = {
-    '.html': 'text/html; charset=utf-8',
-    '.js': 'application/javascript; charset=utf-8',
-    '.mjs': 'application/javascript; charset=utf-8',
-    '.css': 'text/css; charset=utf-8',
-    '.json': 'application/json; charset=utf-8',
-    '.map': 'application/json; charset=utf-8',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.ttf': 'font/ttf',
-    '.otf': 'font/otf',
-    '.mp4': 'video/mp4',
-    '.webm': 'video/webm',
-    '.wasm': 'application/wasm',
-  };
-  const server = http.createServer((req, res) => {
-    try {
-      let pathname = decodeURIComponent((req.url || '/').split('?')[0]);
-      if (pathname === '/' || pathname === '') pathname = '/index.html';
-      const resolved = path.normalize(path.join(frontendDir, pathname));
-      // Defense-in-depth path-traversal guard; loopback-only listener already prevents external access but a misparsed URL must not escape the frontend dir.
-      if (!resolved.startsWith(frontendDir + path.sep) && resolved !== path.join(frontendDir, 'index.html')) {
-        res.writeHead(403); res.end(); return;
-      }
-      fs.readFile(resolved, (err, data) => {
-        if (err) {
-          // SPA fallback: unknown paths return index.html so client-side routing works even if some code uses BrowserRouter instead of HashRouter.
-          fs.readFile(path.join(frontendDir, 'index.html'), (err2, indexData) => {
-            if (err2) { res.writeHead(404); res.end(); return; }
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(indexData);
-          });
-          return;
-        }
-        const ext = path.extname(resolved).toLowerCase();
-        res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
-        res.end(data);
-      });
-    } catch (err) {
-      console.error('[frontend-server] request handler threw:', err && err.message);
-      try { res.writeHead(500); res.end(); } catch (_) {}
-    }
-  });
-  // Try a deterministic port first so the renderer's origin stays stable across launches.
-  // localStorage is keyed by origin (incl. port), and the old listen(0) handed out a random
-  // port every launch, which wiped onboarding state on every restart and re-triggered the
-  // tour. Try a preferred port; if held, fall back to OS-assigned.
-  const PREFERRED_PORT = 4173;
-  return new Promise((resolve) => {
-    server.once('error', () => {
-      // Preferred port held; fall back. localStorage may rotate this run but stabilizes once 4173 frees up.
-      const fallback = http.createServer(server.listeners('request')[0]);
-      fallback.on('error', (err) => {
-        console.error('[frontend-server] fallback also failed:', err && err.message);
-      });
-      fallback.listen(0, '127.0.0.1', () => {
-        const addr = fallback.address();
-        frontendServerPort = typeof addr === 'object' && addr ? addr.port : null;
-        console.log(`[frontend-server] listening (fallback) on 127.0.0.1:${frontendServerPort}`);
-        resolve(frontendServerPort);
-      });
-    });
-    server.listen(PREFERRED_PORT, '127.0.0.1', () => {
-      const addr = server.address();
-      frontendServerPort = typeof addr === 'object' && addr ? addr.port : null;
-      console.log(`[frontend-server] listening on 127.0.0.1:${frontendServerPort}`);
-      resolve(frontendServerPort);
-    });
-  });
-}
+let frontendServer = null;
 
 const GPU_FALLBACK_MARKER = path.join(os.homedir(), 'Library', 'Application Support', 'openswarm', 'gpu-fallback.marker');
 let reducedGraphicsThisBoot = false;
@@ -624,6 +567,23 @@ try {
 
 const isPackaged = app.isPackaged;
 const isDev = process.env.ELECTRON_DEV === '1';
+const runtimePaths = createRuntimePaths({
+  isPackaged,
+  isDev,
+  platform: process.platform,
+  arch: process.arch,
+  resourcesPath: process.resourcesPath,
+  electronDir: __dirname,
+  env: process.env,
+});
+function getAuthTokenPath() {
+  return backendReadiness.authTokenFilePath({
+    isPackaged,
+    platform: process.platform,
+    env: process.env,
+    electronDir: __dirname,
+  });
+}
 
 // Mac-only crash watchdog. Targets the macOS 26.5 + Electron 42 NSEvent
 // null-deref users have reported (wake-from-sleep mostly). When the parent
@@ -840,140 +800,21 @@ function osTakingTooLongText() {
   return 'Backend is taking longer than usual. You can wait, view logs, or restart.';
 }
 
-/**
- * macOS GUI apps launched from Finder/Dock inherit a minimal PATH from launchd
- * (/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin) — none of the user's shell
- * additions (nvm, volta, homebrew, bun, etc.) are present. Resolve the real
- * PATH by asking the user's default shell, then fall back to well-known dirs.
- */
-function getShellPath() {
-  if (process.platform !== 'darwin' || isDev) return process.env.PATH || '';
-
-  // Strategy 1: ask the user's login shell for its PATH
-  try {
-    const userShell = process.env.SHELL || '/bin/zsh';
-    const result = execFileSync(userShell, ['-ilc', 'echo $PATH'], {
-      encoding: 'utf8',
-      timeout: 5000,
-      env: { ...process.env, HOME: os.homedir() },
-    });
-    const resolved = result.trim();
-    if (resolved) return resolved;
-  } catch (_) { /* fall through */ }
-
-  // Strategy 2: read macOS system PATH config (/etc/paths + /etc/paths.d/*)
-  const systemPaths = [];
-  try {
-    const base = fs.readFileSync('/etc/paths', 'utf8');
-    for (const line of base.split('\n')) {
-      const p = line.trim();
-      if (p) systemPaths.push(p);
-    }
-  } catch (_) { /* ignore */ }
-  try {
-    const pathsD = '/etc/paths.d';
-    if (fs.existsSync(pathsD)) {
-      for (const file of fs.readdirSync(pathsD).sort()) {
-        const content = fs.readFileSync(path.join(pathsD, file), 'utf8');
-        for (const line of content.split('\n')) {
-          const p = line.trim();
-          if (p) systemPaths.push(p);
-        }
-      }
-    }
-  } catch (_) { /* ignore */ }
-
-  // Strategy 3: well-known user-local bin directories
-  const home = os.homedir();
-  const fallbackDirs = [
-    path.join(home, '.local/bin'),
-    path.join(home, '.volta/bin'),
-    path.join(home, '.fnm/aliases/default/bin'),
-    path.join(home, '.bun/bin'),
-    path.join(home, '.cargo/bin'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-  ];
-
-  const nvmDir = path.join(home, '.nvm/versions/node');
-  try {
-    if (fs.existsSync(nvmDir)) {
-      const versions = fs.readdirSync(nvmDir).sort().reverse();
-      if (versions.length) {
-        fallbackDirs.unshift(path.join(nvmDir, versions[0], 'bin'));
-      }
-    }
-  } catch (_) { /* ignore */ }
-
-  const seen = new Set();
-  const dirs = [];
-  for (const d of [...fallbackDirs, ...systemPaths, ...(process.env.PATH || '').split(':')]) {
-    if (!d || seen.has(d)) continue;
-    seen.add(d);
-    try { if (fs.statSync(d).isDirectory()) dirs.push(d); } catch { /* skip */ }
-  }
-  return dirs.join(':');
-}
-
-function getResourcePath(...segments) {
-  if (isPackaged) {
-    return path.join(process.resourcesPath, ...segments);
-  }
-  return path.join(__dirname, '..', ...segments);
-}
-
-function getPythonPath() {
-  // python-build-standalone layout differs by OS:
-  //   macOS / Linux: <env>/bin/python3
-  //   Windows:       <env>\python.exe   (no bin/, no python3)
-  //
-  // macOS extra: invoke via Python.app/Contents/MacOS/python3 instead of
-  // bin/python3 so LaunchServices reads LSUIElement=1 from the wrapper
-  // bundle's Info.plist and skips the Dock entry. Without this, the
-  // bundleless python3.13 binary appears as a generic "exec" placeholder
-  // in the Dock on fresh user Macs, bouncing for the entire boot window.
-  // sys.prefix / sys.executable still resolve via realpath so all stdlib
-  // and site-packages discovery is unchanged. See scripts/build-python-env.sh
-  // for the wrapper layout invariants.
-  if (isPackaged) {
-    const envPath = path.join(process.resourcesPath, 'python-env');
-    if (process.platform === 'win32') {
-      return path.join(envPath, 'python.exe');
-    }
-    if (process.platform === 'darwin') {
-      const wrapped = path.join(envPath, 'Python.app', 'Contents', 'MacOS', 'python3');
-      // Defensive fallback: if the wrapper is missing for any reason
-      // (e.g. older build cache), fall back to the bare binary so boot
-      // still succeeds — only the Dock-icon suppression is lost.
-      if (fs.existsSync(wrapped)) return wrapped;
-    }
-    return path.join(envPath, 'bin', 'python3');
-  }
-  if (process.platform === 'win32') {
-    return path.join(__dirname, '..', 'backend', '.venv', 'Scripts', 'python.exe');
-  }
-  return path.join(__dirname, '..', 'backend', '.venv', 'bin', 'python3');
-}
-
 // Read the user's provider session cookies via a one-shot bundled-python invocation, so the
 // offscreen harvest can inject them and pass provider Cloudflare with a real Chrome TLS
 // handshake. Spawned, NEVER an HTTP endpoint, so a token-holding agent can't reach it: only
 // the app shell invokes it. Always resolves (to [] on any failure) so the harvest just falls
-// back to the opportunistic path. mirrors startBackend's python env (projectRoot + site-packages).
+// back to the opportunistic path. Mirrors startBackend's python env (projectRoot + site-packages).
 function p_readProviderCookies(domain) {
   return new Promise((resolve) => {
     let done = false;
     const finish = (v) => { if (!done) { done = true; resolve(v); } };
     try {
-      const root = isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+      // Same resolver startBackend uses (runtime-paths.js): bundled interpreter + the packaged site-packages for the shipped Python.
+      const root = runtimePaths.projectRoot();
       const env = { ...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1' };
-      if (isPackaged) {
-        const sitePackages = process.platform === 'win32'
-          ? path.join(process.resourcesPath, 'python-env', 'Lib', 'site-packages')
-          : path.join(process.resourcesPath, 'python-env', 'lib', 'python3.13', 'site-packages');
-        env.PYTHONPATH = [root, sitePackages].join(path.delimiter);
-      }
-      const proc = spawn(getPythonPath(), ['-m', 'backend.apps.onboarding.usage.dump_cookies', String(domain)], { cwd: root, env });
+      if (isPackaged) env.PYTHONPATH = [root, runtimePaths.pythonSitePackages()].join(path.delimiter);
+      const proc = spawn(runtimePaths.pythonExecutable(), ['-m', 'backend.apps.onboarding.usage.dump_cookies', String(domain)], { cwd: root, env });
       let out = '';
       proc.stdout.on('data', (d) => { out += d.toString(); });
       proc.on('error', () => finish([]));
@@ -984,32 +825,6 @@ function p_readProviderCookies(domain) {
 }
 usageHarvest.configure({ readCookies: p_readProviderCookies });
 
-// Path to a real Node.js binary bundled in extraResources, or null if not
-// shipped (dev mode, or build that skipped the node-fetch step). Backend
-// reads OPENSWARM_NODE_PATH env var to prefer this over both system `node`
-// (which fresh user Macs lack) and the ELECTRON_RUN_AS_NODE fallback
-// (which has flaky Dock behavior + slow cold-start). Used by 9Router and
-// MCP bundle spawning.
-//
-// Layout shipped by scripts/build-app.sh:
-//   <resources>/node/arm64/bin/node
-//   <resources>/node/x64/bin/node
-// Both arches are staged so a single extraResources entry covers
-// publish-mode dual-arch builds without per-arch staging hooks; the
-// runtime picks the matching one by process.arch. Wasted ~25 MB per
-// DMG of cross-arch payload is the cost of avoiding electron-builder's
-// per-arch beforePack complexity. Windows uses node.exe at the root of
-// the per-arch subdir.
-function getBundledNodePath() {
-  if (!isPackaged) return null;
-  const arch = process.arch === 'x64' ? 'x64' : (process.arch === 'arm64' ? 'arm64' : null);
-  if (!arch) return null;
-  const candidate = process.platform === 'win32'
-    ? path.join(process.resourcesPath, 'node', arch, 'node.exe')
-    : path.join(process.resourcesPath, 'node', arch, 'bin', 'node');
-  return fs.existsSync(candidate) ? candidate : null;
-}
-
 // Polls /api/health/check until the backend answers 200, or the spawned
 // python process exits non-zero (real failure). Never times out by wall
 // clock — on a cold-Defender Windows install this can take several
@@ -1017,100 +832,29 @@ function getBundledNodePath() {
 // users staring at a vanished icon. Instead we surface progressive
 // warnings on the splash so the wait feels intentional.
 function waitForBackend(port, opts = {}) {
-  const proc = opts.process || null;
-  const start = Date.now();
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let stillStartingNotified = false;
-    let actionsShown = false;
-    const finish = (fn, val) => { if (settled) return; settled = true; fn(val); };
-
-    if (proc) {
-      proc.once('exit', (code) => {
-        // exit with code === null means we killed it ourselves (normal shutdown).
-        if (code !== 0 && code !== null) {
-          finish(reject, new Error(`Backend process exited with code ${code} during startup`));
-        }
+  return backendReadiness.waitForBackend(port, {
+    process: opts.process || null,
+    onStillStarting: () => {
+      emitSplashStatus({ text: osStillStartingText(), level: 'warning' });
+    },
+    onTakingTooLong: () => {
+      emitSplashStatus({
+        text: osTakingTooLongText(),
+        level: 'warning',
+        showActions: true,
+        logs: bootTelemetry.recentBackendStderr(20),
       });
-      // spawn 'error' (missing/quarantined/wrong-arch python.exe) never fires
-      // 'exit', so without this the health poll loops forever and the splash
-      // hangs. Reject so the caller surfaces the failure UI instead.
-      proc.once('error', (err) => {
-        finish(reject, new Error(`Backend failed to spawn: ${err && err.message || err}`));
-      });
-    }
-
-    function check() {
-      if (settled) return;
-      const elapsed = Date.now() - start;
-      if (elapsed > 60_000 && !stillStartingNotified) {
-        stillStartingNotified = true;
-        emitSplashStatus({ text: osStillStartingText(), level: 'warning' });
-      }
-      if (elapsed > 180_000 && !actionsShown) {
-        actionsShown = true;
-        emitSplashStatus({
-          text: osTakingTooLongText(),
-          level: 'warning',
-          showActions: true,
-          logs: recentBackendStderr.slice(-20).join(''),
-        });
-      }
-      const req = http.get(`http://127.0.0.1:${port}/api/health/check`, (res) => {
-        if (res.statusCode === 200) {
-          finish(resolve);
-        } else {
-          setTimeout(check, 500);
-        }
-      });
-      req.on('error', () => setTimeout(check, 500));
-      req.setTimeout(2000, () => {
-        req.destroy();
-        setTimeout(check, 500);
-      });
-    }
-    check();
+    },
   });
-}
-
-// Race a port-range search against a 3-second wall clock. On most machines
-// `getPort.makeRange(8324, 8424)` returns within milliseconds, but Windows
-// EDR / corp-firewall stacks can intercept the bind() probes and stall each
-// attempt for seconds — 100 attempts × multi-second stalls = "OpenSwarm is
-// hung at startup." The fallback `getPort({ port: 0 })` lets the OS pick
-// any free ephemeral port; we don't actually care about staying inside the
-// 8324-range — the renderer reads the port via IPC, no hardcoded assumption.
-async function pickBackendPort() {
-  const PREFERRED_TIMEOUT_MS = 3000;
-  // host:'127.0.0.1' is load-bearing. The backend binds uvicorn --host
-  // 127.0.0.1, but get-port defaults to probing 0.0.0.0, and on Windows a
-  // 0.0.0.0:PORT probe SUCCEEDS even when another process already holds
-  // 127.0.0.1:PORT (loopback). So without this, get-port hands back e.g.
-  // 8324 as "free" while something else owns 127.0.0.1:8324, the backend
-  // then fails its 127.0.0.1 bind with WinError 10048 and exits, and the
-  // app shows "backend crashed". Probing the same interface uvicorn binds
-  // makes get-port skip the occupied port. (POSIX already rejects the
-  // mismatched 0.0.0.0 probe, so this is a no-op correctness win on Mac.)
-  const preferred = getPort({ port: getPort.makeRange(8324, 8424), host: '127.0.0.1' });
-  let timeoutHandle;
-  const timeout = new Promise((resolve) => {
-    timeoutHandle = setTimeout(() => resolve(null), PREFERRED_TIMEOUT_MS);
-  });
-  const winner = await Promise.race([preferred, timeout]);
-  clearTimeout(timeoutHandle);
-  if (winner !== null) return winner;
-  console.warn(`[boot] getPort.makeRange(8324,8424) stalled past ${PREFERRED_TIMEOUT_MS}ms — falling back to OS-assigned port`);
-  return await getPort({ port: 0, host: '127.0.0.1' });
 }
 
 async function startBackend() {
   if (!backendPort) backendPort = await pickBackendPort();
 
-  const pythonPath = getPythonPath();
-  const backendDir = getResourcePath('backend');
-  const projectRoot = isPackaged ? process.resourcesPath : path.join(__dirname, '..');
-
-  const shellPath = getShellPath();
+  const pythonPath = runtimePaths.pythonExecutable();
+  const backendDir = runtimePaths.resourcePath('backend');
+  const projectRoot = runtimePaths.projectRoot();
+  const shellPath = runtimePaths.shellPath();
 
   // Identifies how this build was packaged. Read by the backend service
   // client so the cloud can split installer-using customers from
@@ -1160,6 +904,10 @@ async function startBackend() {
     OPENSWARM_LOCALE: app.getLocale(),
     OPENSWARM_TIMEZONE: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
     PYTHONDONTWRITEBYTECODE: '1',
+    // The embedded runtime must never import packages from the host user's
+    // roaming Python directory; only the shipped site-packages are trusted.
+    PYTHONNOUSERSITE: '1',
+    PYTHONUNBUFFERED: '1',
     // PEP 540 UTF-8 mode: makes open() default to UTF-8 on Windows where
     // the locale is otherwise cp1252. Many backend modules read UTF-8
     // .md / .json files without an explicit encoding= argument.
@@ -1183,17 +931,15 @@ async function startBackend() {
   // that Electron-as-Node adds vs. native node (~1-2s). Falls back to the
   // existing system-node / Electron-as-Node chain in nine_router._find_node()
   // if the env var is unset (dev mode, or build without node fetch).
-  const bundledNode = getBundledNodePath();
+  const bundledNode = runtimePaths.bundledNodeExecutable();
   if (bundledNode) {
     env.OPENSWARM_NODE_PATH = bundledNode;
   }
 
   if (isPackaged) {
-    // site-packages location differs by OS — Windows has no lib/python3.13/.
-    const pythonEnvSitePackages = process.platform === 'win32'
-      ? path.join(process.resourcesPath, 'python-env', 'Lib', 'site-packages')
-      : path.join(process.resourcesPath, 'python-env', 'lib', 'python3.13', 'site-packages');
-    const debuggerDir = getResourcePath('debugger');
+    // site-packages location differs by OS — Windows has no lib/python<minor>/.
+    const pythonEnvSitePackages = runtimePaths.pythonSitePackages();
+    const debuggerDir = runtimePaths.resourcePath('debugger');
     env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(path.delimiter);
   }
 
@@ -1246,8 +992,7 @@ async function startBackend() {
     // Buffer the most recent stderr lines for the splash error UI so
     // when boot fails we can show actionable context inline instead of
     // making the user dig through a log file.
-    recentBackendStderr.push(text);
-    while (recentBackendStderr.length > 60) recentBackendStderr.shift();
+    bootTelemetry.appendBackendStderr(text);
   });
 
   // spawn() fires 'error' (not 'exit', not stdout/stderr) when the binary is
@@ -1260,8 +1005,7 @@ async function startBackend() {
       `  python path: ${pythonPath} (exists=${pythonExists})\n` +
       `  arch: ${process.arch}, platform: ${process.platform}\n`;
     console.error(msg);
-    recentBackendStderr.push(msg);
-    while (recentBackendStderr.length > 60) recentBackendStderr.shift();
+    bootTelemetry.appendBackendStderr(msg);
   });
 
   backendProcess.on('exit', (code) => {
@@ -1328,26 +1072,6 @@ function markBackendReady() {
   try { connectMainBridge(); } catch (_) {}
 }
 
-function getAuthTokenFilePath() {
-  // Mirrors backend/config/paths.py. On macOS the file lives at
-  // ~/Library/Application Support/OpenSwarm/data/auth.token; on
-  // Windows under %APPDATA%/OpenSwarm/data/; on Linux under
-  // ~/.local/share/OpenSwarm/data/. In dev the backend writes it to
-  // backend/data/auth.token instead.
-  if (isPackaged) {
-    if (process.platform === 'darwin') {
-      return path.join(os.homedir(), 'Library', 'Application Support', 'OpenSwarm', 'data', 'auth.token');
-    } else if (process.platform === 'win32') {
-      return path.join(process.env.APPDATA || os.homedir(), 'OpenSwarm', 'data', 'auth.token');
-    } else {
-      const xdg = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
-      return path.join(xdg, 'OpenSwarm', 'data', 'auth.token');
-    }
-  }
-  // Dev: backend/data/auth.token relative to repo root.
-  return path.join(__dirname, '..', 'backend', 'data', 'auth.token');
-}
-
 // Persistent backend log on disk. Until now the bundled-Python stdout/stderr
 // only went to the Electron process streams, which a packaged Windows app
 // has no console for, so a user whose backend failed on their machine had
@@ -1355,7 +1079,7 @@ function getAuthTokenFilePath() {
 // cause (UnicodeDecodeError, EADDRINUSE, missing DLL, AV quarantine) of the
 // "works on my laptop, not theirs" failures. Lives next to auth.token.
 function getBackendLogPath() {
-  return path.join(path.dirname(getAuthTokenFilePath()), 'backend.log');
+  return path.join(path.dirname(getAuthTokenPath()), 'backend.log');
 }
 
 let backendLogStream = null;
@@ -1397,22 +1121,8 @@ function installConsoleTee() {
 }
 
 async function loadAuthToken() {
-  const tokenPath = getAuthTokenFilePath();
-  // Retry up to 20 × 100ms = 2s in case backend is still writing the
-  // file. Backend writes BEFORE binding HTTP port though, so this
-  // usually returns on the first attempt.
-  for (let attempt = 0; attempt < 20; attempt++) {
-    try {
-      const contents = fs.readFileSync(tokenPath, 'utf8').trim();
-      if (contents) {
-        authToken = contents;
-        console.log(`[auth] loaded token from ${tokenPath}`);
-        return;
-      }
-    } catch (_) {}
-    await new Promise(r => setTimeout(r, 100));
-  }
-  console.warn(`[auth] FAILED to load auth token from ${tokenPath} after 2s — WS/HTTP will be rejected`);
+  const loaded = await backendReadiness.loadAuthToken({ tokenPath: getAuthTokenPath() });
+  if (loaded) authToken = loaded;
 }
 
 function createWindow() {
@@ -1456,7 +1166,7 @@ function createWindow() {
     mainWindow.loadURL(`http://127.0.0.1:${frontendServerPort}/index.html`);
   } else {
     // Fallback only if the embedded server failed to start; the file:// path is known to segfault on Windows CastLabs Electron 40 but it is better than a white screen.
-    const frontendPath = getResourcePath('frontend', 'index.html');
+    const frontendPath = runtimePaths.resourcePath('frontend', 'index.html');
     mainWindow.loadFile(frontendPath);
   }
 
@@ -1794,7 +1504,7 @@ function getBuildInfo() {
   if (_buildInfoCache) return _buildInfoCache;
   let info = { sha: 'unknown', shortSha: 'unknown', builtAt: null, channel: 'unknown' };
   try {
-    const raw = fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8');
+    const raw = fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8').replace(/^\uFEFF/, '');
     const parsed = JSON.parse(raw);
     if (parsed && parsed.sha) info = parsed;
   } catch (_) {
@@ -2312,14 +2022,20 @@ app.whenReady().then(async () => {
       backendPort = await pickBackendPort();
       const _backendBoot = startBackend().catch((err) => {
         console.error('[boot] backend startup failed:', err && err.message);
-        emitSplashStatus({ text: 'Backend failed to start', level: 'error', logs: recentBackendStderr.slice(-20).join('') });
+        emitSplashStatus({ text: 'Backend failed to start', level: 'error', logs: bootTelemetry.recentBackendStderr(20) });
       });
     }
     // Start the embedded frontend HTTP server before createWindow so loadURL has a real port. Only relevant in packaged mode; in dev, frontend lives on webpack-dev-server :3000.
     if (!isDev) {
       try {
-        await startFrontendServer();
+        frontendServer = createFrontendServer({
+          frontendDir: path.join(process.resourcesPath, 'frontend'),
+        });
+        frontendServerPort = await frontendServer.start();
       } catch (err) {
+        await frontendServer?.close().catch(() => {});
+        frontendServer = null;
+        frontendServerPort = null;
         console.error('[boot] frontend server failed to start, falling back to file://:', err && err.message);
       }
     }
@@ -2427,7 +2143,7 @@ app.whenReady().then(async () => {
       text: "OpenSwarm couldn't start: " + (err && err.message ? err.message : String(err)),
       level: 'error',
       showActions: true,
-      logs: recentBackendStderr.slice(-30).join(''),
+      logs: bootTelemetry.recentBackendStderr(30),
     });
     // Do NOT call app.quit() here — the user controls the next step
     // through the splash action buttons.
@@ -3260,6 +2976,14 @@ app.on('before-quit', async (event) => {
 
 app.on('will-quit', () => {
   if (!isDev) killBackend();
+  if (frontendServer) {
+    const stoppingServer = frontendServer;
+    frontendServer = null;
+    frontendServerPort = null;
+    void stoppingServer.close().catch((err) => {
+      console.warn('[frontend-server] close failed:', err && err.message);
+    });
+  }
   try { globalShortcut.unregisterAll(); } catch (_) {}
   try { whisperService.stopServer(); } catch (_) {}
 });
@@ -3321,7 +3045,7 @@ ipcMain.on('splash:action', (_event, action) => {
       if (fs.existsSync(logPath)) {
         shell.showItemInFolder(logPath);
       } else {
-        shell.openPath(path.dirname(getAuthTokenFilePath())).catch(() => {});
+        shell.openPath(path.dirname(getAuthTokenPath())).catch(() => {});
       }
     } catch (_) {}
   }
@@ -3349,7 +3073,7 @@ ipcMain.handle('get-backend-port', () => backendPort);
 
 // ---- Voice dictation (local whisper.cpp) ----
 function voiceResourceDir() {
-  return getResourcePath('whisper');
+  return runtimePaths.resourcePath('whisper');
 }
 function voiceUserDataDir() {
   try { return app.getPath('userData'); } catch (_) { return __dirname; }
@@ -3425,11 +3149,8 @@ ipcMain.handle('get-auth-token', async () => {
   // start, and during dev hot-reload the cached value could go stale
   // while the renderer stays alive. Re-reading is cheap (small file,
   // OS caches it) and guarantees the renderer never holds a dead token.
-  try {
-    const p = getAuthTokenFilePath();
-    const current = fs.readFileSync(p, 'utf8').trim();
-    if (current) authToken = current;
-  } catch (_) {}
+  const current = backendReadiness.readAuthToken(getAuthTokenPath());
+  if (current) authToken = current;
   return authToken;
 });
 // Phase 0: renderer fires this once, when it renders the first streamed token
