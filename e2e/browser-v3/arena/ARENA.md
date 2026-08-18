@@ -1123,3 +1123,13 @@ tasks to lift; booking 'memory flat' off it would have been dishonest. Rebuilt a
 near-miss (partial-credit) tasks + 4 strict controls where v42 baseline = 11.8 partial-sum / 4
 strict -- tasks with genuine room for a completion mechanism to push 0.5->1.0. v48 running on it
 now; THAT result is the decisive, honest test of whether plan-state moves completion.
+
+## v48 plan-state: fair pilot = MARGINAL/inconclusive (2026-08-17)
+Fair near-miss pilot (20 tasks, v42 base 4 strict/11.8 partial): v48 = 5 strict / 9.3 partial.
++1 strict but -2.5 partial-sum -- WITHIN NOISE at n=20, NOT a clear win (my auto-verdict script's
+threshold was too loose; corrected). Plan-state is the ONLY one of four capability mechanisms
+(v45/v46/v47/v48) to nudge strict up at all, so worth resolving: launched a bigger test on all 65
+v42-informative tasks (v42 base 13 strict / 38.2 partial). If v48 clearly beats that -> real
+completion lift, ingest. If flat/within-noise -> completion wall confirmed not scaffolding-movable,
+book the full negative ledger. Honest status: no mechanism has clearly broken the WebArena
+completion wall; plan-state is the one open thread.
