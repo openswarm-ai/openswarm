@@ -2010,8 +2010,12 @@ function dirSizeMb(dir) {
 function sweepStaleUpdaterCache() {
   try {
     const semver = require('semver');
-    const pendingDir = path.join(app.getPath('home'), 'Library', 'Caches', 'openswarm-updater', 'pending');
-    if (process.platform !== 'darwin' || !fs.existsSync(pendingDir)) return;
+    // electron-updater's cache root differs per OS; both layouts end in openswarm-updater/pending.
+    const cacheRoot = process.platform === 'darwin'
+      ? path.join(app.getPath('home'), 'Library', 'Caches')
+      : app.getPath('localAppData' in app ? 'localAppData' : 'appData');
+    const pendingDir = path.join(cacheRoot, 'openswarm-updater', 'pending');
+    if (!fs.existsSync(pendingDir)) return;
     const cur = app.getVersion();
     for (const f of fs.readdirSync(pendingDir)) {
       const m = f.match(/OpenSwarm-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/);
@@ -2592,6 +2596,9 @@ app.whenReady().then(async () => {
     createWindow();
     // After first paint, never before: the sweep shells out to du and must not delay the window.
     setTimeout(() => { void sweepOversizedCaches(); }, 8000);
+    // Long-lived sessions never rebooted used to escape the boot-time cap entirely; a 6h re-check
+    // is one du call when healthy, and it only ever drops refetchable bytes (logins untouched).
+    setInterval(() => { void sweepOversizedCaches(); }, 6 * 3600 * 1000);
     if (!isDev) {
       setupAutoUpdater();
       mainWindow.webContents.on('did-finish-load', () => {
