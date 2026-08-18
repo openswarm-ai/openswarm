@@ -974,7 +974,11 @@ const AgentCard: React.FC<Props> = ({
           bgcolor: 'transparent',
           border: 'none',
           boxShadow: 'none',
-          p: 0,
+          // content-visibility above implies PAINT containment, which clips to this padding box:
+          // the ring's top arc, the hover chip and every above-the-capsule pixel sheared off at a
+          // sharp rectangle (Eric's cut-corner screenshots, root-caused live in Chrome). Grow the
+          // box so the visuals fit inside; the negative margins cancel the geometry outside.
+          pt: '48px', mt: '-48px', px: '6px', mx: '-6px', pb: '6px', mb: '-6px',
           overflow: 'visible',
           cursor: isDragging ? 'grabbing' : 'grab',
           '&:hover': {},
