@@ -100,7 +100,7 @@ def p_read_supporting_files(skill_dir: str) -> dict[str, bytes]:
     for root, p_dirs, names in os.walk(skill_dir):
         for n in names:
             full = os.path.join(root, n)
-            rel = os.path.relpath(full, skill_dir)
+            rel = os.path.relpath(full, skill_dir).replace(os.sep, "/")
             if rel == "SKILL.md" or n.startswith("."):
                 continue
             try:

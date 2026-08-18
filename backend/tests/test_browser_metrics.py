@@ -120,5 +120,6 @@ def test_task_secrets_are_scrubbed_from_tasks_jsonl(tmp_path, monkeypatch):
     assert "hunter2" not in line and "sk-abc" not in line
     assert "password [redacted]" in line
     # owner-only file perms
-    mode = p_os.stat(p_os.path.join(str(tmp_path), "tasks.jsonl")).st_mode & 0o777
-    assert mode == 0o600
+    if p_os.name == "posix":
+        mode = p_os.stat(p_os.path.join(str(tmp_path), "tasks.jsonl")).st_mode & 0o777
+        assert mode == 0o600

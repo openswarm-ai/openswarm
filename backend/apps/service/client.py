@@ -30,7 +30,9 @@ from uuid import uuid4
 import httpx
 
 from backend.apps.service import buffer
+from backend.apps.service.settings_gateway import DEFAULT_SETTINGS_GATEWAY, SettingsGateway
 from backend.apps.service.version import APP_VERSION
+from backend.apps.settings.redaction import redact_settings
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +48,10 @@ P_TIMEOUT_SECONDS = 5.0
 P_MAX_INFLIGHT = 16
 
 
-def resolve_timezone() -> str:
+def resolve_timezone(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> str:
     """Settings-first (the only source that works on dev / OSS), then OS, then UTC."""
     try:
-        from backend.apps.settings.store import load_settings
-        tz = getattr(load_settings(), "timezone", None)
+        tz = getattr(gateway.load(), "timezone", None)
         if tz:
             return tz
     except Exception:
@@ -68,11 +69,10 @@ def resolve_timezone() -> str:
         return "UTC"
 
 
-def resolve_locale() -> str:
+def resolve_locale(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> str:
     """Best-effort BCP-47 locale, settings-first then OS, defaulting to en-US."""
     try:
-        from backend.apps.settings.store import load_settings
-        loc = getattr(load_settings(), "locale", None)
+        loc = getattr(gateway.load(), "locale", None)
         if loc:
             return loc
     except Exception:
@@ -108,31 +108,29 @@ def set_test_sink(fn: Optional[Any]) -> None:
     test_sink = fn
 
 
-def p_get_install_id() -> str:
+def p_get_install_id(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> str:
     global install_id
     if install_id:
         return install_id
     try:
-        from backend.apps.settings.store import load_settings, save_settings
-        s = load_settings()
+        s = gateway.load()
         iid = getattr(s, "installation_id", None)
         if not iid:
             iid = uuid4().hex
             s.installation_id = iid
-            save_settings(s)
+            gateway.save(s)
         install_id = iid
     except Exception:
         install_id = uuid4().hex
     return install_id
 
 
-def p_get_user_id() -> Optional[str]:
+def p_get_user_id(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> Optional[str]:
     global p_user_id
     if p_user_id:
         return p_user_id
     try:
-        from backend.apps.settings.store import load_settings
-        s = load_settings()
+        s = gateway.load()
         # Prefer the cloud-issued user_id (UUID) if the user has signed in via Google OAuth, magic link, or Stripe checkout; that's the authoritative identity. Falls back to user_email for installs that haven't completed sign-in yet (so existing onboarding-only installs don't lose their Person history during the v1.0.29 rollout). After every install signs in, this fallback drops out.
         return (
             getattr(s, "user_id", None)
@@ -148,14 +146,13 @@ def set_user_id(uid: Optional[str]) -> None:
     p_user_id = uid or None
 
 
-def p_is_enabled(kind: str) -> bool:
+def p_is_enabled(kind: str, gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> bool:
     """Honour user opt-out. Diagnostic always flows (errors block usability);
     state + session honour the toggle."""
     if kind == "diagnostic":
         return True
     try:
-        from backend.apps.settings.store import load_settings
-        s = load_settings()
+        s = gateway.load()
         mode = getattr(s, "service_diagnostics_mode", None)
         if mode == "minimal":
             return False
@@ -166,10 +163,10 @@ def p_is_enabled(kind: str) -> bool:
         return True
 
 
-def p_envelope() -> dict:
+def p_envelope(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> dict:
     """Identity + environment metadata stamped on every submission."""
-    env: dict[str, Any] = {"install_id": p_get_install_id()}
-    uid = p_get_user_id()
+    env: dict[str, Any] = {"install_id": p_get_install_id(gateway)}
+    uid = p_get_user_id(gateway)
     if uid:
         env["user_id"] = uid
     try:
@@ -209,18 +206,16 @@ def p_envelope() -> dict:
     return env
 
 
-def p_base_url() -> str:
+def p_base_url(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> str:
     try:
-        from backend.apps.settings.store import load_settings
-        from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
-        s = load_settings()
-        return (getattr(s, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL).rstrip("/")
+        s = gateway.load()
+        return (getattr(s, "openswarm_proxy_url", None) or gateway.default_proxy_url()).rstrip("/")
     except Exception:
         return P_DEFAULT_BASE
 
 
-async def p_post(path: str, body: dict) -> int | None:
-    url = f"{p_base_url()}{path}"
+async def p_post(path: str, body: dict, gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> int | None:
+    url = f"{p_base_url(gateway)}{path}"
     try:
         async with httpx.AsyncClient(timeout=P_TIMEOUT_SECONDS) as c:
             r = await c.post(url, json=body)
@@ -239,23 +234,33 @@ def p_retryable(status: int | None) -> bool:
     return status is None or status >= 500 or status in (408, 429)
 
 
-async def p_post_or_spool(path: str, body: dict, kind: str) -> None:
+def p_redact_sync_body(body: dict) -> dict:
+    """Sanitize a service-sync envelope before network or retry persistence."""
+    safe = redact_settings(body)
+    payload = body.get("d")
+    if isinstance(payload, dict):
+        safe["d"] = redact_settings(payload)
+    return safe
+
+
+async def p_post_or_spool(path: str, body: dict, kind: str, gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> None:
     global p_inflight
+    safe_body = p_redact_sync_body(body)
     if test_sink is not None:
         try:
-            test_sink(kind, body)
+            test_sink(kind, safe_body)
         except Exception as e:
             logger.debug("test sink raised: %s", e)
         return
     async with p_inflight_lock:
         if p_inflight >= P_MAX_INFLIGHT:
-            buffer.enqueue(spool_path(), f"{kind}:{path}", body, now=time.time())
+            buffer.enqueue(spool_path(), f"{kind}:{path}", safe_body, now=time.time())
             return
         p_inflight += 1
     try:
-        status = await p_post(path, body)
+        status = await p_post(path, safe_body, gateway)
         if p_retryable(status):
-            buffer.enqueue(spool_path(), f"{kind}:{path}", body, now=time.time())
+            buffer.enqueue(spool_path(), f"{kind}:{path}", safe_body, now=time.time())
         elif not p_delivered(status):
             logger.warning("service POST %s rejected with HTTP %s; payload dropped", path, status)
     finally:
@@ -263,7 +268,7 @@ async def p_post_or_spool(path: str, body: dict, kind: str) -> None:
             p_inflight = max(0, p_inflight - 1)
 
 
-async def drain_spool(batch_size: int = 50) -> int:
+async def drain_spool(batch_size: int = 50, gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> int:
     async with p_drain_lock:
         entries = buffer.drain(spool_path(), batch_size=batch_size)
         if not entries:
@@ -274,7 +279,7 @@ async def drain_spool(batch_size: int = 50) -> int:
             if not path:
                 succeeded.append(rid)
                 continue
-            status = await p_post(path, body)
+            status = await p_post(path, body, gateway)
             if p_delivered(status):
                 succeeded.append(rid)
             elif p_retryable(status):
@@ -298,7 +303,7 @@ def p_log(kind: str, payload: dict) -> None:
         pass
 
 
-def sync(data: dict | None = None) -> None:
+def sync(data: dict | None = None, gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> None:
     """Sync operational state to the cloud. Single entry point.
 
     Accepts any dict; the cloud determines what it is from the shape.
@@ -313,10 +318,10 @@ def sync(data: dict | None = None) -> None:
     Fire-and-forget; never raises.
     """
     payload = data or {}
-    if not p_is_enabled("state"):
+    if not p_is_enabled("state", gateway):
         return
     body = {
-        "client_state": p_envelope(),
+        "client_state": p_envelope(gateway),
         "d": payload,
         "t": time.time(),
         "submission_id": uuid4().hex,
@@ -324,11 +329,11 @@ def sync(data: dict | None = None) -> None:
     p_log("s", payload)
     if test_sink is not None:
         try:
-            test_sink("s", body)
+            test_sink("s", p_redact_sync_body(body))
         except Exception as e:
             logger.debug("test sink raised: %s", e)
         return
-    p_schedule(p_post_or_spool(P_DEFAULT_SYNC_PATH, body, "s"))
+    p_schedule(p_post_or_spool(P_DEFAULT_SYNC_PATH, body, "s", gateway))
 
 
 # Internal routing; the cloud has one endpoint for everything.

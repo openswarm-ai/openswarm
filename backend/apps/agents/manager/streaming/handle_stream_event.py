@@ -5,7 +5,7 @@ writes the manager's live-partial mirror, exactly as it did inline."""
 
 import time
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 from uuid import uuid4
 
 from typeguard import typechecked
@@ -14,6 +14,7 @@ from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.PartialReply import PartialReply
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 
 # Runtime annotation stays `object` (the old ImportError fallback already admitted that); the real
 # type lives behind TYPE_CHECKING so importing this module stops paying the 350ms claude_agent_sdk+mcp chain at boot.
@@ -33,6 +34,7 @@ async def handle_stream_event(
     turn: TurnState,
     thinking: ThinkingState,
     live_partial: Dict[str, PartialReply],
+    event_emitter: Optional[AgentTurnEventEmitter] = None,
 ) -> None:
     event = message.event
     event_type = event.get("type")
@@ -89,6 +91,8 @@ async def handle_stream_event(
 
         if msg_id and delta_type == "text_delta":
             text_chunk = delta.get("text", "")
+            if text_chunk and event_emitter is not None:
+                event_emitter.emit_first_token()
             turn.assistant_text_chars += len(text_chunk)
             turn.stream_text_accum += text_chunk
             live_partial[session_id] = PartialReply(

@@ -12,6 +12,7 @@ from typing import Literal, Optional
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
+from backend.apps.settings.redaction import redact_settings
 from backend.apps.settings.store import (
     DATA_DIR,
     SETTINGS_FILE,
@@ -223,11 +224,7 @@ async def apply_settings_update(body: AppSettings, protect_fields: set[str] | No
             except Exception:
                 pass
 
-    secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
-                   "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
-                   "openswarm_bearer_token", "free_trial_token", "installation_id", "analytics_token"}
-    safe = {k: v for k, v in body.model_dump().items() if k not in secret_keys}
-    p_sync(safe)
+    p_sync(redact_settings(body.model_dump()))
 
     if (body.user_email and body.user_email != getattr(old, "user_email", None)) or \
        (body.user_name and body.user_name != getattr(old, "user_name", None)):

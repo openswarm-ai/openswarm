@@ -17,7 +17,7 @@ from backend.apps.agents.core.models import (
 )
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
-from backend.apps.agents.manager.session.session_store import load_session_data
+from backend.apps.agents.manager.session.session_store import load_session_data, save_session
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.session.workspace_git import (
     detect_git_identity,
@@ -81,8 +81,18 @@ class AgentLaunch(AgentManagerProtocol):
             or global_settings.default_folder
             or os.path.expanduser("~")
         )
+        # An owned session lives under its owner's workspace root when the build has one (hosted); the desktop has none.
+        owned_workspace = False
+        try:
+            from backend.apps.hosting.policy import hosting_policy
+            owner_root = hosting_policy().owned_workspace_root(config.owner_account_id)
+            if owner_root:
+                effective_cwd = os.path.join(owner_root, session_id)
+                owned_workspace = True
+        except Exception:
+            logger.exception("owned workspace routing failed; using default cwd")
 
-        if config.mode in ("view-builder", "skill-builder") and not config.target_directory:
+        if config.mode in ("view-builder", "skill-builder") and not config.target_directory and not owned_workspace:
             effective_cwd = os.path.join(effective_cwd, session_id)
 
         os.makedirs(effective_cwd, exist_ok=True)
@@ -98,6 +108,7 @@ class AgentLaunch(AgentManagerProtocol):
                     workspace_id=session_id,
                     folder=effective_cwd,
                     session_id=session_id,
+                    owner_account_id=config.owner_account_id,
                 )
                 if output_id:
                     # Broadcast the new row so the Apps sidebar lights up immediately, even before the user clicks into it. The row name is still the placeholder ("Untitled App") at this point; the post-session meta-sync below fires a second upsert with the real name once the agent has written meta.json.
@@ -138,6 +149,7 @@ class AgentLaunch(AgentManagerProtocol):
             repo_url=repo_url,
             branch=branch_name,
             dashboard_id=config.dashboard_id,
+            owner_account_id=config.owner_account_id,
             workflow_run_id=config.workflow_run_id,
             workflow_edit_id=config.workflow_edit_id,
             thinking_level=getattr(global_settings, "default_thinking_level", "auto"),
@@ -145,6 +157,18 @@ class AgentLaunch(AgentManagerProtocol):
         apply_context_window(session, global_settings)
         self.sessions[session_id] = session
 
+        # Snapshot at birth. Until now a launched-but-quiet session lived only in memory until its
+        # first turn ended (the turn snapshot), the chat was closed, or the backend shut down
+        # gracefully (persist_all_sessions). A crash or SIGKILL in between left no file, so the
+        # respawned backend could not promote the session into its dashboard's list, the renderer
+        # treated that scoped list as authority, stripped the card, and the debounced layout save
+        # persisted the loss: the board forgot a chat the user had just opened. With the file on
+        # disk a respawn finds it (reconcile_on_startup marks it stopped, the card returns as the
+        # parked chat it was), which is exactly what a graceful shutdown already gave it.
+        try:
+            save_session(session_id, session.model_dump(mode="json"))
+        except Exception:
+            logger.warning(f"launch: could not snapshot session {session_id}", exc_info=True)
 
         await ws_manager.send_to_session(session_id, "agent:status", {
             "session_id": session_id,

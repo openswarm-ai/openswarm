@@ -39,8 +39,10 @@ class SubscriptionDisconnectResult(BaseModel):
 def sync_settings_state() -> None:
     """Push the settings snapshot to the cloud state sync, exactly as connecting does. Imported late: service.client reaches back into this package."""
     from backend.apps.service.client import sync
+    from backend.apps.settings.redaction import redact_settings
     from backend.apps.settings.settings import load_settings
-    sync(load_settings().model_dump())
+    # F1: credentials never leave the machine through the telemetry/state sync; every sync site redacts first.
+    sync(redact_settings(load_settings().model_dump()))
 
 
 @typechecked

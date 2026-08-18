@@ -36,8 +36,18 @@ def p_value_is_secret_shaped(value: Any) -> bool:
     return isinstance(value, str) and looks_secret(value)
 
 
+def p_is_redacted_value(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("configured"), bool)
+        and set(value.keys()).issubset({"configured", "last4"})
+    )
+
+
 def p_redact_value(value: Any) -> dict[str, Any]:
     """A secret rendered as state, never content: configured + last 4 only."""
+    if p_is_redacted_value(value):
+        return value
     if value is None or (isinstance(value, str) and value.strip() == ""):
         return {"configured": False}
     last4 = value[-4:] if isinstance(value, str) and len(value) >= 4 else None

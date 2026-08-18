@@ -4,11 +4,12 @@ living inside the agent loop's closure. The session reference is the SAME object
 holds (pydantic keeps the instance, doesn't copy it), so hook-side mutations to status /
 pending_approvals are visible to the loop."""
 
-from typing import Dict
+from typing import Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, InstanceOf
 
 from backend.apps.agents.core.models import AgentSession
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 
 
 class HookContext(BaseModel):
@@ -21,6 +22,7 @@ class HookContext(BaseModel):
     policy_defaults: Dict[str, str]
     # The manager's LIVE session registry (InstanceOf keeps the reference, so a sub-agent the post hook spawns is visible to the manager; a plain Dict field pydantic would copy).
     sessions: InstanceOf[dict]
+    event_emitter: Optional[AgentTurnEventEmitter] = None
     # tool_use_id -> wall-clock start (s); pre records it, post pops it for elapsed_ms.
     tool_start_times: Dict[str, float] = {}
     # Consecutive ToolSearch calls; a run of these is the "looping on ToolSearch" wedge.

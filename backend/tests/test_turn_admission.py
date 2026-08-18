@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 
 from backend.apps.agents.core.models import AgentSession
 import backend.apps.agents.agent_manager as am
+import backend.apps.agents.manager.run.TurnAdmission as admission
 
 
 def make_session(parent: Optional[str] = None) -> AgentSession:
@@ -23,19 +24,19 @@ class Harness:
         self.mgr = am.AgentManager()
         self.events: List[Tuple[str, str]] = []
         self.cap = cap
-        self.p_old_max = am.MAX_CONCURRENT_TURNS
+        self.p_old_max = admission.MAX_CONCURRENT_TURNS
         self.p_old_send = am.ws_manager.send_to_session
 
     async def p_fake_send(self, session_id: str, event: str, payload: dict) -> None:
         self.events.append((session_id, event))
 
     def __enter__(self) -> "Harness":
-        am.MAX_CONCURRENT_TURNS = self.cap
+        admission.MAX_CONCURRENT_TURNS = self.cap
         am.ws_manager.send_to_session = self.p_fake_send
         return self
 
     def __exit__(self, *exc) -> None:
-        am.MAX_CONCURRENT_TURNS = self.p_old_max
+        admission.MAX_CONCURRENT_TURNS = self.p_old_max
         am.ws_manager.send_to_session = self.p_old_send
 
 

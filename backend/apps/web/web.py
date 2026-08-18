@@ -79,10 +79,12 @@ ARCHIVE_TIER_SECONDS = 10.0       # the Wayback redirect path answered in 0.5-3s
 # Drive the packaged app's offscreen Chromium (main-process hidden window) for a fetch/search. Returns the bridge result dict, or None when no Electron main bridge is connected (dev/headless/backend-only) so the cascade just skips this tier. This is the real "browser reachable" gate, OPENSWARM_BROWSER_OK is effectively always "1" and not trustworthy for this.
 @typechecked
 async def p_browser_bridge(action: str, params: Dict) -> Optional[Dict]:
-    from backend.apps.agents.core.ws_manager import ws_manager
+    from backend.apps.agents.core.ws_manager import BrowserCommandOwner, ws_manager
     if ws_manager.main_connection is None:
         return None
-    res = await ws_manager.send_main_command(uuid4().hex, action, params)
+    res = await ws_manager.send_main_command(
+        uuid4().hex, action, params, owner=BrowserCommandOwner(origin="main")
+    )
     if not res or res.get("error"):
         return None
     return res

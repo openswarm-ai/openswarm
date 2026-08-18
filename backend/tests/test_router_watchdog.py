@@ -4,8 +4,8 @@ evidence so a zero-config user never boots a router with nothing to route."""
 
 import asyncio
 import json
+import time
 from unittest.mock import patch
-
 
 import backend.apps.nine_router.process as proc
 from backend.apps.settings.models import AppSettings
@@ -202,5 +202,33 @@ def test_detection_revival_gated_on_evidence():
             with patch.object(proc, "has_persisted_connections", return_value=True):
                 assert await cpe.router_available(AppSettings()) is False  # ensure failed (router stays down)
                 assert ensures, "sub-only users must get a revival attempt"
+
+    asyncio.run(run())
+
+
+def test_cold_dev_router_cache_does_not_block_event_loop(monkeypatch):
+    async def run():
+        monkeypatch.delenv("OPENSWARM_PACKAGED", raising=False)
+        monkeypatch.setattr(proc, "p_start_lock", None)
+
+        def slow_cache_install():
+            time.sleep(0.2)
+            return None
+
+        with patch.object(proc, "is_running", return_value=False), \
+             patch.object(proc, "p_rotate_request_log"), \
+             patch.object(proc, "p_find_9router_dir", return_value=None), \
+             patch.object(proc, "p_gpt5_patch_path", return_value=None), \
+             patch.object(proc, "p_ensure_router_cached", slow_cache_install):
+            started = time.perf_counter()
+            startup = asyncio.create_task(proc.ensure_running())
+            await asyncio.sleep(0.02)
+            heartbeat_elapsed = time.perf_counter() - started
+            await startup
+
+        assert heartbeat_elapsed < 0.1, (
+            "cold router installation blocked the backend event loop instead of "
+            "remaining a background startup task"
+        )
 
     asyncio.run(run())

@@ -275,6 +275,20 @@ async def execute(
         triggered_by=triggered_by,
     )
 
+    # Claim-time global-pause gate (W1/T26): the scheduler queues fires against a point-in-time list, so a schedule fire that lands after "pause all schedules" records a clean "skipped" instead of spinning up a session for the per-step recheck to kill. (A deleted or switched-off workflow is refused above, for every trigger.) Run Now deliberately ignores the global pause: it is an explicit user action.
+    if triggered_by == "schedule" and storage.get_paused():
+        run.status = "skipped"
+        run.error = "All schedules are paused"
+        run.finished_at = datetime.now()
+        storage.record_run(run)
+        _persist_run_fields(p_live, {
+            "last_run_at": run.finished_at,
+            "last_run_status": "skipped",
+            "last_run_id": run.id,
+        })
+        return run
+    wf = p_live
+
     # Cost cap pre-check happens before claiming `_running` so a capped workflow doesn't block its own next fire. We still record the run so the user sees it in History with a clear reason.
     if wf.cost_cap_usd_monthly is not None:
         spent = _monthly_spend_so_far(wf)

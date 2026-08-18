@@ -87,6 +87,11 @@ def p_append(filename: str, obj: dict) -> None:
         path = os.path.join(metrics_dir(), filename)
         # owner-only: these lines can carry task text and error snippets
         fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+        if os.name == "posix":
+            try:
+                os.fchmod(fd, 0o600)
+            except Exception:
+                pass
         with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(json.dumps(obj, default=str) + "\n")
     except Exception as e:

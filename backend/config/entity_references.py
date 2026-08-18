@@ -76,6 +76,8 @@ CROSS_ENTITY_REFERENCES: List[EntityReference] = [
     EntityReference(module="backend.apps.agents.core.models", model="AgentConfig", field="workflow_run_id", target=EntityKind.WORKFLOW_RUN),
     EntityReference(module="backend.apps.agents.core.models", model="AgentSession", field="dashboard_id", target=EntityKind.DASHBOARD),
     EntityReference(module="backend.apps.agents.core.models", model="AgentSession", field="parent_session_id", target=EntityKind.SESSION),
+    EntityReference(module="backend.apps.agents.events.AgentEvent", model="AgentEventBase", field="session_id", target=EntityKind.SESSION),
+    EntityReference(module="backend.apps.agents.events.AgentTurnEventEmitter", model="AgentTurnEventEmitter", field="session_id", target=EntityKind.SESSION),
     EntityReference(module="backend.apps.agents.core.models", model="AgentSession", field="workflow_edit_id", target=EntityKind.WORKFLOW),
     EntityReference(module="backend.apps.agents.core.models", model="AgentSession", field="workflow_run_id", target=EntityKind.WORKFLOW_RUN),
     EntityReference(module="backend.apps.agents.core.models", model="ApprovalRequest", field="session_id", target=EntityKind.SESSION),

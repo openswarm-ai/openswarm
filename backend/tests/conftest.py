@@ -25,13 +25,15 @@ os.environ["OPENSWARM_PERSISTENT_CLIENT"] = "0"
 
 
 @pytest.fixture(autouse=True)
-def _isolate_browser_state(monkeypatch):
+def _isolate_browser_state(monkeypatch, tmp_path):
     skills_dir = tempfile.mkdtemp(prefix="os_skills_")
     metrics_dir = tempfile.mkdtemp(prefix="os_metrics_")
     playbook_dir = tempfile.mkdtemp(prefix="os_playbook_")
     monkeypatch.setenv("OPENSWARM_BROWSER_SKILLS_DIR", skills_dir)
     monkeypatch.setenv("OPENSWARM_BROWSER_METRICS_DIR", metrics_dir)
     monkeypatch.setenv("OPENSWARM_BROWSER_PLAYBOOK_DIR", playbook_dir)
+    from backend.apps.agents import agent_manager as p_agent_manager
+    monkeypatch.setattr(p_agent_manager, "SESSIONS_DIR", str(tmp_path / "agent-sessions"))
     # The speed levers are default-ON in prod; pin them off for the suite so mocked loop tests keep exact aux-call/turn expectations (same pattern as OPENSWARM_PERSISTENT_CLIENT). The levers are exercised by their own live gates + targeted tests that set the flag explicitly.
     monkeypatch.setenv("OSW_PRESTAGE", "0")
     monkeypatch.setenv("OSW_FASTREAD_HOP", "0")

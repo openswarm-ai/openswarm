@@ -44,6 +44,62 @@ async def test_second_wall_restores_protected_credential_even_if_body_blanks_it(
         save_settings(original)
 
 
+@pytest.mark.asyncio
+async def test_apply_settings_update_redacts_nested_custom_provider_sync(monkeypatch, tmp_path):
+    import json
+    import backend.apps.settings.store as settings_store
+    import backend.apps.settings.settings as settings_router
+    from backend.apps.settings.models import CustomProvider
+    from backend.apps.settings.settings import (
+        apply_settings_update, settings_write_lock, load_settings, save_settings,
+    )
+    import backend.apps.service.client as service_client
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps({}), encoding="utf-8")
+    monkeypatch.setattr(settings_store, "SETTINGS_FILE", str(settings_file))
+    monkeypatch.setattr(settings_router, "SETTINGS_FILE", str(settings_file))
+    settings_store.p_cached_settings = None
+    settings_store.p_cached_sig = None
+    original = load_settings().model_copy(deep=True)
+    captured: list[dict] = []
+    try:
+        s = load_settings()
+        s.anthropic_api_key = "sk-ant-live-apply-1111"
+        s.openai_api_key = "sk-openai-live-apply-2222"
+        s.google_api_key = "goog-live-apply-3333"
+        s.openrouter_api_key = "or-live-apply-4444"
+        s.openswarm_bearer_token = "bearer-live-apply-5555"
+        s.free_trial_token = "trial-live-apply-6666"
+        s.custom_providers = [
+            CustomProvider(
+                name="Local",
+                base_url="http://localhost:1234/v1",
+                api_key="custom-live-apply-7777",
+            )
+        ]
+        save_settings(s)
+        monkeypatch.setattr(service_client, "sync", lambda payload: captured.append(payload))
+
+        async with settings_write_lock():
+            await apply_settings_update(load_settings())
+
+        assert captured, "settings update did not emit a telemetry sync"
+        raw = __import__("json").dumps(captured[0])
+        for secret in (
+            "sk-ant-live-apply-1111",
+            "sk-openai-live-apply-2222",
+            "goog-live-apply-3333",
+            "or-live-apply-4444",
+            "bearer-live-apply-5555",
+            "trial-live-apply-6666",
+            "custom-live-apply-7777",
+        ):
+            assert secret not in raw
+        assert captured[0]["custom_providers"][0]["api_key"]["configured"] is True
+    finally:
+        save_settings(original)
+
+
 @pytest.fixture
 def client():
     import backend.auth as auth_mod

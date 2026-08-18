@@ -16,6 +16,7 @@ class AgentConfig(BaseModel):
     max_turns: Optional[int] = None
     target_directory: Optional[str] = None
     dashboard_id: Optional[str] = None
+    owner_account_id: Optional[str] = None
     workflow_run_id: Optional[str] = None
     workflow_edit_id: Optional[str] = None
     # App cards the user picked to edit. When exactly one resolves, launch binds the chat's cwd to that app instead of seeding a new "Untitled App".
@@ -119,6 +120,7 @@ class AgentSession(BaseModel):
     active_branch_id: str = "main"
     tool_group_meta: dict[str, "ToolGroupMeta"] = Field(default_factory=dict)
     dashboard_id: Optional[str] = None
+    owner_account_id: Optional[str] = None
     browser_id: Optional[str] = None
     parent_session_id: Optional[str] = None
     # Set when this session IS a workflow run's agent; the run renders in the Workflows monitor card, so the canvas suppresses the duplicate standalone agent card.

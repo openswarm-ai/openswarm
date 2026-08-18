@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, InstanceOf
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 
 
 class ThinkingState(BaseModel):
@@ -35,6 +36,7 @@ class TurnState(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True)
 
+    event_emitter: Optional[AgentTurnEventEmitter] = None
     stream_text_msg_id: Optional[str] = None
     stream_tool_msg_ids_ordered: List[str] = []
     stream_block_index_map: Dict[int, str] = {}

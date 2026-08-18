@@ -27,11 +27,9 @@ from backend.apps.agents.manager.run.client_pool import (
 )
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 from backend.apps.settings.models import AppSettings
+from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 
 logger = logging.getLogger(__name__)
-
-
-from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 
 
 class TurnRunner(AgentManagerProtocol):
@@ -126,13 +124,15 @@ class TurnRunner(AgentManagerProtocol):
 
                 if isinstance(message, StreamEvent):
                     await handle_stream_event(
-                        message, session, session_id, turn, thinking, self.live_partial
+                        message, session, session_id, turn, thinking, self.live_partial,
+                        turn.event_emitter,
                     )
 
                 elif isinstance(message, AssistantMessage):
                     flight_recorder.crumb(session_id, "assistant-msg")
                     await handle_assistant_message(
-                        message, session, session_id, turn, thinking, self.live_partial, self.sessions
+                        message, session, session_id, turn, thinking, self.live_partial,
+                        self.sessions, turn.event_emitter,
                     )
                 elif isinstance(message, ResultMessage):
                     flight_recorder.crumb(session_id, "result-msg", subtype=str(getattr(message, "subtype", "")))
@@ -260,6 +260,8 @@ class TurnRunner(AgentManagerProtocol):
                         wait = 0.0
                 if wait is not None:
                     capacity_retry_attempt += 1
+                    if turn.event_emitter is not None:
+                        turn.event_emitter.close_open_tools(status="cancelled")
                     flight_recorder.crumb(session_id, "transient-retry", attempt=capacity_retry_attempt, wait=wait, err=str(e)[:160])
                     mid_stream = turn.current_turn_emitted
                     logger.warning(
@@ -276,4 +278,3 @@ class TurnRunner(AgentManagerProtocol):
                         options = ClaudeAgentOptions(**options_kwargs)
                     continue
                 raise
-

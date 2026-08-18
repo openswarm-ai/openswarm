@@ -121,6 +121,7 @@ async def test_restoring_a_refresh_token_round_trips(p_router):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits; Windows ACLs do not surface through st_mode")
 async def test_written_db_is_owner_only(p_router):
     await store.apply_to_connection("conn-1", changes={}, drop=["refreshToken"])
     mode = stat.S_IMODE(os.stat(store.db_path()).st_mode)

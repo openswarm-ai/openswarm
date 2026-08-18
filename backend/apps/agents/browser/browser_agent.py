@@ -103,7 +103,7 @@ from backend.apps.agents.browser.browser_schema import (
     SYSTEM_PROMPT,
 )
 from backend.apps.agents.core.models import AgentSession, ApprovalRequest, Message
-from backend.apps.agents.core.ws_manager import ws_manager, await_reconnect
+from backend.apps.agents.core.ws_manager import BrowserCommandOwner, ws_manager, await_reconnect
 from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)
@@ -385,7 +385,10 @@ async def p_execute_browser_tool(
 
         async def p_eval_once() -> dict:
             rid = uuid4().hex
-            return await ws_manager.send_browser_command(rid, action, browser_id, params, tab_id=tab_id)
+            return await ws_manager.send_browser_command(
+                rid, action, browser_id, params, tab_id=tab_id,
+                owner=BrowserCommandOwner(origin="renderer"),
+            )
 
         result = await p_eval_once()
         # Reads poll for the bridge to come up (app still mounting on turn 1).
@@ -426,6 +429,7 @@ async def p_execute_browser_tool(
     request_id = uuid4().hex
     result = await ws_manager.send_browser_command(
         request_id, action, browser_id, params, tab_id=tab_id,
+        owner=BrowserCommandOwner(origin="renderer"),
     )
     if os.environ.get("OSW_DEBUG_LIST") == "1" and action == "list_interactives" and isinstance(result, dict):
         logger.info(f"[debug-list] {str(result.get('text') or '')[:2400]}")
