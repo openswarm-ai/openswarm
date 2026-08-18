@@ -61,7 +61,7 @@ def test_the_agent_uses_the_predicate_rather_than_reinventing_the_condition():
     """The whole point of extracting it. If someone re-inlines the check, these tests would keep
     passing while the live path regressed, which is exactly how this bug survived the first time."""
     src = (bs.__file__).replace("browser_skills.py", "browser_agent.py")
-    with open(src) as f:
+    with open(src, encoding="utf-8") as f:
         text = f.read()
     assert "browser_skills.replay_owns_nav(" in text
     assert "p_skip_prestage_for_skill = bool(" not in text, "the condition was re-inlined"

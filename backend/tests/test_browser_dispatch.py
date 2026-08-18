@@ -7,6 +7,7 @@ import asyncio
 import backend.apps.agents.manager.run_browser_fast_path as bd
 import backend.apps.agents.browser.browser_agent as browser_agent_mod
 from backend.apps.agents.core.models import AgentSession
+from backend.apps.agents.events.AgentEventSink import BoundedAgentEventSink
 
 
 def p_patch_io(monkeypatch, dispatch_result, *, has_dashboard=True):
@@ -36,8 +37,10 @@ def test_fast_path_success_replies_with_the_browser_summary(monkeypatch):
         monkeypatch, {"summary": "Booked the flight to NYC", "done": True, "action_log": []}
     )
     session = AgentSession(name="t", model="sonnet", dashboard_id="dash-1")
+    sink = BoundedAgentEventSink()
     asyncio.run(bd.run_browser_fast_path(
         session, session.id, "book me a flight to NYC", ["browser-1"], brief="", verdict="act",
+        event_sink=sink,
     ))
 
     roles = [m.role for m in session.messages]
@@ -51,6 +54,12 @@ def test_fast_path_success_replies_with_the_browser_summary(monkeypatch):
     # dispatched to the selected browser, parented to this session
     assert fake_run.calls and fake_run.calls[0]["pre_selected_browser_ids"] == ["browser-1"]
     assert fake_run.calls[0]["parent_session_id"] == session.id
+    events = sink.snapshot(session.id).events
+    assert [event.kind for event in events] == [
+        "turn.started", "tool.started", "tool.completed", "turn.first_token", "turn.completed"
+    ]
+    assert [event.sequence for event in events] == list(range(5))
+    assert len({event.turn_id for event in events}) == 1
 
 
 def test_fast_path_no_dashboard_returns_friendly_reply(monkeypatch):

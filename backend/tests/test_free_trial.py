@@ -71,6 +71,23 @@ def testhas_own_model_never_shadows_a_real_provider():
 
 
 @pytest.mark.asyncio
+async def test_trial_persist_rehydrates_before_updating_owned_fields(monkeypatch):
+    """A startup trial request holding old defaults cannot clobber a newer theme."""
+    stale = AppSettings(theme="light", connection_mode="free-trial", free_trial_token="trial")
+    current = AppSettings(theme="dark")
+    saved: list[AppSettings] = []
+    monkeypatch.setattr(ft, "load_settings", lambda: current.model_copy(deep=True))
+    monkeypatch.setattr(ft, "save_settings_async", _record(saved))
+    monkeypatch.setattr(ft, "p_sync_routing", _noop)
+
+    await ft.clear_free_trial(stale)
+
+    assert saved[0].theme == "dark"
+    assert saved[0].connection_mode == "own_key"
+    assert saved[0].free_trial_token is None
+
+
+@pytest.mark.asyncio
 async def test_arm_waits_for_9router_before_shadowing_a_background_started_sub(monkeypatch):
     """The regression: 9Router starts in the background, so at first-boot mint time
     a real Claude sub is invisible. arm() must bring 9Router up (so the sub becomes

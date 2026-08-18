@@ -488,6 +488,10 @@ def reconcile_on_startup() -> None:
 
 async def start() -> None:
     global _loop_task
+    # OQ-17 interim guard: with >1 backend instance (deploy overlap/HA), only the designated instance may run the scheduler loop AND the stuck-run reaper — otherwise fires double and this instance's _mark_stuck_runs_failed kills a peer's live runs (WORKFLOWS_AND_SCHEDULING §3).
+    if os.environ.get("OPENSWARM_SCHEDULER_ENABLED", "1").strip().lower() in ("0", "false", "no"):
+        logger.info("workflow scheduler disabled via OPENSWARM_SCHEDULER_ENABLED")
+        return
     if _loop_task is not None:
         return
     _mark_stuck_runs_failed()

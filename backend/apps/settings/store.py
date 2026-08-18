@@ -115,15 +115,19 @@ def p_preserve_corrupt_settings() -> None:
         pass
 
 
-# In-memory mirror of SETTINGS_FILE, revalidated by stat (mtime+size) on every load so even a hand-edited file or an unexpected writer is picked up immediately. A stat skips the open+parse+validate that Defender turns into 5-50ms on Windows. Copies on both sides keep handler isolation: callers mutate their copy, never the cache.
+# In-memory mirror of SETTINGS_FILE, revalidated by path+stat (mtime+size)
+# on every load so even a hand-edited file, relocated settings path, or an
+# unexpected writer is picked up immediately. A stat skips the open+parse+validate
+# that Defender turns into 5-50ms on Windows. Copies on both sides keep handler
+# isolation: callers mutate their copy, never the cache.
 p_cached_settings: AppSettings | None = None
-p_cached_sig: tuple[int, int] | None = None
+p_cached_sig: tuple[str, int, int] | None = None
 
 
-def p_settings_sig() -> tuple[int, int] | None:
+def p_settings_sig() -> tuple[str, int, int] | None:
     try:
         st = os.stat(SETTINGS_FILE)
-        return (st.st_mtime_ns, st.st_size)
+        return (os.path.abspath(SETTINGS_FILE), st.st_mtime_ns, st.st_size)
     except OSError:
         return None
 
@@ -164,13 +168,16 @@ def atomic_write_settings(payload: dict) -> None:
     """Atomic SETTINGS_FILE write; call via save_settings*, not directly."""
     global p_cached_settings, p_cached_sig
     with p_settings_write_lock:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=DATA_DIR)
+        settings_dir = os.path.dirname(os.path.abspath(SETTINGS_FILE)) or DATA_DIR
+        os.makedirs(settings_dir, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=settings_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
-            # Windows: Defender can briefly lock the destination; one retry handles every real case.
-            for attempt in range(2):
+            # Windows: Defender can briefly lock the destination after a test or
+            # user edit. Keep the retry window short, but long enough for hosted
+            # runners where file scanning is noticeably slower.
+            for attempt in range(6):
                 try:
                     os.replace(tmp, SETTINGS_FILE)
                     # Refresh the cache inside the lock so cache order matches disk order.
@@ -180,9 +187,9 @@ def atomic_write_settings(payload: dict) -> None:
                     p_cached_sig = p_settings_sig()
                     return
                 except PermissionError:
-                    if attempt == 1:
+                    if attempt == 5:
                         raise
-                    time.sleep(0.05)
+                    time.sleep(0.05 * (attempt + 1))
         except Exception:
             try:
                 os.unlink(tmp)

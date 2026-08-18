@@ -17,6 +17,8 @@ from typeguard import typechecked
 
 from swarm_analytics import AnalyticsClient
 
+from backend.apps.service.settings_gateway import DEFAULT_SETTINGS_GATEWAY, SettingsGateway
+
 logger = logging.getLogger(__name__)
 
 P_CLIENT: Optional[AnalyticsClient] = None
@@ -34,11 +36,10 @@ def p_base_url() -> str:
 
 
 @typechecked
-def p_mode() -> str:
+def p_mode(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> str:
     # logs.write is diagnostic so it flows even in 'minimal'; only product events are muted.
     try:
-        from backend.apps.settings.store import load_settings
-        if not getattr(load_settings(), "analytics_opt_in", True):
+        if not getattr(gateway.load(), "analytics_opt_in", True):
             return "minimal"
     except Exception:
         pass
@@ -46,14 +47,13 @@ def p_mode() -> str:
 
 
 @typechecked
-def get_analytics_client() -> Optional[AnalyticsClient]:
+def get_analytics_client(gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY) -> Optional[AnalyticsClient]:
     # Lazy bootstrap + cache; returns None (callers no-op) when setup fails, e.g. offline first run.
     global P_CLIENT
     if P_CLIENT is not None:
         return P_CLIENT
     try:
-        from backend.apps.settings.store import load_settings, save_settings
-        s = load_settings()
+        s = gateway.load()
         install_id = getattr(s, "installation_id", None)
         if not install_id:
             return None
@@ -62,8 +62,8 @@ def get_analytics_client() -> Optional[AnalyticsClient]:
         if not token:
             token = AnalyticsClient.register(base_url=base_url, install_id=install_id)
             s.analytics_token = token
-            save_settings(s)
-        P_CLIENT = AnalyticsClient(base_url=base_url, token=token, mode=p_mode())
+            gateway.save(s)
+        P_CLIENT = AnalyticsClient(base_url=base_url, token=token, mode=p_mode(gateway))
     except Exception as e:
         logger.debug("analytics setup failed (non-critical): %s", e)
         return None
@@ -181,15 +181,19 @@ def track_onboarding_step(*, step_id: str, status: str) -> None:
 
 
 @typechecked
-def persist_client_env(*, timezone: Optional[str] = None, locale: Optional[str] = None) -> None:
+def persist_client_env(
+    *,
+    timezone: Optional[str] = None,
+    locale: Optional[str] = None,
+    gateway: SettingsGateway = DEFAULT_SETTINGS_GATEWAY,
+) -> None:
     # Store the renderer-reported tz/locale for the cloud envelope on dev/OSS runs; disk-write only when a value actually changed.
     tz = (timezone or "").strip() or None
     loc = (locale or "").strip() or None
     if tz is None and loc is None:
         return
     try:
-        from backend.apps.settings.store import load_settings, save_settings
-        s = load_settings()
+        s = gateway.load()
         changed = False
         if tz and getattr(s, "timezone", None) != tz:
             s.timezone = tz
@@ -198,7 +202,7 @@ def persist_client_env(*, timezone: Optional[str] = None, locale: Optional[str] 
             s.locale = loc
             changed = True
         if changed:
-            save_settings(s)
+            gateway.save(s)
     except Exception as e:
         logger.debug("analytics persist_client_env failed: %s", e)
 

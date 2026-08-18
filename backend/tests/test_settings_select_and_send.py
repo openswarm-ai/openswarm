@@ -26,19 +26,24 @@ def client():
 
 def test_message_endpoint_threads_selected_setting_ids(client, monkeypatch):
     from backend.apps.agents.agent_manager import agent_manager
+    from backend.apps.agents.core.models import AgentSession
     captured: dict = {}
+    agent_manager.sessions["sess-x"] = AgentSession(id="sess-x", name="test")
 
     async def fake_send(session_id, prompt, **kwargs):
         captured["session_id"] = session_id
         captured["kwargs"] = kwargs
 
-    monkeypatch.setattr(agent_manager, "send_message", fake_send)
-    r = client.post(
-        "/api/agents/sessions/sess-x/message",
-        json={"prompt": "flip my theme to light", "selected_setting_ids": ["theme", "default_model"]},
-    )
-    assert r.status_code == 200, r.text
-    assert captured["kwargs"].get("selected_setting_ids") == ["theme", "default_model"]
+    try:
+        monkeypatch.setattr(agent_manager, "send_message", fake_send)
+        r = client.post(
+            "/api/agents/sessions/sess-x/message",
+            json={"prompt": "flip my theme to light", "selected_setting_ids": ["theme", "default_model"]},
+        )
+        assert r.status_code == 200, r.text
+        assert captured["kwargs"].get("selected_setting_ids") == ["theme", "default_model"]
+    finally:
+        agent_manager.sessions.pop("sess-x", None)
 
 
 def test_selected_settings_context_block_targets_the_fields():

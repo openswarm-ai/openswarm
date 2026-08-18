@@ -33,11 +33,9 @@ from backend.apps.agents.manager.run.run_options_helpers import (
     pre_send_context_guard, set_framework_overhead, register_web_mcp_server,
     append_web_tools_hint, inject_thinking_options, merge_hard_blocked_tools,
 )
+from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 
 logger = logging.getLogger(__name__)
-
-
-from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 
 
 class RunOptions(AgentManagerProtocol):
@@ -85,6 +83,9 @@ class RunOptions(AgentManagerProtocol):
 
         async def post_tool_hook(input_data, tool_use_id, context):
             return await post_tool_hook_mod.post_tool_hook(hook_ctx, input_data, tool_use_id, context)
+
+        async def post_tool_failure_hook(input_data, tool_use_id, context):
+            return await post_tool_hook_mod.post_tool_failure_hook(hook_ctx, input_data, tool_use_id, context)
         _, mode_sys_prompt, _ = resolve_mode(session.mode, get_all_tool_names)
 
         # Reconcile active_mcps against currently-enabled tools (Phase 3). If the user toggled a server off in the Tools page mid-session, drop it from active_mcps automatically so the model isn't told "X is active" while build_mcp_servers silently filters it out. Emit a context_status event so the model and UI both know.
@@ -193,6 +194,7 @@ class RunOptions(AgentManagerProtocol):
             "hooks": {
                 "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_hook])],
                 "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_hook])],
+                "PostToolUseFailure": [HookMatcher(matcher=None, hooks=[post_tool_failure_hook])],
                 "Stop": [HookMatcher(matcher=None, hooks=[stop_hook])],
             },
             "allowed_tools": effective_allowed,

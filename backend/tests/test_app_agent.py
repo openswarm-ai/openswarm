@@ -42,7 +42,7 @@ def test_app_bridge_expression_invoke_defaults_args_to_empty_object():
 def test_execute_browser_tool_app_bridge_routes_to_evaluate(monkeypatch):
     captured = {}
 
-    async def p_send(request_id, action, browser_id, params, tab_id=""):
+    async def p_send(request_id, action, browser_id, params, tab_id="", *, owner=None):
         captured.update(action=action, browser_id=browser_id, params=params)
         return {"text": json.dumps([{"name": "addExpr"}])}
 
@@ -192,7 +192,7 @@ def test_app_describe_polls_until_bridge_ready(monkeypatch):
     calls = {"n": 0}
     ready = {"rules": "r", "controls": [{"name": "x"}], "__rev": 1}
 
-    async def p_send(request_id, action, browser_id, params, tab_id=""):
+    async def p_send(request_id, action, browser_id, params, tab_id="", *, owner=None):
         calls["n"] += 1
         if calls["n"] < 3:
             return {"text": json.dumps({"__ready": False, "__rev": 0})}
@@ -212,7 +212,7 @@ def test_app_describe_polls_until_bridge_ready(monkeypatch):
 def test_app_invoke_does_not_poll(monkeypatch):
     calls = {"n": 0}
 
-    async def p_send(request_id, action, browser_id, params, tab_id=""):
+    async def p_send(request_id, action, browser_id, params, tab_id="", *, owner=None):
         calls["n"] += 1
         return {"text": json.dumps({"__ready": False})}  # would loop forever if AppInvoke waited
 

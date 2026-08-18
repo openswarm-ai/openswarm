@@ -177,4 +177,3 @@ async def ticker_loop(thinking: ThinkingState, turn: TurnState, session: AgentSe
             await emit_consolidated_thinking(thinking, turn, session, session_id, sessions)
     except asyncio.CancelledError:
         pass
-

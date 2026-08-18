@@ -22,9 +22,29 @@ import time
 import httpx
 
 from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
-from backend.apps.settings.settings import load_settings, save_settings_async
+from backend.apps.settings.settings import load_settings, save_settings_async, settings_write_lock
 
 logger = logging.getLogger(__name__)
+
+P_FREE_TRIAL_FIELDS = (
+    "connection_mode",
+    "free_trial_token",
+    "free_trial_remaining",
+    "free_trial_runs_limit",
+    "free_trial_resets_at",
+    "openswarm_proxy_url",
+)
+
+
+async def p_persist_free_trial_fields(settings_obj, *, include_default_model: bool = False):
+    """Commit trial-owned fields onto fresh settings, never a stale full object."""
+    async with settings_write_lock():
+        current = load_settings()
+        fields = P_FREE_TRIAL_FIELDS + (("default_model",) if include_default_model else ())
+        for field in fields:
+            setattr(current, field, getattr(settings_obj, field))
+        await save_settings_async(current)
+    return current
 
 # Namespaces the hash so a raw hardware UUID never leaves the device. Public on purpose (open-source): it only prevents transmitting the raw id, not a secret.
 P_FP_SALT = "openswarm-free-trial-v1"
@@ -130,6 +150,7 @@ async def p_sync_routing(settings_obj) -> None:
 async def clear_free_trial(settings_obj) -> None:
     """Drop the trial token and revert to own_key. Keeps free_trial_remaining
     (so the UI knows it's spent) and never touches a real paid mode."""
+    default_model_changed = False
     if getattr(settings_obj, "connection_mode", "own_key") == "free-trial":
         settings_obj.connection_mode = "own_key"
         # Keep Haiku as the face of the free lane while the user has no model of their own (a spent trial still shows "Claude Haiku", with the send gated by the out-of-runs UI); only fall back to "sonnet" once a real key/sub connects so we never pin a paying user to Haiku.
@@ -138,9 +159,13 @@ async def clear_free_trial(settings_obj) -> None:
         ):
             from backend.apps.settings.models import DEFAULT_MODEL
             settings_obj.default_model = DEFAULT_MODEL
+            default_model_changed = True
     settings_obj.free_trial_token = None
-    await save_settings_async(settings_obj)
-    await p_sync_routing(settings_obj)
+    saved = await p_persist_free_trial_fields(
+        settings_obj,
+        include_default_model=default_model_changed,
+    )
+    await p_sync_routing(saved)
 
 
 async def clear_free_trial_on_connect() -> None:
@@ -215,8 +240,8 @@ async def arm_free_trial(settings_obj) -> dict:
         settings_obj.openswarm_proxy_url = base
         # Pin the trial to Haiku, the exact tier the cloud serves a free run as. Critical: a sonnet/opus pick makes the Claude Code CLI attach an `effort`/thinking param (reasoning models), which Haiku 400s on ("does not support the effort parameter"). Using Haiku end to end means the CLI never adds it, so the run just works.
         settings_obj.default_model = "haiku"
-        await save_settings_async(settings_obj)
-        await p_sync_routing(settings_obj)
+        saved = await p_persist_free_trial_fields(settings_obj, include_default_model=True)
+        await p_sync_routing(saved)
         return {"armed": True, "runs_remaining": remaining, "runs_limit": settings_obj.free_trial_runs_limit}
 
     # Already spent on this machine: record it but don't arm.
@@ -257,5 +282,5 @@ async def refresh_free_trial(settings_obj) -> dict:
     if remaining <= 0:
         await clear_free_trial(settings_obj)
         return {"connected": False, "runs_remaining": 0, "resets_at": getattr(settings_obj, "free_trial_resets_at", None)}
-    await save_settings_async(settings_obj)
+    await p_persist_free_trial_fields(settings_obj)
     return {"connected": True, "runs_remaining": remaining, "runs_limit": getattr(settings_obj, "free_trial_runs_limit", None)}

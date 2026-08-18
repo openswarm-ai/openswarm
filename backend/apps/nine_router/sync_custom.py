@@ -17,11 +17,14 @@ from backend.apps.nine_router.sync import (
     find_keyed_connection,
     nr,
 )
+from backend.apps.settings.credentials import proxy_auth
 
 logger = logging.getLogger(__name__)
 
 # We mirror settings.custom_providers[] with prefix `cp-<slug>` so they don't collide with the user's primary OpenAI key.
 NINE_ROUTER_CUSTOM_NAME_SUFFIX = " (OpenSwarm-managed)"
+NINE_ROUTER_OPENAI_COMPAT_NAME = f"OpenAI{NINE_ROUTER_CUSTOM_NAME_SUFFIX}"
+P_RESERVED_MANAGED_PREFIXES = {NINE_ROUTER_OPENAI_KEYED_PREFIX}
 
 
 async def sync_openai_compat_node(api_key: str | None) -> None:
@@ -32,7 +35,7 @@ async def sync_openai_compat_node(api_key: str | None) -> None:
     import os as p_os
     port = p_os.environ.get("OPENSWARM_PORT", "8324")
     base_url = f"http://127.0.0.1:{port}/api/openai-passthrough/v1"
-    managed_name = f"OpenAI{NINE_ROUTER_CUSTOM_NAME_SUFFIX}"
+    managed_name = NINE_ROUTER_OPENAI_COMPAT_NAME
 
     try:
         async with nr().httpx.AsyncClient(timeout=5.0, headers=cli_auth_headers()) as client:
@@ -186,6 +189,8 @@ async def sync_custom_providers(providers: list) -> None:
         api_key = api_key.strip() or "no-auth-required"
         slug = p_custom_provider_slug(name)
         prefix = f"cp-{slug}"
+        if prefix in P_RESERVED_MANAGED_PREFIXES:
+            prefix = f"cp-custom-{slug}"
         seen_prefixes.add(prefix)
         managed_name = f"{name.strip()}{NINE_ROUTER_CUSTOM_NAME_SUFFIX}"
 
@@ -260,7 +265,7 @@ async def sync_custom_providers(providers: list) -> None:
         return
     for prefix, node in managed_by_prefix.items():
         # cp-openai wears the same managed suffix but belongs to sync_openai_compat_node; reaping it here killed every gpt-*-api request with "No credentials".
-        if prefix in seen_prefixes or prefix == NINE_ROUTER_OPENAI_KEYED_PREFIX:
+        if prefix in P_RESERVED_MANAGED_PREFIXES or prefix in seen_prefixes or prefix == NINE_ROUTER_OPENAI_KEYED_PREFIX:
             continue
         try:
             async with nr().httpx.AsyncClient(timeout=5.0, headers=cli_auth_headers()) as client:
@@ -331,7 +336,6 @@ async def sync_pro_routing(settings_obj) -> None:
     the bearer (activate, sign-in, sign-out, disconnect, free-trial arm/clear).
     Never raises."""
     try:
-        from backend.apps.settings.credentials import proxy_auth
         bearer, base = proxy_auth(settings_obj)
         active = bool(bearer)
         await sync_openswarm_pro_as_claude(

@@ -1,10 +1,20 @@
+from backend.config.Apps import SubApp
+from backend.apps.agents.agent_manager import agent_manager
+from backend.apps.agents.core.ws_manager import ws_manager
+from backend.apps.agents.core.models import AgentConfig, ApprovalResponse
+from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
+from contextlib import asynccontextmanager
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi.responses import JSONResponse
 import asyncio
 import logging
 import time
-from contextlib import asynccontextmanager
+
+from backend.apps.hosting.policy import REQUEST_SCOPE, RequestScope
+from backend.apps.nine_router.subscription_health import probe_subscription_health
+from backend.apps.settings.redaction import redact_settings
 from typing import Any, Dict
 
-from fastapi import HTTPException, Request
 from typeguard import typechecked
 
 from backend.apps.agents.agent_manager import agent_manager
@@ -41,6 +51,20 @@ async def agents_lifespan():
 agents = SubApp("agents", agents_lifespan)
 
 
+async def p_session_or_404(session_id: str):
+    session = agent_manager.get_session(session_id)
+    if not session:
+        try:
+            session = await agent_manager.resume_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+async def p_require_owned_session(session_id: str, scope: RequestScope):
+    session = await p_session_or_404(session_id)
+    scope.require_owner_of(session.owner_account_id)
+    return session
 @typechecked
 def p_session_list_item(session: AgentSession) -> Dict[str, Any]:
     """Serialize dashboard metadata without retaining the full chat history."""
@@ -63,8 +87,8 @@ def p_session_list_item(session: AgentSession) -> Dict[str, Any]:
 
 
 @agents.router.get("/sessions")
-async def list_sessions(dashboard_id: str = ""):
-    sessions = agent_manager.get_all_sessions(dashboard_id=dashboard_id or None)
+async def list_sessions(dashboard_id: str = "", scope: RequestScope = REQUEST_SCOPE):
+    sessions = scope.filter_owned(agent_manager.get_all_sessions(dashboard_id=dashboard_id or None))
     return {"sessions": [p_session_list_item(s) for s in sessions]}
 
 @agents.router.get("/sessions/{session_id}/followups")
@@ -82,10 +106,13 @@ async def predict_followups_route(session_id: str, count: int = 3):
 
 
 @agents.router.get("/predict-prompts")
-async def predict_prompts_route(count: int = 5):
+async def predict_prompts_route(count: int = 5, scope: RequestScope = REQUEST_SCOPE):
     """Guess a few prompts the user might type next, in their own voice, from what they've already
     worked on. Drives the composer's ghost-text suggestion. Fails open to [] (no signal / no
     provider / error), so the composer just keeps its static placeholder."""
+    # Hosted: the prediction scans every session on disk (all tenants), so it stays empty there (R0 containment).
+    if scope.hosted:
+        return {"suggestions": []}
     from backend.apps.agents.manager.predict_prompts import predict_prompts
     return {"suggestions": await predict_prompts(count=max(1, min(count, 8)))}
 
@@ -105,7 +132,7 @@ async def agent_activity():
     return {"active": active, "next_run_in_s": next_run_in_s}
 
 @agents.router.get("/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, scope: RequestScope = REQUEST_SCOPE):
     """Returns the session by id.
 
     Falls back to a disk load when the session isn't in the in-memory
@@ -117,21 +144,19 @@ async def get_session(session_id: str):
     session into agent_manager.sessions and the next GET short-circuits
     on the in-memory check.
     """
-    session = agent_manager.get_session(session_id)
-    if not session:
-        try:
-            session = await agent_manager.resume_session(session_id)
-        except ValueError:
-            raise HTTPException(status_code=404, detail="Session not found")
-    # Seq read before the dump (no await between = atomic): the client seeds its WS resume cursor from this, so a REST hydrate isn't followed by a full from-zero replay of everything it just received.
+    session = await p_require_owned_session(session_id, scope)
+    # Seq read before the dump (no await between = atomic): the client seeds its WS resume cursor from this, so a REST hydrate isn't followed by a full from-zero replay.
     event_seq = seq_log.current_seq(session_id)
     payload = session.model_dump(mode="json")
     payload["event_seq"] = event_seq
     return payload
 
 @agents.router.post("/launch")
-async def launch_agent(config: AgentConfig):
-    session = await agent_manager.launch_agent(config)
+async def launch_agent(config: AgentConfig, scope: RequestScope = REQUEST_SCOPE):
+    config = scope.sanitize_launch_config(config)
+    session, run_first_turn = await scope.admit_launch(config, agent_manager.launch_agent)
+    if not run_first_turn:
+        return {"session_id": session.id, "session": session.model_dump(mode="json")}
     # A launch that carries a prompt runs it as the first turn through the same path /message uses.
     if config.prompt:
         asyncio.create_task(agent_manager.send_message(session.id, config.prompt))
@@ -140,11 +165,34 @@ async def launch_agent(config: AgentConfig):
         asyncio.create_task(agent_manager.prewarm_client(session.id))
     return {"session_id": session.id, "session": session.model_dump(mode="json")}
 
+
 @agents.router.post("/sessions/{session_id}/message")
-async def send_message(session_id: str, body: dict):
+async def send_message(session_id: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
     prompt = body.get("prompt", "")
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
+    session = await p_require_owned_session(session_id, scope)
+    side_effect_payload = {
+        "prompt": prompt,
+        "mode": body.get("mode"),
+        "model": body.get("model"),
+        "images": body.get("images"),
+        "context_paths": body.get("context_paths"),
+        "forced_tools": body.get("forced_tools"),
+        "attached_skills": body.get("attached_skills"),
+        "hidden": body.get("hidden", False),
+        "selected_browser_ids": body.get("selected_browser_ids"),
+        "selected_app_output_ids": body.get("selected_app_output_ids"),
+        "selected_setting_ids": body.get("selected_setting_ids"),
+        "client_message_id": body.get("client_message_id"),
+    }
+    if scope.admit_prompt(
+        session,
+        requested_mode=body.get("mode"),
+        forced_tools=body.get("forced_tools"),
+        side_effect_payload=side_effect_payload,
+    ):
+        return {"ok": True, "replayed": True}
 
     # Run MCP-suggestion classifier in parallel with the agent launch; fails open.
     try:
@@ -174,25 +222,27 @@ async def send_message(session_id: str, body: dict):
     except Exception:
         pass
 
+
     await agent_manager.send_message(
         session_id,
-        prompt,
-        mode=body.get("mode"),
-        model=body.get("model"),
-        images=body.get("images"),
-        context_paths=body.get("context_paths"),
-        forced_tools=body.get("forced_tools"),
-        attached_skills=body.get("attached_skills"),
-        hidden=body.get("hidden", False),
-        selected_browser_ids=body.get("selected_browser_ids"),
-        selected_app_output_ids=body.get("selected_app_output_ids"),
-        selected_setting_ids=body.get("selected_setting_ids"),
-        client_message_id=body.get("client_message_id"),
+        side_effect_payload["prompt"],
+        mode=side_effect_payload["mode"],
+        model=side_effect_payload["model"],
+        images=side_effect_payload["images"],
+        context_paths=side_effect_payload["context_paths"],
+        forced_tools=side_effect_payload["forced_tools"],
+        attached_skills=side_effect_payload["attached_skills"],
+        hidden=side_effect_payload["hidden"],
+        selected_browser_ids=side_effect_payload["selected_browser_ids"],
+        selected_app_output_ids=side_effect_payload["selected_app_output_ids"],
+        selected_setting_ids=side_effect_payload["selected_setting_ids"],
+        client_message_id=side_effect_payload["client_message_id"],
     )
     return {"ok": True}
 
 @agents.router.post("/sessions/{session_id}/stop")
-async def stop_agent(session_id: str):
+async def stop_agent(session_id: str, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     await agent_manager.stop_agent(session_id)
     # A stopped turn's parked AskUI waits would otherwise zombie for 600s and eat the next click (ENG-232).
     from backend.apps.agents.ui_request_bridge import cancel_session_waits
@@ -200,27 +250,39 @@ async def stop_agent(session_id: str):
     return {"ok": True}
 
 @agents.router.post("/approval")
-async def handle_approval(response: ApprovalResponse):
-    agent_manager.handle_approval(response.request_id, {
+async def handle_approval(response: ApprovalResponse, scope: RequestScope = REQUEST_SCOPE):
+    approval_session_id = ws_manager.approval_session_id(response.request_id)
+    await scope.authorize_approval(approval_session_id, p_session_or_404)
+    decision = {
         "behavior": response.behavior,
         "message": response.message,
         "updated_input": response.updated_input,
         "trust_pattern": response.trust_pattern,
         "set_always_allow": response.set_always_allow,
-    })
+    }
+    if not scope.resolve_approval(response.request_id, decision, approval_session_id):
+        agent_manager.handle_approval(response.request_id, decision)
     return {"ok": True}
 
 @agents.router.post("/sessions/{session_id}/edit_message")
-async def edit_message(session_id: str, body: dict):
+async def edit_message(session_id: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
+    session = await p_require_owned_session(session_id, scope)
     message_id = body.get("message_id")
     new_content = body.get("content", "")
     if not message_id or not new_content:
         raise HTTPException(status_code=400, detail="message_id and content are required")
+    side_effect_payload = {
+        "message_id": message_id,
+        "content": new_content,
+    }
+    if scope.admit_prompt(session, requested_mode=None, forced_tools=None, side_effect_payload=side_effect_payload):
+        return {"ok": True, "replayed": True}
     await agent_manager.edit_message(session_id, message_id, new_content)
     return {"ok": True}
 
 @agents.router.post("/sessions/{session_id}/switch_branch")
-async def switch_branch(session_id: str, body: dict):
+async def switch_branch(session_id: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     branch_id = body.get("branch_id", "")
     if not branch_id:
         raise HTTPException(status_code=400, detail="branch_id is required")
@@ -228,7 +290,8 @@ async def switch_branch(session_id: str, body: dict):
     return {"ok": True}
 
 @agents.router.post("/sessions/{session_id}/generate-title")
-async def generate_title(session_id: str, body: dict):
+async def generate_title(session_id: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     prompt = body.get("prompt", "")
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
@@ -236,7 +299,8 @@ async def generate_title(session_id: str, body: dict):
     return {"title": title}
 
 @agents.router.post("/sessions/{session_id}/generate-group-meta")
-async def generate_group_meta(session_id: str, body: dict):
+async def generate_group_meta(session_id: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     group_id = body.get("group_id", "")
     tool_calls = body.get("tool_calls", [])
     if not group_id or not tool_calls:
@@ -277,25 +341,22 @@ async def generate_group_meta(session_id: str, body: dict):
             p_group_meta_inflight.pop(key, None)
 
 @agents.router.patch("/sessions/{session_id}")
-async def update_session(session_id: str, body: dict):
-    session = agent_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+async def update_session(session_id: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     await agent_manager.update_session(session_id, **body)
     return {"ok": True}
 
 @agents.router.get("/sessions/{session_id}/branches")
-async def get_branches(session_id: str):
-    session = agent_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+async def get_branches(session_id: str, scope: RequestScope = REQUEST_SCOPE):
+    session = await p_require_owned_session(session_id, scope)
     return {
         "branches": {k: v.model_dump(mode="json") for k, v in session.branches.items()},
         "active_branch_id": session.active_branch_id,
     }
 
 @agents.router.post("/sessions/{session_id}/duplicate")
-async def duplicate_session(session_id: str, body: dict = {}):
+async def duplicate_session(session_id: str, body: dict = {}, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     try:
         session = await agent_manager.duplicate_session(
             session_id,
@@ -304,10 +365,12 @@ async def duplicate_session(session_id: str, body: dict = {}):
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    scope.stamp_owner(session)
     return {"session": session.model_dump(mode="json")}
 
 @agents.router.post("/sessions/{session_id}/close")
-async def close_session(session_id: str):
+async def close_session(session_id: str, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     try:
         await agent_manager.close_session(session_id)
     except ValueError as e:
@@ -315,20 +378,23 @@ async def close_session(session_id: str):
     return {"ok": True}
 
 @agents.router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     await agent_manager.delete_session(session_id)
     return {"ok": True}
 
 @agents.router.get("/history")
-async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "", closed_only: int = 0):
+async def get_history(q: str = "", limit: int = 20, offset: int = 0, dashboard_id: str = "", closed_only: int = 0, scope: RequestScope = REQUEST_SCOPE):
     return agent_manager.get_history(
         q=q, limit=limit, offset=offset,
         dashboard_id=dashboard_id or None,
+        owner_account_id=scope.owner_id,
         closed_only=bool(closed_only),
     )
 
 @agents.router.get("/sessions/{session_id}/browser-agents")
-async def get_browser_agent_children(session_id: str):
+async def get_browser_agent_children(session_id: str, scope: RequestScope = REQUEST_SCOPE):
+    await p_require_owned_session(session_id, scope)
     children = agent_manager.get_browser_agent_children(session_id)
     return {"sessions": children}
 
@@ -359,16 +425,17 @@ async def forget_browser_memory(host: str):
 
 
 @agents.router.post("/sessions/{session_id}/resume")
-async def resume_session(session_id: str):
+async def resume_session(session_id: str, scope: RequestScope = REQUEST_SCOPE):
     try:
         session = await agent_manager.resume_session(session_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    scope.require_owner_of(session.owner_account_id)
     return {"session": session.model_dump(mode="json")}
 
 
 @agents.router.post("/sessions/{session_id}/compact")
-async def compact_session(session_id: str):
+async def compact_session(session_id: str, scope: RequestScope = REQUEST_SCOPE):
     """Run the summarizer over older turns to free up context.
 
     Wired to the 'Compact memory' button in the pre-send overflow banner and the
@@ -378,9 +445,7 @@ async def compact_session(session_id: str):
     threshold now does the same (pre_send_context_guard); this button is the manual
     "do it now" for a user who wants the trim before the threshold.
     """
-    session = agent_manager.sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="session not found")
+    session = await p_require_owned_session(session_id, scope)
     fired = agent_manager.maybe_compact(session, force=True)
     if fired:
         session.needs_fresh_session = True
@@ -403,14 +468,12 @@ async def compact_session(session_id: str):
 
 
 @agents.router.post("/sessions/{session_id}/clear")
-async def clear_session(session_id: str):
+async def clear_session(session_id: str, scope: RequestScope = REQUEST_SCOPE):
     """Drop all messages from the session, keep MCPs/model/tools.
 
     Wired to the /clear slash command. Quickest path to recover from an
     overflow short of starting a fresh chat."""
-    session = agent_manager.sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="session not found")
+    session = await p_require_owned_session(session_id, scope)
     session.messages = []
     session.compacted_through_msg_id = None
     session.compacted_summary = None
@@ -505,7 +568,7 @@ async def subscriptions_poll(body: dict):
         if result.get("success"):
             from backend.apps.service.client import sync as p_sync
             from backend.apps.settings.settings import load_settings
-            p_sync(load_settings().model_dump())
+            p_sync(redact_settings(load_settings().model_dump()))
             from backend.apps.subscription.free_trial import clear_free_trial_on_connect
             await clear_free_trial_on_connect()
         return result
@@ -540,7 +603,7 @@ async def subscriptions_exchange(body: dict):
                 mark_completed(state)
             from backend.apps.service.client import sync as do_sync
             from backend.apps.settings.settings import load_settings
-            do_sync(load_settings().model_dump())
+            do_sync(redact_settings(load_settings().model_dump()))
             # A connected subscription takes precedence over the free trial right away.
             from backend.apps.subscription.free_trial import clear_free_trial_on_connect
             await clear_free_trial_on_connect()
@@ -599,6 +662,7 @@ async def probe_model(body: dict):
         from backend.apps.settings.settings import load_settings
         from backend.apps.nine_router import is_running as p_9r_running
         settings = load_settings()
+        await agent_manager.ensure_keyed_model_route_synced(settings, short_name)
         api_type = get_api_type(short_name)
         resolved = resolve_model_id_for_sdk(short_name, settings)
         entry = find_builtin_model(short_name) or {}

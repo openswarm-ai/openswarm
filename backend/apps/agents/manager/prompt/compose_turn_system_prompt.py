@@ -59,10 +59,13 @@ def compose_turn_system_prompt(
         tz_name = tz_name or "UTC"
         now_local = datetime.now(ZoneInfo(tz_name))
         tz_abbr = now_local.strftime("%Z") or tz_name
+        # No `%-d` / `%-I`: those are glibc extensions. On Windows strftime raises ValueError on
+        # them, the except below swallowed it, and the agent shipped without a clock on that OS.
+        hour = now_local.strftime("%I:%M %p").lstrip("0")
         time_ctx = (
             "<current_time>\n"
-            f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
-            f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
+            f"Today is {now_local.strftime('%A, %B')} {now_local.day}, {now_local.year}.\n"
+            f"Local time: {hour} {tz_abbr} ({tz_name}).\n"
             "Use this as ground truth for any date/time/day-of-week question. The timezone also "
             "gives the user's coarse region; when they say 'here' or 'near me' without a place, "
             "infer the likely city from it (say you inferred it) instead of claiming you can't know.\n"

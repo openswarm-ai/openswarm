@@ -21,10 +21,14 @@ if TYPE_CHECKING:
     from backend.apps.agents.manager.run.client_pool import ClientHandle
     from backend.apps.agents.manager.streaming.HookContext import HookContext
     from backend.apps.agents.manager.streaming.PartialReply import PartialReply
+    from backend.apps.agents.manager.session.SessionStore import SessionStore
+    from backend.apps.agents.events.AgentEventSink import AgentEventSink
 
 
 class AgentManagerProtocol:
     # State set in AgentManager.__init__.
+    store: SessionStore
+    event_sink: AgentEventSink
     sessions: Dict[str, AgentSession]
     tasks: Dict[str, asyncio.Task]
     live_partial: Dict[str, PartialReply]

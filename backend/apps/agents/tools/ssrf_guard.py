@@ -4,11 +4,10 @@ Blocks fetches that would target private/internal IPs (RFC1918, link-local
 incl. cloud metadata, CGNAT, multicast, ULA v6, etc). Resolution is async
 (non-blocking) and covers both IPv4 AND IPv6 via getaddrinfo.
 
-Loopback (127/8, ::1) is INTENTIONALLY allowed because the desktop app's App
-Builder previews servers on 127.0.0.1:<random> and the agent needs to be able
-to verify the built app actually runs. The user owns the loopback surface on
-their own machine; the realistic SSRF threat for a desktop app is cloud
-metadata (169.254.169.254) + internal corporate LANs, not localhost.
+Direct and IPv4-mapped loopback are allowed for desktop deployments because
+App Builder previews servers on 127.0.0.1:<random> and the agent needs to
+verify the built app actually runs. Hosted deployments block loopback, and
+transition/local-use ranges never inherit the desktop exception.
 """
 
 from __future__ import annotations
@@ -19,6 +18,8 @@ import logging
 from urllib.parse import urljoin, urlparse
 
 import httpx
+
+from backend.apps.hosting.policy import hosting_policy
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +48,23 @@ P_BLOCKED_V4_NETS = [
     ipaddress.ip_network("169.254.0.0/16"),  # link-local incl. cloud metadata
     ipaddress.ip_network("100.64.0.0/10"),   # CGNAT
     ipaddress.ip_network("224.0.0.0/4"),     # multicast
+    ipaddress.ip_network("240.0.0.0/4"),     # reserved + limited broadcast
     ipaddress.ip_network("0.0.0.0/8"),       # "this network"
     ipaddress.ip_network("198.18.0.0/15"),   # benchmarking
+    ipaddress.ip_network("192.0.2.0/24"),    # TEST-NET-1
+    ipaddress.ip_network("198.51.100.0/24"),  # TEST-NET-2
+    ipaddress.ip_network("203.0.113.0/24"),   # TEST-NET-3
 ]
 
 P_BLOCKED_V6_NETS = [
     ipaddress.ip_network("fe80::/10"),       # link-local
+    ipaddress.ip_network("fec0::/10"),       # deprecated site-local
     ipaddress.ip_network("fc00::/7"),        # ULA
+    ipaddress.ip_network("64:ff9b:1::/48"),  # local-use NAT64
     ipaddress.ip_network("ff00::/8"),        # multicast
     ipaddress.ip_network("::/128"),          # unspecified
 ]
+P_NAT64_WELL_KNOWN = ipaddress.ip_network("64:ff9b::/96")
 
 
 async def p_resolve_host_async(host: str) -> list[str]:
@@ -70,21 +78,39 @@ async def p_resolve_host_async(host: str) -> list[str]:
 
 
 def p_is_forbidden_ip(ip_str: str) -> bool:
-    """True iff this IP is in a blocked range. Loopback is allowed (see module docstring)."""
+    """True iff this IP is blocked for the current deployment."""
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return True  # unparseable -> block
-    # v6 can carry a v4 target (v4-mapped ::ffff:, 6to4 2002::) and routes to it; judge by the embedded v4 or a private host slips past the v6 list.
-    if ip.version == 6:
-        embedded = ip.ipv4_mapped or ip.sixtofour
-        if embedded is not None:
-            ip = embedded
-    if ip.is_loopback:
-        return False
-    if ip.version == 4:
+
+    if isinstance(ip, ipaddress.IPv4Address):
+        if ip.is_loopback:
+            return hosting_policy().blocks_loopback_targets()
         return any(ip in net for net in P_BLOCKED_V4_NETS)
-    return any(ip in net for net in P_BLOCKED_V6_NETS)
+
+    # Only direct v6 and v4-mapped loopback belong to desktop previews. Other
+    # transition encodings must be judged as network targets, even when their
+    # embedded v4 address is loopback.
+    if ip.is_loopback:
+        return hosting_policy().blocks_loopback_targets()
+    mapped = ip.ipv4_mapped
+    if mapped is not None:
+        if mapped.is_loopback:
+            return hosting_policy().blocks_loopback_targets()
+        return any(mapped in net for net in P_BLOCKED_V4_NETS)
+
+    if any(ip in net for net in P_BLOCKED_V6_NETS):
+        return True
+
+    embedded = ip.sixtofour
+    if embedded is None and ip in P_NAT64_WELL_KNOWN:
+        embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    if embedded is not None:
+        if embedded.is_loopback:
+            return True
+        return any(embedded in net for net in P_BLOCKED_V4_NETS)
+    return False
 
 
 async def assert_safe_url(url: str) -> str:

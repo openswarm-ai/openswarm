@@ -179,6 +179,8 @@ async def pre_tool_hook(ctx: HookContext, input_data: dict, tool_use_id: Optiona
             if decision.behavior == "allow":
                 if tool_use_id:
                     ctx.tool_start_times[tool_use_id] = time.time()
+                    if ctx.event_emitter is not None:
+                        ctx.event_emitter.emit_tool_started(tool_use_id, tool_name)
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
@@ -195,4 +197,6 @@ async def pre_tool_hook(ctx: HookContext, input_data: dict, tool_use_id: Optiona
 
     if tool_use_id:
         ctx.tool_start_times[tool_use_id] = time.time()
+        if ctx.event_emitter is not None:
+            ctx.event_emitter.emit_tool_started(tool_use_id, tool_name)
     return {}
