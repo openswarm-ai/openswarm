@@ -64,8 +64,10 @@ def test_truncated_ciphertext_degrades(on_windows):
     assert bc.decrypt_cookie_value(b"v10" + NONCE, KEY) is None
 
 
-def test_the_mac_branch_does_not_try_gcm():
+def test_the_mac_branch_does_not_try_gcm(monkeypatch):
     """Same bytes, no Windows flag: the CBC branch must not accidentally accept a GCM blob."""
+    # Pin the flag rather than the host: on a Windows runner IS_WIN is naturally True and the GCM branch would (correctly) decrypt.
+    monkeypatch.setattr(bc, "IS_WIN", False)
     assert bc.decrypt_cookie_value(p_win_blob(b"sessionid=abc123"), KEY) is None
 
 

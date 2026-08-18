@@ -27,7 +27,7 @@ P_BROWSER_DIR = pathlib.Path(__file__).resolve().parents[1] / "apps" / "agents" 
 def p_model_ids_in_code(path: pathlib.Path):
     """Every concrete model id appearing in a STRING literal, with its line number."""
     hits = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for tok in tokenize.generate_tokens(f.readline):
             if tok.type != tokenize.STRING:
                 continue
@@ -74,7 +74,7 @@ def test_every_aux_call_asks_for_a_tier():
     call_re = re.compile(r"preferred_tier\s*=\s*\"([^\"]+)\"")
     bad = []
     for path in sorted(P_BROWSER_DIR.glob("*.py")):
-        for i, line in enumerate(path.read_text().splitlines(), 1):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             for m in call_re.finditer(line):
                 if m.group(1) not in ("haiku", "sonnet", "opus"):
                     bad.append(f"{path.name}:{i} -> {m.group(1)}")
