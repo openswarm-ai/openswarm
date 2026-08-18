@@ -47,6 +47,7 @@ import { extractLiveSteps } from '../desktop/agentLiveSteps';
 import { extractLatestShowUi, extractPendingAskUi, freezeIfDone, artifactName, hasWorkAfterLatestShowUi } from '@/app/pages/AgentChat/tool-ui/showUiPayload';
 import { useDragEndBackstops } from '../hooks/interaction/useDragEndBackstops';
 import { useBrowserPillShot } from '../desktop/useBrowserPillShot';
+import { subscribeFollowingBrowsers, isBrowserFollowing } from '../desktop/followingBrowsers';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import AskQuestionCard from '@/app/pages/AgentChat/tool-ui/AskQuestionCard';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
@@ -770,6 +771,8 @@ const AgentCard: React.FC<Props> = ({
 
   // f7's collapsed state: a session's browser (spawned by it or docked into it) shows under the pill.
   const browserShot = useBrowserPillShot(session.id, pillMode && !pillArtifact);
+  // A live miniature under the pill owns that space; the pill's own artifacts go quiet.
+  const browserDocked = React.useSyncExternalStore(subscribeFollowingBrowsers, () => isBrowserFollowing(session.id));
 
   // justDraggedRef: the motion.div parks at the START position for the whole imperative drag, so the end-of-drag commit must snap (not spring) to the final spot or the card visibly re-glides from where the drag began.
   const noTransition = isDragging || isResizing || (isSelected && multiDragActive) || justDraggedRef.current;
@@ -1093,6 +1096,7 @@ const AgentCard: React.FC<Props> = ({
             askPair={pillAskPair}
             sessionId={session.id}
             browserShot={browserShot}
+            browserDocked={browserDocked}
             selected={isSelected}
             highlighted={isHighlighted}
           />

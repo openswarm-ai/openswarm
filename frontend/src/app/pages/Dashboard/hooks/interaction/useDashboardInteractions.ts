@@ -106,9 +106,12 @@ export function useDashboardInteractions({
     // multiple clicks"). Collapse lives on the yellow light / Esc / canvas click instead.
     if (type === 'agent' && expandedSessionIds.includes(id)) return;
 
-    // Expand (if not already) + center + zoom + bring to front
+    // Expand (if not already) + bring to front. NO camera motion for chats: opening a pill used
+    // to also center + zoom, and having the view fly on every open is hostile (Eric, 2026-08-17).
     if (type === 'agent') {
       afterPaint(() => dispatch(expandSession(id)));
+      setFocusedCardId(id);
+      return;
     }
     setFocusedCardId(id);
     // The capture-phase select fires on pointer DOWN; if the press became a drag (or marquee),

@@ -3,7 +3,6 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 import DashboardGlyph from '../canvas/DashboardGlyph';
-import { GLASS_SURFACE, GLASS_SURFACE_BLUR } from '@/shared/styles/glassSurface';
 import ShowUiWidgetView from '@/app/pages/AgentChat/tool-ui/ShowUiWidgetView';
 import AskUiBubble from '@/app/pages/AgentChat/tool-ui/AskUiBubble';
 import PillArtifactFrame from './PillArtifactFrame';
@@ -23,7 +22,8 @@ interface AgentNarratorPillProps {
   askPair?: ToolPair | null;
   sessionId?: string;
   browserShot: string | null;
-  /** The turn's plain-text answer, shown when the turn produced no richer artifact. */
+  /** A live browser miniature is tucked under this pill; non-actionable artifacts yield to it. */
+  browserDocked?: boolean;
   /** App quit mid-turn and this agent still owes a response; click resumes it (ENG-321). */
   interrupted?: boolean;
   onResumeInterrupted?: () => void;
@@ -31,12 +31,12 @@ interface AgentNarratorPillProps {
   highlighted: boolean;
 }
 
-const GLASS = GLASS_SURFACE;
-const GLASS_BLUR = GLASS_SURFACE_BLUR;
+// Solid, not glass: backdrop-filter's rounded clip renders squared-off ends under canvas zoom (Eric's cut-off pills).
+const SOLID = '#443C4B';
 const MAX_VISIBLE_TODOS = 4;
 
 /** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: live question > widget > browser shot > plan > live steps > Thinking. */
-function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, interrupted, onResumeInterrupted, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
+function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, browserDocked, interrupted, onResumeInterrupted, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
   const visibleTodos = (todos || []).slice(0, MAX_VISIBLE_TODOS);
   const hiddenCount = (todos?.length || 0) - visibleTodos.length;
   // Live tool steps window to the most recent, since earlier ones are history, not plan.
@@ -46,7 +46,10 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
   const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
   const liveAsk = askPair && sessionId ? askPair : null;
   // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
-  const artifactKey = interrupted ? 'interrupted' : liveAsk ? `ask-${liveAsk.id}` : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : 'none';
+  // A docked live miniature owns the space below the pill: everything non-actionable yields to it
+  // (interrupted and asks still win, and the ask case parks the miniature upstream anyway).
+  const quiet = !!browserDocked && !interrupted && !liveAsk;
+  const artifactKey = interrupted ? 'interrupted' : liveAsk ? `ask-${liveAsk.id}` : quiet ? 'none' : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : 'none';
 
   return (
     <Box
@@ -76,10 +79,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           pl: 1.25,
           pr: 1.75,
           borderRadius: 999,
-          background: GLASS,
-          border: '1px solid rgba(255,255,255,0.08)',
-          backdropFilter: GLASS_BLUR,
-          WebkitBackdropFilter: GLASS_BLUR,
+          background: SOLID,
           boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
           whiteSpace: 'nowrap',
           ...ring,
@@ -135,8 +135,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             whiteSpace: 'nowrap',
             background: 'rgba(30,27,24,0.85)',
             border: '1px solid rgba(245,158,11,0.55)',
-            backdropFilter: GLASS_BLUR,
-            WebkitBackdropFilter: GLASS_BLUR,
             boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
             transition: 'background 0.15s ease, transform 0.15s ease',
             '&:hover': { background: 'rgba(48,40,28,0.95)', transform: 'translateY(-1px)' },
@@ -153,11 +151,11 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
       ) : liveAsk ? (
         <PillArtifactFrame key={artifactKey} name="question">
           {/* One glass surface holds the whole ask (options + Confirm + the type-your-own field); without it the widget's footer floated bare on the canvas. */}
-          <Box sx={{ borderRadius: '16px', background: GLASS, backdropFilter: GLASS_BLUR, WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 1px 2px rgba(0,0,0,0.10)', px: 1.25, py: 1.25 }}>
+          <Box sx={{ borderRadius: '16px', background: SOLID, boxShadow: '0 1px 2px rgba(0,0,0,0.10)', px: 1.25, py: 1.25 }}>
             <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
           </Box>
         </PillArtifactFrame>
-      ) : shownArtifact ? (
+      ) : quiet ? null : shownArtifact ? (
         <PillArtifactFrame key={artifactKey} name={artifactName(shownArtifact)}>
           <ShowUiWidgetView payload={shownArtifact} ambient />
         </PillArtifactFrame>
@@ -176,9 +174,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           className="osw-artifact"
           sx={{
             borderRadius: '16px',
-            background: GLASS,
-            backdropFilter: GLASS_BLUR,
-            WebkitBackdropFilter: GLASS_BLUR,
+            background: SOLID,
             boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
             px: 1.75,
             py: 1.5,
@@ -239,9 +235,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           className="osw-artifact"
           sx={{
             borderRadius: '16px',
-            background: GLASS,
-            backdropFilter: GLASS_BLUR,
-            WebkitBackdropFilter: GLASS_BLUR,
+            background: SOLID,
             boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
             px: 1.75,
             py: 1.5,
@@ -302,9 +296,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             height: 28,
             px: 1.5,
             borderRadius: 999,
-            background: GLASS,
-            backdropFilter: GLASS_BLUR,
-            WebkitBackdropFilter: GLASS_BLUR,
+            background: SOLID,
             boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
           }}
         >
