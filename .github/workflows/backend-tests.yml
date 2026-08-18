@@ -48,11 +48,17 @@ jobs:
         run: |
           python -m pytest backend/tests --ignore=backend/tests/formal --collect-only -q -p no:cacheprovider \
             | tail -1 | tee collected.txt
+      # --timeout: a test that blocks forever (a bare ws.receive_json() waiting for an event that never
+      # comes, say) otherwise stalls the run at 99% until timeout-minutes with no summary and no junit.
+      # With the cap it fails by name, the rest of the suite runs, and the assertion below still holds.
       - name: Run the backend suite
         run: |
           python -m pytest backend/tests --ignore=backend/tests/formal -q -p no:cacheprovider \
+            --timeout=300 \
             --junitxml "${RUNNER_TEMP}/pytest.xml"
       - name: Every collected test ran
+        # Runs after a red suite too, so a failure report also says whether the run was complete.
+        if: ${{ !cancelled() }}
         run: |
           python - "${RUNNER_TEMP}/pytest.xml" collected.txt <<'PY'
           import re, sys, xml.etree.ElementTree as ET
