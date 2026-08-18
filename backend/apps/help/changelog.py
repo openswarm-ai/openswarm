@@ -103,6 +103,13 @@ P_RELEASES: List[ReleaseNote] = [
             "Double-clicking empty canvas reliably fits every card on screen again, and an app an agent builds or drives now docks as a small card beside the chat instead of covering it. When a website needs you to sign in, the agent now pauses, tells you, and continues by itself once you log in on its browser card.",
             "Agents no longer lose their tools partway through a run. Under heavy multi-agent load, a safety timer could mistake a queued browser or app task for a lost one and restart the agent's tool connection mid-task; it now checks the right task before acting.",
             "Heavy sessions no longer vanish without a trace. When memory climbs past the safe line the app now sheds weight itself: preview thumbnails pause and refetchable caches drop, instead of growing until the operating system kills it mid-task.",
+            "A browser that fails to open a page now says so instead of confidently answering from the page it was already on, and a stuck browser card gets swapped for a fresh one automatically.",
+            "Clicking Home, Calendar or New Workflow inside the workflow window no longer yanks the canvas to a fixed spot.",
+            "Hovering a dock button no longer inflates the chat entry next to it, and hover previews near the bottom of the rail stop running off screen.",
+            "Onboarding no longer shows squished frames from an outdated demo video; the old clips are gone and every install is 6MB lighter.",
+            "Agents can tidy up after themselves on the canvas: move, shrink, tile or close their own cards after creating them. Closing is limited to cards they own.",
+            "Settings gains a Tools tab where you can allow, ask, or block any built-in tool. The backend enforces it, so blocked means blocked everywhere.",
+            "The app is ready sooner after launch: the backend now starts the instant the app opens instead of waiting behind window setup.",
         ],
     ),
     ReleaseNote(
