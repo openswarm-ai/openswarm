@@ -50,8 +50,8 @@ jobs:
           R=/tmp/oswapp/OpenSwarm.app/Contents/Resources
           for b in \
             /tmp/oswapp/OpenSwarm.app/Contents/MacOS/OpenSwarm \
-            "$R/python-env/bin/python3.13" \
-            "$R/python-env/lib/python3.13/site-packages/claude_agent_sdk/_bundled/claude" \
+            "$R/python-env/bin/python3.14" \
+            "$R/python-env/lib/python3.14/site-packages/claude_agent_sdk/_bundled/claude" \
             "$R/node/x64/bin/node" \
             "$R/backend/uv-bin/uv"; do
             A=$(lipo -archs "$b")
@@ -67,7 +67,7 @@ jobs:
 
       - name: bundled claude CLI runs natively (the AVX gate Rosetta could not test)
         run: |
-          CLI=/tmp/oswapp/OpenSwarm.app/Contents/Resources/python-env/lib/python3.13/site-packages/claude_agent_sdk/_bundled/claude
+          CLI=/tmp/oswapp/OpenSwarm.app/Contents/Resources/python-env/lib/python3.14/site-packages/claude_agent_sdk/_bundled/claude
           OUT=$("$CLI" --version 2>&1); echo "$OUT"
           echo "$OUT" | grep -q "Claude Code"
           if echo "$OUT" | grep -qi "lacks AVX"; then echo "AVX warning on real Intel = fail"; exit 1; fi

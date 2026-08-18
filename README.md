@@ -199,7 +199,7 @@ electron/
 
 scripts/
   build-app.sh        Desktop app packaging (electron-builder)
-  build-python-env.sh Standalone Python 3.13 environment bundler
+  build-python-env.sh Standalone Python 3.14 environment bundler
 ```
 
 <br>
@@ -212,7 +212,7 @@ scripts/
 
 **Desktop** — Electron 33, electron-builder, electron-updater (auto-updates via GitHub Releases)
 
-**Bundled Runtime** — Standalone Python 3.13 (via python-build-standalone) so end users don't need Python installed
+**Bundled Runtime** — Standalone Python 3.14 (via python-build-standalone) so end users don't need Python installed
 
 <br>
 

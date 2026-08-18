@@ -1,6 +1,9 @@
 import { noteBackendFailure, noteBackendSuccess, noteRequestStalled, setBackendProber } from '@/shared/backendConnection';
 
-const _w = window as any;
+// Import-safe outside a renderer: reducers that import API_BASE also run under node:test, where there
+// is no window. The module then answers with the defaults and installs nothing.
+const hasWindow = typeof window !== 'undefined';
+const _w = (hasWindow ? window : {}) as any;
 // Prefer the preload-injected port; if it's missing (preload raced the backend port being picked), re-query the live value before falling back to 8324. The bare 8324 guess is wrong on any machine where the backend landed on a fallback port (e.g. 8324 was held by a leftover backend); see the self-heal below.
 const port =
   _w.__OPENSWARM_PORT__ ||
@@ -8,7 +11,7 @@ const port =
     ? _w.openswarm.getBackendPortLive()
     : 0) ||
   8324;
-const host = window.location.hostname || 'localhost';
+const host = (hasWindow && window.location.hostname) || 'localhost';
 
 export const API_BASE = `http://${host}:${port}/api`;
 export const WS_BASE = `ws://${host}:${port}`;
@@ -217,5 +220,7 @@ function _installAuthFetchInterceptor() {
   };
 }
 
-_installAuthFetchInterceptor();
-ensureAuthToken();
+if (hasWindow) {
+  _installAuthFetchInterceptor();
+  ensureAuthToken();
+}

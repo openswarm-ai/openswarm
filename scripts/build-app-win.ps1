@@ -379,8 +379,8 @@ if (Test-Path $EnvExampleSrc) {
 # npm, so the App Builder frontend had no way to get its deps; the preview died
 # with the misleading "backend exited with code 1". We ship a single compressed
 # archive (mirrors the Mac build's step 3c); the runtime's _try_extract_bundled_archive
-# unpacks it into the warm cache (kicked off in the background by
-# warm_cache_in_background at startup, so it is off the first-app create path).
+# unpacks it into the warm cache (warm_cache_in_background, scheduled by the
+# backend's first successful health check, so it is off the first-app create path).
 # NOTE: we deliberately do NOT ship node_modules pre-extracted into resources --
 # that adds ~30k tiny files which made electron-builder/Squirrel LZMA compression
 # blow the build past 50 min and bloats the installer. One .tar.gz (~26 MB) keeps

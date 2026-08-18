@@ -17,8 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ELECTRON_DIR="$PROJECT_ROOT/electron"
 
-PYTHON_VERSION="3.13"
-PYTHON_FULL_VERSION="3.13.2"
+PYTHON_VERSION="3.14"
+PYTHON_FULL_VERSION="3.14.6"
 ARCH="${1:-$(uname -m)}"
 
 case "$ARCH" in
@@ -39,9 +39,15 @@ if [[ "$ARCH" == "x64" && "$(uname -m)" == "arm64" ]]; then
     fi
 fi
 
-RELEASE_TAG="20250212"
+RELEASE_TAG="20260623"
+# The archive is pinned by digest so a moved or replaced release asset cannot ship a different interpreter.
+case "$ARCH" in
+    arm64) ARCHIVE_SHA256="35d774f61d63c1fd4f1bc9495a7ada92e500dc4382a0df8a9910eb87ea48e8cf" ;;
+    x64)   ARCHIVE_SHA256="12fb3ea3d6a855fe6ca1c2241702b06cb7e5939fbef09a5f54bf326e480f66af" ;;
+esac
 TARBALL_NAME="cpython-${PYTHON_FULL_VERSION}+${RELEASE_TAG}-${PLATFORM_TAG}-install_only_stripped.tar.gz"
-DOWNLOAD_URL="https://github.com/indygreg/python-build-standalone/releases/download/${RELEASE_TAG}/${TARBALL_NAME}"
+# python-build-standalone now lives under astral-sh; the '+' in the asset name must be URL-encoded.
+DOWNLOAD_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE_TAG}/${TARBALL_NAME/+/%2B}"
 TEMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -64,6 +70,12 @@ mkdir -p "$(dirname "$PYTHON_ENV_DIR")"
 echo "Downloading standalone Python from python-build-standalone..."
 echo "URL: $DOWNLOAD_URL"
 curl -fSL --progress-bar -o "$TEMP_DIR/python.tar.gz" "$DOWNLOAD_URL"
+ACTUAL_SHA256="$(shasum -a 256 "$TEMP_DIR/python.tar.gz" | awk '{print $1}')"
+if [[ "$ACTUAL_SHA256" != "$ARCHIVE_SHA256" ]]; then
+    echo "ERROR: standalone Python archive SHA-256 mismatch: expected $ARCHIVE_SHA256, got $ACTUAL_SHA256" >&2
+    exit 1
+fi
+echo "Standalone Python SHA-256 verified: $ACTUAL_SHA256"
 
 echo "Extracting..."
 tar xzf "$TEMP_DIR/python.tar.gz" -C "$TEMP_DIR"
@@ -97,7 +109,7 @@ fi
 # Install backend dependencies from the fully-pinned, hash-locked file so the
 # shipped python-env is byte-for-byte reproducible (pillar 3). requirements.txt
 # is the human-edited source; regenerate the lock after editing it with:
-#   uv pip compile backend/requirements.txt --python-version 3.13 \
+#   uv pip compile backend/requirements.txt --python-version 3.14 \
 #       --generate-hashes --output-file backend/requirements.lock
 # --require-hashes is implied because every entry carries a hash.
 echo "Installing backend dependencies (from requirements.lock)..."
@@ -138,34 +150,36 @@ echo "Stripping unused Python distribution files..."
 # C headers — only needed when building C extensions, never at runtime.
 rm -rf "$PYTHON_ENV_DIR/include"
 # IDLE editor + Tk GUI toolkit — embedded headless backend has no UI.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/idlelib"
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/tkinter"
-# Pip bootstrap module — backend never installs packages at runtime.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/ensurepip"
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/idlelib"
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/tkinter"
+# ensurepip stays: the App Builder runs `python -m venv` with THIS interpreter
+# for every generated app's backend and for the shared warm venv (run.sh gets it
+# as OPENSWARM_PYTHON; view_builder_templates uses sys.executable), and venv
+# bootstraps pip into the new environment from ensurepip's bundled wheel.
+# Without it the venv step fails and no generated backend can start. ~1.8 MB.
 # Educational drawing examples that ship with stdlib — never imported.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/turtledemo"
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/turtledemo"
 # turtle itself: a Tk-based graphics module. It imports tkinter (stripped
 # above), so it's already non-functional here, and the backend never uses it.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/turtle.py"
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/turtle.py"
 # Man pages / desktop-integration files — embedded Python doesn't read these.
 rm -rf "$PYTHON_ENV_DIR/share"
-# pip itself + launcher shims. Verified the packaged backend never invokes
-# pip: uvx (used by MCPs) is a self-contained installer; the App Builder's
-# view_builder_templates.py:382 picks SYSTEM python via shutil.which, never
-# this bundled one; backend code only mentions "pip install" in error-message
-# strings. `python -m venv` from this bundled env is also dead (ensurepip
-# already stripped above) but nothing calls it.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/site-packages/pip" \
-       "$PYTHON_ENV_DIR/lib/python3.13/site-packages"/pip-*.dist-info
-rm -f "$PYTHON_ENV_DIR/bin/pip" "$PYTHON_ENV_DIR/bin/pip3" "$PYTHON_ENV_DIR/bin/pip3.13" \
-      "$PYTHON_ENV_DIR/bin/idle3" "$PYTHON_ENV_DIR/bin/idle3.13" \
-      "$PYTHON_ENV_DIR/bin/pydoc3" "$PYTHON_ENV_DIR/bin/pydoc3.13"
+# pip itself + launcher shims. Nothing in the packaged backend runs the
+# bundled pip: uvx (used by MCPs) is a self-contained installer, and the venvs
+# the App Builder creates get their own pip from ensurepip (kept above), not
+# from this copy; backend code only mentions "pip install" in error-message
+# strings.
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/site-packages/pip" \
+       "$PYTHON_ENV_DIR/lib/python3.14/site-packages"/pip-*.dist-info
+rm -f "$PYTHON_ENV_DIR/bin/pip" "$PYTHON_ENV_DIR/bin/pip3" "$PYTHON_ENV_DIR/bin/pip3.14" \
+      "$PYTHON_ENV_DIR/bin/idle3" "$PYTHON_ENV_DIR/bin/idle3.14" \
+      "$PYTHON_ENV_DIR/bin/pydoc3" "$PYTHON_ENV_DIR/bin/pydoc3.14"
 # pydoc_data: keyword/topic tables consumed only by stdlib `pydoc` / `help()`.
 # Backend never starts a REPL or calls help().
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/pydoc_data"
-# _pyrepl: Python 3.13's new interactive REPL implementation. We never
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/pydoc_data"
+# _pyrepl: the interactive REPL implementation (new in 3.13). We never
 # spawn an interactive shell from the packaged build.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.13/_pyrepl"
+rm -rf "$PYTHON_ENV_DIR/lib/python3.14/_pyrepl"
 # Tcl/Tk runtime shared libraries. python-build-standalone install_only_stripped
 # ships these even after the `tkinter` Python package is stripped. With the
 # `_tkinter` C extension absent (lib-dynload/ is empty in this build variant;
@@ -184,7 +198,7 @@ rm -rf "$PYTHON_ENV_DIR/lib/tcl8.6" "$PYTHON_ENV_DIR/lib/tk8.6" \
 # line 188 (graceful degradation: that URL just doesn't get language-
 # filtered). Even so, keeping the most-common 20 base languages preserves
 # language detection for the URLs we'll actually see in practice.
-SP="$PYTHON_ENV_DIR/lib/python3.13/site-packages"
+SP="$PYTHON_ENV_DIR/lib/python3.14/site-packages"
 if [[ -d "$SP/babel/locale-data" ]]; then
     echo "Trimming babel/locale-data..."
     LOCALE_DIR="$SP/babel/locale-data"
@@ -223,8 +237,22 @@ find "$SP" -path '*.dist-info/entry_points.txt' -delete 2>/dev/null
 find "$PYTHON_ENV_DIR" -name '*.pyi' -delete 2>/dev/null || true
 # Unix build artifacts: the static lib + config Makefiles exist only to compile
 # C extensions / embed Python; the running interpreter never reads them.
-rm -rf "$PYTHON_ENV_DIR"/lib/python3.13/config-3.13-* 2>/dev/null || true
+rm -rf "$PYTHON_ENV_DIR"/lib/python3.14/config-3.14-* 2>/dev/null || true
 find "$PYTHON_ENV_DIR" -name 'libpython*.a' -delete 2>/dev/null || true
+
+# The trimmed interpreter must still be able to do the one install-time job the
+# App Builder asks of it: create a venv that has pip (see the ensurepip note
+# above). Checked here, after every trim, so a future strip cannot silently
+# take it away again.
+echo "Verifying the trimmed interpreter can create a venv with pip..."
+VENV_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/python-env-venv-probe.XXXXXX")"
+if ! PYTHONNOUSERSITE=1 "$PYTHON_BIN" -m venv "$VENV_PROBE/venv" \
+   || ! "$VENV_PROBE/venv/bin/python" -m pip --version >/dev/null; then
+    rm -rf "$VENV_PROBE"
+    echo "ERROR: the trimmed python-env cannot create a venv with pip; generated app backends need this." >&2
+    exit 1
+fi
+rm -rf "$VENV_PROBE"
 
 # Pre-compile bytecode so cold backend startup skips the parse+compile
 # step on every imported .py. Worth ~5-10s on Windows under Defender
@@ -244,8 +272,8 @@ echo "Pre-compiling bytecode..."
     echo "WARNING: some files failed to compile; runtime will fall back to in-memory compile."
 
 # ----- macOS: hide bundled python from the Dock -----
-# python-build-standalone ships a bare Mach-O at bin/python3.13 with NO
-# embedded __TEXT,__info_plist section, but libpython3.13.dylib is linked
+# python-build-standalone ships a bare Mach-O at bin/python3.14 with NO
+# embedded __TEXT,__info_plist section, but libpython3.14.dylib is linked
 # against AppKit / Cocoa / ApplicationServices. On a fresh user Mac (with
 # .app quarantine attrs + first-launch XProtect inspection), spawning that
 # binary from Electron causes LaunchServices to register it as a generic
@@ -258,13 +286,13 @@ echo "Pre-compiling bytecode..."
 #   - codesign rejects symlinks as CFBundleExecutable ("the main executable
 #     or Info.plist must be a regular file (no symlinks, etc.)") — so
 #     python3 inside Python.app MUST be a real Mach-O copy, not a symlink.
-#     We copy bin/python3.13 in and rewrite its LC_LOAD_DYLIB so it still
-#     finds the single libpython3.13.dylib at python-env/lib/.
+#     We copy bin/python3.14 in and rewrite its LC_LOAD_DYLIB so it still
+#     finds the single libpython3.14.dylib at python-env/lib/.
 #   - Python.getpath() calls realpath() on argv[0], so sys.prefix still
 #     resolves to python-env/ even though the launcher lives inside the
 #     wrapper bundle. All stdlib + site-packages discovery is unchanged.
 #   - The launcher binary is tiny (~50 KB), so the duplicate copy is
-#     negligible. We deliberately do NOT duplicate libpython3.13.dylib
+#     negligible. We deliberately do NOT duplicate libpython3.14.dylib
 #     (~18 MB) — only the launcher.
 if [[ "$(uname)" == "Darwin" ]]; then
     echo "Creating Python.app launcher (LSUIElement=1, hides from Dock)..."
@@ -287,9 +315,9 @@ if [[ "$(uname)" == "Darwin" ]]; then
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>3.13</string>
+  <string>3.14</string>
   <key>CFBundleVersion</key>
-  <string>3.13</string>
+  <string>3.14</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
@@ -299,13 +327,18 @@ PLIST
     # regular file here (symlinks are rejected outright). Then rewrite
     # the LC_LOAD_DYLIB so @executable_path resolves correctly from
     # Python.app/Contents/MacOS/ — three levels up reaches python-env/,
-    # then ../lib gets us to libpython3.13.dylib without duplication.
-    cp "$PYTHON_ENV_DIR/bin/python3.13" "$PY_APP/Contents/MacOS/python3"
+    # then ../lib gets us to libpython3.14.dylib without duplication.
+    cp "$PYTHON_ENV_DIR/bin/python3.14" "$PY_APP/Contents/MacOS/python3"
     chmod +x "$PY_APP/Contents/MacOS/python3"
-    install_name_tool \
-        -change "@executable_path/../lib/libpython3.13.dylib" \
-                "@executable_path/../../../lib/libpython3.13.dylib" \
-        "$PY_APP/Contents/MacOS/python3"
+    # The 3.14 python-build-standalone launcher is statically linked and carries no libpython load
+    # command; only rewrite the dylib path when a build actually links it (getpath() still finds the
+    # prefix by walking up from the copied launcher either way).
+    if otool -L "$PY_APP/Contents/MacOS/python3" | grep -q "libpython3.14.dylib"; then
+        install_name_tool \
+            -change "@executable_path/../lib/libpython3.14.dylib" \
+                    "@executable_path/../../../lib/libpython3.14.dylib" \
+            "$PY_APP/Contents/MacOS/python3"
+    fi
     # install_name_tool invalidates the existing adhoc signature; re-sign
     # ad-hoc so the binary loads cleanly during the build's self-test.
     # electron-builder's full sign pass will replace this with a proper

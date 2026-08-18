@@ -930,7 +930,7 @@ function getPythonPath() {
   // macOS extra: invoke via Python.app/Contents/MacOS/python3 instead of
   // bin/python3 so LaunchServices reads LSUIElement=1 from the wrapper
   // bundle's Info.plist and skips the Dock entry. Without this, the
-  // bundleless python3.13 binary appears as a generic "exec" placeholder
+  // bundleless python3.14 binary appears as a generic "exec" placeholder
   // in the Dock on fresh user Macs, bouncing for the entire boot window.
   // sys.prefix / sys.executable still resolve via realpath so all stdlib
   // and site-packages discovery is unchanged. See scripts/build-python-env.sh
@@ -970,7 +970,7 @@ function p_readProviderCookies(domain) {
       if (isPackaged) {
         const sitePackages = process.platform === 'win32'
           ? path.join(process.resourcesPath, 'python-env', 'Lib', 'site-packages')
-          : path.join(process.resourcesPath, 'python-env', 'lib', 'python3.13', 'site-packages');
+          : path.join(process.resourcesPath, 'python-env', 'lib', 'python3.14', 'site-packages');
         env.PYTHONPATH = [root, sitePackages].join(path.delimiter);
       }
       const proc = spawn(getPythonPath(), ['-m', 'backend.apps.onboarding.usage.dump_cookies', String(domain)], { cwd: root, env });
@@ -1189,10 +1189,10 @@ async function startBackend() {
   }
 
   if (isPackaged) {
-    // site-packages location differs by OS — Windows has no lib/python3.13/.
+    // site-packages location differs by OS — Windows has no lib/python3.14/.
     const pythonEnvSitePackages = process.platform === 'win32'
       ? path.join(process.resourcesPath, 'python-env', 'Lib', 'site-packages')
-      : path.join(process.resourcesPath, 'python-env', 'lib', 'python3.13', 'site-packages');
+      : path.join(process.resourcesPath, 'python-env', 'lib', 'python3.14', 'site-packages');
     const debuggerDir = getResourcePath('debugger');
     env.PYTHONPATH = [projectRoot, debuggerDir, pythonEnvSitePackages].join(path.delimiter);
   }

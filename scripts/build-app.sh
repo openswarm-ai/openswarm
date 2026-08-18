@@ -339,7 +339,7 @@ echo ""
 echo "[3a] Building bundled Python env(s): ${BUILD_ARCHS[*]}"
 for A in "${BUILD_ARCHS[@]}"; do
     bash "$SCRIPT_DIR/build-python-env.sh" "$A"
-    if [[ ! -f "$STAGING_DIR/python-env/$A/bin/python3.13" ]]; then
+    if [[ ! -f "$STAGING_DIR/python-env/$A/bin/python3.14" ]]; then
         echo "ERROR: python-env ($A) missing at $STAGING_DIR/python-env/$A"
         exit 1
     fi
