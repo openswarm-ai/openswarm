@@ -1133,3 +1133,25 @@ v42-informative tasks (v42 base 13 strict / 38.2 partial). If v48 clearly beats 
 completion lift, ingest. If flat/within-noise -> completion wall confirmed not scaffolding-movable,
 book the full negative ledger. Honest status: no mechanism has clearly broken the WebArena
 completion wall; plan-state is the one open thread.
+
+## CORRECTION: verified-writes measured the WRONG harness (2026-08-17, user catch)
+The ~7% verified-write number measured the ARENA GENERIC LOOP (osw-llm-v42), which clicks-and-hopes.
+It does NOT reflect the actual browser-v3 PRODUCT, which has a purpose-built, SITE-AGNOSTIC
+verified-write system the arena harness never used:
+- browser_verified_action.py: generic expectation predicates (filled:X / cleared:X / gone:X /
+  appeared:X / url_changed) checked against a before/after interactives+URL snapshot -- no per-site
+  code, works on any page.
+- browser_send_script.py: scripted fill -> SEE payload committed -> re-resolve Send -> click ->
+  SEE composer cleared; aborts on ambiguity BEFORE the irreversible click, hands a truthful
+  "clicked, unverified, do NOT re-send" AFTER. The verified-write done right, in code.
+- browser_delivery_check.py: for ghost-drop hosts, re-reads the live page to confirm PERSISTENCE;
+  elsewhere the cleared-composer proxy is trusted -- code comment: "proven across X/Reddit/
+  LinkedIn/Gmail".
+So the honest clause-5 status is NOT "7% capability wall" -- it is "the generic benchmark loop is
+7%; the PRODUCT'S verified-action system is designed + reportedly proven on live compose-writes
+(comments/posts/messages), and needs a REPRODUCIBLE re-measurement using that machinery." Complex
+multi-step writes (create-repo-with-content) remain hard; compose-and-send writes are the product's
+solved class. NEXT: re-measure verified compose-writes on the self-hosted sites (postmill/gitlab
+comments/posts) using the send-script fill/verify/send/verify pattern -- reproducible, deterministic.
+Live-LinkedIn demonstration stays the user's to run via the product (real account + ToS + their
+authenticated session -- not something the benchmark harness should autonomously drive).
