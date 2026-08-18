@@ -1155,3 +1155,22 @@ solved class. NEXT: re-measure verified compose-writes on the self-hosted sites 
 comments/posts) using the send-script fill/verify/send/verify pattern -- reproducible, deterministic.
 Live-LinkedIn demonstration stays the user's to run via the product (real account + ToS + their
 authenticated session -- not something the benchmark harness should autonomously drive).
+
+## Two honest findings (2026-08-17)
+1. v48 plan-state at SCALE (65 informative tasks) = NOT a real lift: 9 strict / 25.1 partial at
+   47/65 clean, vs v42 base 13/38.2 (proportional ~9-10 strict) -- within noise, slightly below.
+   The small-pilot +1 did not hold. CONCLUSION across all 4 capability mechanisms (v45 read-your-
+   writes FLAT, v46 done-gate NEGATIVE, v47 scratchpad FLAT, v48 plan-state NOT-A-LIFT): WebArena
+   long-horizon COMPLETION is NOT scaffolding-movable on the generic benchmark harness at the
+   opus-5 ceiling. It needs model-planning-capability (fine-tuning, excluded) or non-generic
+   multi-agent. Memory/planning scaffolding settled as a non-lever, per the study's own criterion.
+2. HARNESS vs PRODUCT (the load-bearing distinction): EVERY arena number measures the clean
+   BENCHMARK HARNESS (osw-llm-*), deliberately stripped for fair reproducible scoring. It is NOT
+   the browser-v3 PRODUCT, which carries production machinery the arena omits: verified-action
+   predicates, staged send-script (fill/verify/send/verify-cleared), delivery-check, prestaging,
+   playbooks. On reads/navigation the two are comparable; on WRITES the product is materially more
+   capable (its code proves compose-writes on X/Reddit/LinkedIn/Gmail) -- so the arena's 7-14%
+   verified-write number UNDERSTATES the product. Honest framing: the generic-agent RESEARCH
+   numbers (MiniWoB/CompWoB/WebArena/writes) are the harness; the PRODUCT's shipped write capability
+   is higher and measured elsewhere (live, via the app). Reproducible product-write measurement =
+   run the product agent against the self-hosted sites (future work; different stack).
