@@ -81,3 +81,7 @@ Thumbs.db
 ehthumbs.db
 desktop.ini
 frontend/tsconfig.tsbuildinfo
+
+# dictation runtime artifacts (model download + first-use marker), never shipped via git
+electron/whisper/
+electron/dictation-used
