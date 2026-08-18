@@ -24,7 +24,6 @@ interface AgentNarratorPillProps {
   sessionId?: string;
   browserShot: string | null;
   /** The turn's plain-text answer, shown when the turn produced no richer artifact. */
-  finalText?: string | null;
   /** App quit mid-turn and this agent still owes a response; click resumes it (ENG-321). */
   interrupted?: boolean;
   onResumeInterrupted?: () => void;
@@ -37,7 +36,7 @@ const GLASS_BLUR = GLASS_SURFACE_BLUR;
 const MAX_VISIBLE_TODOS = 4;
 
 /** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: live question > widget > browser shot > plan > live steps > Thinking. */
-function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, finalText, interrupted, onResumeInterrupted, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
+function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair, sessionId, browserShot, interrupted, onResumeInterrupted, selected, highlighted }: AgentNarratorPillProps): React.ReactElement {
   const visibleTodos = (todos || []).slice(0, MAX_VISIBLE_TODOS);
   const hiddenCount = (todos?.length || 0) - visibleTodos.length;
   // Live tool steps window to the most recent, since earlier ones are history, not plan.
@@ -47,7 +46,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
   const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
   const liveAsk = askPair && sessionId ? askPair : null;
   // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
-  const artifactKey = interrupted ? 'interrupted' : liveAsk ? `ask-${liveAsk.id}` : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : finalText ? 'final' : 'none';
+  const artifactKey = interrupted ? 'interrupted' : liveAsk ? `ask-${liveAsk.id}` : shownArtifact ? 'widget' : browserShot ? 'shot' : visibleTodos.length > 0 ? 'todos' : visibleSteps.length > 0 ? 'steps' : running ? 'thinking' : 'none';
 
   return (
     <Box
@@ -78,9 +77,10 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           pr: 1.75,
           borderRadius: 999,
           background: GLASS,
+          border: '1px solid rgba(255,255,255,0.08)',
           backdropFilter: GLASS_BLUR,
           WebkitBackdropFilter: GLASS_BLUR,
-          boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
           whiteSpace: 'nowrap',
           ...ring,
         }}
@@ -137,7 +137,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             border: '1px solid rgba(245,158,11,0.55)',
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
             transition: 'background 0.15s ease, transform 0.15s ease',
             '&:hover': { background: 'rgba(48,40,28,0.95)', transform: 'translateY(-1px)' },
           }}
@@ -153,7 +153,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
       ) : liveAsk ? (
         <PillArtifactFrame key={artifactKey} name="question">
           {/* One glass surface holds the whole ask (options + Confirm + the type-your-own field); without it the widget's footer floated bare on the canvas. */}
-          <Box sx={{ borderRadius: '16px', background: GLASS, backdropFilter: GLASS_BLUR, WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 8px 24px rgba(0,0,0,0.32)', px: 1.25, py: 1.25 }}>
+          <Box sx={{ borderRadius: '16px', background: GLASS, backdropFilter: GLASS_BLUR, WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 1px 2px rgba(0,0,0,0.10)', px: 1.25, py: 1.25 }}>
             <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
           </Box>
         </PillArtifactFrame>
@@ -168,7 +168,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           component="img"
           src={browserShot}
           alt=""
-          sx={{ width: 300, display: 'block', borderRadius: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.35)' }}
+          sx={{ width: 300, display: 'block', borderRadius: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
         />
       ) : visibleTodos.length > 0 ? (
         <Box
@@ -179,7 +179,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             background: GLASS,
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
             px: 1.75,
             py: 1.5,
             minWidth: 200,
@@ -242,7 +242,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             background: GLASS,
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
             px: 1.75,
             py: 1.5,
             minWidth: 200,
@@ -305,45 +305,11 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             background: GLASS,
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
           }}
         >
           <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
             Thinking...
-          </Typography>
-        </Box>
-      ) : finalText ? (
-        // Last resort, and the common one: a turn that just talked back. Without this a collapsed card answered "hi" with silence.
-        <Box
-          key={artifactKey}
-          className="osw-artifact"
-          sx={{
-            // A width floor: without one a narrow card column squeezed the answer into a skinny
-            // four-line tower (Eric's "incredibly ugly" pill, 2026-08-17); a calm card, not a blob.
-            minWidth: 200,
-            maxWidth: 320,
-            px: 1.5,
-            py: 1,
-            borderRadius: '12px',
-            background: GLASS,
-            border: '1px solid rgba(255,255,255,0.08)',
-            backdropFilter: GLASS_BLUR,
-            WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
-          }}
-        >
-          <Typography
-            sx={{
-              fontSize: '0.75rem',
-              color: 'rgba(255,255,255,0.82)',
-              lineHeight: 1.45,
-              display: '-webkit-box',
-              WebkitLineClamp: 4,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
-          >
-            {finalText}
           </Typography>
         </Box>
       ) : null}

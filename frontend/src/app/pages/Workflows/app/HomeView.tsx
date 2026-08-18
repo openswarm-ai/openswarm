@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { runMissedRuns, dismissMissedRuns } from '@/shared/state/missedRunsSlice';
-import { openWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
+import { focusRunAgentCard } from './focusRunAgentCard';
 import { useCalendarOccurrences } from './useCalendarOccurrences';
 import { colorForWorkflow, useWC, statusChip, statusDot } from './uiKit';
 import { clockOf, whenText } from './model';
@@ -109,7 +109,7 @@ const HomeView: React.FC<{ nav: AppNav }> = ({ nav }) => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {ongoing.map((o) => (
-                <div key={o.wfId} onClick={() => dispatch(openWorkflowMonitor({ workflowId: o.wfId }))} onContextMenu={menuFor(o.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.10)`, borderRadius: WC.radius.md, padding: '11px 15px', cursor: 'pointer' }}>
+                <div key={o.wfId} onClick={() => focusRunAgentCard(o.wfId)} onContextMenu={menuFor(o.wfId)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: WC.raised, border: `1px solid rgba(${WC.inkRGB},0.10)`, borderRadius: WC.radius.md, padding: '11px 15px', cursor: 'pointer' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, flex: 'none' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>

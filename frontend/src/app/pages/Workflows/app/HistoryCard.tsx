@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchRuns } from '@/shared/state/workflowsSlice';
-import { openWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
+import { focusRunAgentCard } from './focusRunAgentCard';
 import { openCardContextMenu } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
 import { useWC, FONT_SERIF, statusChip, statusDot, statusLabel } from './uiKit';
 import type { WCPalette } from './uiKit';
@@ -62,7 +62,7 @@ const HistoryCard: React.FC<{ workflowId: string; title: string }> = ({ workflow
       durationText: row.durationText,
       costText: '',
       where: 'device',
-      open: () => dispatch(openWorkflowMonitor({ workflowId, runId: row.id })),
+      open: () => focusRunAgentCard(workflowId, row.id),
     };
   });
   const remote: Entry[] =

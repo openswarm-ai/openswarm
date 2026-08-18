@@ -50,7 +50,7 @@ import {
 import WindowControls from './WindowControls';
 import { useTiledCard } from './useTiledCard';
 import { useCardTiling } from './useCardTiling';
-import { getMinimizedShot, saveMinimizedShot } from '../desktop/minimizedShots';
+import { getMinimizedShot, saveMinimizedShot, dropMinimizedShot } from '../desktop/minimizedShots';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
 import { createSelector } from '@reduxjs/toolkit';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -1176,6 +1176,11 @@ const BrowserCard: React.FC<Props> = ({
   // browser and drags that instead of the chat. Follow the parent's live rect while it is collapsed.
   const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !dockParked
     && !dragging && !localResize && !isTiled && !isMinimized && !keepAliveHidden;
+  // The live miniature IS the pill's browser preview; a leftover frozen shot under it doubled the
+  // browser and their shadows collided (Eric's overlap screenshots). Fresh shot re-freezes at the next park.
+  useEffect(() => {
+    if (followsParent) dropMinimizedShot(browserId);
+  }, [followsParent, browserId]);
   // Under the pill, not beside it: beside-at-pill-height read as a detached window fighting the
   // pill's ring and shadow (Eric, 2026-08-17); tucked below the collapsed pill it reads as the
   // chat's own attachment, the same visual contract as the docked mini inside an expanded chat.

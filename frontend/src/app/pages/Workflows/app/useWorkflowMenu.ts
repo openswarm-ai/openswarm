@@ -3,7 +3,7 @@ import type React from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { deleteWorkflow, runWorkflowNow } from '@/shared/state/workflowsSlice';
 import type { Workflow } from '@/shared/state/workflowsSlice';
-import { openWorkflowMonitor } from '@/shared/state/dashboardLayoutSlice';
+import { focusRunAgentCard } from './focusRunAgentCard';
 import { stepsSignature } from '@/app/pages/Workflows/scheduleUtils';
 import { openCardContextMenu, isNativeMenuTarget } from '@/app/pages/Dashboard/desktop/openCardContextMenu';
 import { isRunning } from './model';
@@ -29,7 +29,7 @@ export function useWorkflowMenu(): (e: React.MouseEvent, wf: Workflow, opts: Wor
           disabled: running,
           onClick: () => {
             dispatch(runWorkflowNow({ id: wf.id, signature: stepsSignature(wf.steps) }));
-            dispatch(openWorkflowMonitor({ workflowId: wf.id }));
+            focusRunAgentCard(wf.id);
           },
         },
         {

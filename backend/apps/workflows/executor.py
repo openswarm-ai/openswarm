@@ -285,7 +285,9 @@ async def execute(
         p_refusal = "Workflow deleted"
     elif p_live.deleted_at is not None:
         p_refusal = "Workflow deleted"
-    elif not p_live.schedule.enabled:
+    elif not p_live.schedule.enabled and triggered_by != "manual":
+        # Paused only blocks the SCHEDULER. A human pressing Run means run NOW; refusing it as
+        # "Workflow is paused" made every fresh (schedule-off) workflow look broken (Eric's repro).
         p_refusal = "Workflow is paused"
     if p_refusal is not None:
         p_skipped = WorkflowRun(

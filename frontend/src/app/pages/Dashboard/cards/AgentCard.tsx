@@ -734,18 +734,6 @@ const AgentCard: React.FC<Props> = ({
   }, [expanded]);
   // Glass bubble + fullscreen scrim are both dark in either theme, so the title goes light on them.
   const titleColor = expanded ? GLASS_SURFACE_TEXT : c.text.primary;
-  // The answer a finished turn actually spoke, for pills with no widget/plan to show. Only the last assistant say, never a tool line.
-  const pillFinalText = useMemo(() => {
-    if (session.status === 'running') return null;
-    for (let i = session.messages.length - 1; i >= 0; i--) {
-      const m = session.messages[i];
-      if (m.role === 'user') break;
-      if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) {
-        return m.content.trim().slice(0, 400);
-      }
-    }
-    return session.last_message_preview?.trim() || null;
-  }, [session.messages, session.status, session.last_message_preview]);
   const pillLabel = session.turn_label?.label || displayChatTitle(session);
   const pillRunning = session.status === 'running';
   // The boot restore marks a cut-off turn 'stopped' ONLY when the agent still owes a response
@@ -1105,7 +1093,6 @@ const AgentCard: React.FC<Props> = ({
             askPair={pillAskPair}
             sessionId={session.id}
             browserShot={browserShot}
-            finalText={pillFinalText}
             selected={isSelected}
             highlighted={isHighlighted}
           />

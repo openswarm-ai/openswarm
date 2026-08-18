@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { runWorkflowNow } from '@/shared/state/workflowsSlice';
-import { openWorkflowMonitor, setWorkflowsRunContext, clearWorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
+import { setWorkflowsRunContext, clearWorkflowsRunContext } from '@/shared/state/dashboardLayoutSlice';
+import { focusRunAgentCard } from './focusRunAgentCard';
 import { stepsSignature, isScheduleActive } from '@/app/pages/Workflows/scheduleUtils';
 import { askRun } from './api';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
@@ -49,8 +50,11 @@ const DetailView: React.FC<{ workflowId: string; nav: AppNav }> = ({ workflowId 
   const runNow = () => {
     if (running) return;
     dispatch(runWorkflowNow({ id: workflow.id, signature: stepsSignature(workflow.steps) }))
-      .unwrap().then((res) => { autoCtxRunId.current = res.run_id || null; }).catch(() => {});
-    dispatch(openWorkflowMonitor({ workflowId: workflow.id }));
+      .unwrap().then((res) => {
+        autoCtxRunId.current = res.run_id || null;
+        // The run is a real agent chat; land on its card, never the old monitor pane.
+        focusRunAgentCard(workflow.id, res.run_id || undefined);
+      }).catch(() => {});
   };
 
   return (
