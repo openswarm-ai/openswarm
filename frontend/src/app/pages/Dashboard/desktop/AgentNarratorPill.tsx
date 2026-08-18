@@ -166,7 +166,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           component="img"
           src={browserShot}
           alt=""
-          sx={{ width: 300, display: 'block', borderRadius: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+          sx={{ width: 320, display: 'block', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
         />
       ) : visibleTodos.length > 0 ? (
         <Box
