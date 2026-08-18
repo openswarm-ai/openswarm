@@ -4,6 +4,7 @@ import Fade from '@mui/material/Fade';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import Button from '@mui/material/Button';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import KeyboardArrowUpRounded from '@mui/icons-material/KeyboardArrowUpRounded';
@@ -32,11 +33,8 @@ import ShareButton from '@/app/components/share/ShareButton';
 import ShareModal from '@/app/components/share/ShareModal';
 import { getDefault } from '@/shared/inputSchemaDefaults';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
-import {
-  useRuntimePreviewUrl,
-  pickPreviewUrl,
-  RuntimeLogLine,
-} from '@/shared/hooks/useRuntimePreviewUrl';
+import { useRuntimePreviewUrl, RuntimeLogLine } from '@/shared/hooks/useRuntimePreviewUrl';
+import { pickPreviewUrl } from '@/shared/hooks/pickPreviewUrl';
 import { postAppConsoleLine, terminalLineFromStream } from '@/shared/appTerminal';
 
 type AppCardView = 'preview' | 'code' | 'terminal' | 'history';
@@ -131,6 +129,23 @@ const BootingBody: React.FC = () => {
           First run sets the app up, this can take a moment.
         </Typography>
       </Fade>
+    </Box>
+  );
+};
+
+const PreviewFailureBody: React.FC<{ message: string; onRetry: () => void }> = ({ message, onRetry }) => {
+  const c = useClaudeTokens();
+  return (
+    <Box
+      sx={{
+        width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 1.25, px: 3, textAlign: 'center',
+      }}
+    >
+      <Typography sx={{ fontSize: '0.85rem', color: c.text.secondary }}>{message}</Typography>
+      <Button size="small" variant="outlined" startIcon={<RefreshIcon />} onClick={onRetry}>
+        Retry
+      </Button>
     </Box>
   );
 };
@@ -987,7 +1002,7 @@ const DashboardOutputPreview: React.FC<{
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const workspaceId = output.workspace_id ?? null;
-  const { frontendUrl, isNewMode, isHydrating } = useRuntimePreviewUrl({
+  const { frontendUrl, isNewMode, isHydrating, error: previewError, retry: retryPreview } = useRuntimePreviewUrl({
     workspaceId,
     enabled: !!workspaceId,
     onLog: onRuntimeLog,
@@ -1078,6 +1093,10 @@ const DashboardOutputPreview: React.FC<{
         </Typography>
       </Box>
     );
+  }
+
+  if (previewError) {
+    return <PreviewFailureBody message={previewError} onRetry={retryPreview} />;
   }
 
   // Blank body during hydration so warm runtimes don't flash "Starting preview..."
