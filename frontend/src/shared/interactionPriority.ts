@@ -4,7 +4,8 @@
 // Capture-phase listeners keep a decaying "interacting" stamp; stream dispatch consults it and
 // falls back to the 1Hz buffer during the gesture. Smoothness beats token immediacy for ~a second.
 const DECAY_MS = 350;
-let p_lastInteraction = 0;
+// -Infinity, not 0: performance.now() is near 0 at process start, so 0 would read as 'mid-gesture' for the app's first 350ms.
+let p_lastInteraction = Number.NEGATIVE_INFINITY;
 
 export function markInteraction(): void {
   p_lastInteraction = performance.now();
