@@ -1,19 +1,38 @@
-from backend.config.Apps import SubApp
 from contextlib import asynccontextmanager
+from collections.abc import Callable
+
+from fastapi import BackgroundTasks, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
-from fastapi import status, HTTPException
+
+from backend.config.Apps import SubApp
+
+
+ready_background_task: Callable[[], None] | None = None
+
+
+def set_ready_background_task(task: Callable[[], None] | None) -> None:
+    global ready_background_task
+    ready_background_task = task
+
 
 @asynccontextmanager
 async def health_lifespan():
     yield
 
+
 health = SubApp("health", health_lifespan)
+
 
 @health.router.get("/check")
 @typechecked
-async def check() -> PlainTextResponse:
+async def check(background_tasks: BackgroundTasks) -> PlainTextResponse:
+    if ready_background_task is not None:
+        # FastAPI runs this after the response body is sent. The Electron shell
+        # can mark the backend ready before cache population starts competing
+        # for disk, Defender scans, or the bundled Python interpreter.
+        background_tasks.add_task(ready_background_task)
     return PlainTextResponse(
         content="OK",
         status_code=status.HTTP_200_OK,

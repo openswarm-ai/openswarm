@@ -20,6 +20,9 @@ if [[ "${BACKEND_PORT}" == "NONE" ]]; then
 fi
 
 BACKEND_DIR_ABSPATH="$(dirname "$RUN_BACKEND_ABSPATH")"
+# Stdlib-only helper that says whether an interpreter is usable and whether
+# a .venv was built by it (see its docstring for the verdicts).
+PYTHON_GUARD="$BACKEND_DIR_ABSPATH/config/python_runtime_guard.py"
 
 # Windows (Git Bash / MSYS) reports OSTYPE=msys|cygwin|win32; venv layout
 # is Scripts\ + python.exe, and the bare interpreter is `python` not
@@ -29,14 +32,24 @@ case "$OSTYPE" in
     msys*|cygwin*|win32*) IS_WIN=1 ;;
 esac
 
+python_usable() {
+    "$1" -I "$PYTHON_GUARD" identity >/dev/null 2>&1
+}
+
 # --- Find a working Python 3 ---
-# Prefer an explicit path the host passed us (OPENSWARM_PYTHON, set by the
-# packaged Electron shell to the bundled standalone Python so a fresh
-# Windows machine with no system Python still works). Fall back to PATH
-# probing for dev. `python` is first on Windows since python3.x aliases
-# usually don't exist there.
+# Prefer an explicit path the host passed us (OPENSWARM_PYTHON: the backend
+# hands run.sh its own interpreter — the bundled standalone Python in the
+# packaged app, so a fresh Windows machine with no system Python still
+# works). A host that names an interpreter it cannot use is an error, not
+# a reason to pick a different one silently: the venv must be built by the
+# interpreter that will run it. Fall back to PATH probing for dev. `python`
+# is first on Windows since python3.x aliases usually don't exist there.
 PYTHON=""
-if [[ -n "${OPENSWARM_PYTHON:-}" ]] && "${OPENSWARM_PYTHON}" -c "import sys; sys.exit(0 if sys.version_info[0]==3 else 1)" &>/dev/null; then
+if [[ -n "${OPENSWARM_PYTHON:-}" ]]; then
+    if ! python_usable "${OPENSWARM_PYTHON}"; then
+        echo "Error: OPENSWARM_PYTHON (${OPENSWARM_PYTHON}) is not a usable Python 3.10+ interpreter."
+        exit 1
+    fi
     PYTHON="${OPENSWARM_PYTHON}"
 else
     if [[ "$IS_WIN" == "1" ]]; then
@@ -45,14 +58,14 @@ else
         CANDIDATES="python3.14 python3.13 python3.12 python3.11 python3.10 python3 python"
     fi
     for candidate in $CANDIDATES; do
-        if command -v "$candidate" &>/dev/null && "$candidate" -c "import sys; sys.exit(0 if sys.version_info[0]==3 else 1)" &>/dev/null; then
+        if command -v "$candidate" &>/dev/null && python_usable "$candidate"; then
             PYTHON="$candidate"
             break
         fi
     done
 fi
 if [[ -z "$PYTHON" ]]; then
-    echo "Error: No working Python 3 found."
+    echo "Error: No working Python 3.10+ found."
     exit 1
 fi
 echo "Using Python: $PYTHON ($("$PYTHON" --version 2>&1))"
@@ -71,6 +84,23 @@ else
     VENV_PY="$VENV_DIR/bin/python"
 fi
 
+# An existing .venv is only reused if it is ours and was built by $PYTHON.
+# A venv built by an earlier bundled interpreter (the app updated its
+# Python) is discarded and rebuilt below; a .venv we did not create, or a
+# symlink/junction standing in for one, is never touched — the interpreter
+# is not run and nothing is deleted.
+if [[ -e "$VENV_DIR" || -L "$VENV_DIR" ]]; then
+    "$PYTHON" -I "$PYTHON_GUARD" verify "$VENV_DIR"
+    VENV_STATUS=$?
+    if [[ "$VENV_STATUS" == "20" ]]; then
+        echo "Discarding the OpenSwarm-generated virtual environment: it was built by a different Python."
+        "$PYTHON" -I "$PYTHON_GUARD" remove-owned "$VENV_DIR" || exit 1
+    elif [[ "$VENV_STATUS" != "0" ]]; then
+        echo "Error: Existing .venv is unowned or redirected; preserving it for manual remediation."
+        exit 1
+    fi
+fi
+
 # Fast path on every restart: if .venv exists AND we've already
 # installed the workspace's deps once, skip the entire venv-create +
 # pip-install dance (saves ~25s per workspace cold-restart). The
@@ -82,9 +112,25 @@ if [[ -d "$VENV_DIR" && -f "$SENTINEL" ]]; then
 else
     if [[ ! -d "$VENV_DIR" ]]; then
         echo "Creating virtual environment..."
-        "$PYTHON" -m venv "$VENV_DIR"
-        if [[ $? -ne 0 ]]; then
+        if ! "$PYTHON" -m venv "$VENV_DIR"; then
             echo "Error: Failed to create virtual environment."
+            # Whatever a failed create left behind is ours (this run made the
+            # directory): mark and remove it, so the next start retries from
+            # scratch instead of finding a half-built .venv it must not touch.
+            if [[ -d "$VENV_DIR" ]] && "$PYTHON" -I "$PYTHON_GUARD" claim-created "$VENV_DIR" 2>/dev/null; then
+                "$PYTHON" -I "$PYTHON_GUARD" remove-owned "$VENV_DIR" || true
+            fi
+            exit 1
+        fi
+        # Mark it ours (so a later run may rebuild or remove it) and prove
+        # the interpreter inside is $PYTHON before anything is installed.
+        if ! "$PYTHON" -I "$PYTHON_GUARD" claim-created "$VENV_DIR"; then
+            echo "Error: Created virtual environment cannot be safely claimed."
+            exit 1
+        fi
+        if ! "$PYTHON" -I "$PYTHON_GUARD" verify "$VENV_DIR"; then
+            "$PYTHON" -I "$PYTHON_GUARD" remove-owned "$VENV_DIR" || exit 1
+            echo "Error: Created virtual environment does not match the host Python."
             exit 1
         fi
     fi

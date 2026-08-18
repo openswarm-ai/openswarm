@@ -25,7 +25,7 @@ from backend.apps.oauth_state import (
     mark_oauth_completed,
 )
 from backend.config.Apps import MainApp
-from backend.apps.health.health import health
+from backend.apps.health.health import health, set_ready_background_task
 from backend.apps.agents.agents import agents
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.skills.skills import skills
@@ -35,6 +35,14 @@ from backend.apps.settings.settings import settings
 from backend.apps.mcp_registry.mcp_registry import mcp_registry
 from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
+if (
+    os.environ.get("OPENSWARM_BACKEND_IMPORT_ONLY") != "1"
+    and os.environ.get("OPENSWARM_DISABLE_TEMPLATE_WARM_CACHE") != "1"
+):
+    # Importing the backend stays side-effect free: the App Builder's warm caches (template node_modules + backend venv) are populated by a background task the first successful /api/health/check schedules, so a venv build and a pip install cannot compete with the server's own start-up. OPENSWARM_BACKEND_IMPORT_ONLY=1 is the shell's import probe; OPENSWARM_DISABLE_TEMPLATE_WARM_CACHE=1 is for rigs that never build an app.
+    from backend.apps.outputs.view_builder_templates import warm_cache_in_background
+
+    set_ready_background_task(warm_cache_in_background)
 from backend.apps.outputs.versions_routes import output_versions
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.swarm.swarm import swarm
