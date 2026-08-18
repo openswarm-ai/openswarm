@@ -631,6 +631,12 @@ const DashboardViewCard: React.FC<Props> = ({
   const dragTy = dragging ? displayY - cardY : 0;
 
   const dockActive = !!dockRect && !dragging && !localResize && !isTiled && !isMinimized;
+  // Collapsed parent = the app tucks under the pill as a 320px miniature, EVERY stage, no shadow;
+  // the same contract BrowserCard carries (Eric's screenshots: a full-size app half over the pill).
+  const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !isTiled && !isMinimized;
+  const followScale = Math.min(1, 320 / displayW);
+  const followX = followsParent && dockParentCard ? dockParentCard.x : null;
+  const followY = followsParent && dockParentCard ? dockParentCard.y + 52 : null;
   const tiledSize = useTiledCard({ cardId: cardKey, zone: tileZone, active: !isMinimized, originX: displayX, originY: displayY, getCamera: getCanvasState });
 
   // The old 8-icon header cluster, demoted behind one kebab: view switcher, new window, toolbar
@@ -700,15 +706,15 @@ const DashboardViewCard: React.FC<Props> = ({
         // uniform transform centered in the chat's slot, so the app never reflows and agent clicks
         // stay valid. Only `left` was ported originally, so a docked app rendered at the slot's x
         // with its own y and FULL size, a giant overlay covering the chat it lives in (ENG-324).
-        left: isMinimized ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardX : displayX)),
-        top: isMinimized ? -100000 : (dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardY : displayY)),
+        left: isMinimized ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followX ?? (dragging ? cardX : displayX))),
+        top: isMinimized ? -100000 : (dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followY ?? (dragging ? cardY : displayY))),
         width: tiledSize ? tiledSize.width : displayW,
         height: tiledSize ? tiledSize.height : displayH,
-        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : undefined),
-        transformOrigin: tiledSize || dockActive ? '0 0' : undefined,
-        borderRadius: isFullscreen ? '12px' : `${c.radius.lg}px`,
+        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)${followsParent ? ` scale(${followScale})` : ''}` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : followsParent ? `scale(${followScale})` : undefined),
+        transformOrigin: tiledSize || dockActive || followsParent ? '0 0' : undefined,
+        borderRadius: isFullscreen ? '12px' : followsParent ? `${Math.round(12 / followScale)}px` : `${c.radius.lg}px`,
         // Docked = an embedded block, not a floating window (same call as BrowserCard): glow and shadow read as a detached card pasted over the chat.
-        border: dockActive
+        border: dockActive || followsParent
           ? `1px solid ${c.border.medium}`
           : isHighlighted
           ? `2px solid ${c.accent.primary}`
@@ -718,7 +724,7 @@ const DashboardViewCard: React.FC<Props> = ({
               ? `2px solid ${c.accent.primary}`
               : isSelected ? '2px solid #3b82f6' : `1px solid ${c.border.medium}`,
         bgcolor: c.bg.surface,
-        boxShadow: dockActive
+        boxShadow: dockActive || followsParent
           ? 'none'
           : isHighlighted
           ? `0 0 0 3px ${c.accent.primary}50, 0 0 20px ${c.accent.primary}35, 0 0 40px ${c.accent.primary}15`
