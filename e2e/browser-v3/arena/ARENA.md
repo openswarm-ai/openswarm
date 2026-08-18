@@ -1190,3 +1190,19 @@ full app (Electron frontend + backend + ws_manager) pointed at the self-hosted s
 integration project, not a headless run. Honest final: research/generic-harness numbers
 (MiniWoB/CompWoB/WebArena/writes) = benchmark harness; product write capability = live-proven,
 not cheaply benchmarkable headless. The arena was never the product; it was the fair-scoring proxy.
+
+## Product-write measurement attempt (2026-08-17): harness found, stack won't boot headless
+GOOD NEWS: the exact reproducible product-write harness ALREADY EXISTS -- e2e/browser-v3/vs_bench.py
+runs "one OpenSwarm trial through its REAL dispatch path, verified by reading the card back", head-
+to-head vs browser-use, on COOPERATIVE demo editors from bench.py (quilljs playground, tinymce,
+ckeditor, codemirror -- "write X in the editor"): safe, no-account, low-risk live writes, the exact
+class the research recommended. This is the honest product-write number, NOT the stripped arena's
+7-14%. BLOCKER: it needs the app stack at :8326, which won't boot in this autonomous session --
+run.sh backend dep-install FAILED ("Failed to install Python dependencies"), the backend .venv
+can't import backend.main, and browser cards need Electron (display + logged-in session) anyway.
+CONFIRMS the architecture finding: the product's write capability is welded to the running app; it
+cannot be measured from a stripped headless harness -- which is precisely why it is live-proven and
+why the arena number understates it. HANDOFF: with the user's app running (their working dev env
+handles deps/Electron/login), `python e2e/browser-v3/vs_bench.py` yields the real product-write
+number + a browser-use head-to-head, verified by readback, on the cooperative editors. That is the
+one measurement that fairly scores the shipped product's writes.
