@@ -530,23 +530,38 @@ async def browser_agent_run(request: Request):
         pre_selected_browser_ids=pre_selected_browser_ids,
         parent_session_id=parent_session_id or None,
     ))
+
     # The caller is the per-session MCP sidecar. If it dies mid-run (the disconnect class of
     # ENG-327/303), nobody can ever read this result, yet the orphaned run kept driving the card
     # while the parent's recovery re-dispatched onto it: two drivers, one wedged browser (ENG-338).
-    while True:
-        done, p_pending = await asyncio.wait({run_task}, timeout=2.0)
-        if done:
-            return JSONResponse({"results": run_task.result()})
-        if await request.is_disconnected():
-            run_task.cancel()
-            try:
-                await run_task
-            except (asyncio.CancelledError, Exception):
-                pass
-            logger.warning(
-                f"[browser-agent] caller (sidecar) for session {parent_session_id or '?'} disconnected mid-run; "
-                "aborted the orphaned browser run so the card is free for the retry")
-            return JSONResponse({"error": "caller disconnected; browser run aborted"}, status_code=499)
+    # Detection is a HEARTBEAT WRITE, not is_disconnected(): a dead sidecar half-closes (FIN) and
+    # uvicorn never flags that as a disconnect (packaged drill proved the run kept driving 40s+),
+    # but a write to the dead socket fails within one RST round-trip and cancels the stream, whose
+    # finally aborts the run. Leading whitespace is legal JSON, so the sidecar's json.loads is fine.
+    async def p_stream_with_heartbeat():
+        try:
+            while True:
+                done, p_pending = await asyncio.wait({run_task}, timeout=2.0)
+                if done:
+                    try:
+                        yield json.dumps({"results": run_task.result()}).encode()
+                    except Exception as p_run_err:
+                        yield json.dumps({"error": str(p_run_err)}).encode()
+                    return
+                yield b" "
+        finally:
+            if not run_task.done():
+                run_task.cancel()
+                try:
+                    await run_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                logger.warning(
+                    f"[browser-agent] caller (sidecar) for session {parent_session_id or '?'} disconnected mid-run; "
+                    "aborted the orphaned browser run so the card is free for the retry")
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(p_stream_with_heartbeat(), media_type="application/json")
 
 
 # Allowlisted social platforms whose own-session MCP shims may borrow partition cookies. The allowlist is the real scope: even an authenticated localhost caller can only ever read these sites' cookies, never an arbitrary domain, so this can't become a general cookie-theft oracle.

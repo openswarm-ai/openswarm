@@ -1,9 +1,9 @@
 """ENG-338: a browser run whose sidecar caller died must be cancelled, not orphaned.
 
-The MCP disconnects themselves are fixed (ENG-303/327), but WHEN one happens the backend used to
-keep driving the browser card with a result nobody could ever read, while the parent's stage-3
-recovery re-dispatched onto the same card: two drivers, one wedged browser. The route now watches
-its own client and aborts the run the moment the caller is gone."""
+The first fix polled request.is_disconnected(), and the packaged drill proved that NEVER fires on
+real uvicorn when the sidecar half-closes (the run kept driving 40s after the sever). The seal is
+now a heartbeat STREAM: a write to the dead socket fails, the generator is closed, and its finally
+cancels the run. These tests drive the generator directly, both directions."""
 import asyncio
 
 import pytest
@@ -11,22 +11,13 @@ import pytest
 from backend.main import browser_agent_run
 
 
-class P_DeadCallerRequest:
-    """Request stub: valid body, but the client is already gone."""
-
-    def __init__(self):
-        self.disconnect_polls = 0
-
+class P_Req:
     async def json(self):
         return {"tasks": [{"task": "look at example.com"}], "parent_session_id": "s1"}
 
-    async def is_disconnected(self):
-        self.disconnect_polls += 1
-        return True
-
 
 @pytest.mark.asyncio
-async def test_a_dead_caller_cancels_the_run_instead_of_orphaning_it(monkeypatch):
+async def test_closing_the_stream_mid_run_cancels_the_run(monkeypatch):
     state = {"cancelled": False, "started": False}
 
     async def p_never_ending(**p_kw):
@@ -39,25 +30,30 @@ async def test_a_dead_caller_cancels_the_run_instead_of_orphaning_it(monkeypatch
 
     import backend.apps.agents.browser.browser_agent as p_ba
     monkeypatch.setattr(p_ba, "run_browser_agents", p_never_ending)
-    req = P_DeadCallerRequest()
-    resp = await browser_agent_run(req)
-    assert resp.status_code == 499
+    resp = await browser_agent_run(P_Req())
+    gen = resp.body_iterator
+    first = await gen.__anext__()
+    assert first == b" ", "pending run must heartbeat whitespace"
+    # The dead-socket path: uvicorn closes the generator when a write fails.
+    await gen.aclose()
     assert state["started"] is True
     assert state["cancelled"] is True, "the orphaned run must be cancelled, not left driving the card"
-    assert req.disconnect_polls >= 1
 
 
 @pytest.mark.asyncio
-async def test_a_live_caller_gets_the_results_untouched(monkeypatch):
+async def test_a_live_caller_gets_the_results_as_valid_json(monkeypatch):
     async def p_quick(**p_kw):
+        await asyncio.sleep(0)
         return [{"summary": "done"}]
 
-    class P_LiveRequest(P_DeadCallerRequest):
-        async def is_disconnected(self):
-            return False
+    import json
 
     import backend.apps.agents.browser.browser_agent as p_ba
     monkeypatch.setattr(p_ba, "run_browser_agents", p_quick)
-    resp = await browser_agent_run(P_LiveRequest())
-    assert resp.status_code == 200
-    assert b"done" in resp.body
+    resp = await browser_agent_run(P_Req())
+    chunks = []
+    async for c in resp.body_iterator:
+        chunks.append(c)
+    body = b"".join(chunks)
+    parsed = json.loads(body)
+    assert parsed["results"][0]["summary"] == "done"
