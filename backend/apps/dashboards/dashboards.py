@@ -1,11 +1,13 @@
 import json
 import os
 import logging
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 from uuid import uuid4
 
 from backend.config.Apps import SubApp
+from backend.apps.dashboards import dashboard_runtime
 from backend.apps.dashboards.models import (
     Dashboard,
     DashboardCreate,
@@ -23,6 +25,25 @@ from backend.config.paths import DASHBOARDS_DIR as DATA_DIR, SESSIONS_DIR, DASHB
 from backend.config.json_store import read_json_or_none, atomic_write_json
 
 OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
+# One lock around every read-modify-write of a dashboard file: layout saves, renames, thumbnail writes, delete and duplicate arrive concurrently from the renderer, and two writers interleaving on the same file lost one of them.
+p_dashboard_lifecycle_lock = threading.RLock()
+
+
+async def p_rollback_duplicated_sessions(
+    authority: dashboard_runtime.SessionAuthority, duplicated_sessions
+) -> None:
+    for _, session in reversed(duplicated_sessions):
+        try:
+            await authority.delete_session(session.id)
+        except Exception:
+            logger.exception("Failed to roll back duplicated session %s", session.id)
+            try:
+                authority.purge_session_memory(session.id)
+                session_path = os.path.join(SESSIONS_DIR, f"{session.id}.json")
+                if os.path.exists(session_path):
+                    os.remove(session_path)
+            except Exception:
+                logger.exception("Fallback rollback failed for duplicated session %s", session.id)
 
 
 def load_all() -> list[Dashboard]:
@@ -43,21 +64,24 @@ def load_all() -> list[Dashboard]:
 
 
 def save(dashboard: Dashboard):
-    atomic_write_json(os.path.join(DATA_DIR, f"{dashboard.id}.json"), dashboard.model_dump(mode="json"))
+    with p_dashboard_lifecycle_lock:
+        atomic_write_json(os.path.join(DATA_DIR, f"{dashboard.id}.json"), dashboard.model_dump(mode="json"))
 
 
 def load(dashboard_id: str) -> Dashboard:
-    path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
-    data = read_json_or_none(path)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Dashboard not found")
-    return Dashboard(**data)
+    with p_dashboard_lifecycle_lock:
+        path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
+        data = read_json_or_none(path)
+        if data is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return Dashboard(**data)
 
 
 def p_delete(dashboard_id: str):
-    path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
+    with p_dashboard_lifecycle_lock:
+        path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def migrate_if_needed():
@@ -135,8 +159,7 @@ async def create_dashboard(body: DashboardCreate):
     dashboard = Dashboard(name=body.name)
     save(dashboard)
     try:
-        from backend.apps.service.analytics.client import track_dashboard_event
-        track_dashboard_event(dashboard_id=dashboard.id, action="create")
+        dashboard_runtime.DEFAULT_DASHBOARD_TELEMETRY.dashboard_event(dashboard_id=dashboard.id, action="create")
     except Exception:
         pass
     return dashboard.model_dump(mode="json")
@@ -306,10 +329,8 @@ async def generate_name(dashboard_id: str):
     if not dashboard.auto_named and dashboard.name != "Untitled Dashboard":
         return {"name": dashboard.name, "auto_named": dashboard.auto_named}
 
-    from backend.apps.agents.agent_manager import agent_manager
-
     prompts = []
-    for session in agent_manager.sessions.values():
+    for session in dashboard_runtime.DEFAULT_SESSION_AUTHORITY.live_sessions().values():
         if getattr(session, "dashboard_id", None) != dashboard_id:
             continue
         for msg in session.messages:
@@ -321,13 +342,11 @@ async def generate_name(dashboard_id: str):
         return {"name": dashboard.name, "auto_named": dashboard.auto_named}
 
     fallback = " ".join(prompts[0].split()[:4])[:36] or "Untitled Dashboard"
+    naming = dashboard_runtime.DEFAULT_AUX_NAMING
     try:
-        from backend.apps.settings.settings import load_settings
-        from backend.apps.settings.credentials import get_anthropic_client_for_model
-        from backend.apps.agents.providers.registry import resolve_aux_model
-        global_settings = load_settings()
-        aux_model, p_aux_base = await resolve_aux_model(global_settings, preferred_tier="haiku")
-        client = get_anthropic_client_for_model(global_settings, aux_model)
+        global_settings = naming.load_settings()
+        aux_model, p_aux_base = await naming.resolve_aux_model(global_settings, preferred_tier="haiku")
+        client = naming.client_for_model(global_settings, aux_model)
 
         # Mirrors generate_title's hardening: the tasks are inert text to LABEL, never answer, or the aux model happily replies with a markdown essay that becomes the title.
         system = (
@@ -342,17 +361,16 @@ async def generate_name(dashboard_id: str):
             "<tasks>\n" + "\n".join(f"- {p}" for p in prompts) + "\n</tasks>"
         )
 
-        from backend.apps.agents.core.aux_llm import clean_short_label, aux_max_tokens_for
         chunks: list[str] = []
         async with client.messages.stream(
             model=aux_model,
-            max_tokens=aux_max_tokens_for(aux_model),
+            max_tokens=naming.aux_max_tokens_for(aux_model),
             system=system,
             messages=[{"role": "user", "content": user_content}],
         ) as stream:
             async for text in stream.text_stream:
                 chunks.append(text)
-        generated = clean_short_label("".join(chunks))
+        generated = naming.clean_short_label("".join(chunks))
         if generated:
             fallback = generated
     except Exception as e:
@@ -365,7 +383,9 @@ async def generate_name(dashboard_id: str):
     return {"name": dashboard.name, "auto_named": True}
 
 
-def strip_orphan_session_cards(data: dict) -> None:
+def strip_orphan_session_cards(
+    data: dict, authority: dashboard_runtime.SessionAuthority | None = None
+) -> None:
     """Drop layout cards (and expanded ids) whose agent session no longer exists
     anywhere, in memory OR on disk. The frontend mounts an AgentChat per card and
     GETs its session; a card pointing at a vanished session (e.g. an empty
@@ -375,8 +395,7 @@ def strip_orphan_session_cards(data: dict) -> None:
     cards and nothing else. Filtering the RESPONSE (never the stored file) is
     non-destructive: a wrong check can only hide a card for one response, not
     delete it. Drafts have no backend session yet, so they're always kept."""
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.manager.session.session_store import load_session_data
+    live = authority or dashboard_runtime.DEFAULT_SESSION_AUTHORITY
     layout = data.get("layout")
     if not isinstance(layout, dict):
         return
@@ -385,9 +404,9 @@ def strip_orphan_session_cards(data: dict) -> None:
         return
 
     def gone(sid: str) -> bool:
-        if sid.startswith("draft-") or sid in agent_manager.sessions:
+        if sid.startswith("draft-") or sid in live.live_sessions():
             return False
-        return load_session_data(sid) is None
+        return live.load_session_data(sid) is None
 
     orphans = [sid for sid in cards if gone(sid)]
     for sid in orphans:
@@ -408,26 +427,29 @@ async def get_dashboard(dashboard_id: str):
 
 @dashboards.router.put("/{dashboard_id}")
 async def update_dashboard(dashboard_id: str, body: DashboardUpdate):
-    dashboard = load(dashboard_id)
-    if body.name is not None:
-        dashboard.name = body.name
-        dashboard.auto_named = False
-    if body.layout is not None:
-        dashboard.layout = body.layout
-    now = datetime.now()
-    if body.thumbnail is not None:
-        dashboard.thumbnail = body.thumbnail
-        dashboard.preview_signature = body.preview_signature
-        # Only a real screenshot write moves the sort key; layout/rename saves don't reorder.
-        dashboard.preview_updated_at = now
-    dashboard.updated_at = now
-    save(dashboard)
+    with p_dashboard_lifecycle_lock:
+        dashboard = load(dashboard_id)
+        if body.name is not None:
+            dashboard.name = body.name
+            dashboard.auto_named = False
+        if body.layout is not None:
+            dashboard.layout = body.layout
+        now = datetime.now()
+        if body.thumbnail is not None:
+            dashboard.thumbnail = body.thumbnail
+            dashboard.preview_signature = body.preview_signature
+            # Only a real screenshot write moves the sort key; layout/rename saves don't reorder.
+            dashboard.preview_updated_at = now
+        dashboard.updated_at = now
+        save(dashboard)
     return dashboard.model_dump(mode="json")
 
 
 @dashboards.router.delete("/{dashboard_id}")
 async def delete_dashboard(dashboard_id: str):
-    load(dashboard_id)
+    with p_dashboard_lifecycle_lock:
+        load(dashboard_id)
+        p_delete(dashboard_id)
 
     if os.path.exists(SESSIONS_DIR):
         for fname in os.listdir(SESSIONS_DIR):
@@ -442,21 +464,20 @@ async def delete_dashboard(dashboard_id: str):
             except Exception:
                 logger.warning(f"Failed to read/delete session file {fname}")
 
-    from backend.apps.agents.agent_manager import agent_manager
+    authority = dashboard_runtime.DEFAULT_SESSION_AUTHORITY
     to_remove = [
-        sid for sid, sess in agent_manager.sessions.items()
+        sid for sid, sess in authority.live_sessions().items()
         if getattr(sess, "dashboard_id", None) == dashboard_id
     ]
     for sid in to_remove:
         try:
-            await agent_manager.delete_session(sid)
+            await authority.delete_session(sid)
         except Exception:
             logger.warning(f"Failed to delete active session {sid} during dashboard deletion")
 
     p_delete(dashboard_id)
     try:
-        from backend.apps.service.analytics.client import track_dashboard_event
-        track_dashboard_event(dashboard_id=dashboard_id, action="delete")
+        dashboard_runtime.DEFAULT_DASHBOARD_TELEMETRY.dashboard_event(dashboard_id=dashboard_id, action="delete")
     except Exception:
         pass
     return {"ok": True}
@@ -469,8 +490,7 @@ async def duplicate_dashboard(dashboard_id: str):
     new_id = uuid4().hex
     now = datetime.now().isoformat()
 
-    from backend.apps.agents.agent_manager import agent_manager
-    from backend.apps.agents.manager.session.session_store import save_session
+    authority = dashboard_runtime.DEFAULT_SESSION_AUTHORITY
 
     source_layout = source_data.get("layout", {}) or {}
     source_browser_cards = source_layout.get("browser_cards", {}) or {}
@@ -484,7 +504,7 @@ async def duplicate_dashboard(dashboard_id: str):
         new_browser_cards[new_bid] = new_card
 
     candidate_ids: set[str] = set()
-    for sid, sess in agent_manager.sessions.items():
+    for sid, sess in authority.live_sessions().items():
         if getattr(sess, "dashboard_id", None) == dashboard_id:
             candidate_ids.add(sid)
     if os.path.exists(SESSIONS_DIR):
@@ -499,7 +519,7 @@ async def duplicate_dashboard(dashboard_id: str):
     duplicated_sessions = []  # (old_id, new_session)
     for old_sid in candidate_ids:
         try:
-            new_sess = await agent_manager.duplicate_session(old_sid, dashboard_id=new_id)
+            new_sess = await authority.duplicate_session(old_sid, dashboard_id=new_id)
         except Exception:
             logger.warning(f"Failed to duplicate session {old_sid} during dashboard duplication", exc_info=True)
             continue
@@ -507,7 +527,7 @@ async def duplicate_dashboard(dashboard_id: str):
         duplicated_sessions.append((old_sid, new_sess))
 
     for old_sid, new_sess in duplicated_sessions:
-        source_sess = agent_manager.sessions.get(old_sid)
+        source_sess = authority.live_sessions().get(old_sid)
         old_browser_id = getattr(source_sess, "browser_id", None) if source_sess else None
         old_parent_sid = getattr(source_sess, "parent_session_id", None) if source_sess else None
         if old_browser_id is None or old_parent_sid is None:
@@ -520,7 +540,7 @@ async def duplicate_dashboard(dashboard_id: str):
             new_sess.browser_id = browser_id_remap[old_browser_id]
         if old_parent_sid and old_parent_sid in session_id_remap:
             new_sess.parent_session_id = session_id_remap[old_parent_sid]
-        save_session(new_sess.id, new_sess.model_dump(mode="json"))
+        authority.save_session(new_sess.id, new_sess.model_dump(mode="json"))
 
     new_cards: dict[str, dict] = {}
     for old_sid, card in source_cards.items():
@@ -558,11 +578,16 @@ async def duplicate_dashboard(dashboard_id: str):
         "updated_at": now,
         "layout": new_layout,
     }
-    atomic_write_json(os.path.join(DATA_DIR, f"{new_id}.json"), new_dashboard)
+    try:
+        with p_dashboard_lifecycle_lock:
+            load(dashboard_id)
+            atomic_write_json(os.path.join(DATA_DIR, f"{new_id}.json"), new_dashboard)
+    except Exception:
+        await p_rollback_duplicated_sessions(authority, duplicated_sessions)
+        raise
 
     try:
-        from backend.apps.service.analytics.client import track_dashboard_event
-        track_dashboard_event(dashboard_id=new_id, action="create")
+        dashboard_runtime.DEFAULT_DASHBOARD_TELEMETRY.dashboard_event(dashboard_id=new_id, action="create")
     except Exception:
         pass
 
