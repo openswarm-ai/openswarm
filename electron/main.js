@@ -2004,8 +2004,31 @@ function dirSizeMb(dir) {
   }
 }
 
+// The updater cache keeps the downloaded installer AFTER it has been applied (589MB measured, a
+// 308MB zip for the version already running). A pending package at or below the running version
+// can never be installed again, so it is pure dead weight; anything NEWER stays untouched.
+function sweepStaleUpdaterCache() {
+  try {
+    const semver = require('semver');
+    const pendingDir = path.join(app.getPath('home'), 'Library', 'Caches', 'openswarm-updater', 'pending');
+    if (process.platform !== 'darwin' || !fs.existsSync(pendingDir)) return;
+    const cur = app.getVersion();
+    for (const f of fs.readdirSync(pendingDir)) {
+      const m = f.match(/OpenSwarm-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/);
+      if (!m || !semver.valid(m[1])) continue;
+      if (semver.lte(m[1], cur)) {
+        fs.rmSync(path.join(pendingDir, f), { force: true });
+        console.log(`[cache] dropped applied update package ${f} (running ${cur})`);
+      }
+    }
+  } catch (err) {
+    console.warn('[cache] sweepStaleUpdaterCache failed:', err && err.message);
+  }
+}
+
 async function sweepOversizedCaches() {
   try {
+    sweepStaleUpdaterCache();
     const root = app.getPath('userData');
     const before = dirSizeMb(path.join(root, 'Partitions')) + dirSizeMb(path.join(root, 'Code Cache'));
     if (before < DISK_CACHE_CAP_MB) {
