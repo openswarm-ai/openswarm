@@ -1064,7 +1064,7 @@ const AgentCard: React.FC<Props> = ({
             position: 'relative', touchAction: 'none', userSelect: 'none',
             pt: '50px', mt: '-50px', pointerEvents: 'none',
             '& > *': { pointerEvents: 'auto' },
-            '&:hover .osw-pill-lights': { opacity: 1, pointerEvents: 'auto' },
+            '&:hover .osw-pill-lights': { opacity: 1, visibility: 'visible', pointerEvents: 'auto' },
           }}
         >
           {/* Fully above the capsule: at top -8 the 40px round chip hid behind the ~34px pill and hover revealed only its crown, which read as a deformed corner plus a stray shadow (Eric, 2026-08-14). No osw-card class: wearing it dressed this chip in card selection/shadow chrome. */}
@@ -1075,7 +1075,8 @@ const AgentCard: React.FC<Props> = ({
               ...ARC_CHIP_SX,
               position: 'absolute', top: -44, left: 4, zIndex: 2, background: 'rgba(24,14,32,0.85)',
               backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-              opacity: 0, pointerEvents: 'none', transition: 'opacity 140ms ease',
+              // visibility, not just opacity: Chromium paints a backdrop-filter's blur patch even at opacity 0 once the layer is promoted (heavy artifact below promotes it), which was the ghost smudge at the pill's top-left (Eric x3).
+              opacity: 0, visibility: 'hidden', pointerEvents: 'none', transition: 'opacity 140ms ease, visibility 140ms ease',
             }}
           >
             <WindowControls
