@@ -6,11 +6,12 @@ import sys
 import tempfile
 from dataclasses import dataclass
 
-from backend.apps.outputs.code_safety import ALLOWED_MODULES, validate_code_safety
+from backend.sandbox_policy import SANDBOX_POLICY
+from backend.apps.outputs.code_safety import validate_code_safety
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_SECONDS = 30
+TIMEOUT_SECONDS = SANDBOX_POLICY.timeout_seconds
 
 # Env vars we always scrub from the subprocess, approved or not. These are the keys an attacker would actually want; install token, provider API keys, cloud credentials. Everything else is local-machine convenience.
 P_SCRUBBED_ENV_KEYS = frozenset({
@@ -27,7 +28,18 @@ P_SCRUBBED_ENV_KEYS = frozenset({
     "STRIPE_API_KEY",
     "STRIPE_SECRET_KEY",
     "GITHUB_TOKEN",
+    # Hosted deployment secrets (control store, edge storage, database): approved code on a hosted backend must never see them either.
+    "DATABASE_URL",
+    "PGPASSWORD",
+    "POSTGRES_PASSWORD",
+    "OPENSWARM_EDGE_STORAGE_PATH",
 })
+# Whole families a hosting deployment injects (lent provider keys, demo passwords, edge auth): scrubbed by prefix so a new secret in the family never needs a list entry.
+P_SCRUBBED_ENV_PREFIXES = ("OPENSWARM_DEMO_", "OPENSWARM_EDGE_", "EDGE_AUTH_")
+
+
+def p_env_is_secret(key: str) -> bool:
+    return key in P_SCRUBBED_ENV_KEYS or key.startswith(P_SCRUBBED_ENV_PREFIXES)
 
 
 def exec_env(approved: bool = False) -> dict:
@@ -47,7 +59,7 @@ def exec_env(approved: bool = False) -> dict:
     install token or provider API keys.
     """
     if approved:
-        env = {k: v for k, v in os.environ.items() if k not in P_SCRUBBED_ENV_KEYS}
+        env = {k: v for k, v in os.environ.items() if not p_env_is_secret(k)}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         # Force UTF-8 even if the parent somehow lacked it (dev mode where Electron didn't inject PYTHONUTF8). Without this, a child reading non-ASCII stdin/files on a cp1252 Windows machine raises UnicodeDecodeError, the "works on my laptop, not theirs" failure.
         env["PYTHONUTF8"] = "1"
@@ -69,28 +81,6 @@ def exec_env(approved: bool = False) -> dict:
     return env
 
 
-# The subprocess bootstrap: capture stdout, read the input, and hand the code a `result` to fill. Bound objects rather than modules carry the answer back out, so the hardening below can take the modules away.
-P_PREAMBLE = (
-    "import json, sys, io, builtins\n"
-    "p_stdout = sys.stdout\n"
-    "p_capture = io.StringIO()\n"
-    "sys.stdout = p_capture\n"
-    "input_data = json.loads(sys.stdin.read())\n"
-    "result = {}\n"
-)
-# Warm the allowlist BEFORE scrubbing builtins, because half the stdlib borrows the builtins the scrub deletes while it loads (tokenize does `from builtins import open`, which is how `import dataclasses` dies). Warm imports are cache hits, so gate-passing code never touches the loader again. Then the module handles go: leaving `sys` bound handed gate-passing code a live `sys.modules['os']` with no import statement in sight. exec/eval/compile/__import__ stay put whatever we'd like: the import statement, the loader and namedtuple all run on them, and calling them by name is a static-gate warning anyway.
-P_SANDBOX_HARDENING = (
-    f"for p_name in {tuple(sorted(ALLOWED_MODULES))!r}:\n"
-    "    try: __import__(p_name)\n"
-    "    except ImportError: pass\n"
-    "for p_name in ('open','input','breakpoint','exit','quit'):\n"
-    "    try: delattr(builtins, p_name)\n"
-    "    except AttributeError: pass\n"
-    "del sys, io, builtins, p_name\n"
-)
-P_POSTAMBLE = (
-    "\np_stdout.write(json.dumps({\"__stdout__\": p_capture.getvalue(), \"__result__\": result}))\n"
-)
 
 
 @dataclass
@@ -112,21 +102,23 @@ async def execute_backend_code(
     Security boundaries (defense in depth; none alone is sufficient):
       1. The static gate in code_safety.py, on every run that isn't approved.
       2. Subprocess cwd = fresh temp dir (not the OpenSwarm process cwd).
-      3. Subprocess env strips PATH, all *TOKEN / *_API_KEY inheritance.
-      4. Preamble scrubs the I/O builtins and drops the module handles it
-         needed, so gate-passing code starts with no reachable module.
+      3. Subprocess env is built from an explicit runtime allowlist.
+      4. SANDBOX_POLICY's preamble warms the allowlist, scrubs the I/O builtins and
+         drops the module handles it needed, so gate-passing code starts with no
+         reachable module (AST-bypass tricks land on nothing).
       5. 30s wall-clock timeout, killed on overrun.
 
     `approved=True` means a user saw the warnings and clicked Run Anyway, and
     it relaxes 1, 3 and 4 together. It is the ONLY thing that relaxes them: a
     caller that has already run the gate itself still gets the sandbox, because
-    "we checked" must never be the reason the walls come down.
+    "we checked" must never be the reason the walls come down. (Decision
+    2026-08-16: upstream's App Builder semantics; the edge never approves.)
     """
 
     if not approved:
         validate_code_safety(code)
 
-    wrapper = P_PREAMBLE + ("" if approved else P_SANDBOX_HARDENING) + code + P_POSTAMBLE
+    wrapper = SANDBOX_POLICY.wrap(code, approved=approved)
 
     with tempfile.TemporaryDirectory(prefix="openswarm-exec-") as workdir:
         proc = await asyncio.create_subprocess_exec(

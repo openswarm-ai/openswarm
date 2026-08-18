@@ -18,6 +18,8 @@ async def test_agent_create_registers_named_output_and_broadcasts(tmp_path, monk
     import backend.apps.outputs.outputs as outputs_mod
     monkeypatch.setattr(outputs_mod, "WORKSPACE_DIR", str(tmp_path / "ws"))
     monkeypatch.setattr(outputs_mod, "DATA_DIR", str(tmp_path / "data"))
+    import backend.apps.outputs.view_builder_templates as template_mod
+    monkeypatch.setattr(template_mod, "ensure_warm_cache", lambda: None)
     # workspace_io persists Output rows into its own DATA_DIR; isolate it too.
     import backend.apps.outputs.workspace_io as wio
     monkeypatch.setattr(wio, "DATA_DIR", str(tmp_path / "data"))

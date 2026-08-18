@@ -1,5 +1,5 @@
 """Pre-publish security scan: a free AST pass (reuses the executor's
-`get_code_warnings`) plus a best-effort aux-LLM semantic pass, both on the user's
+`get_code_warnings`) plus a required aux-LLM semantic pass, both on the user's
 OWN creds so it costs us nothing and the code never leaves the machine until they
 ship. The JSON shape matches the frontend `ReviewSummary`.
 
@@ -106,21 +106,22 @@ def p_ast_findings(src: dict[str, str]) -> tuple[list[str], list[str]]:
     return findings, scanned
 
 
-async def llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
-    """Aux-tier semantic pass. Best-effort: if no aux model is configured or the
-    call fails, return clean so the AST pass still gates. Runs on the user's creds."""
+async def llm_findings(src: dict[str, str], settings) -> tuple[list[str], str, bool]:
+    """Run the aux-tier semantic pass on the user's credentials.
+
+    The final boolean reports whether the review completed successfully. Public
+    publishing treats an incomplete review as a security block and does not memoize
+    it, allowing a later attempt to recover after credentials or the provider do.
+    """
     blob = p_scan_blob(src)
     if not blob.strip():
-        return [], "clean"
+        return ["No supported source files were available for security review."], "block", False
     from backend.apps.agents.providers.registry import resolve_aux_model
     from backend.apps.settings.credentials import get_anthropic_client_for_model
     from backend.apps.agents.core.aux_llm import safe_resp_text
     try:
         model, p_base = await resolve_aux_model(settings, preferred_tier="haiku")
-    except Exception:
-        return [], "clean"
-    client = get_anthropic_client_for_model(settings, model)
-    try:
+        client = get_anthropic_client_for_model(settings, model)
         resp = await client.messages.create(
             model=model,
             max_tokens=1200,
@@ -128,9 +129,13 @@ async def llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
             messages=[{"role": "user", "content": blob}],
         )
     except Exception:
-        logger.exception("publish LLM scan call failed; AST-only result stands")
-        return [], "clean"
-    text = safe_resp_text(resp).strip()
+        logger.exception("publish LLM security scan unavailable")
+        return ["Automated security review could not run; public publishing is blocked."], "block", False
+    try:
+        text = safe_resp_text(resp).strip()
+    except Exception:
+        logger.exception("publish LLM security scan returned an unreadable response")
+        return ["Automated security review returned an invalid result; public publishing is blocked."], "block", False
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -138,12 +143,14 @@ async def llm_findings(src: dict[str, str], settings) -> tuple[list[str], str]:
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, ValueError):
-        return [], "clean"
-    findings = [str(f) for f in parsed.get("findings", []) if str(f).strip()][:20]
-    severity = parsed.get("severity", "clean")
+        return ["Automated security review returned invalid JSON; public publishing is blocked."], "block", False
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("findings"), list):
+        return ["Automated security review returned an invalid result; public publishing is blocked."], "block", False
+    findings = [str(f) for f in parsed["findings"] if str(f).strip()][:20]
+    severity = parsed.get("severity")
     if severity not in ("clean", "warn", "block"):
-        severity = "warn" if findings else "clean"
-    return findings, severity
+        return ["Automated security review returned an invalid verdict; public publishing is blocked."], "block", False
+    return findings, severity, True
 
 
 async def scan_for_publish(output: Output, settings) -> PublishReview:
@@ -154,27 +161,27 @@ async def scan_for_publish(output: Output, settings) -> PublishReview:
         memo.move_to_end(key)
         return merge_capability(output, cached)
     ast_findings, scanned = p_ast_findings(src)
-    llm_list, llm_sev = await llm_findings(src, settings)
+    llm_list, llm_sev, llm_complete = await llm_findings(src, settings)
     findings = ast_findings + llm_list
     verdict: Literal["clean", "warn", "block"] = "clean"
     if findings:
         verdict = "warn"
-    if llm_sev == "block":
+    if ast_findings or llm_sev == "block" or not llm_complete:
         verdict = "block"
     review = PublishReview(
         verdict=verdict,
         findings=findings,
         scanned_files=scanned or sorted(src.keys()),
     )
-    memo[key] = review
-    memo.move_to_end(key)
-    while len(memo) > P_MEMO_MAX:
-        memo.popitem(last=False)
+    if llm_complete:
+        memo[key] = review
+        memo.move_to_end(key)
+        while len(memo) > P_MEMO_MAX:
+            memo.popitem(last=False)
     return merge_capability(output, review)
 
 
 def quick_ast_gate(output: Output) -> list[str]:
-    """Cheap, free safety net used by /publish when force is not set: flags the
-    AST-visible 'runs code outside the sandbox' findings without an LLM call."""
+    """Return AST-visible findings for callers that need a cheap local preview."""
     findings, _ = p_ast_findings(collect_source(output))
     return findings

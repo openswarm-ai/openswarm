@@ -201,6 +201,13 @@ async def test_force_is_still_the_escape_hatch(p_ws_root, monkeypatch):
     monkeypatch.setattr(outputs_mod, "save", lambda _: None)
     monkeypatch.setattr(outputs_mod, "load_settings", lambda: None)
     monkeypatch.setattr(outputs_mod, "build_static", p_boom)
+    # Force skips CAPABILITY findings only; the security review itself is mandatory (an unavailable review is a block, force or not), so give it a clean pass here.
+    from backend.apps.outputs import publish_scan
+
+    async def p_clean_review(*args, **kwargs):
+        return [], "clean", True
+
+    monkeypatch.setattr(publish_scan, "llm_findings", p_clean_review)
 
     res = await outputs_mod.publish_output(PublishRequest(output_id=out.id, force=True))
 

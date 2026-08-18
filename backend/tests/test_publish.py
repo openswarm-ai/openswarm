@@ -114,14 +114,14 @@ def test_collect_bundle_webapp_dist_skips_symlink():
 def test_scan_for_publish_merges_ast():
     # Force the LLM pass to a deterministic no-op so the test is hermetic.
     async def p_no_llm(src, settings):
-        return [], "clean"
+        return [], "clean", True
     orig = publish_scan.llm_findings
     publish_scan.llm_findings = p_no_llm
     publish_scan.memo.clear()
     try:
         unsafe = Output(name="x", files={"backend.py": "import socket\nresult={}\n"})
         review = asyncio.run(publish_scan.scan_for_publish(unsafe, settings=object()))
-        assert review.verdict == "warn"
+        assert review.verdict == "block"
         assert any("socket" in f for f in review.findings)
 
         clean = Output(name="x", files={"index.html": "<html>hi</html>"})
@@ -139,7 +139,7 @@ def test_scan_memo_skips_second_llm_call():
 
     async def p_counting_llm(src, settings):
         calls["n"] += 1
-        return ["from the llm"], "warn"
+        return ["from the llm"], "warn", True
 
     orig = publish_scan.llm_findings
     publish_scan.llm_findings = p_counting_llm

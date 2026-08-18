@@ -10,22 +10,6 @@ from collections import deque, OrderedDict
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-
-def p_resolve_bash() -> str:
-    # Windows: Python's subprocess uses Windows-style PATH resolution and doesn't follow Git Bash's Unix-style entries like /mingw64/bin/..., so a bare "bash" call hits [WinError 2]. shutil.which goes through Windows PATHEXT lookup; fall back to the conventional Git for Windows install path so users without bash in their Windows PATH still work. POSIX: just return "bash" since the kernel finds it via PATH like any other exec.
-    found = shutil.which("bash")
-    if found:
-        return found
-    if sys.platform == "win32":
-        for candidate in (
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files\Git\usr\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-        ):
-            if os.path.exists(candidate):
-                return candidate
-    return "bash"
-
 from backend.apps.outputs.runtime_proc import (
     ERROR_PATTERNS,
     FRONTEND_BIND_POLL_INTERVAL,
@@ -49,6 +33,22 @@ from backend.apps.outputs.runtime_proc import (
 from backend.config.loop_local import loop_local
 from backend.config.paths import AUTH_TOKEN_FILE
 
+
+def p_resolve_bash() -> str:
+    # Windows: Python's subprocess uses Windows-style PATH resolution and doesn't follow Git Bash's Unix-style entries like /mingw64/bin/..., so a bare "bash" call hits [WinError 2]. shutil.which goes through Windows PATHEXT lookup; fall back to the conventional Git for Windows install path so users without bash in their Windows PATH still work. POSIX: just return "bash" since the kernel finds it via PATH like any other exec.
+    found = shutil.which("bash")
+    if found:
+        return found
+    if sys.platform == "win32":
+        for candidate in (
+            r"C:\Program Files\Git\bin\bash.exe",
+            r"C:\Program Files\Git\usr\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\bin\bash.exe",
+        ):
+            if os.path.exists(candidate):
+                return candidate
+    return "bash"
+
 logger = logging.getLogger(__name__)
 
 # Module-level lock so only ONE vite optimizeDeps runs at a time; must be acquired before manager.p_lock to avoid deadlock with manager.attach.
@@ -59,6 +59,9 @@ RESTART_SENTINEL_POLL_SECONDS = 1.0
 
 # The agent-facing restart handshake: the workspace's restart.sh touches this and the manager restarts the runtime, so agents never need an API token to bounce their own app.
 RESTART_SENTINEL_NAME = "restart-requested"
+
+# Bounds replay protection for out-of-order runtime stops while covering far more leases than one desktop session can reasonably create.
+MAX_ATTACHMENT_TOMBSTONES = 2048
 
 
 @dataclass
@@ -625,6 +628,9 @@ class AppRuntimeManager:
         # workspace_id → AppRuntime, currently has >=1 subscriber.
         self.runtimes: dict[str, AppRuntime] = {}
         self.p_attached: dict[str, int] = {}
+        self.p_legacy_attached: dict[str, int] = {}
+        self.p_attachment_leases: set[tuple[str, str]] = set()
+        self.p_attachment_tombstones: "OrderedDict[tuple[str, str], None]" = OrderedDict()
         # workspace_id → AppRuntime with no subscribers but still alive. OrderedDict gives O(1) move_to_end + popitem(last=False) for LRU semantics.
         self.idle_lru: "OrderedDict[str, AppRuntime]" = OrderedDict()
         # workspace key -> monotonic seconds when it was parked; drives the idle TTL sweep.
@@ -632,6 +638,10 @@ class AppRuntimeManager:
         self.p_lock = asyncio.Lock()
         # Public: tests cancel it during teardown.
         self.restart_watch_task: Optional[asyncio.Task] = None
+
+    def attachment_count(self, workspace_id: str, instance: int = 1) -> int:
+        """Return the current attachment count for runtime diagnostics."""
+        return self.p_attached.get(runtime_key(workspace_id, instance), 0)
 
     def p_ensure_restart_watcher(self) -> None:
         """Lazy-start the sentinel watcher on first attach; __init__ runs at import time, before any event loop exists."""
@@ -667,13 +677,25 @@ class AppRuntimeManager:
             except Exception:
                 logger.exception("restart-sentinel watcher tick failed")
 
-    async def attach(self, workspace_id: str, workspace_path: str, instance: int = 1) -> AppRuntime:
-        self.p_ensure_restart_watcher()
+    async def attach(
+        self,
+        workspace_id: str,
+        workspace_path: str,
+        instance: int = 1,
+        attachment_id: Optional[str] = None,
+    ) -> Optional[AppRuntime]:
         key = runtime_key(workspace_id, instance)
+        lease_key = (key, attachment_id) if attachment_id is not None else None
         revived = False
         # Defined here so every code path below leaves it bound; the revive-idle branch used to skip the assignment, leaving the post-lock `if dead is not None:` check throwing UnboundLocalError.
         dead: Optional[AppRuntime] = None
         async with self.p_lock:
+            if lease_key is not None:
+                if lease_key in self.p_attachment_tombstones:
+                    self.p_attachment_tombstones.move_to_end(lease_key)
+                    return self.runtimes.get(key) or self.idle_lru.get(key)
+                if lease_key in self.p_attachment_leases:
+                    return self.runtimes.get(key)
             rt = self.runtimes.get(key)
             if rt is None:
                 # Maybe the runtime is sitting idle in the LRU; revive it without paying the spawn cost again.
@@ -696,16 +718,30 @@ class AppRuntimeManager:
             else:
                 # Workspace paths shouldn't change for a given id, but if somehow they did (e.g. the user moved the workspace folder), trust the latest caller; they have the current truth.
                 rt.workspace_path = workspace_path
+            if lease_key is not None:
+                self.p_attachment_leases.add(lease_key)
+            else:
+                self.p_legacy_attached[key] = self.p_legacy_attached.get(key, 0) + 1
             self.p_attached[key] = self.p_attached.get(key, 0) + 1
-        if not revived and not rt.running and not rt.serve_static:
-            await rt.start()
-        # A serve-static runtime re-checks its world on every attach: an agent may have bound to the
-        # workspace since, or the dist may have gone stale; either flips it back to a real vite boot.
-        if rt.serve_static:
-            from backend.apps.outputs.static_serve import static_fresh, workspace_being_edited
-            if workspace_being_edited(rt.workspace_path) or not static_fresh(rt.workspace_path):
-                rt.serve_static = False
+        self.p_ensure_restart_watcher()
+        try:
+            if not revived and not rt.running and not rt.serve_static:
                 await rt.start()
+            # A serve-static runtime re-checks its world on every attach: an agent may have bound to the
+            # workspace since, or the dist may have gone stale; either flips it back to a real vite boot.
+            if rt.serve_static:
+                from backend.apps.outputs.static_serve import static_fresh, workspace_being_edited
+                if workspace_being_edited(rt.workspace_path) or not static_fresh(rt.workspace_path):
+                    rt.serve_static = False
+                    await rt.start()
+        except Exception:
+            # start() runs after the runtime and reference are published so
+            # concurrent subscribers can share the same startup. Undo only
+            # this call's reference for definitive startup failures. A
+            # cancelled request remains attached until the client's
+            # compensating detach arrives.
+            await asyncio.shield(self.p_rollback_failed_attach(key, rt, dead, lease_key))
+            raise
         # Stop any dead idle runtime outside the lock to avoid blocking.
         if dead is not None:
             try:
@@ -713,6 +749,46 @@ class AppRuntimeManager:
             except Exception:
                 logger.exception("failed to reap dead idle runtime %s", key)
         return rt
+
+    async def p_rollback_failed_attach(
+        self,
+        key: str,
+        rt: AppRuntime,
+        dead: Optional[AppRuntime],
+        lease_key: Optional[tuple[str, str]],
+    ) -> None:
+        orphaned = False
+        async with self.p_lock:
+            # stop_all() may have removed this generation and a later attach
+            # may already have installed another one under the same key.
+            if self.runtimes.get(key) is rt:
+                if lease_key is not None:
+                    attached = lease_key in self.p_attachment_leases
+                    self.p_attachment_leases.discard(lease_key)
+                else:
+                    legacy_count = self.p_legacy_attached.get(key, 0)
+                    attached = legacy_count > 0
+                    if legacy_count > 1:
+                        self.p_legacy_attached[key] = legacy_count - 1
+                    else:
+                        self.p_legacy_attached.pop(key, None)
+                if attached:
+                    count = self.p_attached.get(key, 0)
+                    if count > 1:
+                        self.p_attached[key] = count - 1
+                    else:
+                        self.p_attached.pop(key, None)
+                        self.runtimes.pop(key, None)
+                        orphaned = True
+
+        cleanup = [rt] if orphaned else []
+        if dead is not None and dead is not rt:
+            cleanup.append(dead)
+        for cleanup_rt in cleanup:
+            try:
+                await cleanup_rt.stop()
+            except Exception:
+                logger.exception("failed to clean up runtime after attach failure %s", key)
 
     async def ensure_editing(self, workspace_path: str) -> None:
         """An agent just bound to this workspace: any serve-static runtime for it must become a real
@@ -723,11 +799,31 @@ class AppRuntimeManager:
                 rt.serve_static = False
                 await rt.start()
 
-    async def detach(self, workspace_id: str, instance: int = 1) -> None:
+    async def detach(
+        self,
+        workspace_id: str,
+        instance: int = 1,
+        attachment_id: Optional[str] = None,
+    ) -> None:
         key = runtime_key(workspace_id, instance)
+        lease_key = (key, attachment_id) if attachment_id is not None else None
         to_idle: Optional[AppRuntime] = None
         to_reap: list[AppRuntime] = []
         async with self.p_lock:
+            if lease_key is not None:
+                if lease_key not in self.p_attachment_leases:
+                    self.p_record_attachment_tombstone(lease_key)
+                    return
+                self.p_attachment_leases.remove(lease_key)
+                self.p_record_attachment_tombstone(lease_key)
+            else:
+                legacy_count = self.p_legacy_attached.get(key, 0)
+                if legacy_count <= 0:
+                    return
+                if legacy_count > 1:
+                    self.p_legacy_attached[key] = legacy_count - 1
+                else:
+                    self.p_legacy_attached.pop(key, None)
             count = self.p_attached.get(key, 0) - 1
             if count > 0:
                 self.p_attached[key] = count
@@ -766,6 +862,11 @@ class AppRuntimeManager:
         if to_idle is not None:
             logger.debug("workspace %s idled (LRU size now %d)", key, len(self.idle_lru))
 
+    def p_record_attachment_tombstone(self, lease_key: tuple[str, str]) -> None:
+        self.p_attachment_tombstones[lease_key] = None
+        self.p_attachment_tombstones.move_to_end(lease_key)
+        while len(self.p_attachment_tombstones) > MAX_ATTACHMENT_TOMBSTONES:
+            self.p_attachment_tombstones.popitem(last=False)
     async def reap_stale_idle(self, ttl_s: float = IDLE_RUNTIME_TTL_S) -> int:
         """Fully stop idle runtimes parked longer than ttl_s. Frozen is 0% CPU but never 0 cost:
         each one holds its memory and its port for as long as it sits there, which is the "app is
@@ -874,6 +975,9 @@ class AppRuntimeManager:
             self.runtimes.clear()
             self.idle_lru.clear()
             self.p_attached.clear()
+            self.p_legacy_attached.clear()
+            self.p_attachment_leases.clear()
+            self.p_attachment_tombstones.clear()
         if not victims:
             return 0
         await asyncio.gather(
