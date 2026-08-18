@@ -153,8 +153,15 @@ const DashboardViewCard: React.FC<Props> = ({
 
   // ---- In-chat dock (mirrors BrowserCard): while docked to an expanded chat, overlay its slot rect.
   const dockedTo = useAppSelector((state) => state.dashboardLayout.viewCards[cardKey]?.docked_to ?? null);
-  const dockParentCard = useAppSelector((state) => (dockedTo ? state.dashboardLayout.cards[dockedTo] ?? null : null));
-  const dockParentExpanded = useAppSelector((state) => (dockedTo ? state.agents.expandedSessionIds.includes(dockedTo) : false));
+  // Ownership survives slot theft: a later-docked browser steals docked_to (one slot per chat),
+  // but the collapse tuck must still claim this card unless the USER dragged it free (ENG-333/324).
+  const tuckTo = useAppSelector((state) => {
+    const vc = state.dashboardLayout.viewCards[cardKey];
+    if (!vc) return null;
+    return vc.docked_to ?? ((vc.parent_session_id && !vc.freed) ? vc.parent_session_id : null);
+  });
+  const dockParentCard = useAppSelector((state) => (tuckTo ? state.dashboardLayout.cards[tuckTo] ?? null : null));
+  const dockParentExpanded = useAppSelector((state) => (tuckTo ? state.agents.expandedSessionIds.includes(tuckTo) : false));
   const dockParentTiled = useAppSelector((state) => (dockedTo ? state.dashboardLayout.tiledCards[dockedTo] : undefined));
   const [dockRect, setDockRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const dockRootRef = useRef<HTMLDivElement | null>(null);
@@ -633,7 +640,7 @@ const DashboardViewCard: React.FC<Props> = ({
   const dockActive = !!dockRect && !dragging && !localResize && !isTiled && !isMinimized;
   // Collapsed parent = the app tucks under the pill as a 320px miniature, EVERY stage, no shadow;
   // the same contract BrowserCard carries (Eric's screenshots: a full-size app half over the pill).
-  const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !isTiled && !isMinimized;
+  const followsParent = !!tuckTo && !!dockParentCard && !dockParentExpanded && !isTiled && !isMinimized;
   const followScale = Math.min(1, 320 / displayW);
   const followX = followsParent && dockParentCard ? dockParentCard.x : null;
   const followY = followsParent && dockParentCard ? dockParentCard.y + 52 : null;

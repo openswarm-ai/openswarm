@@ -233,8 +233,15 @@ const BrowserCard: React.FC<Props> = ({
   // ---- In-chat dock: while docked to an expanded chat, the card overlays the chat's slot rect.
   // Pure geometry in the shared canvas layer (same DOM node), so the webview never remounts.
   const dockedTo = useAppSelector((state) => state.dashboardLayout.browserCards[browserId]?.docked_to ?? null);
-  const dockParentCard = useAppSelector((state) => (dockedTo ? state.dashboardLayout.cards[dockedTo] ?? null : null));
-  const dockParentExpanded = useAppSelector((state) => (dockedTo ? state.agents.expandedSessionIds.includes(dockedTo) : false));
+  // Ownership survives slot theft (one docked surface per chat steals docked_to): the collapse
+  // tuck still claims a card this chat SPAWNED unless the user dragged it free (Eric's round-trip repro).
+  const tuckTo = useAppSelector((state) => {
+    const bc = state.dashboardLayout.browserCards[browserId];
+    if (!bc) return null;
+    return bc.docked_to ?? ((bc.spawned_by && !bc.freed) ? bc.spawned_by : null);
+  });
+  const dockParentCard = useAppSelector((state) => (tuckTo ? state.dashboardLayout.cards[tuckTo] ?? null : null));
+  const dockParentExpanded = useAppSelector((state) => (tuckTo ? state.agents.expandedSessionIds.includes(tuckTo) : false));
   const dockParentTiled = useAppSelector((state) => (dockedTo ? state.dashboardLayout.tiledCards[dockedTo] : undefined));
   const [dockRect, setDockRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // The slot now lives INSIDE the transcript scroller (inline like a tool output), and a live webview cannot be clipped by a scroll container, so the mini hides when its slot scrolls mostly out of view instead.
@@ -1169,7 +1176,7 @@ const BrowserCard: React.FC<Props> = ({
   // Chat collapsed: its docked browser parks off-screen and lives on as the pill's frozen shot,
   // instead of teleporting back to wherever it sat before docking. The park waits for that shot:
   // an off-screen guest never paints again, and capturePage on one never settles (Electron 42).
-  const wantsDockPark = !!dockedTo && !!dockParentCard && !dockParentExpanded && !agentDriving && !dragging && !isTiled && !isMinimized && !keepAliveHidden;
+  const wantsDockPark = !!tuckTo && !!dockParentCard && !dockParentExpanded && !agentDriving && !dragging && !isTiled && !isMinimized && !keepAliveHidden;
   const dockParked = wantsDockPark && pillShotSettled;
   // A docked browser's stored x/y is the beside-chat spot captured AT DOCK TIME, so moving the chat
   // leaves it behind. An agent-driven browser skips the park (above), so it painted itself over
@@ -1178,14 +1185,14 @@ const BrowserCard: React.FC<Props> = ({
   // NO exclusions for dragging/resize/capture-wait: any gap here rendered the FULL-SIZE card
   // halfway up the pill during transient states (thinking, mid-capture, mid-drag; Eric's shots x3).
   // Collapsed parent = parked or 320px miniature, at every stage, no third state.
-  const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !dockParked
+  const followsParent = !!tuckTo && !!dockParentCard && !dockParentExpanded && !dockParked
     && !isTiled && !isMinimized && !keepAliveHidden;
   // Tell the pill a live miniature is underneath it, so it suppresses its own artifacts instead of
   // stacking a widget/frozen shot on top of the browser (Eric's overlap screenshots).
   useEffect(() => {
-    if (dockedTo) setBrowserFollowing(dockedTo, browserId, followsParent);
-    return () => { if (dockedTo) setBrowserFollowing(dockedTo, browserId, false); };
-  }, [followsParent, dockedTo, browserId]);
+    if (tuckTo) setBrowserFollowing(tuckTo, browserId, followsParent);
+    return () => { if (tuckTo) setBrowserFollowing(tuckTo, browserId, false); };
+  }, [followsParent, tuckTo, browserId]);
   // Under the pill, not beside it: beside-at-pill-height read as a detached window fighting the
   // pill's ring and shadow (Eric, 2026-08-17); tucked below the collapsed pill it reads as the
   // chat's own attachment, the same visual contract as the docked mini inside an expanded chat.

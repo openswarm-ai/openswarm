@@ -74,6 +74,8 @@ export interface ViewCardPosition {
   parent_session_id?: string | null;
   /** Chat session this app preview lives inside (renders over the chat's dock slot); null/absent = free card. */
   docked_to?: string | null;
+  // Set when the USER drags the card out of its chat; the collapse tuck respects it forever.
+  freed?: boolean;
   // Reveal-born apps start as a light "built for you, click to open" card so the onboarding curtain
   // lifts INSTANTLY instead of booting a live Vite preview in-frame. Cleared on first click -> boots.
   preview_deferred?: boolean;
@@ -108,6 +110,8 @@ export interface BrowserCardPosition {
   dashboard_id?: string;
   /** Chat session this browser lives inside (renders over the chat's dock slot); null/absent = free card. */
   docked_to?: string | null;
+  // Set when the USER drags the card out of its chat; the collapse tuck respects it forever.
+  freed?: boolean;
 }
 
 export interface WorkflowCardPosition {
@@ -1100,12 +1104,14 @@ const dashboardLayoutSlice = createSlice({
       if (!vc) return;
       if (action.payload.dockedTo) clearOtherDocks(state, action.payload.dockedTo);
       vc.docked_to = action.payload.dockedTo;
+      vc.freed = action.payload.dockedTo === null;
     },
     setBrowserDocked(state, action: PayloadAction<{ browserId: string; dockedTo: string | null }>) {
       const bc = state.browserCards[action.payload.browserId];
       if (!bc) return;
       if (action.payload.dockedTo) clearOtherDocks(state, action.payload.dockedTo, action.payload.browserId);
       bc.docked_to = action.payload.dockedTo;
+      bc.freed = action.payload.dockedTo === null;
     },
     addBrowserCardFromBackend(state, action: PayloadAction<BrowserCardPosition>) {
       const card = action.payload;
