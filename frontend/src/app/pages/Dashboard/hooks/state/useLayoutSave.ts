@@ -36,6 +36,12 @@ export function useLayoutSave({
   captureNow,
 }: UseLayoutSaveArgs) {
   const dispatch = useAppDispatch();
+  // The per-dashboard baseline object created by the last successful fetch. saveLayout refuses a
+  // payload whose authority is not the current baseline, so a delayed/unmount save captured before a
+  // rejected or superseded fetch cannot erase the server's layout.
+  const saveAuthority = useAppSelector(
+    (state) => state.dashboardLayout.unknownPersistedLayoutFieldsByDashboard[dashboardId],
+  );
   const creationOrder = useAppSelector((s) => s.dashboardLayout.creationOrder);
   const skipInitialSave = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,7 +54,7 @@ export function useLayoutSave({
       skipInitialSave.current = false;
       return;
     }
-    const payload = { dashboardId, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder };
+    const payload = { dashboardId, saveAuthority, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder };
     pendingSaveRef.current = payload;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -57,7 +63,7 @@ export function useLayoutSave({
       saveTimerRef.current = null;
       captureNow();
     }, 500);
-  }, [isActive, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder, layoutInitialized, dashboardId, dispatch, captureNow]);
+  }, [isActive, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder, layoutInitialized, dashboardId, saveAuthority, dispatch, captureNow]);
 
   useEffect(() => {
     return () => {
