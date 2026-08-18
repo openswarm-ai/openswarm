@@ -1,5 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import { GLASS_SURFACE, GLASS_SURFACE_BLUR } from '@/shared/styles/glassSurface';
 import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 import DashboardGlyph from '../canvas/DashboardGlyph';
@@ -31,8 +32,8 @@ interface AgentNarratorPillProps {
   highlighted: boolean;
 }
 
-// Solid, not glass: backdrop-filter's rounded clip renders squared-off ends under canvas zoom (Eric's cut-off pills).
-const SOLID = '#443C4B';
+const GLASS = GLASS_SURFACE;
+const GLASS_BLUR = GLASS_SURFACE_BLUR;
 const MAX_VISIBLE_TODOS = 4;
 
 /** Collapsed agent as the desktop narrator pill; below it, the best artifact wins: live question > widget > browser shot > plan > live steps > Thinking. */
@@ -43,16 +44,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
   const visibleSteps = running && !visibleTodos.length ? (liveSteps || []).slice(-MAX_VISIBLE_TODOS) : [];
   const earlierSteps = running && !visibleTodos.length ? Math.max(0, (liveSteps?.length || 0) - visibleSteps.length) : 0;
   const shownArtifact = artifact;
-  // A dedicated ::after ring, not outline (mis-rounds under the canvas zoom transform) and not
-  // box-shadow (siblings painted later occluded its top-left arc, Eric's screenshots x2): an inset
-  // overlay border rides the capsule's own stacking context and cannot be covered or clipped.
-  const ring = selected || highlighted ? {
-    zIndex: 2,
-    '&::after': {
-      content: '""', position: 'absolute', inset: '-3px', borderRadius: 999,
-      border: '2px solid #3b82f6', pointerEvents: 'none',
-    },
-  } : undefined;
+  const ring = selected || highlighted ? { outline: '2px solid #3b82f6', outlineOffset: '2px' } : undefined;
   const liveAsk = askPair && sessionId ? askPair : null;
   // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
   // A docked live miniature owns the space below the pill: everything non-actionable yields to it
@@ -81,7 +73,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
     >
       <Box
         sx={{
-          position: 'relative',
           display: 'inline-flex',
           alignItems: 'center',
           gap: 1,
@@ -89,8 +80,10 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           pl: 1.25,
           pr: 1.75,
           borderRadius: 999,
-          background: SOLID,
-          boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
+          background: GLASS,
+          backdropFilter: GLASS_BLUR,
+          WebkitBackdropFilter: GLASS_BLUR,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
           whiteSpace: 'nowrap',
           ...ring,
         }}
@@ -145,7 +138,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             whiteSpace: 'nowrap',
             background: 'rgba(30,27,24,0.85)',
             border: '1px solid rgba(245,158,11,0.55)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
             transition: 'background 0.15s ease, transform 0.15s ease',
             '&:hover': { background: 'rgba(48,40,28,0.95)', transform: 'translateY(-1px)' },
           }}
@@ -161,7 +154,9 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
       ) : liveAsk ? (
         <PillArtifactFrame key={artifactKey} name="question">
           {/* One glass surface holds the whole ask (options + Confirm + the type-your-own field); without it the widget's footer floated bare on the canvas. */}
-          <Box sx={{ borderRadius: '16px', background: SOLID, boxShadow: '0 1px 2px rgba(0,0,0,0.10)', px: 1.25, py: 1.25 }}>
+          <Box sx={{ borderRadius: '16px', background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 8px 24px rgba(0,0,0,0.32)', px: 1.25, py: 1.25 }}>
             <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
           </Box>
         </PillArtifactFrame>
@@ -176,7 +171,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           component="img"
           src={browserShot}
           alt=""
-          sx={{ width: 320, display: 'block', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+          sx={{ width: 320, display: 'block', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.35)' }}
         />
       ) : visibleTodos.length > 0 ? (
         <Box
@@ -184,8 +179,10 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           className="osw-artifact"
           sx={{
             borderRadius: '16px',
-            background: SOLID,
-            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
+            background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
             px: 1.75,
             py: 1.5,
             minWidth: 200,
@@ -245,8 +242,10 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           className="osw-artifact"
           sx={{
             borderRadius: '16px',
-            background: SOLID,
-            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
+            background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
             px: 1.75,
             py: 1.5,
             minWidth: 200,
@@ -306,8 +305,10 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             height: 28,
             px: 1.5,
             borderRadius: 999,
-            background: SOLID,
-            boxShadow: '0 1px 2px rgba(0,0,0,0.10)',
+            background: GLASS,
+            backdropFilter: GLASS_BLUR,
+            WebkitBackdropFilter: GLASS_BLUR,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
           }}
         >
           <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
