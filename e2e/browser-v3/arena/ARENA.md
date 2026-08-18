@@ -1206,3 +1206,18 @@ why the arena number understates it. HANDOFF: with the user's app running (their
 handles deps/Electron/login), `python e2e/browser-v3/vs_bench.py` yields the real product-write
 number + a browser-use head-to-head, verified by readback, on the cooperative editors. That is the
 one measurement that fairly scores the shipped product's writes.
+
+## Product-agent run PROVEN headless-incapable (2026-08-17, demonstrated end-to-end)
+Got the backend live on :8326 (backend/.venv works from repo root; run.sh's dep-install step is the
+only broken bit, deps are actually present). Created a real agent session (/agents/launch) and
+dispatched a cooperative-editor write task (quilljs playground) through the PRODUCT's real dispatch
+path. RESULT, verbatim from the product agent: "I can't drive a browser right now because no
+OpenSwarm window is connected." DEFINITIVE: the product agent's browser BODY is the Electron app
+window; without it the agent reasons but cannot touch a page. This is why it is live-only, why the
+stripped arena harness understates its writes, and why the two agents differ -- proven by the agent
+itself, not inferred. ONE-STEP HANDOFF: user launches the OpenSwarm desktop app (its own backend +
+window + logged-in session); then `OSW_BASE=http://127.0.0.1:<port> python e2e/browser-v3/vs_bench.py`
+yields the real product-write number + browser-use head-to-head, verified by card readback, on the
+cooperative editors (quill/tinymce/ckeditor/codemirror -- no account risk). That single command is
+the fair measurement of the shipped product's write capability; it is blocked only on the GUI app,
+which is the user's to launch.
