@@ -113,6 +113,7 @@ P_RELEASES: List[ReleaseNote] = [
             "Collapsed chat pills render clean everywhere: no shadow slabs, no doubled browser preview, no cropped ring corners, and opening a pill no longer flies the camera across the canvas.",
             "A browser task whose control link dropped used to keep driving the browser as a ghost; it now stops the moment its controller disappears, so a retry always gets a free browser.",
             "The app cleans up after itself: update downloads you have already installed are deleted (hundreds of megabytes back) and oversized browsing caches are trimmed every few hours; your logins are never touched.",
+            "Dragging and panning stay smooth while agents are answering: streamed text now waits a beat during your gesture instead of stealing frames mid-drag, and collapsed pills lose their last visual glitches (ghost smudge at the corner, near-square miniature corners).",
         ],
     ),
     ReleaseNote(
