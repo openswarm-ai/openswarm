@@ -43,8 +43,16 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
   const visibleSteps = running && !visibleTodos.length ? (liveSteps || []).slice(-MAX_VISIBLE_TODOS) : [];
   const earlierSteps = running && !visibleTodos.length ? Math.max(0, (liveSteps?.length || 0) - visibleSteps.length) : 0;
   const shownArtifact = artifact;
-  // Box-shadow, never outline: Chromium draws outline corners with mis-scaled radii on a capsule under the canvas zoom transform, which cropped the pill's round ends flat (Eric's 'cut off' shots).
-  const ring = selected || highlighted ? { boxShadow: '0 0 0 2px #3b82f6, 0 1px 2px rgba(0,0,0,0.10)' } : undefined;
+  // A dedicated ::after ring, not outline (mis-rounds under the canvas zoom transform) and not
+  // box-shadow (siblings painted later occluded its top-left arc, Eric's screenshots x2): an inset
+  // overlay border rides the capsule's own stacking context and cannot be covered or clipped.
+  const ring = selected || highlighted ? {
+    zIndex: 2,
+    '&::after': {
+      content: '""', position: 'absolute', inset: '-3px', borderRadius: 999,
+      border: '2px solid #3b82f6', pointerEvents: 'none',
+    },
+  } : undefined;
   const liveAsk = askPair && sessionId ? askPair : null;
   // One key per ladder state so a state CHANGE remounts the artifact and replays the one-shot entrance; nothing loops.
   // A docked live miniature owns the space below the pill: everything non-actionable yields to it
@@ -73,6 +81,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
     >
       <Box
         sx={{
+          position: 'relative',
           display: 'inline-flex',
           alignItems: 'center',
           gap: 1,
