@@ -80,4 +80,7 @@ export function noteRequestStalled(): void {
 }
 
 // Harness/debug handle: lets a live session (CDP, support) read the signal without a store import.
-(window as unknown as { __OSW_CONN?: object }).__OSW_CONN = { backendReachable, onBackendReachability };
+// Guarded: reducers that import this module also run under node:test, where there is no window.
+if (typeof window !== 'undefined') {
+  (window as unknown as { __OSW_CONN?: object }).__OSW_CONN = { backendReachable, onBackendReachability };
+}
