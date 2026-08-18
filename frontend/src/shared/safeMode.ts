@@ -11,7 +11,10 @@ export interface SafeModeInfo {
 
 let cached: SafeModeInfo = { safeMode: false, dirtyCount: 0, fingerprint: null };
 
-const api = (window as unknown as { openswarm?: { getSafeMode?: () => Promise<SafeModeInfo> } }).openswarm;
+// Import-safe outside a renderer: the layout slice imports this, and its reducer tests run under node:test.
+const api = typeof window === 'undefined'
+  ? undefined
+  : (window as unknown as { openswarm?: { getSafeMode?: () => Promise<SafeModeInfo> } }).openswarm;
 if (api?.getSafeMode) {
   void api.getSafeMode().then((info) => {
     if (info && typeof info.safeMode === 'boolean') cached = info;

@@ -1,0 +1,71 @@
+name: backend-tests
+
+# The backend pytest suite, run on every pull request and on pushes to the mainline branches. Until
+# now nothing ran it in CI, so a regression only surfaced when someone ran it by hand.
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  workflow_dispatch:
+
+# Runs checked-out project code on pull_request: the token stays read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.txt
+      - name: Install backend deps (locked runtime + dev)
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r backend/requirements.lock
+          python -m pip install -r backend/requirements-dev.txt
+      # Two numbers that must agree. A test process that dies mid-run can exit 0 with no summary
+      # (a hard-exit shutdown path did exactly that once and silently skipped ~42% of the suite), so
+      # the job also asserts that every collected test was actually run: junit testcase count ==
+      # collect-only count. Green then means green, not "green as far as it got".
+      - name: Count the suite
+        run: |
+          python -m pytest backend/tests --ignore=backend/tests/formal --collect-only -q -p no:cacheprovider \
+            | tail -1 | tee collected.txt
+      # --timeout: a test that blocks forever (a bare ws.receive_json() waiting for an event that never
+      # comes, say) otherwise stalls the run at 99% until timeout-minutes with no summary and no junit.
+      # With the cap it fails by name, the rest of the suite runs, and the assertion below still holds.
+      - name: Run the backend suite
+        run: |
+          python -m pytest backend/tests --ignore=backend/tests/formal -q -p no:cacheprovider \
+            --timeout=300 \
+            --junitxml "${RUNNER_TEMP}/pytest.xml"
+      - name: Every collected test ran
+        # Runs after a red suite too, so a failure report also says whether the run was complete.
+        if: ${{ !cancelled() }}
+        run: |
+          python - "${RUNNER_TEMP}/pytest.xml" collected.txt <<'PY'
+          import re, sys, xml.etree.ElementTree as ET
+          ran = sum(1 for _ in ET.parse(sys.argv[1]).getroot().iter('testcase'))
+          m = re.search(r'(\d+) tests? collected', open(sys.argv[2]).read())
+          collected = int(m.group(1)) if m else -1
+          print(f'collected={collected} ran={ran}')
+          if collected < 1 or ran != collected:
+              sys.exit(f'FAIL: {ran} of {collected} collected tests reached the report; the run was truncated')
+          PY

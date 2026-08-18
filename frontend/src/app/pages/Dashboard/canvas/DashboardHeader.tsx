@@ -65,6 +65,8 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const creationOrder = useAppSelector((s) => s.dashboardLayout.creationOrder);
+  // saveLayout only accepts a payload carrying the current per-dashboard baseline (see useLayoutSave).
+  const saveAuthority = useAppSelector((s) => s.dashboardLayout.unknownPersistedLayoutFieldsByDashboard[dashboardId ?? '']);
   const [expanded, setExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -235,7 +237,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               onOpen={() => {
                 // Layout saves are debounced, so a just-added app/agent card may not be on disk yet. The export reads disk, flush the live layout now so Share captures the current board, not a stale one.
                 if (!dashboardId) return;
-                dispatch(saveLayout({ dashboardId, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder }));
+                dispatch(saveLayout({ dashboardId, saveAuthority, cards, viewCards, browserCards, workflowCards, workflowsHub, expandedSessionIds, creationOrder }));
               }}
             />
           </Box>
