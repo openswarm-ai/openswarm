@@ -36,9 +36,16 @@ def patch_settings(tmp_path):
     }))
     import backend.apps.settings.store as settings_mod
     old = settings_mod.SETTINGS_FILE
+    old_dir = settings_mod.DATA_DIR
     settings_mod.SETTINGS_FILE = str(sf)
+    # The atomic writer stages its temp file in DATA_DIR and os.replace()s it onto SETTINGS_FILE, so
+    # the two must live together as they do in production. Left at the real data dir, the temp file
+    # lands in the repo's backend/data and, on a runner where that is another drive than tmp_path,
+    # the replace fails with WinError 17 (and the writer's caller quietly falls back).
+    settings_mod.DATA_DIR = str(tmp_path)
     yield
     settings_mod.SETTINGS_FILE = old
+    settings_mod.DATA_DIR = old_dir
 
 
 @pytest.fixture(autouse=True)

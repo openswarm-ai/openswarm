@@ -42,7 +42,10 @@ def test_warm_cache_is_complete_requires_the_sentinel(tmp_path):
     assert vt.warm_cache_is_complete(str(nm)) is False
     bindir = nm / ".bin"
     bindir.mkdir()
-    (bindir / "vite").symlink_to("../vite/bin/vite.js")
+    # A plain file, not a symlink: on Windows a relative symlink target with forward slashes does not
+    # resolve (exists() is False), and npm writes .bin shims as files there anyway. The check under test
+    # is os.path.exists, which the two are equivalent for.
+    (bindir / "vite").write_text("#!/usr/bin/env node\n")
     assert vt.warm_cache_is_complete(str(nm)) is False
     (tmp_path / ".install-complete").write_text("digest")
     assert vt.warm_cache_is_complete(str(nm)) is True

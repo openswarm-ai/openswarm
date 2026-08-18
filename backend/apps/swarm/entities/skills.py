@@ -100,7 +100,9 @@ def p_read_supporting_files(skill_dir: str) -> dict[str, bytes]:
     for root, p_dirs, names in os.walk(skill_dir):
         for n in names:
             full = os.path.join(root, n)
-            rel = os.path.relpath(full, skill_dir)
+            # Forward slashes: these keys travel inside .swarm bundles, and the importer joins them
+            # onto the destination on whatever OS opens the bundle.
+            rel = os.path.relpath(full, skill_dir).replace(os.sep, "/")
             if rel == "SKILL.md" or n.startswith("."):
                 continue
             try:

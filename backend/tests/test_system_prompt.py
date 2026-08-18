@@ -3,6 +3,8 @@ is composed, the current-time block is always pinned, and view-builder mode appe
 App Builder skill. The context builders are mocked to None so the test is deterministic and
 doesn't depend on dashboard/tool disk state."""
 
+import re
+
 import pytest
 from unittest.mock import patch
 
@@ -26,6 +28,10 @@ def test_base_composition_includes_default_and_time_pin():
     out = p_compose(session)
     assert "You are a helpful agent." in out
     assert "<current_time>" in out  # the wall-clock pin is always appended
+    # The pin carries a real date and time on every OS (the block is built with portable strftime
+    # codes; a formatting error would be swallowed and the whole pin would vanish).
+    assert re.search(r"Today is [A-Z][a-z]+, [A-Z][a-z]+ [1-9]\d?, \d{4}\.", out), out
+    assert re.search(r"Local time: [1-9]\d?:\d{2} [AP]M ", out), out
 
 
 def test_view_builder_appends_live_skill_block():
