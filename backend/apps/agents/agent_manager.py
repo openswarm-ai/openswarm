@@ -2,13 +2,10 @@ import asyncio
 import logging
 import time
 import os
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from typeguard import typechecked
 
-from backend.apps.agents.core.models import (
-    AgentSession, Message,
-)
+from backend.apps.agents.core.models import Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.tools_lib.tools_lib import load_builtin_permissions
@@ -18,8 +15,8 @@ from backend.apps.agents.manager.session.session_store import (
     save_session,
     load_session_data as load_session_data,
 )
+from backend.apps.agents.manager.session.SessionStore import SessionStore
 from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
-from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 from backend.apps.agents.manager.session.SessionLifecycle import SessionLifecycle
 from backend.apps.agents.manager.SpawnAgentRun import SpawnAgentRun
 from backend.apps.agents.manager.session.SessionPersistence import SessionPersistence
@@ -30,76 +27,131 @@ from backend.apps.agents.manager.MockAgent import MockAgent
 from backend.apps.agents.manager.RunSupport import RunSupport
 from backend.apps.agents.manager.run.handle_run_error import handle_run_error
 from backend.apps.agents.manager.run.TurnRunner import TurnRunner
-from backend.apps.agents.manager.run.client_pool import ClientHandle
-from backend.apps.agents.manager.streaming.HookContext import HookContext
+from backend.apps.agents.manager.run.TurnAdmission import TurnAdmission
 from backend.apps.agents.manager.run.RunOptions import RunOptions
+from backend.apps.agents.events.AgentEventSink import (
+    AgentEventSink,
+    BoundedAgentEventSink,
+    NullAgentEventSink,
+)
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 
-# Cap concurrent ROOT agent turns so firing 30 agents at once doesn't spawn 30 CLIs in the same instant; the overflow queues (agents are model/IO-bound, so they're waiting anyway). Env-tunable, 0/blank disables the gate.
-MAX_CONCURRENT_TURNS = int(os.environ.get("OSW_MAX_CONCURRENT_TURNS", "8") or "0")
-
-
-class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnRunner, RunOptions, RunSupport):
+class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnAdmission, TurnRunner, RunOptions, RunSupport):
     @typechecked
-    def __init__(self):
-        self.sessions: Dict[str, AgentSession] = {}
+    def __init__(self, store: Optional[SessionStore] = None, event_sink: Optional[AgentEventSink] = None):
+        self.store = store or SessionStore()
+        self.event_sink = event_sink or NullAgentEventSink()
+        # Messages queued behind an in-flight turn (upstream admission/queue); purged per session in SessionLifecycle.purge_session_memory.
+        self.pending_messages: Dict[str, List[QueuedMessage]] = {}
         from backend.apps.agents.core.flight_recorder import set_sessions_provider
         set_sessions_provider(lambda: self.sessions)
-        self.tasks: Dict[str, asyncio.Task] = {}
-        # Live mirror of the in-flight streamed assistant text per session, so a stop can persist the partial reply instantly instead of waiting out the multi-second SDK teardown the cancel handler sits behind.
-        self.live_partial: Dict[str, PartialReply] = {}
-        # Per-session cancel signal: the loop stashes its asyncio.Event here so a stop/close can set it. Lives on the manager, not the AgentSession model, so it stays out of serialization (an Event can't be model_dump'd).
-        self.cancel_events: Dict[str, asyncio.Event] = {}
-        # Persistent-client pool (lever A, flag-gated): one live CLI per session, reused across turns.
-        self.client_pool: Dict[str, ClientHandle] = {}
-        # Per-SESSION hook context + stderr buffer, updated in place each turn: a persistent client's hooks/stderr callback were bound at connect, so they must read stable objects, not per-turn rebuilds.
-        self.hook_ctxs: Dict[str, HookContext] = {}
-        self.stderr_buffers: Dict[str, List[str]] = {}
-        # Messages typed while a turn was live, replayed in order when it ends (see Messaging).
-        self.pending_messages: Dict[str, List[QueuedMessage]] = {}
         # Admission gate: one shared semaphore caps concurrent ROOT turns (children bypass). (Re)created per running loop by get_turn_admission so it never binds to a dead loop across a uvicorn reload or a test's asyncio.run.
         self.p_turn_admission_sema: Optional[asyncio.Semaphore] = None
         self.p_turn_admission_loop: Optional[asyncio.AbstractEventLoop] = None
 
+    @property
+    @typechecked
+    def sessions(self) -> Dict[str, Any]:
+        return self.store.sessions
+
+    @sessions.setter
+    @typechecked
+    def sessions(self, value: Dict[str, Any]) -> None:
+        object.__setattr__(self.store, "sessions", value)
+
+    @property
+    @typechecked
+    def tasks(self) -> Dict[str, Any]:
+        return self.store.tasks
+
+    @tasks.setter
+    @typechecked
+    def tasks(self, value: Dict[str, Any]) -> None:
+        object.__setattr__(self.store, "tasks", value)
+
+    @property
+    @typechecked
+    def live_partial(self) -> Dict[str, Any]:
+        return self.store.live_partial
+
+    @live_partial.setter
+    @typechecked
+    def live_partial(self, value: Dict[str, Any]) -> None:
+        object.__setattr__(self.store, "live_partial", value)
+
+    @property
+    @typechecked
+    def cancel_events(self) -> Dict[str, asyncio.Event]:
+        return self.store.cancel_events
+
+    @cancel_events.setter
+    @typechecked
+    def cancel_events(self, value: Dict[str, asyncio.Event]) -> None:
+        object.__setattr__(self.store, "cancel_events", value)
+
+    @property
+    @typechecked
+    def client_pool(self) -> Dict[str, Any]:
+        return self.store.client_pool
+
+    @client_pool.setter
+    @typechecked
+    def client_pool(self, value: Dict[str, Any]) -> None:
+        object.__setattr__(self.store, "client_pool", value)
+
+    @property
+    @typechecked
+    def hook_ctxs(self) -> Dict[str, Any]:
+        return self.store.hook_ctxs
+
+    @hook_ctxs.setter
+    @typechecked
+    def hook_ctxs(self, value: Dict[str, Any]) -> None:
+        object.__setattr__(self.store, "hook_ctxs", value)
+
+    @property
+    @typechecked
+    def stderr_buffers(self) -> Dict[str, List[str]]:
+        return self.store.stderr_buffers
+
+    @stderr_buffers.setter
+    @typechecked
+    def stderr_buffers(self, value: Dict[str, List[str]]) -> None:
+        object.__setattr__(self.store, "stderr_buffers", value)
 
     @typechecked
-    def get_turn_admission(self) -> asyncio.Semaphore:
-        """The shared admission semaphore for the CURRENT loop; rebuilt if the loop changed so a
-        reload/test-run can never await a semaphore bound to a dead loop."""
-        loop = asyncio.get_running_loop()
-        if self.p_turn_admission_sema is None or self.p_turn_admission_loop is not loop:
-            self.p_turn_admission_sema = asyncio.Semaphore(MAX_CONCURRENT_TURNS)
-            self.p_turn_admission_loop = loop
-        return self.p_turn_admission_sema
+    async def ensure_keyed_model_route_synced(self, settings, short_name: str) -> None:
+        """Ensure 9Router has the provider node required by a pinned API-key model."""
+        from backend.apps.agents.providers.registry import find_builtin_model
 
-    @asynccontextmanager
-    async def turn_admission_slot(self, session: AgentSession, session_id: str) -> AsyncIterator[None]:
-        """Hold one concurrency slot for the duration of a ROOT turn. Overflow turns queue on the
-        semaphore (emitting agent:queued, then agent:admitted when they start). Two bypasses, both
-        load-bearing: (1) MAX_CONCURRENT_TURNS<=0 disables the gate entirely (kill switch); (2) a
-        CHILD turn (parent_session_id set) is NEVER gated, because a parent holds its own slot while
-        awaiting a delegated child, so gating children would deadlock the pool. `async with` release
-        is cancellation-safe: a stop while queued never acquired, so it can't over-release."""
-        if MAX_CONCURRENT_TURNS <= 0 or session.parent_session_id is not None:
-            yield
+        entry = find_builtin_model(short_name) or {}
+        if entry.get("route") != "api":
             return
-        sema = self.get_turn_admission()
-        was_queued = sema.locked()
-        if was_queued:
-            try:
-                await ws_manager.send_to_session(session_id, "agent:queued", {"session_id": session_id})
-            except Exception:
-                pass
-        async with sema:
-            if was_queued:
-                try:
-                    await ws_manager.send_to_session(session_id, "agent:admitted", {"session_id": session_id})
-                except Exception:
-                    pass
-            yield
+
+        provider = entry.get("api")
+        if provider == "openai" and getattr(settings, "openai_api_key", None):
+            from backend.apps import nine_router
+            if not nine_router.is_running():
+                await nine_router.ensure_running()
+            if nine_router.is_running():
+                await nine_router.sync_openai_api_key(settings.openai_api_key)
+        elif provider == "gemini" and getattr(settings, "google_api_key", None):
+            from backend.apps import nine_router
+            if not nine_router.is_running():
+                await nine_router.ensure_running()
+            if nine_router.is_running():
+                await nine_router.sync_gemini_api_key(settings.google_api_key)
+        elif provider == "custom" and getattr(settings, "custom_providers", None):
+            from backend.apps import nine_router
+            if not nine_router.is_running():
+                await nine_router.ensure_running()
+            if nine_router.is_running():
+                await nine_router.sync_custom_providers(settings.custom_providers or [])
+
 
     @typechecked
     async def prewarm_client(self, session_id: str) -> None:
@@ -156,6 +208,8 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         if not session:
             return
 
+        self.ensure_session_workspace_ready(session)
+
         from backend.apps.agents.providers.registry import get_api_type as p_get_api_type
         p_api = p_get_api_type(session.model)
         prompt_content = self.build_prompt_content(
@@ -184,10 +238,17 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         builtin_perms = load_builtin_permissions()
 
         # Builtins default to always_allow (frictionless); path_gate still force-prompts on catastrophic patterns (rm -rf), OS-scheduling, and sensitive paths, so poisoned-email -> destructive-command is still caught. Flip Bash to "ask" in the UI for a prompt on every command. Bind turn + stderr first: build_agent_options can raise early (no provider) and the except hands both to handle_run_error.
-        turn = TurnState()
         p_stderr_buffer: List[str] = []
         # Read BEFORE build_agent_options consumes these flags: a fresh-session/fork request must force the persistent client to respawn (same branch id would otherwise fingerprint-match a client still holding the old transcript).
         p_force_respawn = bool(session.needs_fresh_session or session.needs_fork or fork_session)
+        p_event_emitter = AgentTurnEventEmitter(
+            sink=self.event_sink,
+            session_id=session_id,
+            provider=p_api_type_for_session,
+            model=p_router_model_id,
+        )
+        turn = TurnState(event_emitter=p_event_emitter)
+        p_event_emitter.emit_started()
         try:
             logger.info(f"[SPAWN-PHASE] run-loop start session={session_id[:8]} t={time.monotonic():.3f}")
             (options, options_kwargs, prompt_content, p_stderr_buffer,
@@ -195,20 +256,25 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                 session, session_id, prompt, prompt_content, builtin_perms,
                 selected_browser_ids, selected_app_output_ids, selected_setting_ids,
                 fork_session, p_router_model_id, p_api_type_for_session)
+            p_hook_ctx = self.hook_ctxs.get(session_id)
+            if p_hook_ctx is not None:
+                p_hook_ctx.event_emitter = p_event_emitter
             resolved_model = p_router_model_id
             api_type = p_api_type_for_session
 
             thinking = ThinkingState()
             # Gate the CLI turn (spawn + stream) behind the admission slot so a burst can't run every turn at once; the slot is held ONLY for run_turn_with_retry, so the context-valve retry below re-acquires cleanly instead of nesting.
-            logger.info(f"[SPAWN-PHASE] admission-wait session={session_id[:8]} t={time.monotonic():.3f}")
             async with self.turn_admission_slot(session, session_id):
-                logger.info(f"[SPAWN-PHASE] admitted session={session_id[:8]} t={time.monotonic():.3f}")
                 await self.run_turn_with_retry(
                     session, session_id, prompt_content, options, options_kwargs,
                     turn, thinking, p_stderr_buffer, resolved_model, api_type, global_settings,
                     force_respawn=p_force_respawn,
                 )
             session.status = "completed"
+            p_event_emitter.emit_completed(
+                input_tokens=int(session.tokens.get("input_fresh", 0) or 0),
+                output_tokens=int(session.tokens.get("output", 0) or 0),
+            )
 
             # Silent-quit seal: a turn that ran tools and ended with no visible answer gets ONE hidden continue nudge (dispatched by the auto-continuation block below); a second silent quit in the same ask surfaces as-is rather than looping.
             try:
@@ -232,6 +298,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             except Exception:
                 logger.exception("auto-continuation dispatch failed")
         except asyncio.CancelledError:
+            p_event_emitter.emit_failed("cancelled")
             # Only act if we're still the session's live task. A user stop pops this task (stop_agent already finalized status + partial), and a follow-up message may have started a newer turn; either way this dying task must NOT clobber the live status or pop the new turn's in-flight partial mirror.
             if self.tasks.get(session_id) is asyncio.current_task():
                 session.status = "stopped"
@@ -287,6 +354,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     })
                 except Exception:
                     logger.debug("submit_diagnostic context_pressure_valve failed", exc_info=True)
+                p_event_emitter.emit_failed("context_pressure_retry", retryable=True)
                 await self.run_agent_loop(
                     session_id, prompt, images, context_paths, forced_tools,
                     attached_skills, fork_session, selected_browser_ids,
@@ -294,23 +362,25 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     context_valve_retry=True,
                 )
                 return
+            p_event_emitter.emit_failed(type(e).__name__)
             await handle_run_error(e, session, session_id, turn, p_stderr_buffer)
         except BaseException as e:
             # Catch BaseExceptionGroup from anyio task groups (e.g. concurrent CLI crash + pending approval cancellation) so it doesn't escape and kill the uvicorn process.
             logger.exception(f"Agent {session_id} fatal error: {e}")
-            # A group's str() names the group, not the cause; unwrap to the real member so a wrapped 429/auth error still gets its friendly card + retry-pill semantics instead of a raw group dump.
+            p_event_emitter.emit_failed(type(e).__name__)
+            # A group's str() names the group, not the cause; unwrap to the real member so a wrapped 429/auth error still gets its friendly card + retry-pill semantics.
             from backend.apps.agents.core.first_real_exception import first_real_exception
             p_real = first_real_exception(e)
             if p_real is not None:
                 await handle_run_error(p_real, session, session_id, turn, p_stderr_buffer)
-            else:
-                session.status = "error"
-                error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
-                session.messages.append(error_msg)
-                await ws_manager.send_to_session(session_id, "agent:message", {
-                    "session_id": session_id,
-                    "message": error_msg.model_dump(mode="json"),
-                })
+                return
+            session.status = "error"
+            error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
+            session.messages.append(error_msg)
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id,
+                "message": error_msg.model_dump(mode="json"),
+            })
         finally:
             # Only the session's live task finalizes. A stopped task (popped by stop_agent, which already finalized status + saved) or one superseded by a newer turn must not pop the new turn's partial mirror, broadcast a stale terminal status, or overwrite the snapshot the live turn is writing.
             p_is_live_task = self.tasks.get(session_id) is asyncio.current_task()
@@ -345,4 +415,4 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     logger.warning(f"Failed to snapshot session {session_id}: {e}")
 
 
-agent_manager = AgentManager()
+agent_manager = AgentManager(event_sink=BoundedAgentEventSink())

@@ -14,6 +14,8 @@ from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.session.session_store import save_session
 from backend.apps.settings.settings import load_settings
+from backend.apps.agents.events.AgentEventSink import AgentEventSink, NullAgentEventSink
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ async def run_browser_fast_path(
     selected_browser_ids: Optional[List[str]],
     brief: str = "",
     verdict: str = "act",
+    event_sink: Optional[AgentEventSink] = None,
 ) -> None:
     """Dispatch the browser sub-agent directly and reply with its outcome;
     the orchestrator LLM never runs. READ verdicts try one local fetch +
@@ -35,6 +38,13 @@ async def run_browser_fast_path(
     task and the children."""
     p_fp_t0 = time.monotonic()
     p_fp_path = verdict
+    p_event_emitter = AgentTurnEventEmitter(
+        sink=event_sink or NullAgentEventSink(),
+        session_id=session_id,
+        provider="browser_fast_path",
+        model=session.model,
+    )
+    p_event_emitter.emit_started()
     logger.info(f"[browser-fast-path] direct dispatch for session {session_id} ({verdict})")
     text = ""
     # The fast-path skips the orchestrator, so the UI never gets the BrowserAgent tool-call that draws the "Browser Agent" bubble. Emit a synthetic tool_call/ tool_result pair (same shape + mcp__ name the orchestrator uses) so the bubble shows here too. None until we actually dispatch a browser (a pure READ answer has no browser, so no bubble).
@@ -91,6 +101,7 @@ async def run_browser_fast_path(
         if not text:
             # show the "Browser Agent" bubble during the dispatch (it renders as running, then completes when we emit the matching result below)
             p_bubble_tid = uuid4().hex
+            p_event_emitter.emit_tool_started(p_bubble_tid, p_browser_tool)
             p_tc = Message(role="tool_call", branch_id=session.active_branch_id,
                            content={"id": p_bubble_tid, "tool": p_browser_tool, "input": {"task": prompt}})
             session.messages.append(p_tc)
@@ -128,6 +139,7 @@ async def run_browser_fast_path(
             if not text:
                 text = "The browser agent couldn't complete this and gave no report."
     except asyncio.CancelledError:
+        p_event_emitter.emit_failed("cancelled")
         raise
     except Exception as e:
         logger.warning(f"[browser-fast-path] dispatch failed: {e}")
@@ -139,6 +151,7 @@ async def run_browser_fast_path(
     )
     # Close the synthetic bubble (always, even if the dispatch threw) so it never hangs as "running"; the bubble pairs this result with its call positionally.
     if p_bubble_tid:
+        p_event_emitter.emit_tool_completed(p_bubble_tid, p_browser_tool)
         # The bubble carries the same auditable record the sub-agent path shows. It used to close
         # with the literal string "done", so expanding it on this tier revealed nothing.
         from backend.apps.agents.browser import browser_trace
@@ -156,6 +169,8 @@ async def run_browser_fast_path(
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id, "message": p_tr.model_dump(mode="json")})
     asst_msg = Message(role="assistant", content=text, branch_id=session.active_branch_id)
+    if text:
+        p_event_emitter.emit_first_token()
     session.messages.append(asst_msg)
     await ws_manager.send_to_session(session_id, "agent:message", {
         "session_id": session_id,
@@ -163,6 +178,7 @@ async def run_browser_fast_path(
     })
     session.status = "completed"
     session.closed_at = datetime.now()
+    p_event_emitter.emit_completed()
     await ws_manager.send_to_session(session_id, "agent:status", {
         "session_id": session_id,
         "status": "completed",

@@ -567,7 +567,11 @@ async def p_ensure_running_impl():
             env["ELECTRON_RUN_AS_NODE"] = "1"
     else:
         # Dev: install the pinned npm package into a local cache once, then spawn `node app/server.js` directly (bypasses the package cli.js tray icon users confusingly quit, its update-check spinner, and the TUI).
-        cached_server = p_ensure_router_cached()
+        # A cold npm install can take minutes on Windows. This path is started
+        # as a background task during app lifespan, so running the synchronous
+        # installer on the event loop would still block the HTTP server from
+        # binding and make the whole backend appear hung.
+        cached_server = await asyncio.to_thread(p_ensure_router_cached)
         if not cached_server:
             return
         node = p_find_node()

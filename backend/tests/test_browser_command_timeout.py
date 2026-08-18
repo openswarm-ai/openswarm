@@ -11,6 +11,9 @@ import time
 import pytest
 
 from backend.apps.agents.core import ws_manager as wsm
+from backend.apps.agents.core.ws_manager import BrowserCommandOwner
+
+P_LOCAL = BrowserCommandOwner(origin="renderer")
 
 
 class p_FakeSock:
@@ -40,7 +43,7 @@ async def test_hung_command_returns_fast_at_the_bound(monkeypatch):
     monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUTS", {"navigate": 0.6})
     m = p_mgr()
     t0 = time.monotonic()
-    res = await m.send_browser_command("rid1", "get_text", "b1", {})  # never resolved
+    res = await m.send_browser_command("rid1", "get_text", "b1", {}, owner=P_LOCAL)  # never resolved
     elapsed = time.monotonic() - t0
     assert res == {"error": "Browser command timed out"}
     assert 0.25 < elapsed < 1.0, f"a read should time out near its 0.3s bound, took {elapsed:.2f}s"
@@ -52,7 +55,7 @@ async def test_navigate_gets_the_longer_leash(monkeypatch):
     monkeypatch.setattr(wsm, "BROWSER_CMD_TIMEOUTS", {"navigate": 0.7})
     m = p_mgr()
     t0 = time.monotonic()
-    await m.send_browser_command("rid2", "navigate", "b1", {"url": "x"})
+    await m.send_browser_command("rid2", "navigate", "b1", {"url": "x"}, owner=P_LOCAL)
     elapsed = time.monotonic() - t0
     assert elapsed > 0.5, "navigate should use its longer bound, not the default"
 
@@ -70,10 +73,10 @@ async def test_lost_first_delivery_heals_via_rebroadcast(monkeypatch):
             sends.append(payload)
             if len(sends) >= 2:  # first delivery "lost", second lands
                 rid = next(iter(m.browser_futures))
-                m.resolve_browser_command(rid, {"text": "ok"})
+                m.resolve_browser_command(rid, {"text": "ok"}, claimant=P_LOCAL)
 
     m.global_connections = [p_CountingSock()]
-    res = await m.send_browser_command("rid4", "get_text", "b1", {})
+    res = await m.send_browser_command("rid4", "get_text", "b1", {}, owner=P_LOCAL)
     assert res == {"text": "ok"}
     assert len(sends) >= 2, "command must be re-broadcast until a client answers"
 
@@ -96,7 +99,7 @@ async def test_a_window_closing_mid_command_fails_fast_not_at_the_bound(monkeypa
 
     asyncio.create_task(p_close_window_soon())
     t0 = time.monotonic()
-    res = await m.send_browser_command("rid5", "get_text", "b1", {})
+    res = await m.send_browser_command("rid5", "get_text", "b1", {}, owner=P_LOCAL)
     elapsed = time.monotonic() - t0
     # the agent's card-gone streak keys on this exact wording, so it must match the entry check's
     assert res == {"error": "No dashboard is connected. Open the dashboard to use browser tools."}
@@ -109,7 +112,7 @@ async def test_the_fast_fail_wording_is_the_one_the_agent_watches_for():
     from backend.apps.agents.browser.browser_loop import card_is_unavailable
     m = wsm.ConnectionManager()
     m.global_connections = []
-    res = await m.send_browser_command("rid6", "get_text", "b1", {})
+    res = await m.send_browser_command("rid6", "get_text", "b1", {}, owner=P_LOCAL)
     assert card_is_unavailable(res), "the not-connected error must read as a gone card"
 
 
@@ -129,10 +132,10 @@ async def test_a_brief_socket_blip_still_rides_through(monkeypatch):
         m.global_connections = [sock]      # frontend reconnects
         await asyncio.sleep(0.15)
         rid = next(iter(m.browser_futures))
-        m.resolve_browser_command(rid, {"text": "ok"})
+        m.resolve_browser_command(rid, {"text": "ok"}, claimant=P_LOCAL)
 
     asyncio.create_task(p_blip_then_return())
-    res = await m.send_browser_command("rid7", "get_text", "b1", {})
+    res = await m.send_browser_command("rid7", "get_text", "b1", {}, owner=P_LOCAL)
     assert res == {"text": "ok"}, "a reconnect inside the grace must not fail the command"
 
 
@@ -146,11 +149,11 @@ async def test_a_resolved_command_returns_immediately(monkeypatch):
         await asyncio.sleep(0.05)
         # find the pending future and resolve it like the renderer would
         rid = next(iter(m.browser_futures))
-        m.resolve_browser_command(rid, {"text": "ok", "url": "u"})
+        m.resolve_browser_command(rid, {"text": "ok", "url": "u"}, claimant=P_LOCAL)
 
     asyncio.create_task(p_resolve_soon())
     t0 = time.monotonic()
-    res = await m.send_browser_command("rid3", "get_text", "b1", {})
+    res = await m.send_browser_command("rid3", "get_text", "b1", {}, owner=P_LOCAL)
     elapsed = time.monotonic() - t0
     assert res == {"text": "ok", "url": "u"}
     assert elapsed < 1.0, "healthy command returns on resolve, not at the timeout"

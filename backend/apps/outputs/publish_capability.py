@@ -69,7 +69,7 @@ def p_api_callers(root: str) -> List[str]:
                     continue
                 with open(full, "r", encoding="utf-8", errors="replace") as fh:
                     if P_API_CALL.search(fh.read()):
-                        hits.append(os.path.relpath(full, root))
+                        hits.append(os.path.relpath(full, root).replace(os.sep, "/"))
             except OSError:
                 continue
     return sorted(hits)

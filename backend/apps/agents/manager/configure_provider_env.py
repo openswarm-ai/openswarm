@@ -8,6 +8,10 @@ from typing import Dict, Optional
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
+from backend.apps.agents.manager.provider_runtime import (
+    DEFAULT_PROVIDER_RUNTIME,
+    ProviderRuntime,
+)
 from backend.apps.settings.models import AppSettings
 from backend.auth import get_auth_token
 
@@ -15,16 +19,17 @@ logger = __import__("logging").getLogger(__name__)
 
 
 @typechecked
-async def router_available(global_settings: AppSettings) -> bool:
+async def router_available(
+    global_settings: AppSettings,
+    runtime: ProviderRuntime = DEFAULT_PROVIDER_RUNTIME,
+) -> bool:
     """True when 9Router is up, reviving it first if it died. A dead router must never masquerade
     as "no provider configured": detection now shares the dispatch path's lazy-start, so a crashed
     or orphaned router self-heals on the very next send instead of erroring the turn. Revival is
     gated on EVIDENCE of a provider (a settings key, proxy mode, or an active connection in the
     router's on-disk db) so a zero-config user keeps the clean no-provider message instead of us
     booting a router with nothing to route."""
-    from backend.apps.nine_router import ensure_running as p_ensure, is_running as p_running
-    from backend.apps.nine_router.process import has_persisted_connections
-    if p_running():
+    if runtime.router_is_running():
         return True
     p_evidence = any([
         getattr(global_settings, "anthropic_api_key", None),
@@ -33,13 +38,13 @@ async def router_available(global_settings: AppSettings) -> bool:
         getattr(global_settings, "openrouter_api_key", None),
         getattr(global_settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial"),
         bool(getattr(global_settings, "custom_providers", None) or []),
-        has_persisted_connections(),
+        runtime.has_persisted_connections(),
     ])
     if not p_evidence:
         return False
     logger.info("[MCP-DEBUG] 9Router down at provider detection; reviving before concluding")
-    await p_ensure()
-    return p_running()
+    await runtime.ensure_router_running()
+    return runtime.router_is_running()
 
 
 @typechecked
@@ -49,8 +54,8 @@ async def configure_provider_env(
     resolved_model: object,
     api_type: Optional[str],
     global_settings: AppSettings,
+    runtime: ProviderRuntime = DEFAULT_PROVIDER_RUNTIME,
 ) -> None:
-    from backend.apps.nine_router import is_running as nine_router_running
     from backend.apps.agents.providers.registry import NINEROUTER_MODEL_PREFIXES as NINEROUTER_MODEL_PREFIXES
     resolved_is_9router = isinstance(resolved_model, str) and resolved_model.startswith(NINEROUTER_MODEL_PREFIXES)
 
@@ -84,11 +89,10 @@ async def configure_provider_env(
         logger.info(f"[MCP-DEBUG] Using direct OpenAI API key (route=api) for {session.model} via openai-passthrough")
     elif is_pinned_api_route and api_route_provider == "custom":
         # User OpenAI-compatible endpoint (Ollama/Together/LM Studio) via 9Router's synced provider node.
-        from backend.apps.nine_router import ensure_running as p_9r_ensure_c
-        if not nine_router_running():
+        if not runtime.router_is_running():
             logger.info(f"[MCP-DEBUG] custom provider selected but 9Router not running; waiting for startup")
-            await p_9r_ensure_c()
-            if not nine_router_running():
+            await runtime.ensure_router_running()
+            if not runtime.router_is_running():
                 raise ValueError(
                     "9Router could not start. Custom OpenAI-compatible "
                     "providers need 9Router to translate the Anthropic "
@@ -104,8 +108,9 @@ async def configure_provider_env(
         if cp:
             # Local servers often run auth-disabled; placeholder key since the OpenAI SDK requires non-empty.
             env["OPENAI_API_KEY"] = (cp.api_key or "").strip() or "no-auth-required"
-            from backend.apps.nine_router import normalize_openai_compat_base_url as norm_cp_url
-            env["OPENAI_BASE_URL"] = norm_cp_url(cp.base_url or "")
+            env["OPENAI_BASE_URL"] = runtime.normalize_openai_compat_base_url(
+                cp.base_url or ""
+            )
         # Pin subagents or CLI's default Haiku 4.5 404s on the custom provider.
         if global_settings.anthropic_api_key:
             env["CLAUDE_CODE_SUBAGENT_MODEL"] = "claude-sonnet-4-6"
@@ -130,11 +135,10 @@ async def configure_provider_env(
         logger.info(f"[MCP-DEBUG] Using direct Google API key (route=api) for {session.model} via local proxy")
     elif api_type == "openrouter" and getattr(global_settings, "openrouter_api_key", None):
         # OpenRouter via 9Router; with no Anthropic key/sub, fall back to OR's resold Claude for subagents (incl. WebSearch delegation) so they stay on the same OR billing.
-        if not nine_router_running():
-            from backend.apps.nine_router import ensure_running as nine_router_ensure
+        if not runtime.router_is_running():
             logger.info(f"[MCP-DEBUG] OpenRouter selected but 9Router not running; waiting for startup")
-            await nine_router_ensure()
-            if not nine_router_running():
+            await runtime.ensure_router_running()
+            if not runtime.router_is_running():
                 raise ValueError(
                     "9Router could not start. OpenRouter routing requires "
                     "Node.js, install it and restart the app, or pick a "
@@ -157,8 +161,7 @@ async def configure_provider_env(
         options_kwargs["env"] = env
         logger.info(f"[MCP-DEBUG] Using OpenRouter for {session.model}")
     elif api_type == "anthropic" and not resolved_is_9router and getattr(global_settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial"):
-        from backend.apps.settings.credentials import proxy_auth
-        bearer, proxy_url = proxy_auth(global_settings)
+        bearer, proxy_url = runtime.proxy_auth(global_settings)
         bearer = bearer or ""
         options_kwargs["env"] = {
             "ANTHROPIC_AUTH_TOKEN": bearer,
@@ -179,7 +182,7 @@ async def configure_provider_env(
     elif api_type == "anthropic" and not resolved_is_9router and global_settings.anthropic_api_key:
         options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
         logger.info("[MCP-DEBUG] Using direct Anthropic API key")
-    elif await router_available(global_settings):
+    elif await router_available(global_settings, runtime):
         # Gemini-bound ids go through the local proxy for schema scrubbing; everything else hits 9Router directly.
         is_gemini_bound = (
             isinstance(resolved_model, str)

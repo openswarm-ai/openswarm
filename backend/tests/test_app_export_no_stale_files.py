@@ -34,7 +34,7 @@ def p_make_app(ws_root, *, workspace: bool) -> str:
     if wsid:
         folder = ws_root / wsid
         folder.mkdir()
-        (folder / "app.py").write_text("print('v1')\n")
+        (folder / "app.py").write_text("print('v1')\n", newline="\n")
     o = Output(
         name="Demo", description="", icon="view_quilt",
         input_schema={"type": "object", "properties": {}, "required": []},
@@ -50,8 +50,8 @@ def test_workspace_app_export_omits_stale_inline_files(p_ws_root):
     o = workspace_io.load_output(oid)
     folder = p_ws_root / o.workspace_id
     # agent edit -> v2 on disk: modify app.py + add new.py (output.files stays v1)
-    (folder / "app.py").write_text("print('v2 EDITED')\n")
-    (folder / "new.py").write_text("print('v2 NEW')\n")
+    (folder / "app.py").write_text("print('v2 EDITED')\n", newline="\n")
+    (folder / "new.py").write_text("print('v2 NEW')\n", newline="\n")
 
     exp = AppExportable.load(oid)
     payload = exp.serialize(P_Ctx())

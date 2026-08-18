@@ -14,13 +14,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import ntpath
 import os
+import re
 import shutil
+import tempfile
+import unicodedata
 import zlib
 from datetime import datetime
 from uuid import uuid4
 
 from backend.apps.outputs.models import Output, OutputVersion
+from backend.apps.outputs.version_blob_staging import (
+    BlobRestoreIntegrityError as BlobRestoreIntegrityError,  # re-export: the restore error is part of this module's API
+    stage_blob_verified,
+)
 from backend.apps.outputs.workspace_io import WALK_SKIP_DIRS, save, load_output
 from backend.apps.swarm.entities.apps import AppExportable
 from backend.config.paths import OUTPUTS_VERSIONS_DIR, OUTPUTS_WORKSPACE_DIR
@@ -28,6 +36,8 @@ from backend.config.paths import OUTPUTS_VERSIONS_DIR, OUTPUTS_WORKSPACE_DIR
 logger = logging.getLogger(__name__)
 
 P_MAX_FILE_BYTES = 25 * 1024 * 1024  # don't snapshot giant build artifacts
+P_RESTORE_HASH_CHUNK_BYTES = 256 * 1024
+P_SHA256_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class p_NullExportCtx:
@@ -56,12 +66,79 @@ def p_digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def p_digest_file(path: str) -> str:
+    """Hash a live destination without loading the whole file into memory."""
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while chunk := handle.read(P_RESTORE_HASH_CHUNK_BYTES):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def p_safe_join(folder: str, rel: str) -> str:
     dest = os.path.realpath(os.path.join(folder, rel))
     root = os.path.realpath(folder)
     if dest != root and not dest.startswith(root + os.sep):
         raise ValueError("version file path escapes the workspace")
     return dest
+
+
+def p_restore_targets(
+    folder: str,
+    file_map: object,
+) -> dict[str, tuple[str, str]]:
+    """Validate the complete manifest before staging or destination mutation."""
+    if not isinstance(file_map, dict):
+        raise BlobRestoreIntegrityError("restore manifest files must be an object")
+
+    targets: dict[str, tuple[str, str]] = {}
+    destination_aliases: set[str] = set()
+    existing_inodes: set[tuple[int, int]] = set()
+    for key, digest in file_map.items():
+        if not isinstance(key, str) or not key.startswith("workspace/"):
+            raise BlobRestoreIntegrityError("restore manifest has a non-workspace path")
+        rel = key[len("workspace/"):]
+        parts = rel.split("/")
+        if (
+            not rel
+            or "\\" in rel
+            or "\0" in rel
+            or os.path.isabs(rel)
+            or any(part in {"", ".", ".."} for part in parts)
+            or any(ntpath.isreserved(part) for part in parts)
+        ):
+            raise BlobRestoreIntegrityError(f"restore manifest path is not canonical: {key!r}")
+        if not isinstance(digest, str) or P_SHA256_DIGEST.fullmatch(digest) is None:
+            raise BlobRestoreIntegrityError(f"restore manifest digest is invalid for {key!r}")
+
+        try:
+            dest = p_safe_join(folder, rel)
+        except (OSError, ValueError) as error:
+            raise BlobRestoreIntegrityError(
+                f"restore manifest path is unsafe: {key!r}"
+            ) from error
+        destination_alias = unicodedata.normalize("NFC", dest).casefold()
+        if destination_alias in destination_aliases:
+            raise BlobRestoreIntegrityError("restore manifest destination paths alias")
+        destination_aliases.add(destination_alias)
+
+        if os.path.exists(dest):
+            if not os.path.isfile(dest):
+                raise BlobRestoreIntegrityError(
+                    f"restore destination is not a regular file: {key!r}"
+                )
+            try:
+                stat = os.stat(dest)
+            except OSError as error:
+                raise BlobRestoreIntegrityError(
+                    f"restore destination is unreadable: {key!r}"
+                ) from error
+            inode = (stat.st_dev, stat.st_ino)
+            if inode in existing_inodes:
+                raise BlobRestoreIntegrityError("restore manifest destinations alias an inode")
+            existing_inodes.add(inode)
+        targets[rel] = (dest, digest)
+    return targets
 
 
 def p_write_blob(output_id: str, data: bytes, digest: str) -> None:
@@ -205,46 +282,72 @@ def capture(
     return OutputVersion(**manifest)
 
 
-def p_restore_workspace(output_id: str, workspace_id: str, file_map: dict[str, str]) -> None:
+def p_restore_workspace(output_id: str, workspace_id: str, file_map: object) -> None:
     """Make the workspace match the snapshot. Deletes current authored files not
     in it, then writes the rest FROM BLOBS, skipping any file already byte-correct
     (so a restore writes only the diff). Keeps the live .env and build/cache dirs.
-    Per-file writes: a crash mid-restore leaves a mixed tree, but the pre_restore
-    backup restore() takes first is the real safety net."""
-    folder = os.path.join(OUTPUTS_WORKSPACE_DIR, workspace_id)
-    os.makedirs(folder, exist_ok=True)
-    targets: dict[str, str] = {
-        key[len("workspace/"):]: dig for key, dig in file_map.items() if key.startswith("workspace/")
-    }
 
-    for root, dirs, fnames in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in WALK_SKIP_DIRS]
-        for fname in fnames:
-            if fname == ".env":
-                continue
-            full = os.path.join(root, fname)
-            rel = os.path.relpath(full, folder).replace(os.sep, "/")
-            if rel not in targets:
+    Two phases, so a bad blob can never leave a partial tree: EVERY blob the
+    restore needs is staged and digest-verified OUTSIDE the workspace FIRST,
+    with bounded streamed decompression (per-file uncompressed cap enforced
+    while reading; only paths held in memory, never all bytes). Any missing,
+    unreadable, oversized, malformed, or digest-mismatched blob raises
+    BlobRestoreIntegrityError before the destination is touched - not even the
+    workspace directory is created. Only once all blobs are proven does the
+    destructive/write phase run; staging is cleaned up on success and failure.
+    (A crash mid-write still leaves a mixed tree, but the pre_restore backup
+    restore() captures first is the safety net for that.)"""
+    folder = os.path.join(OUTPUTS_WORKSPACE_DIR, workspace_id)
+    targets = p_restore_targets(folder, file_map)
+
+    # The staging dir lives under the app's VERSION store (never the workspace).
+    os.makedirs(p_app_dir(output_id), exist_ok=True)
+    staging = tempfile.mkdtemp(prefix="restore-stage-", dir=p_app_dir(output_id))
+    staged: dict[str, tuple[str, str]] = {}
+    try:
+        # Phase 1 (destination untouched): stage + verify every file that needs
+        # writing. Files already byte-correct on disk are skipped (neither read
+        # from blobs nor rewritten), preserving the diff-only write behavior.
+        for rel, (dest, digest) in targets.items():
+            if os.path.exists(dest):
                 try:
-                    os.remove(full)
+                    if (
+                        os.path.getsize(dest) <= P_MAX_FILE_BYTES
+                        and p_digest_file(dest) == digest
+                    ):
+                        continue  # already correct: don't rewrite
                 except OSError:
                     pass
+            staging_path = os.path.join(staging, f"{len(staged)}.blob")
+            stage_blob_verified(
+                os.path.join(blobs_dir(output_id), digest), digest, staging_path, P_MAX_FILE_BYTES
+            )
+            staged[rel] = (dest, staging_path)
 
-    for rel, digest in targets.items():
-        dest = p_safe_join(folder, rel)
-        if os.path.exists(dest):
+        # Phase 2 (mutation): every blob is proven, so NOW create the folder,
+        # delete files not in the snapshot, and move the staged bytes in.
+        os.makedirs(folder, exist_ok=True)
+        for root, dirs, fnames in os.walk(folder):
+            dirs[:] = [d for d in dirs if d not in WALK_SKIP_DIRS]
+            for fname in fnames:
+                if fname == ".env":
+                    continue
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(full, folder).replace(os.sep, "/")
+                if rel not in targets:
+                    try:
+                        os.remove(full)
+                    except OSError:
+                        pass
+
+        for rel, (dest, staging_path) in staged.items():
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
             try:
-                with open(dest, "rb") as f:
-                    if p_digest(f.read()) == digest:
-                        continue  # already correct: don't rewrite
+                os.replace(staging_path, dest)
             except OSError:
-                pass
-        data = p_read_blob(output_id, digest)
-        if data is None:
-            continue
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "wb") as f:
-            f.write(data)
+                shutil.copyfile(staging_path, dest)  # cross-device fallback
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def restore(output_id: str, version_id: str) -> Output | None:
@@ -275,7 +378,7 @@ def restore(output_id: str, version_id: str) -> Output | None:
     output.preview_updated_at = now
 
     if output.workspace_id:
-        p_restore_workspace(output_id, output.workspace_id, manifest.get("files") or {})
+        p_restore_workspace(output_id, output.workspace_id, manifest.get("files"))
     save(output)
     return output
 

@@ -76,7 +76,7 @@ class Messaging(AgentManagerProtocol):
                 self.sessions[session_id] = session
             else:
                 raise ValueError(f"Session {session_id} not found")
-        
+
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
             # A mid-turn message used to be silently dropped here (no bubble, no trace); queue it and the turn task's done callback replays it.
@@ -175,7 +175,7 @@ class Messaging(AgentManagerProtocol):
                 logger.warning(f"[browser-fast-path] gate error, normal path: {e}")
 
         if fast_verdict != "no":
-            task = asyncio.create_task(run_browser_fast_path(session, session_id, prompt, selected_browser_ids, fast_brief, fast_verdict))
+            task = asyncio.create_task(run_browser_fast_path(session, session_id, prompt, selected_browser_ids, fast_brief, fast_verdict, event_sink=self.event_sink))
         else:
             task = asyncio.create_task(self.run_agent_loop(session_id, prompt, images=images, context_paths=context_paths, forced_tools=forced_tools, attached_skills=attached_skills, selected_browser_ids=selected_browser_ids, selected_app_output_ids=selected_app_output_ids, selected_setting_ids=selected_setting_ids))
         self.register_turn_task(session_id, task)

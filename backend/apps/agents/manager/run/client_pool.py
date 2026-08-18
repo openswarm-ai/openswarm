@@ -76,7 +76,7 @@ class ClientHandle(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     fingerprint: str
-    client: InstanceOf[object]
+    client: Any
     lock: InstanceOf[asyncio.Lock]
     connected_at: float
     last_used: float
@@ -94,6 +94,13 @@ IDLE_EVICT_SECONDS = float(os.environ.get("OSW_CLIENT_IDLE_EVICT_SECONDS", "600"
 # machines we explicitly support. Still a SOFT cap: live turns are never evicted, so real concurrent
 # work can exceed it; only parked chats pay.
 MAX_LIVE_CLIENTS = int(os.environ.get("OSW_CLIENT_MAX_LIVE", "8"))
+# Never cap-evict a client used this recently; far larger than the acquire->lock window, so a just-acquired client can't be reaped before its turn takes the lock.
+LRU_GUARD_SECONDS = float(os.environ.get("OSW_CLIENT_LRU_GUARD_SECONDS", "5"))
+# Timer cadence for the background reclaim; the acquire-time sweep is lazy (fires only when some session takes a turn), this one catches an all-quiet pool.
+SWEEP_INTERVAL_SECONDS = float(os.environ.get("OSW_CLIENT_SWEEP_INTERVAL_SECONDS", "60"))
+
+# Hard ceiling on warm CLIs regardless of idle age: past this, the least-recently-used IDLE sessions are disposed (they respawn ~0.5s on their next message), bounding the "30 chats open" resident-memory case. Kept a SOFT cap: a mid-turn or just-acquired client is never evicted, so a burst of live turns may exceed it rather than kill work.
+MAX_LIVE_CLIENTS = int(os.environ.get("OSW_CLIENT_MAX_LIVE", "12"))
 # Never cap-evict a client used this recently; far larger than the acquire->lock window, so a just-acquired client can't be reaped before its turn takes the lock.
 LRU_GUARD_SECONDS = float(os.environ.get("OSW_CLIENT_LRU_GUARD_SECONDS", "5"))
 # Timer cadence for the background reclaim; the acquire-time sweep is lazy (fires only when some session takes a turn), this one catches an all-quiet pool.

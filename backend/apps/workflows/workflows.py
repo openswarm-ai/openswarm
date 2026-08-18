@@ -2,16 +2,16 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import HTTPException, Header, Query, Request
+from fastapi import Depends, HTTPException, Header, Query
 
 from backend.config.Apps import SubApp
+from backend.apps.hosting.policy import hosting_policy
 from backend.apps.workflows.models import (
     Workflow,
     WorkflowCreate,
     WorkflowUpdate,
-    WorkflowRun,
     WorkflowStep,
     DraftCommitBody,
     AskRunBody,
@@ -19,7 +19,14 @@ from backend.apps.workflows.models import (
     GenerateMetadataRequest,
     GenerateMetadataResponse,
 )
-from backend.apps.workflows import storage, scheduler, executor, audit, escalation
+from backend.apps.workflows import (
+    audit,
+    escalation,
+    executor,
+    lifecycle_events,
+    scheduler,
+    storage,
+)
 from backend.apps.workflows.cloud.handover import release_before_removing
 from backend.apps.settings.models import DEFAULT_MODEL
 from backend.apps.workflows.default_model import provider_for_model, user_default_model
@@ -38,7 +45,7 @@ EDIT_AGENT_INTRO = (
 )
 
 
-def _scan_cron_for_openswarm() -> list[str]:
+def scan_cron_for_openswarm() -> list[str]:
     """Surface OS-level scheduled-task entries that reference us.
 
     macOS + Linux: read `crontab -l`. Windows: query `schtasks` for any
@@ -83,11 +90,15 @@ _cron_findings: list[str] = []
 
 @asynccontextmanager
 async def workflows_lifespan():
+    if hosting_policy().workflows_disabled():
+        logger.info("workflow storage and scheduler disabled in hosted mode")
+        yield
+        return
     storage.init()
     await scheduler.start()
     # Cheap one-shot scan for prior cron entries that reference us. We don't migrate automatically; the FE shows a banner with a "Convert to OpenSwarm scheduled tasks" button so the user is in control.
     global _cron_findings
-    _cron_findings = _scan_cron_for_openswarm()
+    _cron_findings = scan_cron_for_openswarm()
     try:
         yield
     finally:
@@ -95,6 +106,30 @@ async def workflows_lifespan():
 
 
 workflows = SubApp("workflows", workflows_lifespan)
+
+WorkflowLifecycleEventDependency = Annotated[
+    lifecycle_events.WorkflowLifecycleEventPort | None,
+    Depends(lifecycle_events.workflow_lifecycle_event_publisher),
+]
+
+
+async def p_publish_workflow_updated(
+    event_publisher: lifecycle_events.WorkflowLifecycleEventPort | None,
+    workflow_id: str,
+    workflow: lifecycle_events.WorkflowPayload,
+) -> None:
+    if event_publisher is None:
+        event_publisher = lifecycle_events.workflow_lifecycle_event_publisher()
+    await event_publisher.workflow_updated(workflow_id, workflow)
+
+
+async def p_publish_workflow_deleted(
+    event_publisher: lifecycle_events.WorkflowLifecycleEventPort | None,
+    workflow_id: str,
+) -> None:
+    if event_publisher is None:
+        event_publisher = lifecycle_events.workflow_lifecycle_event_publisher()
+    await event_publisher.workflow_deleted(workflow_id)
 
 
 def _derive_icon(wf: Workflow) -> str:
@@ -276,7 +311,10 @@ def _parse_calendar_bound(value: str, label: str) -> datetime:
 
 
 @workflows.router.post("/create")
-async def create_workflow(body: WorkflowCreate):
+async def create_workflow(
+    body: WorkflowCreate,
+    event_publisher: WorkflowLifecycleEventDependency = None,
+):
     if not body.unsaved and not _has_nonempty_steps(body.steps):
         raise HTTPException(status_code=400, detail="Workflow must have at least one step")
     actions = body.actions
@@ -327,14 +365,7 @@ async def create_workflow(body: WorkflowCreate):
     storage.save_workflow(wf)
     scheduler.kick()
     enriched = _enriched(wf)
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:updated", {
-            "workflow_id": wf.id,
-            "workflow": enriched,
-        })
-    except Exception:
-        pass
+    await p_publish_workflow_updated(event_publisher, wf.id, enriched)
     return enriched
 
 
@@ -803,6 +834,7 @@ async def update_workflow(
     workflow_id: str,
     body: WorkflowUpdate,
     if_match: Optional[str] = Header(default=None, alias="If-Match"),
+    event_publisher: WorkflowLifecycleEventDependency = None,
 ):
     wf = storage.get_workflow(workflow_id)
     if not wf:
@@ -841,14 +873,7 @@ async def update_workflow(
         await p_sync_cloud_copy(wf, {k: v for k, v in data.items() if k != "steps"})
         storage.save_workflow(wf)
         enriched = _enriched(wf)
-        try:
-            from backend.apps.agents.core.ws_manager import ws_manager
-            await ws_manager.broadcast_global("workflow:updated", {
-                "workflow_id": wf.id,
-                "workflow": enriched,
-            })
-        except Exception:
-            pass
+        await p_publish_workflow_updated(event_publisher, wf.id, enriched)
         return enriched
     for k, v in data.items():
         setattr(wf, k, v)
@@ -867,14 +892,7 @@ async def update_workflow(
     scheduler.kick()
     # Push the change to every open dashboard so an agent-driven edit (the Edit Agent's add/delete/edit-step tools all PATCH here) refreshes the card live instead of looking stale until the next full refetch.
     enriched = _enriched(wf)
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:updated", {
-            "workflow_id": wf.id,
-            "workflow": enriched,
-        })
-    except Exception:
-        pass
+    await p_publish_workflow_updated(event_publisher, wf.id, enriched)
     return enriched
 
 
@@ -892,7 +910,10 @@ async def _stop_in_flight_run(workflow_id: str) -> None:
 
 
 @workflows.router.delete("/{workflow_id}")
-async def delete_workflow(workflow_id: str):
+async def delete_workflow(
+    workflow_id: str,
+    event_publisher: WorkflowLifecycleEventDependency = None,
+):
     """Soft-delete: move to Trash. The record stays on disk with deleted_at
     set so it's hidden from every list and the scheduler but restorable.
     /{id}/purge does the irreversible hard delete."""
@@ -912,16 +933,15 @@ async def delete_workflow(workflow_id: str):
     # Drop any pending missed fires so a trashed workflow can't haunt the card.
     p_drop_pending_missed(workflow_id)
     scheduler.kick()
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:deleted", {"workflow_id": workflow_id})
-    except Exception:
-        pass
+    await p_publish_workflow_deleted(event_publisher, workflow_id)
     return {"ok": True}
 
 
 @workflows.router.post("/{workflow_id}/restore")
-async def restore_workflow(workflow_id: str):
+async def restore_workflow(
+    workflow_id: str,
+    event_publisher: WorkflowLifecycleEventDependency = None,
+):
     """Bring a trashed workflow back. Its schedule stays off (we disabled it
     on delete); the user re-enables it deliberately."""
     wf = storage.get_workflow(workflow_id)
@@ -930,19 +950,15 @@ async def restore_workflow(workflow_id: str):
     wf.deleted_at = None
     storage.save_workflow(wf, untrash=True)
     enriched = _enriched(wf)
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:updated", {
-            "workflow_id": wf.id,
-            "workflow": enriched,
-        })
-    except Exception:
-        pass
+    await p_publish_workflow_updated(event_publisher, wf.id, enriched)
     return enriched
 
 
 @workflows.router.delete("/{workflow_id}/purge")
-async def purge_workflow(workflow_id: str):
+async def purge_workflow(
+    workflow_id: str,
+    event_publisher: WorkflowLifecycleEventDependency = None,
+):
     """Hard delete, only from Trash. Removes the record, its run history and its own chats."""
     wf = storage.get_workflow(workflow_id)
     if not wf or wf.deleted_at is None:
@@ -954,11 +970,7 @@ async def purge_workflow(workflow_id: str):
     from backend.apps.workflows.owned_sessions import purge_owned_sessions
     await purge_owned_sessions(wf)
     storage.delete_workflow(workflow_id)
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:deleted", {"workflow_id": workflow_id})
-    except Exception:
-        pass
+    await p_publish_workflow_deleted(event_publisher, workflow_id)
     return {"ok": True}
 
 
@@ -1190,7 +1202,11 @@ def p_sync_model_on_save(wf, model: Optional[str]) -> None:
 
 
 @workflows.router.post("/{workflow_id}/draft/commit")
-async def commit_draft(workflow_id: str, body: Optional[DraftCommitBody] = None):
+async def commit_draft(
+    workflow_id: str,
+    body: Optional[DraftCommitBody] = None,
+    event_publisher: WorkflowLifecycleEventDependency = None,
+):
     """Commit the Edit-Agent draft: draft_steps become the live steps."""
     wf = storage.get_workflow(workflow_id)
     if not wf:
@@ -1231,19 +1247,15 @@ async def commit_draft(workflow_id: str, body: Optional[DraftCommitBody] = None)
     audit.log_change(wf.id, "user", before, wf.model_dump(mode="json"))
     scheduler.kick()
     enriched = _enriched(wf)
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:updated", {
-            "workflow_id": wf.id,
-            "workflow": enriched,
-        })
-    except Exception:
-        pass
+    await p_publish_workflow_updated(event_publisher, wf.id, enriched)
     return enriched
 
 
 @workflows.router.post("/{workflow_id}/draft/discard")
-async def discard_draft(workflow_id: str):
+async def discard_draft(
+    workflow_id: str,
+    event_publisher: WorkflowLifecycleEventDependency = None,
+):
     """Throw away the Edit-Agent draft; the live workflow is untouched."""
     wf = storage.get_workflow(workflow_id)
     if not wf:
@@ -1254,14 +1266,7 @@ async def discard_draft(workflow_id: str):
     p_prune_step_tool_usage(wf)
     storage.save_workflow(wf)
     enriched = _enriched(wf)
-    try:
-        from backend.apps.agents.core.ws_manager import ws_manager
-        await ws_manager.broadcast_global("workflow:updated", {
-            "workflow_id": wf.id,
-            "workflow": enriched,
-        })
-    except Exception:
-        pass
+    await p_publish_workflow_updated(event_publisher, wf.id, enriched)
     return enriched
 
 

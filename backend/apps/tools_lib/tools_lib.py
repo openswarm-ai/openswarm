@@ -19,6 +19,7 @@ from backend.config.paths import DATA_ROOT, TOOLS_DIR as DATA_DIR, BUILTIN_PERMI
 # oauth_config runs the dotenv load (leaf) so OPENSWARM_OAUTH_BASE_URL is set before anything reads it; re-exported here for the route handlers below.
 from backend.apps.tools_lib.oauth_config import OPENSWARM_OAUTH_BASE_URL
 # sanitize_server_name + derive_mcp_config re-exported for agent_manager/main.
+from backend.apps.hosting.policy import hosting_policy
 from backend.apps.tools_lib.mcp_config import sanitize_server_name, derive_mcp_config
 from backend.apps.tools_lib.mcp_discovery import (
     discover_mcp_tools_http,
@@ -345,6 +346,11 @@ async def create_tool(body: ToolCreate):
 @tools_lib.router.put("/{tool_id}")
 async def update_tool(tool_id: str, body: ToolUpdate):
     tool = load(tool_id)
+    if hosting_policy().tool_update_restricted(tool, body):
+        raise HTTPException(
+            status_code=403,
+            detail="this build only allows enabling or disabling tools here",
+        )
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(tool, k, v)
     save(tool)

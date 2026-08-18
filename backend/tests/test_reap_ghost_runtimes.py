@@ -7,6 +7,8 @@ have killed 14 running app runtimes whose backend was up. These pin the discrimi
 import os
 from unittest.mock import patch
 
+import pytest
+
 from backend.apps.outputs import reap_ghost_runtimes as mod
 
 
@@ -163,6 +165,7 @@ def test_a_cwd_orphan_owned_by_a_live_backend_is_spared(monkeypatch):
     assert rg.find_ghost_runtime_pids() == [], "a live backend's own app runtime must never be killed"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="SIGSTOP/SIGCONT freezing is POSIX-only; the reaper never pauses runtimes on Windows")
 def test_a_frozen_ghost_is_thawed_before_being_signalled(monkeypatch):
     """Idle app runtimes are parked with SIGSTOP, and a STOPPED process never handles SIGTERM: it
     queues it and lives forever. Found live as a frozen `bash run.sh` that had survived every reap

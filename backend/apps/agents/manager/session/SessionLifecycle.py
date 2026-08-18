@@ -4,6 +4,7 @@ self.tasks / self.stop_agent across the MRO exactly as it did inline, so behavio
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 
@@ -17,7 +18,9 @@ from backend.apps.agents.manager.session.session_store import (
     save_session,
     build_search_text,
 )
+from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
+from backend.apps.agents.manager.session.workspace_git import ensure_cwd_git_repo
 from backend.apps.agents.manager.session import resume_and_duplicate
 from backend.apps.agents.manager.view_builder_state import (
     view_builder_render_retry_counts,
@@ -29,9 +32,6 @@ logger = logging.getLogger(__name__)
 
 # Agent-spawned children, never a chat the user started, so they stay out of chat history.
 P_NON_CHAT_MODES = {"browser-agent", "sub-agent", "invoked-agent", "app-agent"}
-
-
-from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 
 
 class SessionLifecycle(AgentManagerProtocol):
@@ -101,16 +101,11 @@ class SessionLifecycle(AgentManagerProtocol):
         close or delete can't strand stale per-session state that lives until
         the process dies. One chokepoint on purpose: a new per-session cache
         wires its eviction in HERE and both removal paths get it for free."""
-        self.sessions.pop(session_id, None)
-        self.tasks.pop(session_id, None)
-        self.live_partial.pop(session_id, None)
-        self.cancel_events.pop(session_id, None)
-        self.pending_messages.pop(session_id, None)
         view_builder_render_retry_counts.pop(session_id, None)
         view_builder_dirty_sessions.discard(session_id)
         dispose_client_soon(self.client_pool, session_id)
-        self.hook_ctxs.pop(session_id, None)
-        self.stderr_buffers.pop(session_id, None)
+        self.pending_messages.pop(session_id, None)
+        self.store.purge_session_runtime(session_id)
 
     @typechecked
     async def delete_session(self, session_id: str) -> None:
@@ -139,6 +134,35 @@ class SessionLifecycle(AgentManagerProtocol):
         logger.info(f"Session {session_id} permanently deleted")
 
     @typechecked
+    async def delete_sessions_for_owner(self, owner_account_id: str) -> int:
+        """Permanently delete every in-memory or persisted session for an owner."""
+        session_ids = {
+            sid for sid, session in self.sessions.items()
+            if session.owner_account_id == owner_account_id
+        }
+        for sid, data in load_all_session_data():
+            if data.get("owner_account_id") == owner_account_id:
+                session_ids.add(sid)
+
+        deleted = 0
+        failures = 0
+        for sid in sorted(session_ids):
+            try:
+                if sid in self.sessions:
+                    await self.delete_session(sid)
+                else:
+                    delete_session_file(sid)
+                deleted += 1
+            except Exception:
+                logger.exception("Failed to delete owned session %s during reset", sid)
+                failures += 1
+        if failures:
+            raise RuntimeError(
+                f"failed to delete {failures} owned session(s) during reset"
+            )
+        return deleted
+
+    @typechecked
     async def resume_session(self, session_id: str) -> AgentSession:
         if session_id in self.sessions:
             return self.sessions[session_id]
@@ -159,6 +183,7 @@ class SessionLifecycle(AgentManagerProtocol):
         limit: int = 20,
         offset: int = 0,
         dashboard_id: Optional[str] = None,
+        owner_account_id: Optional[str] = None,
         closed_only: bool = False,
     ) -> Dict:
         """Return paginated, optionally filtered summaries of sessions, live ones included."""
@@ -189,8 +214,10 @@ class SessionLifecycle(AgentManagerProtocol):
             # Children are machinery, not chats: a busy user's real history was buried under hundreds of "Browser Agent" rows.
             if data.get("mode") in P_NON_CHAT_MODES:
                 continue
-            # The boot fetch wants CLOSED sessions only: open ones landing in the client's history map made its resurrection gate swallow their terminal frames. Search keeps the full pool (open sessions on other dashboards are reachable nowhere else).
+            # The boot fetch wants CLOSED sessions only: open ones landing in the client's history map made its resurrection gate swallow their terminal frames.
             if closed_only and not data.get("closed_at"):
+                continue
+            if owner_account_id and data.get("owner_account_id") != owner_account_id:
                 continue
             if dashboard_id and data.get("dashboard_id") != dashboard_id:
                 continue
@@ -279,6 +306,35 @@ class SessionLifecycle(AgentManagerProtocol):
         return self.sessions.get(session_id)
 
     @typechecked
+    def is_hosted_owned_workspace(self, session: AgentSession) -> bool:
+        if not session.owner_account_id or not session.cwd:
+            return False
+        try:
+            from backend.apps.hosting.policy import hosting_policy
+
+            owner_root = hosting_policy().owned_workspace_root(session.owner_account_id)
+            if not owner_root:
+                return False
+            root = os.path.abspath(owner_root)
+            cwd = os.path.abspath(session.cwd)
+            return cwd == root or cwd.startswith(root + os.sep)
+        except Exception:
+            return False
+
+    @typechecked
+    def ensure_session_workspace_ready(self, session: AgentSession) -> bool:
+        """Recreate a missing owned workspace before handing cwd to the SDK."""
+        if not session.cwd or os.path.isdir(session.cwd):
+            return False
+        if not self.is_hosted_owned_workspace(session):
+            return False
+        os.makedirs(session.cwd, exist_ok=True)
+        ensure_cwd_git_repo(session.cwd)
+        session.needs_fresh_session = True
+        logger.info("Recreated missing owned workspace for session %s", session.id)
+        return True
+
+    @typechecked
     def get_browser_agent_children(self, parent_session_id: str) -> List[dict]:
         """Return browser-agent sessions for a parent, from memory or disk."""
         results: List[dict] = []
@@ -302,4 +358,3 @@ class SessionLifecycle(AgentManagerProtocol):
                 results.append(sess.model_dump(mode="json"))
 
         return results
-

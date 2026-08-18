@@ -9,7 +9,14 @@ ran while the run still looked like it had finished. Same class as ENG-219 and t
 skip: a green-looking run that never executed.
 """
 
+import os
+
+import pytest
+
 from backend.apps.service.shutdown_fuse import arm_shutdown_fuse, disarm_shutdown_fuse, fuse_armed
+
+# The fuse walks the process tree with pgrep and is deliberately a no-op on Windows (arm returns without a timer), so there is nothing to stand down there.
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="the shutdown fuse is POSIX-only; arm is a no-op on Windows")
 
 
 def test_arming_then_disarming_leaves_no_live_timer() -> None:

@@ -26,6 +26,21 @@ logger = logging.getLogger(__name__)
 
 
 @typechecked
+async def post_tool_failure_hook(
+    ctx: HookContext, input_data: dict, tool_use_id, context
+) -> Dict[str, object]:
+    if tool_use_id and ctx.event_emitter is not None:
+        ctx.tool_start_times.pop(tool_use_id, None)
+        ctx.event_emitter.emit_tool_completed(
+            str(tool_use_id),
+            input_data.get("tool_name", ""),
+            status="cancelled" if input_data.get("is_interrupt") else "error",
+            error_type="ToolExecutionError",
+        )
+    return {}
+
+
+@typechecked
 async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, context) -> Dict[str, object]:
     session = ctx.session
     session_id = ctx.session_id
@@ -38,6 +53,14 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
 
     # Accumulate per-tool latency on the session. Lets the cloud aggregate a tool-latency distribution into the existing daily.summary without firing per-tool events.
     hook_tool_name_early = input_data.get("tool_name", "")
+    if tool_use_id and ctx.event_emitter is not None:
+        is_error = bool(input_data.get("is_error"))
+        ctx.event_emitter.emit_tool_completed(
+            str(tool_use_id),
+            hook_tool_name_early,
+            status="error" if is_error else "success",
+            error_type="tool_error" if is_error else None,
+        )
     if hook_tool_name_early and elapsed_ms is not None and elapsed_ms >= 0:
         latencies = getattr(session, "tool_latencies", None)
         if latencies is None:

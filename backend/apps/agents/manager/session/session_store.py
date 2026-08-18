@@ -26,6 +26,16 @@ def load_session_data(session_id: str) -> Optional[Dict]:
 
 
 @typechecked
+def load_session_owner_account_id(session_id: str) -> Optional[str]:
+    """Read persisted ownership without hydrating or publishing the session."""
+    data = load_session_data(session_id)
+    if data is None:
+        return None
+    owner_account_id = data.get("owner_account_id")
+    return owner_account_id if isinstance(owner_account_id, str) else None
+
+
+@typechecked
 def delete_session_file(session_id: str) -> None:
     path = os.path.join(sessions_dir(), f"{session_id}.json")
     if os.path.exists(path):

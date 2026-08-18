@@ -17,6 +17,7 @@ from backend.apps.agents.manager.streaming.state import ThinkingState, TurnState
 from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 
 # The block types drive isinstance DISPATCH, so they must be real at runtime; imported inside the handler because by stream time the SDK is already resident (the turn's presence check imported it), keeping the 350ms sdk+mcp chain off the boot graph.
 from typing import TYPE_CHECKING
@@ -36,6 +37,7 @@ async def handle_assistant_message(
     thinking: ThinkingState,
     live_partial: Dict[str, PartialReply],
     sessions: Dict[str, AgentSession],
+    event_emitter: Optional[AgentTurnEventEmitter] = None,
 ) -> None:
     from claude_agent_sdk.types import ThinkingBlock, TextBlock, ToolUseBlock
 
@@ -65,6 +67,9 @@ async def handle_assistant_message(
                 "tool": block.name,
                 "input": block.input,
             })
+
+    if content_parts and any(content_parts) and event_emitter is not None:
+        event_emitter.emit_first_token()
 
     # Accumulate this AssistantMessage's contributions into the turn-level thinking pill. We re-emit the SAME message id each time so the frontend dedupes (addMessage replaces by id) and the bubble updates live as more thought / tools arrive. This is what gives us "Thought for 18s · 412 tokens · 3 tools used" reflecting the whole turn rather than just one think-step. NOTE: tool count is incremented in the content_block_start (block_type=="tool_use") branch above, NOT here. That path fires for both Anthropic and 9Router-translated providers; counting again here would double. If a provider somehow doesn't surface content_block_start for tool blocks but DOES surface them in the AssistantMessage envelope (defensive case), the max() in the consolidated emit will still pick up the higher count.
     if new_thinking_parts:
@@ -183,4 +188,3 @@ async def handle_assistant_message(
     turn.stream_text_msg_id = None
     turn.stream_tool_msg_ids_ordered = []
     turn.stream_block_index_map = {}
-
