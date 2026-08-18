@@ -83,7 +83,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           background: GLASS,
           backdropFilter: GLASS_BLUR,
           WebkitBackdropFilter: GLASS_BLUR,
-          boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
           whiteSpace: 'nowrap',
           ...ring,
         }}
@@ -138,7 +137,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             whiteSpace: 'nowrap',
             background: 'rgba(30,27,24,0.85)',
             border: '1px solid rgba(245,158,11,0.55)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
             transition: 'background 0.15s ease, transform 0.15s ease',
             '&:hover': { background: 'rgba(48,40,28,0.95)', transform: 'translateY(-1px)' },
           }}
@@ -156,7 +154,7 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
           {/* One glass surface holds the whole ask (options + Confirm + the type-your-own field); without it the widget's footer floated bare on the canvas. */}
           <Box sx={{ borderRadius: '16px', background: GLASS,
             backdropFilter: GLASS_BLUR,
-            WebkitBackdropFilter: GLASS_BLUR, boxShadow: '0 8px 24px rgba(0,0,0,0.32)', px: 1.25, py: 1.25 }}>
+            WebkitBackdropFilter: GLASS_BLUR, px: 1.25, py: 1.25 }}>
             <AskUiBubble pair={liveAsk} sessionId={sessionId!} isPending suppressReveal />
           </Box>
         </PillArtifactFrame>
@@ -182,7 +180,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             background: GLASS,
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
             px: 1.75,
             py: 1.5,
             minWidth: 200,
@@ -245,7 +242,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             background: GLASS,
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
             px: 1.75,
             py: 1.5,
             minWidth: 200,
@@ -308,7 +304,6 @@ function AgentNarratorPill({ label, running, todos, liveSteps, artifact, askPair
             background: GLASS,
             backdropFilter: GLASS_BLUR,
             WebkitBackdropFilter: GLASS_BLUR,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
           }}
         >
           <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
