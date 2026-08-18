@@ -152,8 +152,11 @@ rm -rf "$PYTHON_ENV_DIR/include"
 # IDLE editor + Tk GUI toolkit — embedded headless backend has no UI.
 rm -rf "$PYTHON_ENV_DIR/lib/python3.14/idlelib"
 rm -rf "$PYTHON_ENV_DIR/lib/python3.14/tkinter"
-# Pip bootstrap module — backend never installs packages at runtime.
-rm -rf "$PYTHON_ENV_DIR/lib/python3.14/ensurepip"
+# ensurepip stays: the App Builder runs `python -m venv` with THIS interpreter
+# for every generated app's backend and for the shared warm venv (run.sh gets it
+# as OPENSWARM_PYTHON; view_builder_templates uses sys.executable), and venv
+# bootstraps pip into the new environment from ensurepip's bundled wheel.
+# Without it the venv step fails and no generated backend can start. ~1.8 MB.
 # Educational drawing examples that ship with stdlib — never imported.
 rm -rf "$PYTHON_ENV_DIR/lib/python3.14/turtledemo"
 # turtle itself: a Tk-based graphics module. It imports tkinter (stripped
@@ -161,12 +164,11 @@ rm -rf "$PYTHON_ENV_DIR/lib/python3.14/turtledemo"
 rm -rf "$PYTHON_ENV_DIR/lib/python3.14/turtle.py"
 # Man pages / desktop-integration files — embedded Python doesn't read these.
 rm -rf "$PYTHON_ENV_DIR/share"
-# pip itself + launcher shims. Verified the packaged backend never invokes
-# pip: uvx (used by MCPs) is a self-contained installer; the App Builder's
-# view_builder_templates.py:382 picks SYSTEM python via shutil.which, never
-# this bundled one; backend code only mentions "pip install" in error-message
-# strings. `python -m venv` from this bundled env is also dead (ensurepip
-# already stripped above) but nothing calls it.
+# pip itself + launcher shims. Nothing in the packaged backend runs the
+# bundled pip: uvx (used by MCPs) is a self-contained installer, and the venvs
+# the App Builder creates get their own pip from ensurepip (kept above), not
+# from this copy; backend code only mentions "pip install" in error-message
+# strings.
 rm -rf "$PYTHON_ENV_DIR/lib/python3.14/site-packages/pip" \
        "$PYTHON_ENV_DIR/lib/python3.14/site-packages"/pip-*.dist-info
 rm -f "$PYTHON_ENV_DIR/bin/pip" "$PYTHON_ENV_DIR/bin/pip3" "$PYTHON_ENV_DIR/bin/pip3.14" \
@@ -237,6 +239,20 @@ find "$PYTHON_ENV_DIR" -name '*.pyi' -delete 2>/dev/null || true
 # C extensions / embed Python; the running interpreter never reads them.
 rm -rf "$PYTHON_ENV_DIR"/lib/python3.14/config-3.14-* 2>/dev/null || true
 find "$PYTHON_ENV_DIR" -name 'libpython*.a' -delete 2>/dev/null || true
+
+# The trimmed interpreter must still be able to do the one install-time job the
+# App Builder asks of it: create a venv that has pip (see the ensurepip note
+# above). Checked here, after every trim, so a future strip cannot silently
+# take it away again.
+echo "Verifying the trimmed interpreter can create a venv with pip..."
+VENV_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/python-env-venv-probe.XXXXXX")"
+if ! PYTHONNOUSERSITE=1 "$PYTHON_BIN" -m venv "$VENV_PROBE/venv" \
+   || ! "$VENV_PROBE/venv/bin/python" -m pip --version >/dev/null; then
+    rm -rf "$VENV_PROBE"
+    echo "ERROR: the trimmed python-env cannot create a venv with pip; generated app backends need this." >&2
+    exit 1
+fi
+rm -rf "$VENV_PROBE"
 
 # Pre-compile bytecode so cold backend startup skips the parse+compile
 # step on every imported .py. Worth ~5-10s on Windows under Defender

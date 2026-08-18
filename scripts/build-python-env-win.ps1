@@ -102,13 +102,15 @@ Get-ChildItem -Path $PythonEnvDir -Recurse -Force -Filter '*.pyc' `
     | Remove-Item -Force -ErrorAction SilentlyContinue
 
 # Strip parts of the Python distribution we provably don't use at runtime.
-# Each removal here has been individually verified.
+# Each removal here has been individually verified. ensurepip is NOT on the
+# list: the App Builder runs `python -m venv` with this interpreter for every
+# generated app's backend and for the shared warm venv, and venv bootstraps pip
+# into the new environment from ensurepip's bundled wheel.
 Write-Host "Stripping unused Python distribution files..."
 $ToStrip = @(
     (Join-Path $PythonEnvDir 'include'),                          # C headers — never used at runtime
     (Join-Path $PythonEnvDir 'lib\python3.14\idlelib'),           # IDLE editor — headless backend has no GUI
     (Join-Path $PythonEnvDir 'lib\python3.14\tkinter'),           # Tk GUI toolkit — same
-    (Join-Path $PythonEnvDir 'lib\python3.14\ensurepip'),         # Pip bootstrap — backend never installs at runtime
     (Join-Path $PythonEnvDir 'lib\python3.14\turtledemo'),        # Educational drawing examples
     (Join-Path $PythonEnvDir 'lib\python3.14\turtle.py'),         # Tk-based turtle graphics; imports stripped tkinter, backend never uses it
     (Join-Path $PythonEnvDir 'lib\python3.14\pydoc_data'),        # pydoc topics/keywords; only `help()` reads them
@@ -119,10 +121,10 @@ foreach ($p in $ToStrip) {
     if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
 }
 $Sp = Join-Path $PythonEnvDir 'lib\python3.14\site-packages'
-# pip itself: nothing in the packaged backend invokes it. uvx (used by
-# MCPs) is a self-contained installer; the App Builder picks SYSTEM
-# python via shutil.which (view_builder_templates.py:382), never this
-# bundled one; backend code only mentions "pip install" in error strings.
+# pip itself: nothing in the packaged backend runs the bundled pip. uvx (used
+# by MCPs) is a self-contained installer, and the venvs the App Builder creates
+# get their own pip from ensurepip (kept), not from this copy; backend code only
+# mentions "pip install" in error strings.
 Remove-Item -Recurse -Force (Join-Path $Sp 'pip') -ErrorAction SilentlyContinue
 Get-ChildItem -Path $Sp -Directory -Filter 'pip-*.dist-info' -ErrorAction SilentlyContinue `
     | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
@@ -168,6 +170,18 @@ foreach ($pattern in @('RECORD','INSTALLER','WHEEL','top_level.txt','entry_point
 Write-Host "Trimming .pyi type stubs..."
 Get-ChildItem -Path $PythonEnvDir -Recurse -Filter '*.pyi' -File -ErrorAction SilentlyContinue `
     | Remove-Item -Force -ErrorAction SilentlyContinue
+
+# The trimmed interpreter must still be able to do the one install-time job the
+# App Builder asks of it: create a venv that has pip (see the ensurepip note
+# above). Checked here, after every trim, so a future strip cannot silently
+# take it away again.
+Write-Host "Verifying the trimmed interpreter can create a venv with pip..."
+$VenvProbe = Join-Path ([System.IO.Path]::GetTempPath()) ("python-env-venv-probe-" + [guid]::NewGuid())
+& $PythonBin -m venv (Join-Path $VenvProbe 'venv')
+if ($LASTEXITCODE -ne 0) { throw "the trimmed python-env cannot create a venv; generated app backends need this" }
+& (Join-Path $VenvProbe 'venv\Scripts\python.exe') -m pip --version | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "the trimmed python-env creates a venv without pip; generated app backends need this" }
+Remove-Item -Recurse -Force $VenvProbe -ErrorAction SilentlyContinue
 
 # Pre-compile bytecode so cold backend startup skips parse+compile per import.
 # invalidation-mode unchecked-hash is load-bearing: the default timestamp mode
