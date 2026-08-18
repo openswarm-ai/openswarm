@@ -1278,7 +1278,8 @@ const BrowserCard: React.FC<Props> = ({
         transformOrigin: tiledSize || dockActive || followsParent ? '0 0' : undefined,
         width: tiledSize ? tiledSize.width : displayW,
         height: tiledSize ? tiledSize.height : displayH,
-        borderRadius: tileZone === 'fullscreen' ? '12px' : dockActive || followsParent ? '12px' : `${c.radius.lg}px`,
+        // The scale transform shrinks corner radii too (12px at 0.35x paints ~4px, reading as a cut corner next to the pill's capsule); divide by the scale so the MINIATURE'S corners stay visually 12px.
+        borderRadius: tileZone === 'fullscreen' ? '12px' : dockActive ? `${Math.round(12 / Math.min(dockRect!.w / displayW, dockRect!.h / displayH))}px` : followsParent ? `${Math.round(12 / Math.min(1, 320 / displayW))}px` : `${c.radius.lg}px`,
         // Docked = an embedded block, not a floating window: a drop shadow and heavy accent frame read as a detached card pasted over the chat.
         border: dockActive || followsParent ? `1px solid ${c.border.medium}` : agentBorder,
         bgcolor: c.bg.surface,
