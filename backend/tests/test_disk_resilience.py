@@ -79,9 +79,11 @@ def test_atomic_write_fsyncs_file_before_rename(tmp_path, monkeypatch):
 
 
 def test_atomic_write_fsyncs_directory_after_rename(tmp_path, monkeypatch):
-    # POSIX only: the rename is only durable once the parent dir is fsync'd.
-    if not hasattr(os, "O_RDONLY"):
-        pytest.skip("directory fsync not applicable on this platform")
+    # POSIX only: the rename is only durable once the parent dir is fsync'd. Windows exposes
+    # os.O_RDONLY but cannot open a directory with it, and json_store skips the dir fsync there
+    # by design, so the old hasattr guard never fired where it was needed.
+    if os.name == "nt":
+        pytest.skip("directory fsync is not possible on Windows; json_store skips it there")
     from backend.config import json_store
 
     fsync_targets = []
