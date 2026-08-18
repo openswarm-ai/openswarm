@@ -44,6 +44,9 @@ export async function refreshAuthToken(): Promise<string> {
     if (r.ok) {
       const data = await r.json();
       _authTokenCache = typeof data?.token === 'string' ? data.token : '';
+    } else {
+      // A refresh is a statement that the current token is suspect (the 4401 path): a non-OK response must clear the cache like a thrown transport error does, or the stale token survives the refresh.
+      _authTokenCache = '';
     }
   } catch {
     _authTokenCache = '';
@@ -51,14 +54,19 @@ export async function refreshAuthToken(): Promise<string> {
   return _authTokenCache;
 }
 
-/** Resolve auth token once; concurrent callers share the same promise. */
+/**
+ * Single-flight token acquisition. The shared promise is held only while a refresh is IN FLIGHT — once
+ * settled the slot clears and the cache is the source of truth. A resolved-forever slot either poisons
+ * retries (an empty result) or shadows a later forced refreshAuthToken() failure (the 4401 path) with a
+ * stale token; in-flight-only does neither, and a non-empty cache short-circuits so callers never start
+ * redundant refreshes. Also covers the boot race (ENG-207): an EMPTY resolve is never memoized because
+ * the slot clears on settle.
+ */
 export function ensureAuthToken(): Promise<string> {
   if (_authTokenPromise) return _authTokenPromise;
-  _authTokenPromise = refreshAuthToken().then((tok) => {
-    // A boot race can resolve EMPTY (backend hadn't written the token file yet); memoizing that
-    // left the renderer auth-dead until a manual reload (ENG-207). Empty = not an answer; retry.
-    if (!tok) _authTokenPromise = null;
-    return tok;
+  if (_authTokenCache) return Promise.resolve(_authTokenCache);
+  _authTokenPromise = refreshAuthToken().finally(() => {
+    _authTokenPromise = null;
   });
   return _authTokenPromise;
 }
@@ -121,6 +129,9 @@ function _installAuthFetchInterceptor() {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
       const isOurApi = url.startsWith(API_BASE) || url.startsWith(`http://${host}:${port}/`);
       if (!isOurApi) return originalFetch(input, init);
+
+      // The dev-token bootstrap must never re-enter the auth path: refreshAuthToken's fetch arrives here BEFORE _authTokenPromise is assigned (an async fn suspends only at its first await), so calling ensureAuthToken from this frame would start another refresh and recurse synchronously until RangeError. Raw transport, no bearer, no dedupe/cache; `await` so a rejection lands in the catch below (port self-heal, then the honest rethrow) instead of escaping the try.
+      if (url.endsWith('/api/dev/token')) return await originalFetch(input, init);
 
       const existingHeaders = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
       const callerSetAuth = existingHeaders.has('Authorization') || existingHeaders.has('authorization');
@@ -196,6 +207,8 @@ function _installAuthFetchInterceptor() {
             lastErr = err;
             // A caller-driven abort is a real answer, never something to retry through.
             if (finalInit?.signal?.aborted) throw err;
+            // A transport failure may mean the renderer is pinned to a stale port: consult the live port NOW (one-shot, reloads only if it differs) instead of retrying against a dead port for seconds first.
+            _maybeHealBackendPort();
             if (attempt < GET_RETRY_DELAYS_MS.length) {
               await new Promise((r) => setTimeout(r, GET_RETRY_DELAYS_MS[attempt]));
               continue;
@@ -224,7 +237,9 @@ function _installAuthFetchInterceptor() {
         _inflightFetches.delete(cacheKey);
       }
     } catch (err) {
-      // Interceptor plumbing must never turn a workable request into a failure; fall through raw.
+      // A network failure reaching our backend may mean we're on a stale port; the heal is one-shot and a no-op on the same port.
+      if (err instanceof TypeError) _maybeHealBackendPort();
+      // Interceptor plumbing must never turn a workable request into a failure; fall through raw. Real transport/abort/timeout answers stay honest (the retry budget above already ran for GETs).
       if (err instanceof TypeError || (err as Error)?.name === 'AbortError' || (err as Error)?.name === 'TimeoutError') throw err;
       return originalFetch(input, init);
     }
