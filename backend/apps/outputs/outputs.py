@@ -1,26 +1,32 @@
 import asyncio
 import json
+import importlib.util
 import os
 import logging
 import mimetypes
+import ntpath
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 from contextlib import asynccontextmanager
-from fastapi import HTTPException, Query
+from urllib.parse import unquote
+from fastapi import HTTPException, Query, Request
 from fastapi.responses import Response
 from backend.auth import get_auth_token
 from backend.config.Apps import SubApp
+from backend.apps.hosting.policy import REQUEST_SCOPE, RequestScope, hosting_policy
 from backend.apps.outputs.models import (
     Output, OutputCreate, OutputUpdate, OutputExecute, OutputExecuteResult,
     VibeCodeRequest, WorkspaceSeedRequest, AgentCreateAppRequest,
     PublishPreflightRequest, PublishRequest, PublishPreflightResponse,
-    PublishResult, PublishReview,
+    PublishResult,
 )
+from backend.apps.outputs.path_security import contained_path, workspace_directory
 from backend.apps.outputs.code_safety import get_code_warnings
-from backend.apps.outputs.executor import execute_backend_code
-from backend.apps.outputs.publish_capability import check_publish_capability
+from backend.apps.outputs.execution.ExecutionContract import ExecutionRequest
+from backend.apps.outputs.execution.SubprocessExecutor import SubprocessExecutor
 from backend.apps.outputs.publish_common import slugify, PublishError
-from backend.apps.outputs.publish_scan import scan_for_publish, quick_ast_gate
+from backend.apps.outputs.publish_scan import scan_for_publish
+from backend.apps.outputs.publish_capability import check_publish_capability
 from backend.apps.outputs.publish_build import build_static, collect_bundle
 from backend.apps.outputs.publish_cloud import upload_to_cloud, unpublish_from_cloud
 from backend.apps.outputs.view_builder_templates import (
@@ -33,7 +39,6 @@ from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR 
 from backend.apps.outputs.html_inject import (
     get_anthropic_client,
     validate_against_schema,
-    build_data_injection,
     inject_data_into_html,
     backend_url_for_workspace,
     inject_token_into_relative_urls,
@@ -43,8 +48,7 @@ from backend.apps.outputs.workspace_io import (
     load_all,
     save,
     load,
-    load_output,
-    resolve_in_workspace,
+    output_metadata_path,
     walk_directory,
     workspace_root,
     would_shrink_oversize_file,
@@ -52,6 +56,46 @@ from backend.apps.outputs.workspace_io import (
 from backend.apps.outputs.prompts import VIBE_CODE_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
+p_executor = SubprocessExecutor()
+
+AttachmentId = Annotated[
+    Optional[str],
+    Query(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    ),
+]
+
+
+def workspace_folder(workspace_id: str) -> str:
+    try:
+        return workspace_directory(WORKSPACE_DIR, workspace_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="Invalid workspace ID")
+
+
+def p_workspace_file_path(folder: str, filepath: str) -> str:
+    decoded = filepath
+    for _ in range(8):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    else:
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+    drive, _ = ntpath.splitdrive(decoded)
+    if "\x00" in decoded or drive or ntpath.isabs(decoded):
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    platform_path = decoded.replace("\\", os.sep).replace("/", os.sep)
+    try:
+        full_path = contained_path(folder, platform_path)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    if os.path.normcase(os.path.realpath(full_path)) == os.path.normcase(os.path.realpath(folder)):
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    return full_path
 
 
 @asynccontextmanager
@@ -108,15 +152,34 @@ async def outputs_lifespan():
 outputs = SubApp("outputs", outputs_lifespan)
 
 
-# --------------------------------------------------------------------------- File-serving endpoints (for iframe preview with multi-file support) ---------------------------------------------------------------------------
+def p_workspace_output(workspace_id: str) -> Output | None:
+    return next((output for output in load_all() if output.workspace_id == workspace_id), None)
+
+
+def p_require_output_owner(output: Output, scope: RequestScope) -> None:
+    scope.require_owner_of(output.owner_account_id)
+
+
+def p_require_workspace_owner(workspace_id: str, scope: RequestScope) -> None:
+    # Only a hosted build owns workspaces; on the desktop this must not cost a load_all() per request.
+    if not scope.hosted:
+        return
+    output = p_workspace_output(workspace_id)
+    if not output:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    scope.require_owner_of(output.owner_account_id)
+
+
+# ---------------------------------------------------------------------------
+# File-serving endpoints (for iframe preview with multi-file support)
+# ---------------------------------------------------------------------------
 
 @outputs.router.get("/workspace/{workspace_id}/serve/{filepath:path}")
-async def serve_workspace_file(workspace_id: str, filepath: str, p_d: str = ""):
+async def serve_workspace_file(workspace_id: str, filepath: str, p_d: str = "", scope: RequestScope = REQUEST_SCOPE):
     """Serve a file from a workspace folder. For index.html, inject OUTPUT data."""
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
-    full_path = resolve_in_workspace(folder, filepath)
-    if full_path is None:
-        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    p_require_workspace_owner(workspace_id, scope)
+    folder = workspace_folder(workspace_id)
+    full_path = p_workspace_file_path(folder, filepath)
     if not os.path.isfile(full_path):
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -124,11 +187,13 @@ async def serve_workspace_file(workspace_id: str, filepath: str, p_d: str = ""):
     if filepath.endswith("index.html"):
         with open(full_path) as f:
             content = f.read()
-        input_json, result_json = decode_data_param(p_d) if p_d else ("{}", "null")
+        data_param = p_d
+        input_json, result_json = decode_data_param(data_param) if data_param else ("{}", "null")
         backend_url_json = backend_url_for_workspace(workspace_id)
         content = inject_data_into_html(content, input_json, result_json, backend_url_json, with_runtime=True)
         # Iframe sub-resource fetches (<link>, <script src>, <img>) drop the parent's ?token= query string, so rewrite the HTML to put the token back on every relative URL; otherwise sub-resources 401.
-        content = inject_token_into_relative_urls(content, get_auth_token())
+        if not hosting_policy().enabled:
+            content = inject_token_into_relative_urls(content, get_auth_token())
         mime, _ = mimetypes.guess_type(filepath)
         return Response(content=content, media_type=mime or "text/plain")
 
@@ -140,18 +205,21 @@ async def serve_workspace_file(workspace_id: str, filepath: str, p_d: str = ""):
 
 
 @outputs.router.get("/{output_id}/serve/{filepath:path}")
-async def serve_output_file(output_id: str, filepath: str, p_d: str = ""):
+async def serve_output_file(output_id: str, filepath: str, p_d: str = "", scope: RequestScope = REQUEST_SCOPE):
     """Serve a file from a saved output's files dict. For index.html, inject OUTPUT data."""
     output = load(output_id)
+    p_require_output_owner(output, scope)
     content = output.files.get(filepath)
     if content is None:
         raise HTTPException(status_code=404, detail="File not found in output")
 
     if filepath == "index.html":
-        input_json, result_json = decode_data_param(p_d) if p_d else ("{}", "null")
+        data_param = p_d
+        input_json, result_json = decode_data_param(data_param) if data_param else ("{}", "null")
         backend_url_json = backend_url_for_workspace(output.workspace_id) if output.workspace_id else "null"
         content = inject_data_into_html(content, input_json, result_json, backend_url_json, with_runtime=True)
-        content = inject_token_into_relative_urls(content, get_auth_token())
+        if not hosting_policy().enabled:
+            content = inject_token_into_relative_urls(content, get_auth_token())
 
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
@@ -160,14 +228,16 @@ async def serve_output_file(output_id: str, filepath: str, p_d: str = ""):
 # --------------------------------------------------------------------------- CRUD + workspace endpoints ---------------------------------------------------------------------------
 
 @outputs.router.get("/list")
-async def list_outputs():
-    return {"outputs": [o.model_dump() for o in load_all()]}
+async def list_outputs(scope: RequestScope = REQUEST_SCOPE):
+    outputs_list = scope.filter_owned(load_all())
+    return {"outputs": [o.model_dump() for o in outputs_list]}
 
 
 @outputs.router.get("/workspace/{workspace_id}")
-async def read_workspace(workspace_id: str):
+async def read_workspace(workspace_id: str, scope: RequestScope = REQUEST_SCOPE):
     """Read all files from an output workspace folder."""
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    p_require_workspace_owner(workspace_id, scope)
+    folder = workspace_folder(workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
 
@@ -188,7 +258,7 @@ def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = No
     """Sync the Output row's name/description from meta.json (or fallback_name when
     meta.json has no name). Only overwrites placeholder values; user renames win."""
     try:
-        folder = os.path.join(WORKSPACE_DIR, workspace_id)
+        folder = workspace_folder(workspace_id)
         meta_path = os.path.join(folder, "meta.json")
         name = ""
         description = ""
@@ -229,6 +299,7 @@ def ensure_webapp_workspace_seeded_and_registered(
     workspace_id: str,
     folder: str,
     session_id: Optional[str] = None,
+    owner_account_id: Optional[str] = None,
 ) -> Optional[str]:
     """Idempotently seed the webapp template into `folder` and register an
     Output row pointing at `workspace_id`. Used by the canvas-chat launch
@@ -260,8 +331,11 @@ def ensure_webapp_workspace_seeded_and_registered(
         existing = [o for o in load_all() if o.workspace_id == workspace_id]
         if existing:
             output = existing[0]
+            if owner_account_id and output.owner_account_id != owner_account_id:
+                output.owner_account_id = owner_account_id
             if session_id and output.session_id != session_id:
                 output.session_id = session_id
+            if owner_account_id or session_id:
                 output.updated_at = datetime.now().isoformat()
                 save(output)
             return output.id
@@ -270,6 +344,7 @@ def ensure_webapp_workspace_seeded_and_registered(
             name="Untitled App",
             description="",
             icon="view_quilt",
+            owner_account_id=owner_account_id,
             files={},
             workspace_id=workspace_id,
             session_id=session_id,
@@ -290,7 +365,7 @@ async def agent_create_app(body: AgentCreateAppRequest):
     dashboard drops a live card next to the agent. Any agent, any mode."""
     from uuid import uuid4
     workspace_id = uuid4().hex
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    folder = workspace_folder(workspace_id)
     output_id = ensure_webapp_workspace_seeded_and_registered(
         workspace_id=workspace_id,
         folder=folder,
@@ -325,7 +400,7 @@ async def agent_create_app(body: AgentCreateAppRequest):
 
 
 @outputs.router.post("/workspace/seed")
-async def seed_workspace(body: WorkspaceSeedRequest):
+async def seed_workspace(body: WorkspaceSeedRequest, scope: RequestScope = REQUEST_SCOPE):
     """Create a workspace folder and pre-seed it.
 
     Two seeding modes:
@@ -346,7 +421,8 @@ async def seed_workspace(body: WorkspaceSeedRequest):
       `body.files` is ignored in this mode; the snapshot is the source
       of truth.
     """
-    folder = os.path.join(WORKSPACE_DIR, body.workspace_id)
+    scope.require_app_builder_enabled()
+    folder = workspace_folder(body.workspace_id)
     os.makedirs(folder, exist_ok=True)
 
     # An explicit non-empty `files` payload means the caller has flat-mode content to write (a saved legacy Output being reseeded). Don't clobber that with the React template even if template_mode is the new default; the migration helper has its own path for that.
@@ -386,6 +462,7 @@ async def seed_workspace(body: WorkspaceSeedRequest):
                     name=str(meta.get("name") or "Untitled App"),
                     description=str(meta.get("description") or ""),
                     icon="view_quilt",
+                    owner_account_id=scope.owner_id,
                     files={},
                     workspace_id=body.workspace_id,
                     created_at=now,
@@ -406,8 +483,9 @@ async def seed_workspace(body: WorkspaceSeedRequest):
     # Legacy flat path. Seed only fills in MISSING files; it never overwrites what's already on disk. A reopen re-sends the inline output.files snapshot, which lags behind whatever the agent just wrote to the workspace; writing it back reverted every edited file (new files survived, edited ones snapped to the snapshot). Disk wins once an app exists.
     if body.files:
         for rel_path, content in body.files.items():
-            full_path = resolve_in_workspace(folder, rel_path)
-            if full_path is None:
+            try:
+                full_path = p_workspace_file_path(folder, rel_path)
+            except HTTPException:
                 continue
             if os.path.exists(full_path):
                 continue
@@ -434,7 +512,8 @@ async def seed_workspace(body: WorkspaceSeedRequest):
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(body.meta, f, indent=2)
 
-    return {"path": os.path.abspath(folder), "template_mode": "flat"}
+    output_id = scope.register_seeded_workspace(body.workspace_id, body.meta)
+    return {"path": os.path.abspath(folder), "template_mode": "flat", "output_id": output_id}
 
 
 # --------------------------------------------------------------------------- Persistent app-backend runtime control. backend.py runs as a long-lived subprocess for the lifetime of the App being open; auto-allocated port, log streaming via WebSocket. See runtime.py for the manager. ---------------------------------------------------------------------------
@@ -446,7 +525,7 @@ def runtime_status_payload(workspace_id: str, instance: int = 1) -> dict:
     rt = runtime_manager.get(workspace_id, instance)
     if not rt:
         # Even without a live runtime, the editor needs is_new_mode to decide whether the preview pane should fall back to the legacy /serve/index.html URL (old-mode flat workspaces) or show the "starting preview…" placeholder (new-mode webapp_template). Compute from disk so a failed runtime/start still gives the client the right hint instead of dumping it onto a 404.
-        folder = os.path.join(WORKSPACE_DIR, workspace_id)
+        folder = workspace_folder(workspace_id)
         is_new = is_new_mode(folder) if os.path.isdir(folder) else False
         return {
             "running": False,
@@ -480,25 +559,45 @@ def runtime_status_payload(workspace_id: str, instance: int = 1) -> dict:
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/start")
-async def runtime_start(workspace_id: str, instance: int = 1):
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+async def runtime_start(
+    workspace_id: str,
+    instance: int = 1,
+    attachment_id: AttachmentId = None,
+    scope: RequestScope = REQUEST_SCOPE,
+):
+    scope.require_app_builder_enabled()
+    p_require_workspace_owner(workspace_id, scope)
+    folder = workspace_folder(workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
     from backend.apps.outputs.runtime import manager as runtime_manager
-    await runtime_manager.attach(workspace_id, os.path.abspath(folder), instance)
+    await runtime_manager.attach(
+        workspace_id,
+        os.path.abspath(folder),
+        instance,
+        attachment_id,
+    )
     return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/stop")
-async def runtime_stop(workspace_id: str, instance: int = 1):
+async def runtime_stop(
+    workspace_id: str,
+    instance: int = 1,
+    attachment_id: AttachmentId = None,
+    scope: RequestScope = REQUEST_SCOPE,
+):
+    p_require_workspace_owner(workspace_id, scope)
     from backend.apps.outputs.runtime import manager as runtime_manager
-    await runtime_manager.detach(workspace_id, instance)
+    await runtime_manager.detach(workspace_id, instance, attachment_id)
     return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/restart")
-async def runtime_restart(workspace_id: str, instance: int = 1):
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+async def runtime_restart(workspace_id: str, instance: int = 1, scope: RequestScope = REQUEST_SCOPE):
+    scope.require_app_builder_enabled()
+    p_require_workspace_owner(workspace_id, scope)
+    folder = workspace_folder(workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
     from backend.apps.outputs.runtime import manager as runtime_manager
@@ -510,12 +609,14 @@ async def runtime_restart(workspace_id: str, instance: int = 1):
 
 
 @outputs.router.get("/workspace/{workspace_id}/runtime/status")
-async def runtime_get_status(workspace_id: str, instance: int = 1):
+async def runtime_get_status(workspace_id: str, instance: int = 1, scope: RequestScope = REQUEST_SCOPE):
+    p_require_workspace_owner(workspace_id, scope)
     return runtime_status_payload(workspace_id, instance)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/report-error")
-async def runtime_report_error(workspace_id: str, body: dict, instance: int = 1):
+async def runtime_report_error(workspace_id: str, body: dict, instance: int = 1, scope: RequestScope = REQUEST_SCOPE):
+    p_require_workspace_owner(workspace_id, scope)
     from backend.apps.outputs.runtime import manager as runtime_manager
     rt = runtime_manager.get(workspace_id, instance)
     if rt is None:
@@ -532,7 +633,8 @@ async def runtime_report_error(workspace_id: str, body: dict, instance: int = 1)
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/console-log")
-async def runtime_console_log(workspace_id: str, body: dict, instance: int = 1):
+async def runtime_console_log(workspace_id: str, body: dict, instance: int = 1, scope: RequestScope = REQUEST_SCOPE):
+    p_require_workspace_owner(workspace_id, scope)
     """Fold webview console lines into the runtime's terminal stream so they reach the Terminal panes AND the agent-readable .openswarm/terminal.log. Renderer batches; body is {lines: [{level, text}, ...]}."""
     from backend.apps.outputs.runtime import manager as runtime_manager
     rt = runtime_manager.get(workspace_id, instance)
@@ -550,7 +652,8 @@ async def runtime_console_log(workspace_id: str, body: dict, instance: int = 1):
 
 
 @outputs.router.post("/workspace/{workspace_id}/runtime/report-ready")
-async def runtime_report_ready(workspace_id: str, instance: int = 1):
+async def runtime_report_ready(workspace_id: str, instance: int = 1, scope: RequestScope = REQUEST_SCOPE):
+    p_require_workspace_owner(workspace_id, scope)
     from backend.apps.outputs.runtime import manager as runtime_manager
     rt = runtime_manager.get(workspace_id, instance)
     if rt is None:
@@ -560,25 +663,26 @@ async def runtime_report_ready(workspace_id: str, instance: int = 1):
 
 
 @outputs.router.post("/shutdown-all")
-async def runtime_shutdown_all():
+async def runtime_shutdown_all(scope: RequestScope = REQUEST_SCOPE):
     """Reap every workspace subprocess. Electron POSTs this during
     will-quit so app subprocesses die BEFORE the main backend gets
     SIGTERM'd; without it `bash run.sh` + its vite/uvicorn descendants
     reparent to PID 1 and squat on .env-pinned ports forever."""
+    scope.require_local_operator("global shutdown")
     from backend.apps.outputs.runtime import manager as runtime_manager
     killed = await runtime_manager.stop_all()
     return {"ok": True, "killed": killed}
 
 
 @outputs.router.put("/workspace/{workspace_id}/file/{filepath:path}")
-async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
+async def write_workspace_file(workspace_id: str, filepath: str, body: dict, scope: RequestScope = REQUEST_SCOPE):
     """Write (create/overwrite) a single file in a workspace."""
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    scope.require_app_builder_enabled()
+    p_require_workspace_owner(workspace_id, scope)
+    folder = workspace_folder(workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
-    full_path = resolve_in_workspace(folder, filepath)
-    if full_path is None:
-        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    full_path = p_workspace_file_path(folder, filepath)
     content = body.get("content", "")
     if would_shrink_oversize_file(full_path, content):
         return {"ok": True, "skipped": "oversize"}
@@ -589,14 +693,14 @@ async def write_workspace_file(workspace_id: str, filepath: str, body: dict):
 
 
 @outputs.router.delete("/workspace/{workspace_id}/file/{filepath:path}")
-async def delete_workspace_file(workspace_id: str, filepath: str):
+async def delete_workspace_file(workspace_id: str, filepath: str, scope: RequestScope = REQUEST_SCOPE):
     """Delete a single file from a workspace."""
-    folder = os.path.join(WORKSPACE_DIR, workspace_id)
+    scope.require_app_builder_enabled()
+    p_require_workspace_owner(workspace_id, scope)
+    folder = workspace_folder(workspace_id)
     if not os.path.isdir(folder):
         raise HTTPException(status_code=404, detail="Workspace not found")
-    full_path = resolve_in_workspace(folder, filepath)
-    if full_path is None:
-        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    full_path = p_workspace_file_path(folder, filepath)
     if os.path.isfile(full_path):
         os.remove(full_path)
         root = workspace_root(folder)
@@ -611,20 +715,25 @@ async def delete_workspace_file(workspace_id: str, filepath: str):
 
 
 @outputs.router.get("/{output_id}")
-async def get_output(output_id: str):
-    return load(output_id).model_dump()
+async def get_output(output_id: str, scope: RequestScope = REQUEST_SCOPE):
+    output = load(output_id)
+    p_require_output_owner(output, scope)
+    return output.model_dump()
 
 
 @outputs.router.post("/create")
-async def create_output(body: OutputCreate):
+async def create_output(body: OutputCreate, scope: RequestScope = REQUEST_SCOPE):
     now = datetime.now().isoformat()
     output = Output(
         name=body.name,
         description=body.description,
         icon=body.icon,
+        owner_account_id=scope.owner_for_new_resource(body.owner_account_id),
         input_schema=body.input_schema,
         files=body.files,
         thumbnail=body.thumbnail,
+        session_id=body.session_id,
+        workspace_id=body.workspace_id,
         created_at=now,
         updated_at=now,
     )
@@ -633,10 +742,13 @@ async def create_output(body: OutputCreate):
 
 
 @outputs.router.put("/{output_id}")
-async def update_output(output_id: str, body: OutputUpdate):
+async def update_output(output_id: str, body: OutputUpdate, scope: RequestScope = REQUEST_SCOPE):
     output = load(output_id)
+    p_require_output_owner(output, scope)
     # exclude_unset, NOT exclude_none: a PUT that explicitly sends session_id=null (the Apps stale-link self-heal) must clear the field. exclude_none silently dropped that null, so the dead pointer never cleared and the app 404'd on every open, forever. Unset fields stay untouched; only what the client sent applies.
-    for k, v in body.model_dump(exclude_unset=True).items():
+    update = body.model_dump(exclude_unset=True)
+    update.pop("owner_account_id", None)
+    for k, v in update.items():
         setattr(output, k, v)
     now = datetime.now().isoformat()
     output.updated_at = now
@@ -648,9 +760,10 @@ async def update_output(output_id: str, body: OutputUpdate):
 
 
 @outputs.router.delete("/{output_id}")
-async def delete_output(output_id: str):
-    load(output_id)
-    path = os.path.join(DATA_DIR, f"{output_id}.json")
+async def delete_output(output_id: str, scope: RequestScope = REQUEST_SCOPE):
+    output = load(output_id)
+    p_require_output_owner(output, scope)
+    path = output_metadata_path(output_id)
     if os.path.exists(path):
         os.remove(path)
     from backend.apps.outputs import versions
@@ -659,11 +772,10 @@ async def delete_output(output_id: str):
 
 
 @outputs.router.post("/vibe-code")
-async def vibe_code(body: VibeCodeRequest):
+async def vibe_code(body: VibeCodeRequest, scope: RequestScope = REQUEST_SCOPE):
     """Use an LLM to generate or iterate on Output code from a natural language prompt."""
-    try:
-        import anthropic
-    except ImportError:
+    scope.require_app_builder_enabled()
+    if importlib.util.find_spec("anthropic") is None:
         return {
             "message": "anthropic SDK not installed. Install with: pip install anthropic",
             "frontend_code": body.current_frontend_code,
@@ -746,8 +858,9 @@ async def vibe_code(body: VibeCodeRequest):
 
 
 @outputs.router.post("/execute")
-async def execute_output(body: OutputExecute):
+async def execute_output(body: OutputExecute, scope: RequestScope = REQUEST_SCOPE):
     output = load(body.output_id)
+    p_require_output_owner(output, scope)
 
     validation_err = validate_against_schema(body.input_data, output.input_schema)
     if validation_err:
@@ -774,13 +887,21 @@ async def execute_output(body: OutputExecute):
                 code_preview = output.backend_code
         if not warnings_out:
             try:
-                # `approved` is body.force alone: code that merely passed the gate above still runs sandboxed, because a clean scan is not consent.
-                exec_result = await execute_backend_code(
-                    output.backend_code, body.input_data, approved=bool(body.force)
+                # `approved` is body.force alone: code that merely passed the gate above still runs strictly, because a clean scan is not consent.
+                exec_result = await p_executor.execute(
+                    ExecutionRequest(
+                        code=output.backend_code,
+                        input_data=body.input_data,
+                        validation_mode="user_approved" if body.force else "strict",
+                        egress_policy="provider_defined",
+                    )
                 )
-                backend_result = exec_result.result
-                stdout_text = exec_result.stdout
-                stderr_text = exec_result.stderr
+                if exec_result.status == "success":
+                    backend_result = exec_result.result
+                    stdout_text = exec_result.stdout
+                    stderr_text = exec_result.stderr
+                else:
+                    error = exec_result.error or f"Execution {exec_result.status}"
             except Exception as e:
                 error = str(e)
 
@@ -801,32 +922,27 @@ async def execute_output(body: OutputExecute):
 # --------------------------------------------------------------------------- Publishing to {slug}.openswarm.host ---------------------------------------------------------------------------
 
 @outputs.router.post("/publish/preflight")
-async def publish_preflight(body: PublishPreflightRequest):
+async def publish_preflight(body: PublishPreflightRequest, scope: RequestScope = REQUEST_SCOPE):
     """Scan the app (AST + an aux-LLM pass on the user's own creds) and return a
     review. No build, no cloud call; this just drives the security modal."""
     output = load(body.output_id)
+    p_require_output_owner(output, scope)
     review = await scan_for_publish(output, load_settings())
     return PublishPreflightResponse(review=review).model_dump()
 
 
 @outputs.router.post("/publish")
-async def publish_output(body: PublishRequest):
-    """Build (webapp) + bundle + upload to the cloud host. `force` skips the
-    cheap AST safety net (the user already saw the findings in the review modal)."""
+async def publish_output(body: PublishRequest, scope: RequestScope = REQUEST_SCOPE):
+    """Build, bundle, and upload only after a complete clean security review."""
     output = load(body.output_id)
+    p_require_output_owner(output, scope)
     settings = load_settings()
-    if not body.force:
-        capability = check_publish_capability(output).findings
-        ast = quick_ast_gate(output)
-        if capability or ast:
-            return PublishResult(
-                ok=False,
-                blocked=True,
-                review=PublishReview(
-                    verdict="block" if capability else "warn",
-                    findings=capability + ast,
-                ),
-            ).model_dump()
+    review = await scan_for_publish(output, settings)
+    if review.verdict != "clean":
+        # A SECURITY block (AST/LLM findings, or a review that could not complete) is never bypassable, force or not. Capability findings ("this app won't work as shipped") inform; a user who read them can force past them, so the gate informs without trapping.
+        capability_only = set(review.findings) <= set(check_publish_capability(output).findings)
+        if not (body.force and capability_only):
+            return PublishResult(ok=False, blocked=True, review=review).model_dump()
 
     output.publish_status = "publishing"
     output.publish_error = None
@@ -841,14 +957,14 @@ async def publish_output(body: PublishRequest):
             name=output.name,
             slug_hint=slug_hint,
             bundle=bundle,
-            override=body.force,
+            override=False,
         )
     except PublishError as e:
         output.publish_status = "error"
         output.publish_error = str(e)
         save(output)
         return PublishResult(ok=False, error=str(e)).model_dump()
-    except Exception as e:
+    except Exception:
         logger.exception("publish failed for %s", output.id)
         output.publish_status = "error"
         output.publish_error = "Something went wrong while publishing."
@@ -868,9 +984,10 @@ async def publish_output(body: PublishRequest):
 
 
 @outputs.router.post("/unpublish")
-async def unpublish_output(body: PublishPreflightRequest):
+async def unpublish_output(body: PublishPreflightRequest, scope: RequestScope = REQUEST_SCOPE):
     """Take the app offline and clear its publish state."""
     output = load(body.output_id)
+    p_require_output_owner(output, scope)
     if output.published_slug:
         try:
             await unpublish_from_cloud(load_settings(), output.published_slug)
@@ -882,5 +999,3 @@ async def unpublish_output(body: PublishPreflightRequest):
     output.publish_error = None
     save(output)
     return {"ok": True}
-
-

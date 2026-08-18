@@ -3,12 +3,13 @@ the SDK enforces. Pure function over the session's allowed tools, the live built
 map, and the registered MCP servers; lifted out of the agent loop and covered by the MCP-gate
 invariant tests. Returns (allowed, disallowed)."""
 
-from typing import Dict, List, Tuple
+from typing import Dict, FrozenSet, List, Tuple
 
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.permissions import path_gate
+from backend.apps.hosting.policy import MUTATING_BUILTINS, hosting_policy
 from backend.apps.agents.manager.prompt.tool_catalog import (
     FULL_TOOLS,
     get_all_known_tool_names,
@@ -23,6 +24,20 @@ from backend.config.headless import apply_unreachable_denies
 # Mutation/exec tools a read-only session must never reach: Edit (rewrites files), Bash (rm/mv/overwrite),
 # NotebookEdit (rewrites notebooks). Write is intentionally NOT here, the audit needs its one report.
 READ_ONLY_BLOCKED_TOOLS = ("Edit", "Bash", "NotebookEdit")
+
+
+
+def p_apply_builtin_denials(
+    allowed_tools: List[str],
+    disallowed_tools: List[str],
+    denials: FrozenSet[str],
+) -> Tuple[List[str], List[str]]:
+    allowed = [tool for tool in allowed_tools if tool not in denials]
+    denied = list(disallowed_tools)
+    for tool in sorted(denials):
+        if tool not in denied:
+            denied.append(tool)
+    return allowed, denied
 
 
 @typechecked
@@ -130,6 +145,19 @@ def build_effective_tool_lists(
         for wt_name in ("WebSearch", "WebFetch"):
             if wt_name not in effective_disallowed:
                 effective_disallowed.append(wt_name)
+
+    # The build's per-session denial list; fail closed to the mutating built-ins for an owned session whose policy cannot be consulted.
+    try:
+        denials = hosting_policy().builtin_tool_denials(session)
+    except Exception:
+        denials = MUTATING_BUILTINS if session.owner_account_id else frozenset()
+    if denials:
+        effective_allowed, effective_disallowed = p_apply_builtin_denials(
+            effective_allowed,
+            effective_disallowed,
+            denials,
+        )
+
     # With the openswarm-ui server live, the built-in AskUserQuestion is swapped for AskUI (same
     # Agent->SpawnAgent playbook: prompt nudges lose to the trained prior, a hard deny doesn't).
     # AskUI's option-list/question-flow cover the flat-choice cases; denying the built-in is what

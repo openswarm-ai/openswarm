@@ -43,7 +43,7 @@ def live_backend():
     if not auth_mod.TOKEN:
         auth_mod.TOKEN = secrets.token_urlsafe(32)
     port = p_free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", lifespan="off"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     for _ in range(200):

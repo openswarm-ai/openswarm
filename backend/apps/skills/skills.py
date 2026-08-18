@@ -359,10 +359,10 @@ async def seed_skill_workspace(body: SkillWorkspaceSeedRequest):
     os.makedirs(folder, exist_ok=True)
 
     if body.skill_content:
-        with open(os.path.join(folder, "SKILL.md"), "w") as f:
+        with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(body.skill_content)
     if body.meta:
-        with open(os.path.join(folder, "meta.json"), "w") as f:
+        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(body.meta, f, indent=2)
 
     return {"path": os.path.abspath(folder)}
@@ -377,14 +377,14 @@ async def read_skill_workspace(workspace_id: str):
     skill_content = None
     skill_path = os.path.join(folder, "SKILL.md")
     if os.path.isfile(skill_path):
-        with open(skill_path) as f:
+        with open(skill_path, encoding="utf-8") as f:
             skill_content = f.read()
 
     meta = None
     meta_path = os.path.join(folder, "meta.json")
     if os.path.isfile(meta_path):
         try:
-            with open(meta_path) as f:
+            with open(meta_path, encoding="utf-8") as f:
                 meta = json.load(f)
         except json.JSONDecodeError:
             pass
@@ -503,7 +503,8 @@ async def list_skill_files(skill_id: str):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for n in sorted(names):
             path = os.path.join(root, n)
-            rel = os.path.relpath(path, base_abs)
+            # API paths are posix on every OS: the frontend joins them with "/" and the SKILL.md-first sort compares them as strings.
+            rel = os.path.relpath(path, base_abs).replace(os.sep, "/")
             if n.startswith(".") or os.path.getsize(path) > 512_000:
                 continue
             try:

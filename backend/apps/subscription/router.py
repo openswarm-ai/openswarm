@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.credentials import OPENSWARM_DEFAULT_PROXY_URL
+from backend.apps.settings.redaction import redact_settings
 from backend.apps.settings.settings import SETTINGS_FILE, load_settings, save_settings_async
 
 logger = logging.getLogger(__name__)
@@ -246,9 +247,10 @@ async def sync():
     settings_obj = load_settings()
     bearer = getattr(settings_obj, "openswarm_bearer_token", None)
     mode = getattr(settings_obj, "connection_mode", "own_key")
+    safe_settings = redact_settings(settings_obj.model_dump())
 
     if mode != "openswarm-pro" or not bearer:
-        p_sync(settings_obj.model_dump())
+        p_sync(safe_settings)
         return {"ok": True, "synced": False, "connection_mode": mode}
 
     try:
@@ -259,14 +261,14 @@ async def sync():
             )
     except httpx.HTTPError as e:
         logger.debug("subscription/sync live fetch failed: %s", e)
-        p_sync(settings_obj.model_dump())
+        p_sync(safe_settings)
         return {"ok": True, "synced": False, "reason": "network"}
 
     # Same 401/402 handling as /status: if Stripe-side reconciliation proves the bearer is dead or the sub expired, clear local state so the app reverts to own_key instead of hammering a useless token.
     if r.status_code in (401, 402):
         await p_clear_subscription(settings_obj)
         reason = "revoked" if r.status_code == 401 else "expired"
-        p_sync(settings_obj.model_dump())
+        p_sync(redact_settings(settings_obj.model_dump()))
         return {
             "ok": True,
             "synced": False,
@@ -276,7 +278,7 @@ async def sync():
 
     if r.status_code != 200:
         logger.debug("subscription/sync got %s from cloud: %s", r.status_code, r.text[:200])
-        p_sync(settings_obj.model_dump())
+        p_sync(safe_settings)
         return {"ok": True, "synced": False, "reason": "upstream"}
 
     data = r.json()
@@ -293,7 +295,7 @@ async def sync():
         )
     await save_settings_async(settings_obj)
     p_sync_subscription_identity(settings_obj)
-    p_sync(settings_obj.model_dump())
+    p_sync(redact_settings(settings_obj.model_dump()))
     return {
         "ok": True,
         "synced": bool(data.get("synced")),

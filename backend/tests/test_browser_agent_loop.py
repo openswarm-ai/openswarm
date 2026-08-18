@@ -114,7 +114,7 @@ def p_install(monkeypatch, primary, aux):
     # fake WS: record browser commands, script results by action
     sent = []
 
-    async def p_send_browser_command(request_id, action, browser_id, params, tab_id=""):
+    async def p_send_browser_command(request_id, action, browser_id, params, tab_id="", *, owner=None):
         sent.append({"action": action, "params": params})
         # smart-wait probes via evaluate; report 'settled' so BrowserWait returns fast in tests instead of riding the full cap.
         if action == "evaluate" and "getEntriesByType('resource')" in str(params.get("expression", "")):
@@ -511,11 +511,11 @@ def test_replay_falls_back_to_full_agent_when_a_step_fails(monkeypatch):
     sent = p_install(monkeypatch, primary, aux)
     # make click_by_name FAIL (target gone) so replay must fall back
     orig = BA.ws_manager.send_browser_command
-    async def p_fail_cbn(request_id, action, browser_id, params, tab_id=""):
+    async def p_fail_cbn(request_id, action, browser_id, params, tab_id="", *, owner=None):
         if action == "click_by_name":
             sent.append({"action": action, "params": params})
             return {"error": 'No element matching name="Save" on this page.'}
-        return await orig(request_id, action, browser_id, params, tab_id)
+        return await orig(request_id, action, browser_id, params, tab_id, owner=owner)
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_fail_cbn, raising=False)
 
     r = asyncio.run(BA.run_browser_agent(
@@ -545,11 +545,11 @@ def test_deferred_replay_fires_after_navigating_to_the_right_host(monkeypatch):
     GOOGLE = "https://www.google.com/"
     orig = BA.ws_manager.send_browser_command
 
-    async def p_cmd(request_id, action, browser_id, params, tab_id=""):
+    async def p_cmd(request_id, action, browser_id, params, tab_id="", *, owner=None):
         # perception + reads report GOOGLE (so the DISPATCH replay misses there), navigation + clicks report the doc host (so the re-check matches)
         if action in ("list_interactives", "get_text"):
             return {"text": "stuff", "url": GOOGLE}
-        return await orig(request_id, action, browser_id, params, tab_id)
+        return await orig(request_id, action, browser_id, params, tab_id, owner=owner)
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_cmd, raising=False)
 
     # NO initial_url -> dispatch perceives google -> dispatch replay misses.
@@ -582,10 +582,10 @@ def test_deferred_replay_does_not_fire_after_the_page_was_dirtied(monkeypatch):
     GOOGLE = "https://www.google.com/"
     orig = BA.ws_manager.send_browser_command
 
-    async def p_cmd(request_id, action, browser_id, params, tab_id=""):
+    async def p_cmd(request_id, action, browser_id, params, tab_id="", *, owner=None):
         if action in ("list_interactives", "get_text"):
             return {"text": "stuff", "url": GOOGLE}
-        return await orig(request_id, action, browser_id, params, tab_id)
+        return await orig(request_id, action, browser_id, params, tab_id, owner=owner)
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_cmd, raising=False)
 
     r = asyncio.run(BA.run_browser_agent(
@@ -746,11 +746,11 @@ def test_unproven_skill_that_fails_is_quarantined_and_never_retried(monkeypatch)
     sent = p_install(monkeypatch, primary, aux)
     orig = BA.ws_manager.send_browser_command
 
-    async def p_fail_cbn(request_id, action, browser_id, params, tab_id=""):
+    async def p_fail_cbn(request_id, action, browser_id, params, tab_id="", *, owner=None):
         if action == "click_by_name":
             sent.append({"action": action, "params": params})
             return {"error": 'No element matching name="Save" on this page.'}
-        return await orig(request_id, action, browser_id, params, tab_id)
+        return await orig(request_id, action, browser_id, params, tab_id, owner=owner)
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_fail_cbn, raising=False)
 
     # Run 1: replay is attempted, the step fails -> skill is quarantined.
@@ -861,7 +861,7 @@ def test_dead_browser_card_aborts_fast_without_spinning(monkeypatch):
     aux = FakeAux()
     p_install(monkeypatch, primary, aux)
 
-    async def p_card_gone(request_id, action, browser_id, params, tab_id=""):
+    async def p_card_gone(request_id, action, browser_id, params, tab_id="", *, owner=None):
         return {"error": f"Browser card '{browser_id}' not found or not an Electron webview"}
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_card_gone, raising=False)
     captured = {}
@@ -892,7 +892,7 @@ def test_hung_browser_card_aborts_fast_not_a_20_minute_loop(monkeypatch):
     )
     p_install(monkeypatch, primary, FakeAux())
 
-    async def p_hung(request_id, action, browser_id, params, tab_id=""):
+    async def p_hung(request_id, action, browser_id, params, tab_id="", *, owner=None):
         return {"error": "Browser command timed out"}  # what a wedged tab returns
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_hung, raising=False)
     captured = {}
@@ -1040,13 +1040,12 @@ def test_ambient_memory_signals_fire_calmly(monkeypatch):
             return Resp([Blk("text", p_json.dumps({"playbook": ["search company+React, not generic"]}))],
                         stop_reason="end_turn")
     msgs = []
-    orig = BA.ws_manager.send_to_session
 
     async def p_cap(session_id, event, payload):
         if event == "agent:message":
             c = payload.get("message", {}).get("content")
             msgs.append(c if isinstance(c, str) else (c or {}).get("text", ""))
-        return await orig(session_id, event, payload)
+        return None
     monkeypatch.setattr(BA.ws_manager, "send_to_session", p_cap, raising=False)
 
     def p_run():
@@ -1117,7 +1116,7 @@ def test_batch_replay_runs_a_read_loop_for_all_values(monkeypatch):
     ])
     sent = p_install(monkeypatch, primary, FakeAux())
 
-    async def p_data(request_id, action, browser_id, params, tab_id=""):
+    async def p_data(request_id, action, browser_id, params, tab_id="", *, owner=None):
         sent.append({"action": action, "params": params})
         if action == "evaluate":
             # return value-specific data so we can prove the DATA comes back
@@ -1148,7 +1147,7 @@ def test_batch_replay_is_ghost_proof_when_an_item_does_not_match(monkeypatch):
     ])
     sent = p_install(monkeypatch, primary, FakeAux())
 
-    async def p_vary(request_id, action, browser_id, params, tab_id=""):
+    async def p_vary(request_id, action, browser_id, params, tab_id="", *, owner=None):
         sent.append({"action": action, "params": params})
         if action == "navigate" and "grace" in params.get("url", ""):
             return {"error": "Page not found for grace (different layout)"}
@@ -1213,10 +1212,10 @@ def test_captured_routes_are_surfaced_once_per_host(monkeypatch):
     sent = p_install(monkeypatch, primary, FakeAux())
     orig = BA.ws_manager.send_browser_command
 
-    async def p_with_routes(request_id, action, browser_id, params, tab_id=""):
+    async def p_with_routes(request_id, action, browser_id, params, tab_id="", *, owner=None):
         if action == "evaluate":
             return {"text": "Reddit Programming", "url": DOC_URL, "routes_available": 4}
-        return await orig(request_id, action, browser_id, params, tab_id)
+        return await orig(request_id, action, browser_id, params, tab_id, owner=owner)
     monkeypatch.setattr(BA.ws_manager, "send_browser_command", p_with_routes, raising=False)
 
     asyncio.run(BA.run_browser_agent(task="browse", browser_id="b1", model="sonnet", initial_url=DOC_URL))
@@ -1799,7 +1798,7 @@ def test_warm_send_prefix_replay_marries_send_script_zero_llm_turns(monkeypatch)
     seq = {"n": 0}
     states = [COMPOSER, COMMITTED, CLEARED, CLEARED]
 
-    async def p_cmd(request_id, action, browser_id, params, tab_id=""):
+    async def p_cmd(request_id, action, browser_id, params, tab_id="", *, owner=None):
         sent.append({"action": action, "params": params})
         if action == "list_interactives":
             s = states[min(seq["n"], len(states) - 1)]; seq["n"] += 1
@@ -1836,7 +1835,7 @@ def test_autosend_finishes_the_send_after_the_model_fills(monkeypatch):
     CLEARED = '[2]<textbox "Write a message">\n[9]<button "Attach">'
     st = {"filled": False, "sent": False}
 
-    async def p_cmd(request_id, action, browser_id, params, tab_id=""):
+    async def p_cmd(request_id, action, browser_id, params, tab_id="", *, owner=None):
         sent.append({"action": action, "params": params})
         if action == "click_index":
             if params.get("text"):

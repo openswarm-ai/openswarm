@@ -36,9 +36,16 @@ def patch_settings(tmp_path):
     }))
     import backend.apps.settings.store as settings_mod
     old = settings_mod.SETTINGS_FILE
+    old_dir = settings_mod.DATA_DIR
     settings_mod.SETTINGS_FILE = str(sf)
+    # The atomic writer stages its temp file in DATA_DIR and os.replace()s it onto SETTINGS_FILE, so
+    # the two must live together as they do in production. Left at the real data dir, the temp file
+    # lands in the repo's backend/data and, on a runner where that is another drive than tmp_path,
+    # the replace fails with WinError 17 (and the writer's caller quietly falls back).
+    settings_mod.DATA_DIR = str(tmp_path)
     yield
     settings_mod.SETTINGS_FILE = old
+    settings_mod.DATA_DIR = old_dir
 
 
 @pytest.fixture(autouse=True)
@@ -127,6 +134,54 @@ def test_sync_payload_round_trips(sink):
     sync(data)
     _, body = sink[0]
     assert body["d"] == data
+
+
+def test_sync_redacts_settings_credentials_before_egress(sink):
+    from backend.apps.service.client import sync
+    secrets = [
+        "sk-ant-live-provider-1111",
+        "sk-openai-live-provider-2222",
+        "goog-live-provider-3333",
+        "or-live-provider-4444",
+        "bearer-live-provider-5555",
+        "trial-live-provider-6666",
+        "custom-live-provider-7777",
+    ]
+    sync({
+        "anthropic_api_key": secrets[0],
+        "openai_api_key": secrets[1],
+        "google_api_key": secrets[2],
+        "openrouter_api_key": secrets[3],
+        "openswarm_bearer_token": secrets[4],
+        "free_trial_token": secrets[5],
+        "custom_providers": [{
+            "name": "Local",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": secrets[6],
+        }],
+    })
+    _, body = sink[0]
+    raw = json.dumps(body)
+    for secret in secrets:
+        assert secret not in raw
+    assert body["d"]["anthropic_api_key"]["configured"] is True
+    assert body["d"]["custom_providers"][0]["api_key"]["configured"] is True
+
+
+def test_sync_preserves_unconfigured_secret_markers(sink):
+    from backend.apps.service.client import sync
+    marker = {"configured": False}
+    sync({
+        "anthropic_api_key": marker,
+        "custom_providers": [{
+            "name": "Local",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": marker,
+        }],
+    })
+    _, body = sink[0]
+    assert body["d"]["anthropic_api_key"] == {"configured": False}
+    assert body["d"]["custom_providers"][0]["api_key"] == {"configured": False}
 
 
 def test_sync_empty_data(sink):
@@ -281,6 +336,78 @@ async def test_drain_spool_empty():
     from backend.apps.service.client import drain_spool
     n = await drain_spool()
     assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_spool_never_stores_cleartext_credentials(tmp_path):
+    import asyncio
+    import sqlite3
+    import httpx
+    from backend.apps.service import buffer, client
+    spool = str(tmp_path / "spool.db")
+    secret = "sk-ant-live-spooled-1111"
+    payload = {
+        "anthropic_api_key": secret,
+        "custom_providers": [{
+            "name": "Local",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "custom-live-spooled-2222",
+        }],
+    }
+
+    async def fail_post(*args, **kwargs):
+        raise httpx.ConnectError("offline")
+
+    with patch.object(client, "spool_path", lambda: spool), \
+            patch("httpx.AsyncClient.post", fail_post):
+        client.sync(payload)
+        for _ in range(50):
+            if buffer.count(spool):
+                break
+            await asyncio.sleep(0.02)
+    assert buffer.count(spool) == 1
+    raw_db = open(spool, "rb").read()
+    assert secret.encode() not in raw_db
+    assert b"custom-live-spooled-2222" not in raw_db
+    with sqlite3.connect(spool) as c:
+        payload = c.execute("SELECT payload FROM spool").fetchone()[0]
+    assert secret not in payload
+    assert "custom-live-spooled-2222" not in payload
+
+
+@pytest.mark.asyncio
+async def test_retry_spool_preserves_unconfigured_secret_markers(tmp_path):
+    import asyncio
+    import sqlite3
+    import httpx
+    from backend.apps.service import buffer, client
+    spool = str(tmp_path / "spool.db")
+    marker = {"configured": False}
+    payload = {
+        "anthropic_api_key": marker,
+        "custom_providers": [{
+            "name": "Local",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": marker,
+        }],
+    }
+
+    async def fail_post(*args, **kwargs):
+        raise httpx.ConnectError("offline")
+
+    with patch.object(client, "spool_path", lambda: spool), \
+            patch("httpx.AsyncClient.post", fail_post):
+        client.sync(payload)
+        for _ in range(50):
+            if buffer.count(spool):
+                break
+            await asyncio.sleep(0.02)
+    assert buffer.count(spool) == 1
+    with sqlite3.connect(spool) as c:
+        raw_payload = c.execute("SELECT payload FROM spool").fetchone()[0]
+    body = json.loads(raw_payload)
+    assert body["d"]["anthropic_api_key"] == {"configured": False}
+    assert body["d"]["custom_providers"][0]["api_key"] == {"configured": False}
 
 
 # --- identity ----------------------------------------------------------------

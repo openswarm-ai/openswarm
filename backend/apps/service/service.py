@@ -29,6 +29,8 @@ from pydantic import BaseModel, ConfigDict
 from backend.config.Apps import SubApp
 from backend.config.paths import SESSIONS_DIR
 from backend.apps.service import client as svc
+from backend.apps.service import service_runtime
+from backend.apps.service import settings_gateway
 from backend.apps.service.version import APP_VERSION, read_app_version
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,10 @@ p_last_9r_prompt_tokens: int | None = None
 p_last_9r_completion_tokens: int | None = None
 p_last_9r_requests: int | None = None
 P_RESTART_THRESHOLD = 1.0
+
+
+def should_autostart_9router() -> bool:
+    return os.environ.get("OPENSWARM_DISABLE_9ROUTER_AUTOSTART") != "1"
 
 
 def p_compute_delta(current: float, last: float | None, threshold: float = P_RESTART_THRESHOLD) -> tuple[float, float]:
@@ -78,9 +84,9 @@ async def p_pulse_loop():
 
         cost_delta = 0.0
         try:
-            from backend.apps.nine_router import get_usage_stats, is_running as p_9r_running
-            if p_9r_running():
-                stats = await get_usage_stats()
+            router = service_runtime.DEFAULT_ROUTER_USAGE
+            if router.is_running():
+                stats = await router.get_usage_stats()
                 if stats:
                     cur_cost = stats.get("totalCost", 0) or 0
                     cur_prompt = stats.get("totalPromptTokens", 0) or 0
@@ -96,10 +102,9 @@ async def p_pulse_loop():
 
         if p_pulse_count >= p_pulse_batch_size:
             try:
-                from backend.apps.agents.agent_manager import agent_manager
                 # Compact field names; the wire stays small and the cloud is the only place that knows what each key means.
                 svc.sync({
-                    "a": len(agent_manager.sessions),       # active sessions
+                    "a": service_runtime.DEFAULT_AGENT_CENSUS.live_session_count(),  # active sessions
                     "h": sorted(p_pulse_hours),               # hour bucket set
                     "n": p_pulse_count,                       # samples in batch
                     "c": p_last_9r_cost or 0,                 # cumulative cost
@@ -126,13 +131,12 @@ async def service_lifespan():
     global p_pulse_task, p_drain_task, p_9r_start_task
 
     try:
-        from backend.apps.settings.settings import load_settings, save_settings
-        settings = load_settings()
+        settings = settings_gateway.DEFAULT_SETTINGS_GATEWAY.load()
 
         is_first_open = settings.first_opened_at is None
         if is_first_open:
             settings.first_opened_at = datetime.now().isoformat()
-            save_settings(settings)
+            settings_gateway.DEFAULT_SETTINGS_GATEWAY.save(settings)
 
         days_since_install = 0
         if settings.first_opened_at:
@@ -203,12 +207,12 @@ async def service_lifespan():
     except Exception as e:
         logger.debug(f"Service startup event failed (non-critical): {e}")
 
-    try:
-        from backend.apps.nine_router import ensure_running as ensure_9router
-        # Start 9Router in the BACKGROUND instead of awaiting it here. Awaiting it was ~7s (up to ~18s cold) of the startup critical path, blocking the HTTP bind and the whole UI behind it. 9Router is only needed when the user sends an agent message, and the dispatch path calls ensure_running() itself (now serialized, so no double-spawn), so the first message waits for readiness lazily. This is the single biggest warm-startup win.
-        p_9r_start_task = asyncio.create_task(ensure_9router())
-    except Exception as e:
-        logger.debug(f"9Router auto-start skipped: {e}")
+    if should_autostart_9router():
+        try:
+            # Start 9Router in the BACKGROUND instead of awaiting it here. Awaiting it was ~7s (up to ~18s cold) of the startup critical path, blocking the HTTP bind and the whole UI behind it. 9Router is only needed when the user sends an agent message, and the dispatch path calls ensure_running() itself (now serialized, so no double-spawn), so the first message waits for readiness lazily. This is the single biggest warm-startup win.
+            p_9r_start_task = asyncio.create_task(service_runtime.DEFAULT_ROUTER_USAGE.ensure_running())
+        except Exception as e:
+            logger.debug(f"9Router auto-start skipped: {e}")
 
     p_pulse_task = asyncio.create_task(p_pulse_loop())
     p_drain_task = asyncio.create_task(p_drain_loop())
@@ -243,8 +247,7 @@ async def service_lifespan():
     p_9r_start_task = None
 
     try:
-        from backend.apps.nine_router import stop as stop_9router
-        stop_9router()
+        service_runtime.DEFAULT_ROUTER_USAGE.stop()
     except Exception:
         pass
 
@@ -310,12 +313,10 @@ def p_is_automation(sess: dict, tool_profile: "Counter") -> bool:
 
 @service.router.get("/usage-summary")
 async def usage_summary(window: str = "30d"):
-    from backend.apps.agents.agent_manager import agent_manager
-
     sessions = p_load_all_sessions()
     # A live session is usually already on disk, so appending it blind counted the same chat twice.
     seen_ids = {s.get("id") for s in sessions if s.get("id")}
-    for s in agent_manager.get_all_sessions():
+    for s in service_runtime.DEFAULT_AGENT_CENSUS.all_sessions():
         live = s.model_dump(mode="json")
         if live.get("id") and live["id"] in seen_ids:
             sessions = [d for d in sessions if d.get("id") != live["id"]]
@@ -413,8 +414,8 @@ async def usage_summary(window: str = "30d"):
     completed = status_counts.get("completed", 0)
     completion_rate = completed / total_sessions if total_sessions > 0 else 0
 
-    from backend.apps.nine_router import get_usage_stats, is_running as p_9r_running
-    nine_router_stats = await get_usage_stats() if p_9r_running() else None
+    router = service_runtime.DEFAULT_ROUTER_USAGE
+    nine_router_stats = await router.get_usage_stats() if router.is_running() else None
 
     if nine_router_stats and nine_router_stats.get("totalCost", 0) > 0:
         cost_source = "9router"
@@ -481,10 +482,10 @@ async def usage_summary(window: str = "30d"):
 
 @service.router.get("/cost-breakdown")
 async def cost_breakdown(period: str = "7d"):
-    from backend.apps.nine_router import get_usage_stats, is_running as p_9r_running
-    if not p_9r_running():
+    router = service_runtime.DEFAULT_ROUTER_USAGE
+    if not router.is_running():
         return {"available": False, "by_model": {}, "by_provider": {}}
-    stats = await get_usage_stats(period)
+    stats = await router.get_usage_stats(period)
     if not stats:
         return {"available": False, "by_model": {}, "by_provider": {}}
     return {

@@ -1,15 +1,19 @@
-import os
-
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 from typing import Literal, Optional, Any
 from uuid import uuid4
 from datetime import datetime
 
+from backend.apps.outputs.path_security import (
+    validate_output_id,
+    validate_workspace_id,
+    workspace_directory,
+)
 from backend.config.paths import OUTPUTS_WORKSPACE_DIR
 
 
 class Output(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
+    owner_account_id: Optional[str] = None
     name: str
     description: str = ""
     icon: str = "view_quilt"
@@ -32,6 +36,16 @@ class Output(BaseModel):
     published_url: Optional[str] = None
     publish_status: Optional[Literal["publishing", "published", "error"]] = None
     publish_error: Optional[str] = None
+
+    @field_validator("id")
+    @classmethod
+    def p_validate_id(cls, value: str) -> str:
+        return validate_output_id(value)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def p_validate_workspace_id(cls, value: Optional[str]) -> Optional[str]:
+        return validate_workspace_id(value) if value is not None else None
 
     @model_validator(mode="before")
     @classmethod
@@ -59,7 +73,7 @@ class Output(BaseModel):
         """Absolute on-disk folder for this app, resolved from workspace_id. API-only (excluded from the saved JSON since it's machine-specific and re-derivable); lets the frontend show the real edit path when an App card is selected."""
         if not self.workspace_id:
             return ""
-        return os.path.abspath(os.path.join(OUTPUTS_WORKSPACE_DIR, self.workspace_id))
+        return workspace_directory(OUTPUTS_WORKSPACE_DIR, self.workspace_id)
 
     @property
     def frontend_code(self) -> str:
@@ -84,6 +98,7 @@ class OutputVersion(BaseModel):
 
 
 class OutputCreate(BaseModel):
+    owner_account_id: Optional[str] = None
     name: str
     description: str = ""
     icon: str = "view_quilt"
@@ -96,6 +111,11 @@ class OutputCreate(BaseModel):
     thumbnail: Optional[str] = None
     session_id: Optional[str] = None
     workspace_id: Optional[str] = None
+
+    @field_validator("workspace_id")
+    @classmethod
+    def p_validate_workspace_id(cls, value: Optional[str]) -> Optional[str]:
+        return validate_workspace_id(value) if value is not None else None
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +138,7 @@ class OutputCreate(BaseModel):
 
 
 class OutputUpdate(BaseModel):
+    owner_account_id: Optional[str] = None
     name: Optional[str] = None
     description: Optional[str] = None
     icon: Optional[str] = None
@@ -126,6 +147,11 @@ class OutputUpdate(BaseModel):
     thumbnail: Optional[str] = None
     session_id: Optional[str] = None
     workspace_id: Optional[str] = None
+
+    @field_validator("workspace_id")
+    @classmethod
+    def p_validate_workspace_id(cls, value: Optional[str]) -> Optional[str]:
+        return validate_workspace_id(value) if value is not None else None
 
     @model_validator(mode="before")
     @classmethod
@@ -182,6 +208,11 @@ class WorkspaceSeedRequest(BaseModel):
     meta: Optional[dict[str, Any]] = None
     # "webapp_template" (default) → seed the vendored openswarm-ai/webapp-template snapshot (React + Vite + TS frontend with optional FastAPI backend), allocate a free FRONTEND_PORT, leave BACKEND_PORT=NONE. Runtime spawns `bash run.sh`; preview pane points at `http://localhost:{FRONTEND_PORT}/`. "flat" → legacy single-`index.html` workspace, kept for explicit opt-in (migration helper, regression tests). Workspaces predating this flip continue to work in old-mode automatically since the runtime detects mode via the presence of `run.sh`.
     template_mode: Literal["flat", "webapp_template"] = "webapp_template"
+
+    @field_validator("workspace_id")
+    @classmethod
+    def p_validate_workspace_id(cls, value: str) -> str:
+        return validate_workspace_id(value)
 
     @model_validator(mode="before")
     @classmethod

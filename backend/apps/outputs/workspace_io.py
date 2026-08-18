@@ -8,10 +8,21 @@ from typing import Optional
 from fastapi import HTTPException
 
 from backend.apps.outputs.models import Output
+from backend.apps.outputs.path_security import (
+    contained_path,
+    opened_file_is_contained,
+    validate_output_id,
+    workspace_directory,
+)
 from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR
 from backend.config.json_store import read_json_or_none, atomic_write_json
 
 logger = logging.getLogger(__name__)
+
+
+def output_metadata_path(output_id: str) -> str:
+    validate_output_id(output_id)
+    return contained_path(DATA_DIR, f"{output_id}.json")
 
 
 def load_all() -> list[Output]:
@@ -20,7 +31,12 @@ def load_all() -> list[Output]:
         return result
     for fname in os.listdir(DATA_DIR):
         if fname.endswith(".json"):
-            data = read_json_or_none(os.path.join(DATA_DIR, fname))
+            try:
+                path = output_metadata_path(fname[:-5])
+            except ValueError as e:
+                logger.warning("Skipping invalid output file %s: %s", fname, e)
+                continue
+            data = read_json_or_none(path)
             if data is None:
                 continue
             try:
@@ -31,11 +47,15 @@ def load_all() -> list[Output]:
 
 
 def save(output: Output):
-    atomic_write_json(os.path.join(DATA_DIR, f"{output.id}.json"), output.model_dump(exclude={"workspace_path"}))
+    atomic_write_json(output_metadata_path(output.id), output.model_dump(exclude={"workspace_path"}))
 
 
 def load(output_id: str) -> Output:
-    data = read_json_or_none(os.path.join(DATA_DIR, f"{output_id}.json"))
+    try:
+        path = output_metadata_path(output_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=404, detail="Output not found")
+    data = read_json_or_none(path)
     if data is None:
         raise HTTPException(status_code=404, detail="Output not found")
     return Output(**data)
@@ -43,7 +63,11 @@ def load(output_id: str) -> Output:
 
 def load_output(output_id: str) -> Output | None:
     """Public helper for other modules to resolve an output by ID."""
-    data = read_json_or_none(os.path.join(DATA_DIR, f"{output_id}.json"))
+    try:
+        path = output_metadata_path(output_id)
+    except (TypeError, ValueError):
+        return None
+    data = read_json_or_none(path)
     return Output(**data) if data is not None else None
 
 
@@ -55,7 +79,10 @@ def app_workspace_dir(output_id: str) -> str | None:
     output = load_output(output_id)
     if not output or not output.workspace_id:
         return None
-    path = os.path.abspath(os.path.join(OUTPUTS_WORKSPACE_DIR, output.workspace_id))
+    try:
+        path = workspace_directory(OUTPUTS_WORKSPACE_DIR, output.workspace_id)
+    except ValueError:
+        return None
     return path if os.path.isdir(path) else None
 
 
@@ -120,6 +147,8 @@ def walk_directory(folder: str) -> tuple[dict[str, str], dict[str, int]]:
     truncated: dict[str, int] = {}
     if not os.path.isdir(folder):
         return files, truncated
+    resolved_folder = os.path.realpath(os.path.abspath(folder))
+    open_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     for root, dirs, filenames in os.walk(folder):
         # Mutate `dirs` in place; that's how os.walk skips a subtree. Doing it here means we never even stat the children, so a 10k-file `.venv/` costs ~one stat (on the dir itself) instead of 10k.
         dirs[:] = [d for d in dirs if d not in WALK_SKIP_DIRS]
@@ -129,16 +158,24 @@ def walk_directory(folder: str) -> tuple[dict[str, str], dict[str, int]]:
             full_path = os.path.join(root, fname)
             # Normalize to forward-slash keys so the frontend's `path.split('/')` and `.startsWith(prefix)` checks work the same on Windows (where os.sep is '\\') as on macOS. Without this, every workspace file came back as `backend\\app.py` on Windows and the file tree silently mis-parsed.
             rel_path = os.path.relpath(full_path, folder).replace(os.sep, "/")
+            file_descriptor = None
             try:
-                # Stat first; cheap, lets us skip giant files without opening + reading them.
-                size = os.path.getsize(full_path)
+                file_descriptor = os.open(full_path, open_flags)
+                if not opened_file_is_contained(resolved_folder, file_descriptor):
+                    continue
+                size = os.fstat(file_descriptor).st_size
                 if size > P_WALK_MAX_FILE_BYTES:
                     truncated[rel_path] = size
                     continue
-                with open(full_path) as f:
+                stream = os.fdopen(file_descriptor)
+                file_descriptor = None
+                with stream as f:
                     files[rel_path] = f.read()
             except Exception:
                 pass
+            finally:
+                if file_descriptor is not None:
+                    os.close(file_descriptor)
     return files, truncated
 
 

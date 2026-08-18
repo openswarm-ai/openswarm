@@ -12,6 +12,7 @@ from claude_agent_sdk import AssistantMessage, ResultMessage
 from claude_agent_sdk.types import TextBlock, ToolUseBlock, ThinkingBlock, StreamEvent
 
 from backend.apps.agents.agent_manager import AgentManager
+from backend.apps.agents.events.AgentEvent import AgentEvent
 import backend.apps.agents.core.ws_manager as ws_mod
 
 
@@ -266,6 +267,69 @@ def test_full_streaming_turn_drives_the_complete_ws_contract(monkeypatch):
     # Context input = the last STEP's request size (real context), never the result's cross-step billing sum; the sum lives in input_fresh.
     assert session.tokens.get("input") == 100
     assert session.tokens.get("input_fresh") == 1100
+
+
+def test_turn_events_are_ordered_and_share_identity(monkeypatch):
+    agent_events = []
+
+    class RecordingSink:
+        def emit(self, event: AgentEvent) -> None:
+            agent_events.append(event)
+
+    async def fake_send(session_id, event, data):
+        return None
+
+    monkeypatch.setattr(ws_mod.ws_manager, "send_to_session", fake_send, raising=True)
+    monkeypatch.setattr(
+        claude_agent_sdk,
+        "query",
+        p_mock_query_yielding(
+            p_assistant([TextBlock(text="done")]),
+            p_result(usage={"input_tokens": 20, "output_tokens": 7}),
+        ),
+        raising=True,
+    )
+
+    mgr = AgentManager(event_sink=RecordingSink())
+    from backend.apps.agents.core.models import AgentSession
+    session = AgentSession(name="t", model="sonnet", dashboard_id="d")
+    mgr.sessions[session.id] = session
+    asyncio.run(mgr.run_agent_loop(session.id, "hi"))
+
+    assert [event.kind for event in agent_events] == ["turn.started", "turn.first_token", "turn.completed"]
+    assert [event.sequence for event in agent_events] == [0, 1, 2]
+    assert len({event.turn_id for event in agent_events}) == 1
+    assert agent_events[0].session_id == session.id
+    assert agent_events[2].output_tokens == 7
+
+
+def test_failed_turn_emits_one_redacted_terminal_event(monkeypatch):
+    agent_events = []
+
+    class RecordingSink:
+        def emit(self, event: AgentEvent) -> None:
+            agent_events.append(event)
+
+    async def failing_query(*args, **kwargs):
+        if False:
+            yield None
+        raise RuntimeError("secret provider detail")
+
+    async def fake_send(session_id, event, data):
+        return None
+
+    monkeypatch.setattr(ws_mod.ws_manager, "send_to_session", fake_send, raising=True)
+    monkeypatch.setattr(claude_agent_sdk, "query", failing_query, raising=True)
+
+    mgr = AgentManager(event_sink=RecordingSink())
+    from backend.apps.agents.core.models import AgentSession
+    session = AgentSession(name="t", model="sonnet", dashboard_id="d")
+    mgr.sessions[session.id] = session
+    asyncio.run(mgr.run_agent_loop(session.id, "hi"))
+
+    assert [event.kind for event in agent_events] == ["turn.started", "turn.failed"]
+    assert agent_events[1].error_type == "RuntimeError"
+    assert "secret provider detail" not in agent_events[1].model_dump_json()
 
 
 def test_loop_wires_all_four_hooks_to_a_live_hook_context(monkeypatch):

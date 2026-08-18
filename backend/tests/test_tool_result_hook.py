@@ -9,6 +9,9 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.streaming.HookContext import HookContext
 from backend.apps.agents.manager.streaming import post_tool_hook as tool_result_hook
+from backend.apps.agents.manager.permissions import gate_hooks
+from backend.apps.agents.events.AgentEventSink import BoundedAgentEventSink
+from backend.apps.agents.events.AgentTurnEventEmitter import AgentTurnEventEmitter
 from backend.apps.agents.manager import view_builder_state
 
 
@@ -79,6 +82,48 @@ async def test_view_builder_plain_write_does_not_flag_deps_changed():
     assert "agent:app_deps_changed" not in events
 
 
+@pytest.mark.asyncio
+async def test_allowed_tool_emits_paired_execution_events():
+    registry: dict = {}
+    ctx = p_ctx(registry)
+    sink = BoundedAgentEventSink()
+    ctx.event_emitter = AgentTurnEventEmitter(
+        sink=sink, session_id=ctx.session_id, provider="anthropic", model="claude"
+    )
+    with patch.object(gate_hooks.path_gate, "maybe_override_policy", return_value=("always_allow", None)), \
+         patch.object(tool_result_hook.ws_manager, "send_to_session", new=AsyncMock()):
+        await gate_hooks.pre_tool_hook(
+            ctx, {"tool_name": "Read", "tool_input": {}}, "tu1", None
+        )
+        await tool_result_hook.post_tool_hook(
+            ctx, {"tool_name": "Read", "tool_response": "ok"}, "tu1", None
+        )
+
+    events = sink.snapshot(ctx.session_id).events
+    assert [event.kind for event in events] == ["tool.started", "tool.completed"]
+    assert events[0].tool_call_id == events[1].tool_call_id == "tu1"
+    assert events[1].status == "success"
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_emits_redacted_completion():
+    registry: dict = {}
+    ctx = p_ctx(registry)
+    sink = BoundedAgentEventSink()
+    ctx.event_emitter = AgentTurnEventEmitter(
+        sink=sink, session_id=ctx.session_id, provider="anthropic", model="claude"
+    )
+    ctx.event_emitter.emit_tool_started("tu1", "Bash")
+
+    await tool_result_hook.post_tool_failure_hook(
+        ctx, {"tool_name": "Bash", "error": "secret command output"}, "tu1", None
+    )
+
+    events = sink.snapshot(ctx.session_id).events
+    assert [event.kind for event in events] == ["tool.started", "tool.completed"]
+    assert events[1].status == "error"
+    assert events[1].error_type == "ToolExecutionError"
+    assert "secret command output" not in events[1].model_dump_json()
 def p_app_manager(build_errors=(), console_errors=()) -> MagicMock:
     fake = MagicMock()
     fake.drain_errors_for_path.return_value = list(build_errors)
