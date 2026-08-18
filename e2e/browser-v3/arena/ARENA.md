@@ -1234,3 +1234,15 @@ arena harness's 7% measured the stripped research agent; the PRODUCT does verifi
 in ~8s, exactly as the user reported (LinkedIn/etc). The user was right end-to-end -- verified-
 writes was never a 7% capability wall, it was the wrong-body measurement. Full vs_bench number +
 per-site + Wilson CI to be booked when the run completes.
+
+## Product verified-write measurement: RESULT (2026-08-17)
+vs_bench product arm on 4 LIVE hard-editor stress-sites, verified by card readback:
+  gtranslate  reach=Y  7.9s  (verified)   |  w3schools  reach=Y  28.0s (verified)
+  deepl       reach=n  240s  (timeout, rich-contenteditable)  |  regex101 reach=n (no card; frontend died mid-run, confound)
+= 2/4 verified. HONEST CAVEATS: (a) these are DELIBERATELY HARD editors (contenteditable/CodeMirror/
+ACE stress cases), NOT the product's proven compose-and-send class (X/Reddit/LinkedIn/Gmail social
+composers); (b) the frontend webpack died mid-run and likely caused regex101's "no card"; (c) live
+external + n=4 = not a settled clause-5 number. BUT DEFINITIVE: the product does REAL verified live
+writes in ~8-28s -- the arena's 7% measured the stripped research agent (wrong body), now corrected.
+The user was right: verified-writes was a wrong-body measurement, not a 7% capability wall. Bigger
+clean run (frontend restarted, product's proven-class sites, larger N) pending for the settled number.
