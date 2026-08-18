@@ -71,6 +71,16 @@ const ModelErrorPill: React.FC = () => {
     };
   }, [dispatch]);
 
+  // A router bounce restores models while the backend stays reachable, so no recovery event fires; poll gently while the error owns the corner.
+  useEffect(() => {
+    if (state !== 'no-model') return;
+    const t = setInterval(() => {
+      dispatch(fetchSettings());
+      dispatch(fetchModels());
+    }, 30000);
+    return () => clearInterval(t);
+  }, [state, dispatch]);
+
   const clickable = state === 'no-model';
   const title =
     state === 'offline' ? 'No internet connection'
