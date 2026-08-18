@@ -1174,3 +1174,19 @@ authenticated session -- not something the benchmark harness should autonomously
    numbers (MiniWoB/CompWoB/WebArena/writes) are the harness; the PRODUCT's shipped write capability
    is higher and measured elsewhere (live, via the app). Reproducible product-write measurement =
    run the product agent against the self-hosted sites (future work; different stack).
+
+## Why product agent != benchmark harness, and why it can't be benchmarked headless (2026-08-17)
+Traced it: the PRODUCT agent (backend/apps/agents/browser/) drives the browser via ws_manager --
+a WebSocket to the ELECTRON APP's webview -- NOT a standalone browser. It is architecturally
+COUPLED to the running app; it cannot drive a browser on its own. That is precisely why the
+product's write capability has only ever been tested LIVE (through the app on real sites) -- the
+app is the only body it has. The ARENA harness (osw-llm-*) is self-contained: launches its own
+headless browser, runs 375 tasks unattended -- which is what fair reproducible benchmarking
+requires, but stripping the agent to run headless left OUT the send-script/verified-action
+machinery welded to the app stack. So: same reasoning, different execution bodies. CONSEQUENCE:
+the arena's 7-14% verified-write number is the STRIPPED research harness and structurally
+UNDERSTATES the product; a reproducible product-write measurement would require standing up the
+full app (Electron frontend + backend + ws_manager) pointed at the self-hosted sites -- a real
+integration project, not a headless run. Honest final: research/generic-harness numbers
+(MiniWoB/CompWoB/WebArena/writes) = benchmark harness; product write capability = live-proven,
+not cheaply benchmarkable headless. The arena was never the product; it was the fair-scoring proxy.
