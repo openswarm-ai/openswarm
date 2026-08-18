@@ -1,0 +1,44 @@
+name: edge-tests
+
+# The openswarm-edge pytest suite, on every pull request that touches it and on pushes to the
+# mainline branches.
+on:
+  pull_request:
+    paths:
+      - 'openswarm-edge/**'
+      - '.github/workflows/edge-tests.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'openswarm-edge/**'
+      - '.github/workflows/edge-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (openswarm-edge)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: openswarm-edge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: openswarm-edge/requirements.txt
+      - name: Install edge deps
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-asyncio
+      - name: Run the edge suite
+        run: python -m pytest tests -q -p no:cacheprovider
