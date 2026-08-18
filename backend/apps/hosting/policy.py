@@ -10,7 +10,7 @@ Everything here is a plain default: the desktop scope allows, filters nothing, s
 """
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple, TypeVar
 
 from fastapi import Request, params
 from typeguard import typechecked
@@ -155,6 +155,18 @@ class HostingPolicy:
         """True when SSRF checks must treat loopback as a network target (never on the desktop,
         where local previews are the point)."""
         return False
+
+    @typechecked
+    def hydrate_settings(self, settings: Any, save: Callable[[Any], None]) -> Any:
+        """Give the build a chance to pin settings at boot (a hosted build lends a provider key);
+        the desktop returns them untouched."""
+        return settings
+
+    @typechecked
+    def present_settings(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """The settings payload a client may see; the desktop shows everything, a hosted build masks
+        what it lent."""
+        return payload
 
 
 DESKTOP_SCOPE = RequestScope()

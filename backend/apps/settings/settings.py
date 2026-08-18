@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import Literal, Optional
 
 from backend.config.Apps import SubApp
+from backend.apps.hosting.policy import hosting_policy
 from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
 from backend.apps.settings.redaction import redact_settings
 from backend.apps.settings.store import (
@@ -38,7 +39,7 @@ async def settings_lifespan():
             sync_openswarm_pro_as_claude,
             sync_custom_providers,
         )
-        s = load_settings()
+        s = hosting_policy().hydrate_settings(load_settings(), save_settings)
         import asyncio as p_asyncio
 
         async def p_boot_router_then_sync():
@@ -114,7 +115,7 @@ async def save_settings_async(settings_obj: AppSettings) -> None:
 
 @settings.router.get("")
 async def get_settings():
-    return load_settings().model_dump()
+    return hosting_policy().present_settings(load_settings().model_dump())
 
 
 # Written only by their dedicated flows (Stripe activate, sign-in, signout, OAuth connects); a full-object PUT from a stale renderer snapshot must never revert or forge them.
@@ -160,7 +161,7 @@ def settings_write_lock() -> asyncio.Lock:
 async def update_settings(body: AppSettings):
     async with settings_write_lock():
         saved = await apply_settings_update(body)
-    return {"ok": True, "settings": saved.model_dump()}
+    return {"ok": True, "settings": hosting_policy().present_settings(saved.model_dump())}
 
 
 @settings.router.patch("")
@@ -172,7 +173,7 @@ async def patch_settings(changes: dict):
     field you never sent."""
     async with settings_write_lock():
         saved = await apply_settings_patch(changes)
-    return {"ok": True, "settings": saved.model_dump()}
+    return {"ok": True, "settings": hosting_policy().present_settings(saved.model_dump())}
 
 
 async def apply_settings_patch(changes: dict) -> AppSettings:
@@ -356,7 +357,7 @@ async def put_dismiss_mcp_suggestion(body: DismissMcpSuggestionPayload):
     for tool_id in body.ids:
         current.dismissed_mcp_suggestions[tool_id] = now
     await save_settings_async(current)
-    return {"ok": True, "settings": current.model_dump()}
+    return {"ok": True, "settings": hosting_policy().present_settings(current.model_dump())}
 
 
 @settings.router.get("/default-system-prompt")
@@ -369,7 +370,7 @@ async def reset_system_prompt():
     current = load_settings()
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
     await save_settings_async(current)
-    return {"ok": True, "settings": current.model_dump()}
+    return {"ok": True, "settings": hosting_policy().present_settings(current.model_dump())}
 
 
 # A preferences reset (the iOS "Reset All Settings" analogue): everything back to defaults EXCEPT the things a "reset my preferences" click must never silently sever, your connections (server-owned subscription fields AND your pasted provider credentials) and your identity. Hard-erase is the separate flow.
