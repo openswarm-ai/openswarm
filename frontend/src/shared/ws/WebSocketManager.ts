@@ -31,6 +31,7 @@ import {
 } from '../state/agentsSlice';
 import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
 import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
+import { interactionActive, installInteractionListeners } from '../interactionPriority';
 import { addBrowserCardFromBackend, setBrowserDocked, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, placeBrowserBesideChat, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeBrowserCard, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { setCardPosition } from '../state/dashboardLayoutSlice';
@@ -43,6 +44,7 @@ import { notifyAgentCompletion, notifyWorkflowRun } from '../notifications';
 
 // Phase 0 boot instrumentation: one-shot flag so we report the first streamed agent token to Electron main exactly once per app launch. Module scope (not instance) because multiple WebSocketManagers exist (one per session WS).
 let firstAgentResponseMarked = false;
+installInteractionListeners();
 
 // Thin wrapper around getAuthToken so the connect() call site stays synchronous. If the token isn't cached yet, returns '' and the WS handshake will 4401, onclose catches that and refreshes the token before the next reconnect.
 const _getAuthTokenSafe = (): string => {
@@ -180,7 +182,9 @@ class WebSocketManager {
       firstAgentResponseMarked = true;
       try { (window as any).openswarm?.markFirstAgentResponse?.(); } catch { /* not in Electron */ }
     }
-    if (this.backgrounded) {
+    // Mid-gesture, a delta rides the same 1Hz buffer as a backgrounded chat: its React commit
+    // (50-66ms under load) would land inside the user's drag frames (ENG-301 "still glitchy").
+    if (this.backgrounded || interactionActive()) {
       const evicted = this.bgBuffer.add(messageId, delta);
       if (evicted) store.dispatch(streamDelta({ sessionId, messageId: evicted.messageId, delta: evicted.text }));
       this.armBgFlush();
@@ -198,10 +202,13 @@ class WebSocketManager {
 
   private armBgFlush() {
     if (this.bgFlushTimer !== null) return;
+    // Gesture-buffered deltas flush fast (250ms) once the hand stops; true background stays 1Hz.
+    const delay = this.backgrounded ? 1000 : 250;
     this.bgFlushTimer = setTimeout(() => {
       this.bgFlushTimer = null;
+      if (!this.backgrounded && interactionActive()) { this.armBgFlush(); return; }
       this.flushBgDelta();
-    }, 1000);
+    }, delay);
   }
 
   private flushBgDelta() {
