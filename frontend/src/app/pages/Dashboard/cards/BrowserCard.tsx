@@ -1175,8 +1175,11 @@ const BrowserCard: React.FC<Props> = ({
   // leaves it behind. An agent-driven browser skips the park (above), so it painted itself over
   // wherever the chat USED to be, sometimes exactly on the chat's own header, where a press grabs the
   // browser and drags that instead of the chat. Follow the parent's live rect while it is collapsed.
+  // NO exclusions for dragging/resize/capture-wait: any gap here rendered the FULL-SIZE card
+  // halfway up the pill during transient states (thinking, mid-capture, mid-drag; Eric's shots x3).
+  // Collapsed parent = parked or 320px miniature, at every stage, no third state.
   const followsParent = !!dockedTo && !!dockParentCard && !dockParentExpanded && !dockParked
-    && !dragging && !localResize && !isTiled && !isMinimized && !keepAliveHidden;
+    && !isTiled && !isMinimized && !keepAliveHidden;
   // Tell the pill a live miniature is underneath it, so it suppresses its own artifacts instead of
   // stacking a widget/frozen shot on top of the browser (Eric's overlap screenshots).
   useEffect(() => {
@@ -1269,12 +1272,12 @@ const BrowserCard: React.FC<Props> = ({
         // Docked = a TRUE miniature: the card keeps its full-size layout and shrinks by uniform
         // transform (centered in the slot), so the page never reflows and agent clicks stay valid.
         // Resizing the webview to the slot re-rendered the page as a narrow window, which is wrong.
-        left: keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardX : (followX ?? displayX))),
-        top: dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (dragging ? cardY : (followY ?? displayY)),
+        left: keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followX ?? (dragging ? cardX : displayX))),
+        top: dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followY ?? (dragging ? cardY : displayY)),
         // Following a collapsed pill = a TRUE 320px miniature (uniform scale, no reflow, agent
         // coordinates stay valid), the same contract as the in-chat dock; full-size beside a pill
         // read as a detached window and buried the pill (Eric's 1.7.7 comparison).
-        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : followsParent ? `scale(${Math.min(1, 320 / displayW)})` : undefined),
+        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)${followsParent ? ` scale(${Math.min(1, 320 / displayW)})` : ''}` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : followsParent ? `scale(${Math.min(1, 320 / displayW)})` : undefined),
         transformOrigin: tiledSize || dockActive || followsParent ? '0 0' : undefined,
         width: tiledSize ? tiledSize.width : displayW,
         height: tiledSize ? tiledSize.height : displayH,
