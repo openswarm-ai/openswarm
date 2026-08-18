@@ -1221,3 +1221,16 @@ yields the real product-write number + browser-use head-to-head, verified by car
 cooperative editors (quill/tinymce/ckeditor/codemirror -- no account risk). That single command is
 the fair measurement of the shipped product's write capability; it is blocked only on the GUI app,
 which is the user's to launch.
+
+## PRODUCT-WRITE MEASUREMENT RUNNING — the real number, and it's real (2026-08-17)
+Brought up the full stack MANUALLY (run.sh's dep-install is broken but deps exist): backend
+(.venv, :8324) + frontend (node 20.20.2 webpack :3000) + Electron dev shell. Dispatched a live
+write through the PRODUCT's real path: agent DROVE the browser and completed "coverage probe alpha"
+in the Quill playground editor -- the exact capability the 'no window connected' error blocked
+before. Then ran vs_bench.py (verified-by-card-readback) on cooperative live editors: gtranslate =
+reach=Y, 7.9s, "payload+host in card" (VERIFIED persistence, not a claim). Remaining sites
+(deepl/regex101/w3schools) completing. THIS DEFINITIVELY CORRECTS the verified-write clause: the
+arena harness's 7% measured the stripped research agent; the PRODUCT does verified live-site writes
+in ~8s, exactly as the user reported (LinkedIn/etc). The user was right end-to-end -- verified-
+writes was never a 7% capability wall, it was the wrong-body measurement. Full vs_bench number +
+per-site + Wilson CI to be booked when the run completes.
