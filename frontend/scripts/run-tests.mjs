@@ -25,5 +25,11 @@ if (files.length === 0) {
   console.error('run-tests: no test files found under src/');
   process.exit(1);
 }
-const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', ...files], { cwd: root, stdio: 'inherit' });
+// --require css-stub: some units live in component files that import a stylesheet; under node those
+// imports must resolve to nothing (Vite handles them in the bundle).
+const result = spawnSync(
+  process.execPath,
+  ['--import', 'tsx', '--require', './scripts/css-stub.cjs', '--test', ...files],
+  { cwd: root, stdio: 'inherit' },
+);
 process.exit(result.status ?? 1);
