@@ -140,14 +140,18 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
     message up to and including that id so the marker the UI shows actually matches
     what the model sees. Missing cutoff id falls through to full history.
     """
+    # Aging replaced dropping (ENG-354, hermes lift): pre-cutoff history becomes re-runnable
+    # one-line stubs instead of vanishing, duplicates collapse, and the newest tool results
+    # survive verbatim inside a budget, so a context break costs detail, never the trail.
+    from backend.apps.agents.manager.session.aged_recap_lines import age_tool_results
+    cutoff_idx = -1
     if cutoff_msg_id:
-        skip_idx = next((i for i, m in enumerate(messages) if m.id == cutoff_msg_id), -1)
-        if skip_idx >= 0:
-            messages = messages[skip_idx + 1:]
+        cutoff_idx = next((i for i, m in enumerate(messages) if m.id == cutoff_msg_id), -1)
+    visible = [(i, m) for i, m in enumerate(messages) if not getattr(m, "hidden", False)]
+    fates = age_tool_results([m for _, m in visible], cutoff_idx=next(
+        (v for v, (i, _) in enumerate(visible) if i == cutoff_idx), -1))
     lines = []
-    for m in messages:
-        if getattr(m, "hidden", False):
-            continue
+    for v, (i, m) in enumerate(visible):
         if m.role == "user":
             text = m.content if isinstance(m.content, str) else str(m.content)
             lines.append(f"User: {strip_forged_sentinels(clamp_recap_text(text))}")
@@ -157,7 +161,13 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
         elif m.role == "tool_call":
             lines.append(recap_tool_call_line(m.content))
         elif m.role == "tool_result":
-            lines.append(recap_tool_result_line(m.content))
+            body = fates.get(v)
+            if body is None:
+                lines.append(recap_tool_result_line(m.content))
+            else:
+                tool_name = m.content.get("tool_name") if isinstance(m.content, dict) else None
+                label = f"Tool result ({tool_name})" if tool_name else "Tool result"
+                lines.append(f"{label}: {strip_forged_sentinels(body)}")
     if not lines:
         return ""
     return f"{SESSION_RECAP_OPEN}\n{PLATFORM_NOTE_PREAMBLE}\n" + "\n".join(lines) + f"\n{SESSION_RECAP_CLOSE}"
