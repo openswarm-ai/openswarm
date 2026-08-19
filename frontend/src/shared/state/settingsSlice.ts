@@ -163,7 +163,7 @@ interface SettingsState {
 export const DEFAULT_SETTINGS: AppSettings = {
   default_system_prompt: null,
   default_folder: null,
-  default_model: 'opus-5',
+  default_model: 'sonnet-5',
   default_mode: 'agent',
   default_max_turns: null,
   default_thinking_level: 'auto',

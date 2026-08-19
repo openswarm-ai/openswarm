@@ -70,7 +70,7 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 # Fresh-install / unset-fallback model. "opus-5" is the plain row: cc/ sub lane for subscription users, API key otherwise.
-DEFAULT_MODEL = "opus-5"
+DEFAULT_MODEL = "sonnet-5"
 
 
 class AppSettings(BaseModel):

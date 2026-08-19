@@ -63,7 +63,7 @@ def test_minimal_old_file_fills_missing_with_defaults(settings_file):
     p_write(settings_file, {"theme": "light"})
     s = store.load_settings()
     assert s.theme == "light"
-    assert s.default_model == "opus-5"  # filled from default
+    assert s.default_model == "sonnet-5"  # filled from default
     assert s.auto_reveal_sub_agents is True
 
 

@@ -87,14 +87,14 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const defaultThinkingLevel = useAppSelector((s) => s.settings.data.default_thinking_level);
     const settingsLoaded = useAppSelector((s) => s.settings.loaded);
     const [mode, setMode] = useState(defaultMode || 'agent');
-    const [model, setModel] = useState(defaultModel || 'opus-5');
+    const [model, setModel] = useState(defaultModel || 'sonnet-5');
     const [thinkingLevel, setThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'auto'>(defaultThinkingLevel || 'auto');
     // Snap to the persisted Settings defaults as soon as they arrive from the backend. Without the settingsLoaded guard, the effect fires against the Redux initialState ('sonnet') before the real default has loaded, and the settingsApplied flag then locks out the real default for the rest of the session, so new chats spawn under the stale value.
     const settingsApplied = useRef(false);
     useEffect(() => {
       if (settingsLoaded && !settingsApplied.current) {
         setMode(defaultMode || 'agent');
-        setModel(defaultModel || 'opus-5');
+        setModel(defaultModel || 'sonnet-5');
         setThinkingLevel(defaultThinkingLevel || 'auto');
         settingsApplied.current = true;
       }
@@ -129,7 +129,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     useEffect(() => {
       if (settingsLoaded && inputOpen && !prevInputOpen.current) {
         setMode(defaultMode || 'agent');
-        setModel(defaultModel || 'opus-5');
+        setModel(defaultModel || 'sonnet-5');
         setThinkingLevel(defaultThinkingLevel || 'auto');
       }
       prevInputOpen.current = inputOpen;
