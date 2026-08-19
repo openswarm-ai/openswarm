@@ -295,6 +295,19 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                 )
                 return
             await handle_run_error(e, session, session_id, turn, p_stderr_buffer)
+            # An error handler may arm a self-heal continuation (the policy-block recap-free retry);
+            # the success path's dispatcher never runs on this branch, so dispatch it here or the
+            # armed retry silently rots and the session dies at "error" (caught by the exp.19 drill).
+            try:
+                if getattr(session, "pending_continuation", False):
+                    p_cont = session.pending_continuation_prompt or "Continue."
+                    session.pending_continuation = False
+                    session.pending_continuation_prompt = None
+                    session.status = "completed"
+                    asyncio.create_task(self.send_message(session_id, p_cont, hidden=True))
+                    logger.info(f"Auto-continuing session {session_id} after a self-healing error path")
+            except Exception:
+                logger.exception("error-path continuation dispatch failed")
         except BaseException as e:
             # Catch BaseExceptionGroup from anyio task groups (e.g. concurrent CLI crash + pending approval cancellation) so it doesn't escape and kill the uvicorn process.
             logger.exception(f"Agent {session_id} fatal error: {e}")
