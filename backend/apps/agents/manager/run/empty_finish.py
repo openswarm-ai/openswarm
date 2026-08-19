@@ -157,7 +157,11 @@ def turn_finished_empty(session: AgentSession) -> bool:
             p_last_call_name = p_tool_name_of(m)
             return not any(marker in p_last_call_name for marker in P_ANSWER_TOOL_MARKERS)
         if role in ("user", "system"):
-            return False
+            # A user-message tail normally means a bare prompt (never claimed). But when the model
+            # QUIT so hard it persisted nothing at all, and this session has already silent-quit
+            # before, that vanishing act IS the quit repeating (Haik's poke storms: "continue" ->
+            # instant thinking-only end_turn -> nothing persisted -> detector shrugged).
+            return role == "user" and getattr(session, "empty_finish_total", 0) >= 1
     return False
 
 

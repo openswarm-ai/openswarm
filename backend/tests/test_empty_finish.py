@@ -202,3 +202,16 @@ def test_drill_seam_disables_compaction(monkeypatch):
     s.tokens["input"] = 190_000
     assert maybe_nudge_empty_finish(s, "sid-seam") is True
     assert s.compacted_through_msg_id is None
+
+
+def test_vanishing_quit_on_repeat_session_is_claimed():
+    """Haik's poke storm: 'continue' -> instant thinking-only quit -> NOTHING persisted. A session
+    that already silent-quit must claim that vanishing act; a truly bare first prompt stays unclaimed."""
+    from backend.apps.agents.manager.run.empty_finish import turn_finished_empty
+    s = p_session(("user", "task"),
+                  ("tool_call", {"tool": "Read", "input": {}}),
+                  ("tool_result", {"text": "x"}),
+                  ("user", "you stopped. continue."))
+    assert turn_finished_empty(s) is False, "first-time session: user tail stays unclaimed"
+    s.empty_finish_total = 1
+    assert turn_finished_empty(s) is True, "repeat session: the vanishing quit is claimed"
