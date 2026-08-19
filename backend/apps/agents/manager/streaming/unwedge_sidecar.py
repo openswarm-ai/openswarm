@@ -10,6 +10,7 @@ block (a human answering AskUI, a delegated browser run) are exempt by name, nev
 
 import asyncio
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -24,6 +25,11 @@ logger = logging.getLogger(__name__)
 # the recovery as a hiccup rather than a hang. Anything that legitimately blocks (a human, a
 # delegated run) is exempt by name below, so this deadline never races real work.
 WEDGE_SECONDS = 25.0
+# A sidecar whose heartbeat still beats is ALIVE with one slow tool, not wedged; give it this long
+# before concluding the call is hung anyway (measured: 5 healthy-sidecar kills in one loaded evening
+# were every one of Haik's "MCP disconnected" reports, ENG-353).
+LATE_WEDGE_SECONDS = 120.0
+HEARTBEAT_FRESH_S = 12.0
 
 P_CORE_PREFIX = "mcp__openswarm-core__"
 
@@ -70,6 +76,30 @@ def find_sidecar_pids(session_id: str) -> list:
         if f"OPENSWARM_PARENT_SESSION_ID={session_id}" in env:
             pids.append(int(pid))
     return pids
+
+
+@typechecked
+def heartbeat_age(session_id: str) -> float:
+    """Seconds since the session's sidecar last proved its process alive, or a huge number when no
+    heartbeat exists (old sidecar builds have none: treat as wedged-on-timeout, the old behavior)."""
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), f"osw-mcp-hb-{session_id}")
+    try:
+        return max(0.0, time.time() - os.path.getmtime(path))
+    except OSError:
+        return 1e9
+
+
+@typechecked
+def wedge_verdict(outstanding_s: float, hb_age: float) -> str:
+    """kill | extend | wait. Stale heartbeat = the PROCESS is wedged, kill at the first deadline.
+    Fresh heartbeat = alive with a slow call: extend once, and only a call still outstanding at the
+    late deadline dies (a hung per-call thread must not hang the session forever)."""
+    if outstanding_s >= LATE_WEDGE_SECONDS:
+        return "kill"
+    if hb_age > HEARTBEAT_FRESH_S:
+        return "kill"
+    return "extend"
 
 
 RETRY_PROMPT = (
@@ -143,10 +173,18 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         session_id = getattr(ctx, "session_id", "")
         if not session_id:
             return
+        outstanding = time.time() - started
+        verdict = wedge_verdict(outstanding, heartbeat_age(session_id))
+        if verdict == "extend":
+            logger.info(
+                f"Agent {session_id}: core tool {tool_name} outstanding {outstanding:.0f}s but the "
+                f"sidecar heartbeat is fresh (alive, slow); re-checking at {LATE_WEDGE_SECONDS:.0f}s")
+            loop.call_later(LATE_WEDGE_SECONDS - outstanding, p_check)
+            return
         # ps + kill are blocking; keep them off the event loop. A daemon thread, not the loop's
         # default executor: executor workers are non-daemon and a per-test loop that closes without
         # shutdown leaks them parked forever (the suite's flaky hang at interpreter exit).
-        threading.Thread(target=unwedge, args=(session_id, tool_name, time.time() - started), daemon=True, name="unwedge").start()
+        threading.Thread(target=unwedge, args=(session_id, tool_name, outstanding), daemon=True, name="unwedge").start()
         arm_retry(getattr(ctx, "session", None))
 
     loop.call_later(WEDGE_SECONDS, p_check)

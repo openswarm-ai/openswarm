@@ -95,7 +95,32 @@ def p_call_async(id_, tool_name: str, arguments: dict) -> None:
         send_response(id_, error={"code": -32000, "message": str(e)})
 
 
+def start_heartbeat():
+    """Touch a per-session file every 5s from a daemon thread: proof this process is scheduled and
+    alive. The backend's wedge watchdog reads the mtime to tell a WEDGED sidecar (SIGSTOP, dead
+    process: heartbeat stops) from a merely SLOW tool call (threads fine, heartbeat keeps beating),
+    because killing the second kind is exactly the "MCP disconnected" a user reports (ENG-353)."""
+    import tempfile
+    import time as p_time
+    session = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
+    if not session:
+        return
+    path = os.path.join(tempfile.gettempdir(), f"osw-mcp-hb-{session}")
+
+    def p_beat():
+        while True:
+            try:
+                with open(path, "a"):
+                    os.utime(path, None)
+            except Exception:
+                pass
+            p_time.sleep(5)
+
+    threading.Thread(target=p_beat, daemon=True, name="hb").start()
+
+
 def main():
+    start_heartbeat()
     for line in sys.stdin:
         line = line.strip()
         if not line:
