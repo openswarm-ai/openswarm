@@ -370,13 +370,22 @@ export function useDashboardLifecycle({
       if (sess.dashboard_id !== dashboardId) continue;
       autoOpenedOutputsRef.current.add(output.id);
       if (viewCards[output.id]) continue;
-      dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: sid }));
+      // A sub-agent has no canvas card, so anchoring on it dumped the app at a far grid cell; walk up to the nearest ancestor that IS on the canvas (ENG-346).
+      const layoutCards = store.getState().dashboardLayout.cards;
+      let anchorSid: string = sid;
+      for (let hops = 0; hops < 5 && !layoutCards[anchorSid]; hops += 1) {
+        const up = sessions[anchorSid]?.parent_session_id;
+        if (!up || !sessions[up]) break;
+        anchorSid = up;
+      }
+      if (!layoutCards[anchorSid]) anchorSid = sid;
+      dispatch(addViewCard({ outputId: output.id, expandedSessionIds, parentSessionId: anchorSid }));
       const outputId = output.id;
       setTimeout(() => {
         const vc = store.getState().dashboardLayout.viewCards[outputId];
         if (!vc) return;
         const rects = [{ x: vc.x, y: vc.y, width: vc.width, height: vc.height }];
-        const ac = store.getState().dashboardLayout.cards[sid];
+        const ac = store.getState().dashboardLayout.cards[anchorSid];
         if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
         canvasActions.revealCards(rects);
         handleHighlightCard(outputId);

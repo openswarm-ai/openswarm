@@ -418,10 +418,13 @@ function collectOccupiedRects(
   }
   for (const c of Object.values(state.viewCards)) {
     if (exclude?.type === 'view' && exclude.id === c.output_id) continue;
+    // Docked cards render inside a chat; their stored canvas rect is an invisible obstacle that flings new placements far away (ENG-346).
+    if (c.docked_to) continue;
     rects.push({ x: c.x, y: c.y, w: c.width, h: c.height });
   }
   for (const c of Object.values(state.browserCards)) {
     if (exclude?.type === 'browser' && exclude.id === c.browser_id) continue;
+    if (c.docked_to) continue;
     rects.push({ x: c.x, y: c.y, w: c.width, h: c.height });
   }
   for (const w of Object.values(state.workflowCards)) {
