@@ -55,6 +55,13 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     if session.empty_finish_nudges >= 1 and p_tool_calls <= session.empty_finish_progress_mark:
         return False
     session.empty_finish_progress_mark = p_tool_calls
+    # At high context the silent quit is usually the model choking on the prompt itself, so
+    # re-sending the same bloat just burns a nudge; compact FIRST and retry distilled (ENG-354).
+    from backend.apps.agents.manager.context_budget import compact_trigger_tokens, maybe_compact
+    p_input = int(session.tokens.get("input", 0) or 0)
+    if p_input >= int(0.8 * compact_trigger_tokens(session)) and maybe_compact(session, force=True):
+        session.needs_fresh_session = True
+        logger.warning(f"Agent {session_id}: empty finish at {p_input} input tokens; compacted history before the nudge")
     session.empty_finish_nudges += 1
     session.pending_continuation = True
     p_final = session.empty_finish_nudges >= NUDGE_HARD_CAP
@@ -72,6 +79,8 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
             "kind": "empty_finish_nudge",
             "session_id": session_id,
             "model": session.model,
+            "input_tokens": p_input,
+            "compacted": bool(session.needs_fresh_session),
             "tool_calls": p_tool_calls,
             "nudge": session.empty_finish_nudges,
             "flight": p_fr.build_envelope(

@@ -134,3 +134,32 @@ def test_stalled_continuation_is_not_renudged() -> None:
     s.pending_continuation = False
     assert maybe_nudge_empty_finish(s, "sid") is True
     assert s.empty_finish_nudges == 2
+
+
+def test_high_context_empty_finish_compacts_before_nudge():
+    """ENG-354: a silent quit at high context must compact + go fresh, not just re-send the bloat."""
+    from backend.apps.agents.manager.run.empty_finish import maybe_nudge_empty_finish
+    s = p_session(("user", "long task"),
+                  ("tool_call", {"tool": "Bash", "input": {"command": "ls"}}),
+                  ("tool_result", {"text": "ok"}),
+                  ("tool_call", {"tool": "Bash", "input": {"command": "pwd"}}),
+                  ("tool_result", {"text": "/tmp"}),
+                  ("tool_call", {"tool": "Bash", "input": {"command": "date"}}),
+                  ("tool_result", {"text": "now"}))
+    s.context_window = 200_000
+    s.tokens["input"] = 190_000
+    assert maybe_nudge_empty_finish(s, "sid-high") is True
+    assert s.compacted_through_msg_id is not None
+    assert s.needs_fresh_session is True
+
+
+def test_low_context_empty_finish_nudges_without_compacting():
+    from backend.apps.agents.manager.run.empty_finish import maybe_nudge_empty_finish
+    s = p_session(("user", "small task"),
+                  ("tool_call", {"tool": "Bash", "input": {"command": "ls"}}),
+                  ("tool_result", {"text": "ok"}))
+    s.context_window = 1_000_000
+    s.tokens["input"] = 30_000
+    assert maybe_nudge_empty_finish(s, "sid-low") is True
+    assert s.compacted_through_msg_id is None
+    assert getattr(s, "needs_fresh_session", False) is False
