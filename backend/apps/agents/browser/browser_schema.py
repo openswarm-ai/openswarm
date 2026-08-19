@@ -767,6 +767,26 @@ BROWSER_TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "RequestUserSignIn",
+        "description": (
+            "Hand a login wall back to the user WITHOUT ending the run: the browser card stays "
+            "live, the user signs in on it directly, and you resume automatically the moment "
+            "the wall clears (waits up to 3 minutes). Prefer this over giving up or over "
+            "RequestHumanIntervention whenever the only blocker is authentication "
+            "(login page, SSO, MFA, session expired)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "description": "Site that needs the sign-in, e.g. 'notion.so'. Defaults to the current page's domain.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "RequestHumanIntervention",
         "description": (
             "Request the user's help when you encounter an obstacle you cannot solve "

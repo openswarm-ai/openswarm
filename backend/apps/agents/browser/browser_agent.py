@@ -1500,7 +1500,8 @@ async def run_browser_agent(
     if not browser_delete_script.delete_tool_enabled():
         p_cached_tools = [t for t in p_cached_tools if t["name"] != "BrowserDeleteItem"]
     if not p_hitl_allowed:
-        p_cached_tools = [t for t in p_cached_tools if t["name"] != "RequestHumanIntervention"]
+        # Unattended runs (workflows) have no human to sign in either; both hand-off tools go together.
+        p_cached_tools = [t for t in p_cached_tools if t["name"] not in ("RequestHumanIntervention", "RequestUserSignIn")]
     if p_cached_tools:
         p_cached_tools[-1] = {**p_cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
@@ -2513,6 +2514,63 @@ async def run_browser_agent(
                         "content": [{"type": "text", "text": "ok"}],
                     })
                     break
+
+                # RequestUserSignIn (ENG-351): the model hands a login wall to the user in
+                # place; same borrow-then-wait ladder as the automatic ENG-279 path, same
+                # one-pause-per-run cap, and the run never dies at the wall.
+                if tu.name == "RequestUserSignIn":
+                    from urllib.parse import urlsplit as p_si_urlsplit
+                    p_si_dom = (str(tu.input.get("domain") or "").strip()
+                                or (p_si_urlsplit(last_seen_url).hostname or "this site"))
+                    if await try_borrow_signin(p_si_dom, browser_id, tab_id, last_seen_url):
+                        browser_login_handoff.record_login(p_si_dom)
+                        p_si_text = (f"You are now signed in to {p_si_dom} (the user's existing "
+                                     "session was borrowed silently). Look at the page fresh and "
+                                     "continue the task.")
+                    elif p_signin_wait_used or not ws_manager.global_connections:
+                        p_si_text = ("Nobody is watching the card right now (or a sign-in wait "
+                                     "already ran this run), so the user cannot sign in for you. "
+                                     "Do what is possible without it and say plainly in Done what "
+                                     "still needs the sign-in.")
+                    else:
+                        p_signin_wait_used = True
+                        p_si_msg = Message(role="assistant", content=(
+                            f"⏸ {p_si_dom} needs you to sign in. Use the browser card directly; "
+                            "I'll continue automatically once you're in (waiting up to 3 minutes)."))
+                        session.messages.append(p_si_msg)
+                        await ws_manager.send_to_session(session_id, "agent:message", {
+                            "session_id": session_id,
+                            "message": p_si_msg.model_dump(mode="json"),
+                        })
+
+                        async def p_si_probe() -> tuple:
+                            p_gt = await execute_browser_tool("BrowserGetText", {}, browser_id, tab_id)
+                            if not isinstance(p_gt, dict):
+                                return ("", "")
+                            return (str(p_gt.get("url") or ""), str(p_gt.get("text") or ""))
+
+                        if await wait_for_user_signin(p_si_dom, p_si_probe, cancel_event):
+                            browser_login_handoff.record_login(p_si_dom)
+                            p_si_text = (f"The user just signed in to {p_si_dom}. The page has "
+                                         "changed; look at it fresh and continue the task.")
+                        else:
+                            p_si_text = (f"The user did not sign in to {p_si_dom} within the wait "
+                                         "window. Do what is possible without it, and say plainly "
+                                         "in Done what still needs the sign-in.")
+                    tool_results.append({
+                        "type": "tool_result", "tool_use_id": tu.id,
+                        "content": [{"type": "text", "text": p_si_text}],
+                    })
+                    p_si_result = Message(
+                        role="tool_result",
+                        content={"text": p_si_text, "tool_name": tu.name, "elapsed_ms": 0},
+                    )
+                    session.messages.append(p_si_result)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id,
+                        "message": p_si_result.model_dump(mode="json"),
+                    })
+                    continue
 
                 # Handle RequestHumanIntervention; pause and wait for user. Only the model can
                 # reach here, and only when the tool was actually offered this run.
