@@ -37,6 +37,7 @@ export interface AppSettings {
   memory_enabled?: boolean;
   agent_settings_write_enabled?: boolean;
   dictation_haptics?: boolean;
+  dictation_works_anywhere?: boolean;
   dictation_sound_volume?: number;
   dictation_disabled_surfaces?: string;
   anthropic_api_key: string | null;
@@ -179,6 +180,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memory_enabled: true,
   agent_settings_write_enabled: true,
   dictation_haptics: true,
+  dictation_works_anywhere: false,
   dictation_sound_volume: 0.7,
   dictation_disabled_surfaces: '',
   anthropic_api_key: null,

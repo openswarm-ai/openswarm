@@ -29,11 +29,18 @@ export function VoiceDictationProvider({ children }: { children: React.ReactNode
   const dictationShortcut = useAppSelector((s) => s.settings.data.dictation_shortcut ?? null);
   const dictationModel = useAppSelector((s) => s.settings.data.dictation_model ?? null);
 
+  const dictationAnywhere = useAppSelector((s) => (s.settings.data as { dictation_works_anywhere?: boolean }).dictation_works_anywhere ?? false);
   // Push the user's combo to main on boot and on change so every hotkey tier rebinds live.
   useEffect(() => {
     const bridge = window as unknown as { openswarm?: { setVoiceHotkey?: (combo: string | null) => void } };
     bridge.openswarm?.setVoiceHotkey?.(dictationShortcut);
   }, [dictationShortcut]);
+
+  // Same for the dictate-anywhere scope (ENG-341): app-scoped unless the user opted in.
+  useEffect(() => {
+    const bridge = window as unknown as { openswarm?: { setVoiceScope?: (anywhere: boolean) => void } };
+    bridge.openswarm?.setVoiceScope?.(dictationAnywhere);
+  }, [dictationAnywhere]);
 
   // Main boots with the catalog default, so a user who picked something else has to say so on every
   // launch or dictation quietly runs on the wrong model.

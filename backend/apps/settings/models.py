@@ -95,6 +95,8 @@ class AppSettings(BaseModel):
     # None = platform default (Cmd/Ctrl+Shift+D); parts format matches new_agent_shortcut.
     dictation_shortcut: Optional[str] = None
     voice_hold_to_talk: bool = True
+    # Dictation hotkey acts outside the app only when the user opts in (ENG-341).
+    dictation_works_anywhere: bool = False
     # Whisper model id from the desktop catalog (electron/voice/whisperModels.js); None = its default.
     dictation_model: Optional[str] = None
     # Personal glossary (comma-separated names/jargon) fed to whisper as a decode prompt so "Anthropic" never comes out "and Thropic".

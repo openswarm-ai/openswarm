@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('openswarm', {
   // True keyboard hold-to-talk needs the native key tap; renderers ask so Settings copy stays honest,
   // and request triggers the macOS Accessibility prompt when the tap is blocked on permission.
   setVoiceHotkey: (combo) => ipcRenderer.send('voice:set-hotkey', combo),
+  setVoiceScope: (anywhere) => ipcRenderer.send('voice:set-scope', anywhere === true),
   voiceHoldCapable: () => ipcRenderer.invoke('voice:hold-capable'),
   voiceRequestHoldPermission: () => ipcRenderer.invoke('voice:request-hold-permission'),
   voiceRequestMicAccess: () => ipcRenderer.invoke('voice:request-mic-access'),

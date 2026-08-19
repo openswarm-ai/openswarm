@@ -1,4 +1,4 @@
-const { app, globalShortcut, ipcMain, systemPreferences } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, systemPreferences } = require('electron');
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -87,7 +87,11 @@ function uiohookKeycodeFor(key, UiohookKey) {
 }
 
 function installVoiceHotkey(getMainWindow) {
+  // App-scoped by default (ENG-341): hotkeys act only while an OpenSwarm window is focused, unless
+  // the user opts into dictate-anywhere in Settings.
+  let worksAnywhere = false;
   const send = (channel) => {
+    if (!worksAnywhere && BrowserWindow.getFocusedWindow() === null) return;
     const win = getMainWindow();
     if (win && !win.isDestroyed()) win.webContents.send(channel);
   };
@@ -123,6 +127,7 @@ function installVoiceHotkey(getMainWindow) {
 
   // Fallback shortcut stays registered while unfocused until the primary tier proves alive.
   const registerVoiceShortcut = () => {
+    if (!worksAnywhere) return;
     if (primaryProven()) return;
     if (registeredAccel === fallbackCombo.accel) return;
     unregisterFallbackShortcut();
@@ -287,9 +292,19 @@ function installVoiceHotkey(getMainWindow) {
       return false;
     }
   };
-  tryStartNativeTap();
-  startFnWatcher();
-  registerVoiceShortcut();
+  // Arming the native tiers is what raises macOS's Input Monitoring prompt, so a fresh install must
+  // NOT arm at boot (ENG-341): the prompt fires at first dictation use instead, with context.
+  let tiersArmed = false;
+  const armNativeTiers = () => {
+    if (tiersArmed) return;
+    tiersArmed = true;
+    tryStartNativeTap();
+    startFnWatcher();
+    registerVoiceShortcut();
+  };
+  try {
+    if (fs.existsSync(path.join(app.getPath('userData'), 'dictation-used'))) armNativeTiers();
+  } catch (_) {}
   app.on('browser-window-focus', () => { unregisterFallbackShortcut(); pokeFnWatcher(); });
   app.on('browser-window-blur', registerVoiceShortcut);
 
@@ -331,16 +346,24 @@ function installVoiceHotkey(getMainWindow) {
     combo = next;
     fallbackCombo = combo.special ? parseCombo(LEGACY_COMBO) : combo;
     if (UiohookKeyRef && !combo.special) tapKeycode = uiohookKeycodeFor(combo.key, UiohookKeyRef);
-    startFnWatcher();
+    if (tiersArmed) startFnWatcher();
     unregisterFallbackShortcut();
     registerVoiceShortcut();
     console.log('[voice] hotkey set to', combo.accel);
+  });
+
+  // Renderer pushes the dictate-anywhere setting on boot and on change.
+  ipcMain.on('voice:set-scope', (_e, anywhere) => {
+    worksAnywhere = anywhere === true;
+    if (!worksAnywhere) unregisterFallbackShortcut();
+    else if (tiersArmed && BrowserWindow.getFocusedWindow() === null) registerVoiceShortcut();
   });
 
   ipcMain.handle('voice:hold-capable', () => tapProven || fnProven);
   // Settings' "Hold to talk" fires the Accessibility prompt; Input Monitoring has no Electron API,
   // but a running tap makes macOS list the app in that pane for the user to flip.
   ipcMain.handle('voice:request-hold-permission', () => {
+    armNativeTiers();
     if (process.platform === 'darwin' && !tapProven) {
       try { systemPreferences.isTrustedAccessibilityClient(true); } catch (_) {}
     }
@@ -349,6 +372,7 @@ function installVoiceHotkey(getMainWindow) {
   // Fires the real TCC mic prompt BEFORE the first capture: with the entitlement present but no
   // prior grant, getUserMedia would still fail once and burn the user's first dictation attempt.
   ipcMain.handle('voice:request-mic-access', async () => {
+    armNativeTiers();
     if (process.platform !== 'darwin') return true;
     try {
       if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true;

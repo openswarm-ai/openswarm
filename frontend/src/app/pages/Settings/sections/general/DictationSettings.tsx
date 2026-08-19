@@ -51,7 +51,7 @@ const DictationSettings: React.FC<{
       <Box sx={inlineRowSx} {...settingSelectAttrs('dictation_shortcut', 'Dictation shortcut', 'Interface', 'Global hotkey that starts dictation.')}>
         <Box sx={{ mr: 3 }}>
           <Typography sx={labelSx}>Dictation shortcut</Typography>
-          <Typography sx={descSx}>Works anywhere, even with the app in the background.</Typography>
+          <Typography sx={descSx}>Starts dictation while OpenSwarm is focused.</Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {form.dictation_shortcut ? (
@@ -115,6 +115,18 @@ const DictationSettings: React.FC<{
             onChange={(e) => setForm({ ...form, dictation_sounds: e.target.checked })}
           />
         </Box>
+      </Box>
+
+      <Box sx={inlineRowSx} {...settingSelectAttrs('dictation_works_anywhere', 'Dictate anywhere', 'Interface', 'Let the dictation shortcut work while other apps are focused.')}>
+        <Box sx={{ mr: 3 }}>
+          <Typography sx={labelSx}>Dictate anywhere</Typography>
+          <Typography sx={descSx}>Shortcut also works with OpenSwarm in the background, typing into other apps.</Typography>
+        </Box>
+        <Switch
+          size="small"
+          checked={form.dictation_works_anywhere ?? false}
+          onChange={(e) => setForm({ ...form, dictation_works_anywhere: e.target.checked })}
+        />
       </Box>
 
       <Box sx={inlineRowSx} {...settingSelectAttrs('dictation_haptics', 'Dictation haptics', 'Interface', 'Trackpad taps on start and stop.')}>
