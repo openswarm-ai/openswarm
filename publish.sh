@@ -45,6 +45,13 @@ bash scripts/build-app.sh --publish
 if [[ "$VERSION" == *-* ]]; then
     echo "==> Marking v$VERSION as draft on GitHub..."
     gh release edit "v$VERSION" --draft=true --prerelease 2>/dev/null || echo "WARN: could not mark draft+prerelease via gh CLI (release may not exist yet)"
+    # ENG-319 guard: a git tag on origin whose release is a DRAFT poisons releases.atom (the feed
+    # lists bare tags), so every experimental updater resolves it first and 404s on its assets.
+    # This broke "check for updates" fleet-wide for hours on 2026-08-19. Kill it here, always.
+    if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+        echo "==> ENG-319 guard: deleting dangling remote tag v$VERSION (release is a draft; a public tag would 404 every experimental updater)"
+        git push origin ":refs/tags/v$VERSION" || echo "WARN: could not delete remote tag v$VERSION; DELETE IT MANUALLY or updaters 404"
+    fi
 fi
 
 cd -
