@@ -163,3 +163,42 @@ def test_low_context_empty_finish_nudges_without_compacting():
     assert maybe_nudge_empty_finish(s, "sid-low") is True
     assert s.compacted_through_msg_id is None
     assert getattr(s, "needs_fresh_session", False) is False
+
+
+def test_repeat_quit_compacts_from_the_low_floor():
+    """ENG-354 field data: opus-5 quits at ~149K, BELOW the 180K trigger; a repeat quit must compact anyway."""
+    from backend.apps.agents.manager.run.empty_finish import maybe_nudge_empty_finish
+    s = p_session(("user", "long task"),
+                  ("tool_call", {"tool": "Read", "input": {"file_path": "/a"}}),
+                  ("tool_result", {"text": "x"}),
+                  ("tool_call", {"tool": "Read", "input": {"file_path": "/b"}}),
+                  ("tool_result", {"text": "y"}),
+                  ("tool_call", {"tool": "Read", "input": {"file_path": "/c"}}),
+                  ("tool_result", {"text": "z"}))
+    s.context_window = 1_000_000
+    s.tokens["input"] = 100_000  # below the 144K first-quit floor, above the 72K repeat floor
+    assert maybe_nudge_empty_finish(s, "sid-r1") is True
+    assert s.compacted_through_msg_id is None, "first quit below the band must NOT compact"
+    # New user message resets the per-message counter but not the lifetime one; the loop consumed the pending continuation.
+    s.pending_continuation = False
+    s.empty_finish_nudges = 0
+    s.empty_finish_progress_mark = 0
+    assert maybe_nudge_empty_finish(s, "sid-r2") is True
+    assert s.compacted_through_msg_id is not None, "repeat quit must compact from the low floor"
+    assert s.needs_fresh_session is True
+
+
+def test_drill_seam_disables_compaction(monkeypatch):
+    from backend.apps.agents.manager.run.empty_finish import maybe_nudge_empty_finish
+    monkeypatch.setenv("OSW_DISABLE_EMPTY_FINISH_COMPACT", "1")
+    s = p_session(("user", "t"),
+                  ("tool_call", {"tool": "Read", "input": {}}),
+                  ("tool_result", {"text": "x"}),
+                  ("tool_call", {"tool": "Read", "input": {}}),
+                  ("tool_result", {"text": "y"}),
+                  ("tool_call", {"tool": "Read", "input": {}}),
+                  ("tool_result", {"text": "z"}))
+    s.context_window = 1_000_000
+    s.tokens["input"] = 190_000
+    assert maybe_nudge_empty_finish(s, "sid-seam") is True
+    assert s.compacted_through_msg_id is None

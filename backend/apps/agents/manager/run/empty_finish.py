@@ -57,11 +57,20 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     session.empty_finish_progress_mark = p_tool_calls
     # At high context the silent quit is usually the model choking on the prompt itself, so
     # re-sending the same bloat just burns a nudge; compact FIRST and retry distilled (ENG-354).
+    # Field data (Haik, 2026-08-19): opus-5 quits from ~149K, BELOW the 180K trigger, and his storm
+    # sessions logged 130+ quits each; a REPEAT quit therefore compacts from a much lower floor,
+    # because one failed nudge is proof the prompt itself is what the model is choking on.
+    import os as p_os
     from backend.apps.agents.manager.context_budget import compact_trigger_tokens, maybe_compact
     p_input = int(session.tokens.get("input", 0) or 0)
-    if p_input >= int(0.8 * compact_trigger_tokens(session)) and maybe_compact(session, force=True):
+    p_repeat = getattr(session, "empty_finish_total", 0) >= 1
+    session.empty_finish_total = getattr(session, "empty_finish_total", 0) + 1
+    p_floor = int((0.4 if p_repeat else 0.8) * compact_trigger_tokens(session))
+    # Drill seam: the ENG-354 negative control runs the exp.14 behavior (no compact) on identical bits.
+    p_disabled = p_os.environ.get("OSW_DISABLE_EMPTY_FINISH_COMPACT") == "1"
+    if not p_disabled and p_input >= p_floor and maybe_compact(session, force=True):
         session.needs_fresh_session = True
-        logger.warning(f"Agent {session_id}: empty finish at {p_input} input tokens; compacted history before the nudge")
+        logger.warning(f"Agent {session_id}: empty finish at {p_input} input tokens (repeat={p_repeat}); compacted history before the nudge")
     session.empty_finish_nudges += 1
     session.pending_continuation = True
     p_final = session.empty_finish_nudges >= NUDGE_HARD_CAP
