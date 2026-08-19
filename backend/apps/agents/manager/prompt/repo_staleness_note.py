@@ -17,6 +17,8 @@ from typing import List, Optional
 
 from typeguard import typechecked
 
+from backend.apps.agents.manager.session.workspace_git import git_available
+
 P_TIMEOUT_S = 2.0
 # Below this, a checkout is normal working drift and a note would just be noise.
 MIN_BEHIND_TO_WARN = 20
@@ -25,6 +27,8 @@ MIN_BEHIND_TO_WARN = 20
 @typechecked
 def p_git(cwd: str, args: List[str]) -> Optional[str]:
     """Run a read-only git command, or None if anything at all goes wrong."""
+    if not git_available():
+        return None
     try:
         out = subprocess.run(
             ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=P_TIMEOUT_S,

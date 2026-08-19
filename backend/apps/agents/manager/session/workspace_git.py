@@ -6,6 +6,36 @@ from typeguard import typechecked
 
 logger = logging.getLogger(__name__)
 
+p_git_ok: Optional[bool] = None
+
+
+@typechecked
+def git_available() -> bool:
+    """True when running `git` won't pop an OS installer dialog (ENG-344).
+
+    On a Mac without Xcode Command Line Tools, /usr/bin/git is a shim whose EXECUTION opens the
+    modal "install the developer tools?" prompt, so which("git") alone is a trap there: presence
+    must be proven by `xcode-select -p` (never prompts) or by a git that isn't the shim."""
+    global p_git_ok
+    if p_git_ok is not None:
+        return p_git_ok
+    import shutil
+    import subprocess as sp
+    import sys
+    found = shutil.which("git")
+    if not found:
+        p_git_ok = False
+    elif sys.platform != "darwin" or found != "/usr/bin/git":
+        p_git_ok = True
+    else:
+        try:
+            p_git_ok = sp.run(["/usr/bin/xcode-select", "-p"], capture_output=True, timeout=5).returncode == 0
+        except Exception:
+            p_git_ok = False
+    if not p_git_ok:
+        logger.info("[agent-cwd] git unavailable (or would prompt to install); skipping all git integration")
+    return p_git_ok
+
 
 @typechecked
 def ensure_cwd_git_repo(cwd: str, home: Optional[str] = None) -> None:
@@ -22,6 +52,8 @@ def ensure_cwd_git_repo(cwd: str, home: Optional[str] = None) -> None:
     Safe to call on every request, does nothing if cwd is already a
     valid repo (real project, previous init, or inside a parent repo).
     """
+    if not git_available():
+        return
     try:
         home = home or os.path.expanduser("~")
         cwd_abs = os.path.abspath(cwd)
@@ -92,6 +124,8 @@ def detect_git_identity(cwd: str) -> Tuple[Optional[str], Optional[str]]:
     subprocess failure. Credentials in the URL are stripped so a
     `https://user:token@host/...` remote becomes `https://host/...`.
     """
+    if not git_available():
+        return (None, None)
     if not cwd or not os.path.isdir(cwd):
         return (None, None)
     try:
