@@ -168,13 +168,13 @@ async def test_clear_keeps_haiku_as_trial_face_unless_a_real_model_is_connected(
     s2 = AppSettings(connection_mode="free-trial", free_trial_token="ftk",
                      default_model="haiku", anthropic_api_key="sk-ant-real")
     await clear_free_trial(s2)
-    assert s2.default_model == "opus-5"
+    assert s2.default_model == "sonnet-5"
 
     # A connected 9Router subscription (invisible in settings) also frees haiku -> sonnet.
     monkeypatch.setattr(ft, "p_has_connected_subscription", _true)
     s3 = AppSettings(connection_mode="free-trial", free_trial_token="ftk", default_model="haiku")
     await clear_free_trial(s3)
-    assert s3.default_model == "opus-5"
+    assert s3.default_model == "sonnet-5"
 
     # A user who deliberately picked haiku OUTSIDE free-trial mode is left alone.
     s4 = AppSettings(connection_mode="own_key", default_model="haiku")
