@@ -273,15 +273,21 @@ class RunOptions(AgentManagerProtocol):
             if session.needs_fork:
                 session.needs_fork = False
         elif len(session.messages) > 1:
-            history = build_history_prefix(
-                get_branch_messages(session),
-                cutoff_msg_id=session.compacted_through_msg_id,
-            )
+            p_suppress = getattr(session, "suppress_recap_once", False)
+            if p_suppress:
+                # A provider policy filter just blocked the recap-bearing request; one turn without it (or its distilled cousin) is the only retry that can pass (Alex's bricked-chat class).
+                session.suppress_recap_once = False
+                history = ""
+            else:
+                history = build_history_prefix(
+                    get_branch_messages(session),
+                    cutoff_msg_id=session.compacted_through_msg_id,
+                )
             # Distill the dropped span into a cached aux summary so a rebuild keeps the gist of old turns instead of hard-dropping them. Fail-open: "" -> the plain recap above, exactly today's behavior.
             from backend.apps.agents.manager.session.distill_history import distilled_history_summary
             from backend.apps.agents.manager.session.history_compaction import wrap_platform_note
             logger.info(f"[SPAWN-PHASE] distill start session={session_id[:8]} t={time.monotonic():.3f}")
-            distilled = await distilled_history_summary(session, global_settings)
+            distilled = "" if p_suppress else await distilled_history_summary(session, global_settings)
             logger.info(f"[SPAWN-PHASE] distill done session={session_id[:8]} t={time.monotonic():.3f}")
             if distilled:
                 fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")

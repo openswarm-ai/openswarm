@@ -45,6 +45,7 @@ NON_TRANSIENT_PATTERNS = re.compile(
     r"|extra\s+usage\s+is\s+required\s+for\s+long\s+context"
     r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))"
     r"|free_trial_exhausted|used\s+your\s+free"
+    r"|blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy"
     r"|401|403)",
     re.IGNORECASE,
 )

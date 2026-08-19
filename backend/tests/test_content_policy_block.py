@@ -1,0 +1,43 @@
+"""Pins the content-policy-block contract (Alex's bricked-chat class): the provider's ToS/AUP
+refusal is terminal (no retry ladder, no snag flicker), a recap-bearing session gets exactly ONE
+silent retry without the recap, and the recap itself no longer reads as a User:/Assistant:
+transcript replay (the shape provider distillation filters flag)."""
+
+from backend.apps.agents.core.error_classify import is_transient_capacity_error
+from backend.apps.agents.core.models import AgentSession, Message
+from backend.apps.agents.manager.run.handle_run_error import p_is_content_policy_block
+from backend.apps.agents.manager.session.history_compaction import build_history_prefix
+
+TOS_TEXT = (
+    "API Error: 400 (request id: req_x) https://www.anthropic.com/legal/aup). This request was "
+    "blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse "
+    "engineering or duplicating model outputs."
+)
+
+
+def test_tos_block_detected():
+    assert p_is_content_policy_block(TOS_TEXT) is True
+    assert p_is_content_policy_block("ordinary overloaded_error 529") is False
+
+
+def test_tos_block_never_transient():
+    """The retry ladder hammering this deterministic 400 was the snag-chip flicker."""
+    assert is_transient_capacity_error(Exception(TOS_TEXT)) is False
+
+
+def test_recap_is_first_person_not_transcript():
+    s = AgentSession(name="t", model="sonnet")
+    s.messages.append(Message(role="user", content="find candidates for the role"))
+    s.messages.append(Message(role="assistant", content="I found three strong profiles."))
+    recap = build_history_prefix(s.messages)
+    assert "You replied:" in recap
+    assert "The user asked:" in recap
+    assert "\nAssistant: " not in recap, "bare transcript labels pattern-match distillation filters"
+    assert "\nUser: " not in recap
+    assert "YOUR OWN earlier turns" in recap
+
+
+def test_policy_fields_default_off():
+    s = AgentSession(name="t", model="sonnet")
+    assert s.policy_retry_used is False
+    assert s.suppress_recap_once is False

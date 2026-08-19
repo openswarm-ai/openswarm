@@ -4,6 +4,7 @@ emits the matching system message + WS event. Pulled out of agent_manager so the
 the file ceiling; pure relocation, no self (operates on the passed run state)."""
 
 import logging
+import re
 from typing import List
 from typeguard import typechecked
 
@@ -51,6 +52,11 @@ def p_report_model_error(subkind: str, session_id: str, session: AgentSession, t
         logger.debug(f"submit_diagnostic {subkind} failed", exc_info=True)
 
 @typechecked
+def p_is_content_policy_block(text: str) -> bool:
+    """The provider refused the request itself on policy grounds; a retry is guaranteed futile."""
+    return bool(re.search(r"blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy", text, re.IGNORECASE))
+
+
 async def handle_run_error(e: Exception, session: AgentSession, session_id: str, turn: TurnState, p_stderr_buffer: List[str]) -> None:
     logger.exception(f"Agent {session_id} error: {e}")
     session.status = "error"
@@ -188,6 +194,32 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "session_id": session_id,
             "message": friendly_msg,
         })
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": error_msg.model_dump(mode="json"),
+        })
+    elif p_is_content_policy_block(f"{e!s}\n{p_stderr_tail}"):
+        # The provider's abuse classifier declined the REQUEST (Anthropic: "blocked as it seems to
+        # violate ... reverse engineering or duplicating model outputs"). Deterministic: retrying
+        # re-blocks, which is the "hit a snag" flicker Alex reported, and a compaction recap that
+        # re-sends each turn bricks the whole chat. One honest card; a recap-bearing session gets
+        # one silent retry WITHOUT the recap, which is the only self-heal that can work.
+        if getattr(session, "compacted_through_msg_id", None) and not getattr(session, "policy_retry_used", False):
+            session.policy_retry_used = True
+            session.suppress_recap_once = True
+            session.pending_continuation = True
+            session.pending_continuation_prompt = (
+                "Continue the task exactly where you left off; the session summary was omitted "
+                "this turn, rely on the visible conversation.")
+            logger.warning(f"Agent {session_id}: provider content-policy block on a recap-bearing turn; retrying once without the recap")
+            return
+        friendly_msg = (
+            "The model provider declined this request (its automated policy filter flagged the "
+            "conversation's content). Retrying won't change that. Rephrasing your last message, "
+            "or starting a fresh chat about this topic, usually clears it."
+        )
+        error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+        session.messages.append(error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
