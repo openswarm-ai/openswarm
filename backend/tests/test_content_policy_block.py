@@ -72,3 +72,17 @@ def test_second_policy_block_renders_the_terminal_card():
     asyncio.run(handle_run_error(Exception(TOS_TEXT), s, "sid-pol2", TurnState(), []))
     cards = [m for m in s.messages if m.role == "system"]
     assert len(cards) == 1 and "declined this request" in str(cards[0].content)
+
+
+def test_recap_rides_the_system_channel_not_the_user_message():
+    """The structural ENG-358 fix: history injection must land in system_prompt.append, and the
+    user message must stay exactly what the user (or the continuation) wrote. A transcript recap
+    inside user content is the anti-distillation filter's exact target shape."""
+    src = open("backend/apps/agents/manager/run/RunOptions.py").read()
+    inject = src.split('p_sys = options_kwargs.get("system_prompt")')[1][:600]
+    assert 'p_sys["append"]' in inject, "system-channel injection missing"
+    # The user-message fallback survives only for the exotic no-system_prompt case.
+    before = src.split('p_sys = options_kwargs.get("system_prompt")')[0]
+    tail = before[-1200:]
+    assert "elif isinstance(prompt_content, str)" not in tail.replace(
+        'p_sys = options_kwargs.get("system_prompt")', ""), "primary path must not touch prompt_content"

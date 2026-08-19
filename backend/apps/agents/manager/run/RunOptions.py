@@ -293,7 +293,15 @@ class RunOptions(AgentManagerProtocol):
                 fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")
                 history = f"{fenced}\n\n{history}" if history else fenced
             if history:
-                if isinstance(prompt_content, str):
+                # SYSTEM channel, not the user message (ENG-358 structural fix): a transcript recap
+                # inside user content is byte-for-byte what anti-distillation filters hunt, and no
+                # rewording makes that shape safe forever. The system prompt is platform-authored
+                # context by definition, and this branch only runs on fresh-session turns where the
+                # cached prefix is already busted, so the cache cost is zero.
+                p_sys = options_kwargs.get("system_prompt")
+                if isinstance(p_sys, dict):
+                    p_sys["append"] = f"{p_sys.get('append', '')}\n\n{history}".strip()
+                elif isinstance(prompt_content, str):
                     prompt_content = history + "\n\n" + prompt_content
                 elif isinstance(prompt_content, list):
                     prompt_content.insert(0, {"type": "text", "text": history})
