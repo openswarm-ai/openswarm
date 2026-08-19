@@ -49,14 +49,17 @@ test('network errors keep their existing message', () => {
   assert.match(msg, /Check your connection/);
 });
 
-test('the experimental-channel 404 still wins when prerelease is on', () => {
+test('the experimental-channel 404 still wins when prerelease is on, and NEVER claims latest', () => {
   const msg = friendlyUpdateError(new Error('404 Not Found: latest-mac.yml'), true);
-  assert.match(msg, /No experimental builds/);
+  assert.match(msg, /Could not fetch the experimental build feed/);
+  // A 404 usually means a release mid-publish (a dangling draft tag); asserting "you are on the
+  // latest version" told users the opposite of the truth during every publish window.
+  assert.doesNotMatch(msg, /latest version/);
 });
 
 test('the same 404 is NOT the experimental message when prerelease is off', () => {
   const msg = friendlyUpdateError(new Error('404 Not Found: latest-mac.yml'), false);
-  assert.doesNotMatch(msg, /No experimental builds/);
+  assert.doesNotMatch(msg, /experimental build feed/);
 });
 
 test('a genuinely unknown failure still falls through to the generic message', () => {

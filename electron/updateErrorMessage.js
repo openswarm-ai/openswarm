@@ -19,7 +19,10 @@ function friendlyUpdateError(err, allowPrerelease) {
   // Experimental on, but there is no pre-release to fetch: the provider 404s looking for the
   // pre-release channel feed.
   if (allowPrerelease && /404|not found|cannot find|no published|latest.*\.yml/.test(raw)) {
-    return 'No experimental builds available right now. You are on the latest version.';
+    // A 404 here means the FEED broke (most often a release mid-publish), not that no build
+    // exists; claiming "you are on the latest version" told users the opposite of the truth
+    // during every publish window (ENG-319 class).
+    return 'Could not fetch the experimental build feed. This is usually a release being published right now; try again in a few minutes.';
   }
   if (/net::|enotfound|etimedout|econnrefused|getaddrinfo|network/.test(raw)) {
     return 'Could not reach the update server. Check your connection and try again.';
