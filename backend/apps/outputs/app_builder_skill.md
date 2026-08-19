@@ -272,6 +272,7 @@ and flips `BACKEND_PORT` in both `.env` and `.env.example`. Then run
 - Use Flask, Django, or any framework other than the FastAPI scaffold
   the script gives you.
 - Install your own venv or `pip install` manually.
+- Ask the user to run pip or install anything. Python deps go in `backend/pyproject.toml`; the framework's restart installs them. Users never run install commands.
 - Edit `backend/run.sh` or the SubApp framework.
 
 **Persist anything the user comes back to. Your process is disposable.**

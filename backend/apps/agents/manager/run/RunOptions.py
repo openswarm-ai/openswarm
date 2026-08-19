@@ -205,6 +205,11 @@ class RunOptions(AgentManagerProtocol):
         )
         # The CLI's own auto-memory keys its directory on cwd, and every chat has its own workspace cwd, so it silently files memories into per-chat buckets no other chat reads; MemoryRead/MemoryWrite on the shared store is the one memory surface (ENG-222).
         options_kwargs.setdefault("env", {})["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+        # Packaged builds put the app bundle's site-packages on PYTHONPATH, which shadows any venv an agent makes: pip reports success while installing nothing (ENG-347). Keep only the debugger injection dir.
+        p_pp = os.environ.get("PYTHONPATH", "")
+        if p_pp:
+            p_kept = [e for e in p_pp.split(os.pathsep) if e and "debugger" in os.path.basename(e.rstrip("/\\"))]
+            options_kwargs["env"]["PYTHONPATH"] = os.pathsep.join(p_kept)
         logger.info(f"[SPAWN-PHASE] provider-env done session={session_id[:8]} t={time.monotonic():.3f}")
         if mcp_servers:
             options_kwargs["mcp_servers"] = mcp_servers
