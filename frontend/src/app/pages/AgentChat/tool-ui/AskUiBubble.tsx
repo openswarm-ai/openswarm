@@ -19,6 +19,7 @@ interface AskUiBubbleProps {
   sessionId: string;
   isPending: boolean;
   suppressReveal: boolean;
+  onAnswered?: () => void;
 }
 
 function parseResultResponse(pair: ToolPair): Record<string, unknown> | null {
@@ -34,7 +35,7 @@ function parseResultResponse(pair: ToolPair): Record<string, unknown> | null {
 }
 
 /** An AskUI call: the live interactive component while the agent waits; its answered state after. */
-function AskUiBubble({ pair, sessionId, isPending, suppressReveal }: AskUiBubbleProps): React.ReactElement {
+function AskUiBubble({ pair, sessionId, isPending, suppressReveal, onAnswered }: AskUiBubbleProps): React.ReactElement {
   const payload = parseShowUiPayload(pair);
   const [submitted, setSubmitted] = useState(false);
   const [orphaned, setOrphaned] = useState(false);
@@ -63,6 +64,7 @@ function AskUiBubble({ pair, sessionId, isPending, suppressReveal }: AskUiBubble
       inFlight.current = true;
       markAskAnswered(sessionId, componentId);
       setSubmitted(true);
+      onAnswered?.();
       if (response.action !== 'free_text') {
         setLocalChoice(response.choice ?? response.value ?? undefined);
       }
@@ -84,7 +86,7 @@ function AskUiBubble({ pair, sessionId, isPending, suppressReveal }: AskUiBubble
         })
         .catch(() => { inFlight.current = false; releaseAskAnswer(sessionId, componentId); setSubmitted(false); setLocalChoice(undefined); setOrphaned(true); });
     },
-    [submitted, sessionId, componentId],
+    [submitted, sessionId, componentId, onAnswered],
   );
 
   // isPending gates clickability: once the session stops or completes, an unanswered ask must never look live (bounced asks used to revive as clickable dupes whose answers vanished into the 45s buffer, ENG-232).
