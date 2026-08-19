@@ -74,11 +74,35 @@ def p_call(mod, tool_name: str, arguments: dict) -> dict:
 P_STDOUT_LOCK = threading.Lock()
 
 
+P_MAX_RESPONSE_BYTES = 200_000
+
+def p_shrink_oversize(result):
+    """The CLI silently DROPS an MCP response line past its output ceiling; the call then hangs
+    until a watchdog shoots this healthy process (diag-proven 2026-08-19: 340KB written, never
+    resolved, 150s kill). Better an answer without its picture than no answer: strip image blocks
+    first, then hard-elide the text."""
+    content = result.get("content") if isinstance(result, dict) else None
+    if not isinstance(content, list):
+        return result
+    kept = [c for c in content if not (isinstance(c, dict) and c.get("type") == "image")]
+    if len(kept) < len(content):
+        kept.append({"type": "text", "text": "[screenshot omitted: full response exceeded the transport limit]"})
+    out = dict(result)
+    out["content"] = kept
+    if len(json.dumps({"result": out})) > P_MAX_RESPONSE_BYTES:
+        for c in out["content"]:
+            if isinstance(c, dict) and isinstance(c.get("text"), str) and len(c["text"]) > 100_000:
+                c["text"] = c["text"][:80_000] + "\n\n[... elided: response exceeded the transport limit ...]"
+    return out
+
+
 def send_response(id_, result=None, error=None):
     msg = {"jsonrpc": "2.0", "id": id_}
     if error is not None:
         msg["error"] = error
     else:
+        if result is not None and len(json.dumps({"jsonrpc": "2.0", "id": id_, "result": result})) > P_MAX_RESPONSE_BYTES:
+            result = p_shrink_oversize(result)
         msg["result"] = result
     with P_STDOUT_LOCK:
         sys.stdout.write(json.dumps(msg) + "\n")

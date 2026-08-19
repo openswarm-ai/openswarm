@@ -198,7 +198,10 @@ def call_backend(tasks: list[dict]) -> dict:
         return {"error": str(e)}
 
 
-MAX_IMAGE_B64_BYTES = 400_000
+# 400KB was over the CLI's silent MCP-result ceiling: a 340,096-byte response line was WRITTEN and
+# never resolved (diag-proven 2026-08-19), which is the whole "delegation result died on the stdio
+# hop" class. 90KB keeps the line safely under the CLI's ~25K-token output cap with headroom.
+MAX_IMAGE_B64_BYTES = 90_000
 MAX_SUMMARY_CHARS = 16_000
 MAX_ACTION_LOG_ENTRIES = 40
 REPORT_DIR = os.environ.get(
@@ -263,7 +266,12 @@ def compress_screenshot(b64_png: str) -> tuple[str, str] | None:
             img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
         buf = BytesIO()
         img.convert("RGB").save(buf, format="JPEG", quality=45)
-        return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
+        out = base64.b64encode(buf.getvalue()).decode()
+        if len(out) > MAX_IMAGE_B64_BYTES:
+            buf2 = BytesIO()
+            img.resize((640, int(img.height * 640 / img.width)), Image.LANCZOS).convert("RGB").save(buf2, format="JPEG", quality=35)
+            out = base64.b64encode(buf2.getvalue()).decode()
+        return out, "image/jpeg"
     except Exception:
         return None
 
