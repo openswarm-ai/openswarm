@@ -142,6 +142,8 @@ class Messaging(AgentManagerProtocol):
 
         # A real user message opens a fresh silent-quit budget; the cap only guards within one ask.
         if not hidden:
+            # A human actively driving the session forgives its crash history (breaker reset).
+            session.crash_interrupt_count = 0
             session.empty_finish_nudges = 0
             session.empty_finish_progress_mark = 0
             session.empty_finish_surfaced = False

@@ -24,14 +24,31 @@ from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtoco
 class SessionPersistence(AgentManagerProtocol):
     @typechecked
     async def reconcile_on_startup(self) -> None:
-        """Mark any stale running sessions as stopped."""
+        """Mark any stale running sessions as stopped, and queue crash-interrupted turns for
+        auto-resume. A file still saying "running" at boot is PROOF of a dirty death (a graceful
+        quit flushes "stopped"), so the user's task was cut off through no choice of their own;
+        those resume themselves. The breaker (hermes #30719): a session mid-turn at TWO
+        consecutive dirty deaths is plausibly what keeps killing the process, so it gets the
+        amber chip instead of a third run. A user's own Cmd+Q never lands here."""
         marked = 0
+        self.crash_resume_queue = []
         for sid, data in load_all_session_data():
             dirty = False
             if data.get("status") in ("running", "waiting_approval"):
+                p_was_running = data.get("status") == "running"
                 data["status"] = "stopped"
                 dirty = True
                 marked += 1
+                branch = data.get("active_branch_id") or "main"
+                p_msgs = [m for m in data.get("messages", []) if (m.get("branch_id") or "main") == branch]
+                p_owed = bool(p_msgs) and p_msgs[-1].get("role") != "assistant"
+                if p_was_running and p_owed and data.get("closed_at") is None:
+                    count = int(data.get("crash_interrupt_count", 0) or 0) + 1
+                    data["crash_interrupt_count"] = count
+                    if count <= 1:
+                        self.crash_resume_queue.append(sid)
+                    else:
+                        logger.warning(f"crash-resume breaker: session {sid} was mid-turn at {count} consecutive dirty deaths; leaving it for the manual chip")
             # Mode migration: Chat was merged into Ask. Rewrite mode="chat" so old sessions keep loading after the chat.json file is gone.
             if data.get("mode") == "chat":
                 data["mode"] = "ask"
@@ -40,6 +57,27 @@ class SessionPersistence(AgentManagerProtocol):
                 save_session(sid, data)
         if marked:
             logger.info(f"Marked {marked} stale session(s) as stopped")
+        if self.crash_resume_queue:
+            logger.info(f"crash-resume: {len(self.crash_resume_queue)} turn(s) cut off by the dirty exit will auto-resume")
+
+    @typechecked
+    async def auto_resume_crashed_turns(self) -> None:
+        """Fire one hidden continuation into each crash-interrupted session (called after
+        restore, off the boot critical path). Failure is per-session and non-fatal: a session
+        that cannot resume just keeps its amber chip."""
+        for sid in list(getattr(self, "crash_resume_queue", []) or []):
+            try:
+                await self.send_message(
+                    sid,
+                    "[Automated message from OpenSwarm itself, not written by your user] The app "
+                    "restarted while you were mid-task; nothing was lost. Continue exactly where "
+                    "you left off; do not redo completed steps.",
+                    hidden=True,
+                )
+                logger.info(f"crash-resume: session {sid} auto-resumed")
+            except Exception:
+                logger.warning(f"crash-resume: session {sid} failed to auto-resume; amber chip remains", exc_info=True)
+        self.crash_resume_queue = []
 
     @typechecked
     async def persist_all_sessions(self) -> None:

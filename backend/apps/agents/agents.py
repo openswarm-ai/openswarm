@@ -26,6 +26,8 @@ async def agents_lifespan():
     logger.info("Agents sub-app starting")
     await agent_manager.reconcile_on_startup()
     await agent_manager.restore_all_sessions()
+    # Off the critical path: crash-cut turns resume themselves once everything is hydrated.
+    asyncio.create_task(agent_manager.auto_resume_crashed_turns())
     from backend.apps.agents.manager.run.client_pool import start_pool_sweeper, stop_pool_sweeper, dispose_all_clients
     pool_sweeper = start_pool_sweeper(agent_manager.client_pool)
     yield

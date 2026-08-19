@@ -150,6 +150,8 @@ class AgentSession(BaseModel):
     # Content-policy self-heal (one shot per session): the provider blocked a recap-bearing turn, so the next send omits the recap.
     policy_retry_used: bool = False
     suppress_recap_once: bool = False
+    # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
+    crash_interrupt_count: int = 0
     # Memory prompt block frozen at first compose (prefix-cache discipline: mid-chat fact writes must
     # not shift the prompt bytes). Excluded from persistence so a resumed session re-snapshots fresh.
     memory_snapshot: Optional[str] = Field(default=None, exclude=True)
