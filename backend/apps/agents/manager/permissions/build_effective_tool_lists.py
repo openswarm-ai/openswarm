@@ -110,6 +110,12 @@ def build_effective_tool_lists(
                         effective_allowed.append("mcp__openswarm-core__CanvasCommand")
                     elif policy == "deny":
                         effective_disallowed.append("mcp__openswarm-core__CanvasCommand")
+                if "ptc" in p_modules:
+                    policy = builtin_perms.get("RunToolScript", "always_allow")
+                    if policy == "always_allow":
+                        effective_allowed.append("mcp__openswarm-core__RunToolScript")
+                    elif policy == "deny":
+                        effective_disallowed.append("mcp__openswarm-core__RunToolScript")
                 if "web" in p_modules:
                     # Honor existing WebSearch/WebFetch permission policy, if the user disabled them in Settings, don't offer the MCP variants either.
                     for wt in ("WebSearch", "WebFetch"):

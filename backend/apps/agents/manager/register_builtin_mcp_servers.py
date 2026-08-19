@@ -75,6 +75,10 @@ def register_builtin_mcp_servers(
     # Schedule module: ScheduleWorkflow + CRUD + step editing so the agent (and the workflow Edit Agent) can build and schedule recurring work via the native scheduler. The 4 scheduling tools are force-gated in path_gate; Cron* is denied in build_effective_tool_lists.
     modules.append("schedule")
 
+    # RunToolScript (PTC): script-chained tool calls whose intermediates never enter context; inner calls are allowlisted in the server itself.
+    if builtin_perms.get("RunToolScript", "always_allow") != "deny":
+        modules.append("ptc")
+
     # Canvas control after spawn (ENG-334): move/collapse/tile/close/tidy; close is scoped server-side to the caller's own cards.
     if builtin_perms.get("CanvasCommand", "always_allow") != "deny":
         modules.append("canvas")

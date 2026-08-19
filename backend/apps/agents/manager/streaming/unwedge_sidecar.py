@@ -40,6 +40,7 @@ P_BLOCKING_TOOLS: Set[str] = {
     "CreateBrowserAgent", "BrowserAgent", "AppAgent",
     "SpawnAgent", "InvokeAgent", "RequestHumanIntervention",
     "MCPSearch", "MCPActivate",
+    "RunToolScript",
 }
 
 
