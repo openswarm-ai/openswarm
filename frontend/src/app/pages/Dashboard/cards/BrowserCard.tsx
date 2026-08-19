@@ -1612,6 +1612,23 @@ const BrowserCard: React.FC<Props> = ({
         {findOpen && !suspendedSnap && (
           <BrowserFindBar browserId={browserId} focusSignal={findFocusSignal} onClose={() => setFindOpen(false)} />
         )}
+        {/* Docked in chat = inert preview (ENG-348): body clicks can't reach the page, drag works from anywhere, wheel scrolls the transcript. Header (z16) keeps its controls. */}
+        {dockActive && (
+          <Box
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={abortDrag}
+            onLostPointerCapture={abortDrag}
+            onWheel={(e) => {
+              e.stopPropagation();
+              let el = document.querySelector(`[data-browser-slot="${dockedTo}"]`) as HTMLElement | null;
+              while (el && el.scrollHeight <= el.clientHeight + 1) el = el.parentElement;
+              if (el) el.scrollTop += e.deltaY;
+            }}
+            sx={{ position: 'absolute', inset: 0, zIndex: 15, cursor: 'grab', '&:active': { cursor: 'grabbing' } }}
+          />
+        )}
         {isElementSelectMode && (
           <Box sx={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none' }} />
         )}

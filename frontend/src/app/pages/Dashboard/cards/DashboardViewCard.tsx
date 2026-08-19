@@ -875,6 +875,23 @@ const DashboardViewCard: React.FC<Props> = ({
         {cmdHeld && !isSelected && (
           <Box sx={{ position: 'absolute', inset: 0, zIndex: 12 }} />
         )}
+        {/* Docked in chat = inert preview (ENG-348): body clicks can't reach the app, drag works from anywhere, wheel scrolls the transcript. */}
+        {dockActive && (
+          <Box
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={abortDrag}
+            onLostPointerCapture={abortDrag}
+            onWheel={(e) => {
+              e.stopPropagation();
+              let el = document.querySelector(`[data-browser-slot="${dockedTo}"]`) as HTMLElement | null;
+              while (el && el.scrollHeight <= el.clientHeight + 1) el = el.parentElement;
+              if (el) el.scrollTop += e.deltaY;
+            }}
+            sx={{ position: 'absolute', inset: 0, zIndex: 14, cursor: 'grab', '&:active': { cursor: 'grabbing' } }}
+          />
+        )}
         <DashboardOutputPreview
           previewRef={previewRef}
           output={output}
