@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from backend.apps.onboarding.identity import build_identity, decode_jwt_payload
+from backend.apps.onboarding import local_scan
 from backend.apps.onboarding.local_scan import detect_signal_apps, run_local_scan
 from backend.apps.onboarding.models import PrepRequest, ScanResult
 from backend.apps.onboarding.prep.build_prep import build_prep
@@ -56,7 +57,9 @@ def test_build_identity_bad_rows_never_raise():
     assert result.providers[0].email is None
 
 
-def test_run_local_scan_counts_names_only(tmp_path: Path):
+def test_run_local_scan_counts_names_only(tmp_path: Path, monkeypatch):
+    # Non-darwin contract: the TCC-protected folders are scanned (ENG-342 keeps them off macOS).
+    monkeypatch.setattr(local_scan, "SCAN_FOLDERS", ("Downloads", "Desktop", "Documents"))
     downloads = tmp_path / "Downloads"
     downloads.mkdir()
     (downloads / "Screenshot 2026-07-01.png").write_text("x")
@@ -78,6 +81,16 @@ def test_run_local_scan_counts_names_only(tmp_path: Path):
     assert result.has_gitconfig is True
     serialized = json.dumps(result.model_dump())
     assert "[user]" not in serialized
+
+
+def test_run_local_scan_darwin_skips_tcc_folders(tmp_path: Path):
+    import sys as p_sys
+    if p_sys.platform != "darwin":
+        return
+    (tmp_path / "Downloads").mkdir()
+    (tmp_path / "Downloads" / "a.pdf").write_text("x")
+    result = run_local_scan(tmp_path)
+    assert all(f.name != "Downloads" for f in result.folders)
 
 
 def test_signal_apps_picks_tools_not_noise_and_avoids_substring_traps():
