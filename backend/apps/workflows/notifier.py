@@ -27,6 +27,26 @@ def _base_payload(wf: Workflow, run: WorkflowRun) -> dict:
     }
 
 
+def notify_workflow_paused_by_guard(wf: Workflow) -> None:
+    """One ws notice when the restart-loop breaker pauses a schedule: the user must learn WHY
+    their workflow stopped firing, or the pause reads as the scheduler silently breaking."""
+    try:
+        import asyncio
+        from backend.apps.agents.core.ws_manager import ws_manager
+        payload = {
+            "workflow_id": wf.id,
+            "workflow_title": wf.title,
+            "reason": "restart_loop_guard",
+            "message": (f"Schedule paused: '{wf.title}' was running each time the app died "
+                        "repeatedly, so it has been stopped to break the loop. Review the "
+                        "workflow, then re-enable its schedule."),
+        }
+        asyncio.get_running_loop().create_task(
+            ws_manager.broadcast("workflow:schedule_paused_by_guard", payload))
+    except Exception:
+        logger.debug("guard-pause notify failed", exc_info=True)
+
+
 async def notify_run_complete(wf: Workflow, run: WorkflowRun) -> None:
     from backend.apps.agents.core.ws_manager import ws_manager
     from backend.apps.workflows import escalation

@@ -317,6 +317,18 @@ async def _tick() -> None:
             due.append(wf)
 
     for wf in due:
+        from backend.apps.workflows import restart_loop_guard
+        if restart_loop_guard.is_tripped(wf.id):
+            # This workflow died mid-fire in consecutive backend lives during a boot storm; firing it again IS the loop. Pause it and put a human back in charge.
+            wf.schedule.enabled = False
+            storage.save_workflow(wf)
+            logger.error(f"restart-loop guard TRIPPED: paused workflow {wf.id} ({wf.title}); it was mid-fire in consecutive backend deaths")
+            try:
+                from backend.apps.workflows.notifier import notify_workflow_paused_by_guard
+                notify_workflow_paused_by_guard(wf)
+            except Exception:
+                pass
+            continue
         scheduled_for = _as_utc(wf.next_run_at)
         nxt = _next_fire_after(wf.schedule, now_utc, _as_utc(getattr(wf, "created_at", None)))
         wf.next_run_at = nxt
@@ -325,10 +337,15 @@ async def _tick() -> None:
 
 
 async def _fire(wf: Workflow, scheduled_for: Optional[datetime]) -> None:
+    from backend.apps.workflows import restart_loop_guard
+    restart_loop_guard.mark_firing(wf.id)
     try:
         await executor.execute(wf, triggered_by="schedule", scheduled_for=scheduled_for)
     except Exception:
         logger.exception("scheduler fire failed for workflow=%s", wf.id)
+    finally:
+        # Reached = the process survived this run; a death would have left the marker for the next boot to read.
+        restart_loop_guard.clear_firing(wf.id)
 
 
 def seconds_to_next_fire() -> Optional[float]:
@@ -491,6 +508,9 @@ async def start() -> None:
     if _loop_task is not None:
         return
     _mark_stuck_runs_failed()
+    # Restart-loop breaker (hermes #30719 analog): count this boot and convert any stale mid-fire marker into an implication.
+    from backend.apps.workflows import restart_loop_guard
+    restart_loop_guard.record_boot()
     # A pointer at a session that is gone renders as a blank panel; nulling it renders the empty state.
     from backend.apps.workflows.reconcile_references import reconcile_workflow_sessions
     reconcile_workflow_sessions()
