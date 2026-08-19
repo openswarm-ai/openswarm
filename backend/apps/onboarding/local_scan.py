@@ -5,6 +5,7 @@ is safe to show the user and to hand to their own configured model for prep.
 Results are returned to the caller and never persisted or sent to analytics.
 """
 
+import sys
 import os
 from collections import Counter
 from pathlib import Path
@@ -17,8 +18,9 @@ from backend.apps.onboarding.models import FolderSummary, ScanResult
 MAX_APPS = 120
 MAX_ENTRIES_PER_FOLDER = 5000
 MAX_REPO_SCAN_ENTRIES = 400
-SCAN_FOLDERS = ("Downloads", "Desktop", "Documents")
-REPO_PARENT_CANDIDATES = ("dev", "code", "projects", "src", "repos", "Documents/GitHub")
+# macOS gates Downloads/Desktop/Documents behind per-folder TCC dialogs; three permission pop-ups mid-onboarding cost more trust than the scan earns, so only unprotected home-level dirs are read there (ENG-342).
+SCAN_FOLDERS = ("Downloads", "Desktop", "Documents") if sys.platform != "darwin" else ()
+REPO_PARENT_CANDIDATES = ("dev", "code", "projects", "src", "repos") + (("Documents/GitHub",) if sys.platform != "darwin" else ())
 SCREENSHOT_PREFIXES = ("screenshot", "screen shot", "screen recording")
 
 # The high-signal tools that actually tell prep who this person is (an IDE, a design app, a DAW) so the greeting can lead with a confident read instead of drowning in Calculator + System Settings. Matched by exact name or "name " prefix so "Arc" never trips on "Search".

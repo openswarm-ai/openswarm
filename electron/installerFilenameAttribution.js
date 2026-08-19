@@ -56,7 +56,9 @@ function findAffiliateHashFromInstaller({
     return hashFromInstallerBasename(env.APPIMAGE);
   }
 
-  if (platform !== "darwin" && platform !== "win32") {
+  // macOS: listing ~/Downloads or ~/Desktop raises a TCC permission dialog on FIRST LAUNCH, which
+  // costs more trust than filename attribution earns; the welcome-page handshake covers macOS (ENG-342).
+  if (platform !== "win32") {
     return null;
   }
 
