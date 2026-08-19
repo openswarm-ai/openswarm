@@ -18,10 +18,10 @@ const Home: React.FC = () => {
   return (
     <Box
       sx={{
-        position: 'fixed',
-        inset: 0,
-        bgcolor: '#1a1a1a',
+        position: 'relative',
+        minHeight: '100vh',
         overflow: 'hidden',
+        bgcolor: '#1a1a1a',
       }}
     >
       <PixelBlast
