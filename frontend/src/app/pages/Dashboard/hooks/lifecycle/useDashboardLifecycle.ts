@@ -384,6 +384,11 @@ export function useDashboardLifecycle({
       setTimeout(() => {
         const vc = store.getState().dashboardLayout.viewCards[outputId];
         if (!vc) return;
+        // A docked app renders inside the chat the user is already watching; flying the camera to its STORED rect lands on empty canvas (ENG-352).
+        if (vc.docked_to) {
+          handleHighlightCard(outputId);
+          return;
+        }
         const rects = [{ x: vc.x, y: vc.y, width: vc.width, height: vc.height }];
         const ac = store.getState().dashboardLayout.cards[anchorSid];
         if (ac) rects.push({ x: ac.x, y: ac.y, width: ac.width, height: ac.height });
