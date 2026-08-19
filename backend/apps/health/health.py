@@ -7,7 +7,17 @@ from fastapi import status, HTTPException
 
 @asynccontextmanager
 async def health_lifespan():
-    yield
+    # Out-of-loop liveness backstop (hermes #66892 lift): every other watchdog here is an asyncio
+    # task that a wedged loop can never run; this one is a plain OS thread that hard-exits a
+    # provably frozen backend so Electron's respawn produces a working process. Fails open.
+    import asyncio
+    from backend.apps.system.loop_liveness_watchdog import start_loop_liveness_watchdog
+    p_stop = start_loop_liveness_watchdog(asyncio.get_running_loop())
+    try:
+        yield
+    finally:
+        if p_stop is not None:
+            p_stop.set()
 
 health = SubApp("health", health_lifespan)
 
