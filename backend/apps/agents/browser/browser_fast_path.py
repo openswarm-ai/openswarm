@@ -54,7 +54,10 @@ P_CLASSIFIER_SYSTEM = (
     "spreadsheets, SMS to a phone number, or other desktop apps. Also NO for "
     "plain conversation or questions answerable without visiting any site. "
     "Also NO when the task names an app the user message says is connected as "
-    "a native integration: the main agent's own tools beat a browser there.\n"
+    "a native integration: the main agent's own tools beat a browser there. "
+    "Also NO when the task needs MORE THAN TWO distinct pages or sites visited "
+    "(comparing several articles, per-item facts across a list): you route one "
+    "focused visit, not a sweep.\n"
     "The browser is the LAST resort: prefer READ over ACT whenever the goal is "
     "information rather than an action on a page, and prefer NO over READ when "
     "a plain web search could answer it without visiting a specific page.\n"
@@ -66,6 +69,8 @@ P_CLASSIFIER_SYSTEM = (
     "'count the messages in my linkedin thread with bob' -> ACT\n"
     "'find the report on stripe.com and save it to my desktop' -> NO\n"
     "'text 555-0102 that I'm late' -> NO\n"
+    "'fetch the wikipedia articles for six scientists and give a table' -> NO (a "
+    "multi-page sweep, not one visit)\n"
     "If line 1 is NO, reply with exactly the word NO and nothing else.\n"
     "If line 1 is READ or ACT, follow it with a short browsing brief:\n"
     "ENTRY: the best starting URL; use a direct deep/search URL when the site's "
@@ -92,6 +97,9 @@ def fast_path_eligible(
     if mode != "agent" or not dashboard_id or not is_first_message or has_attachments:
         return False
     if not prompt or not prompt.strip():
+        return False
+    # A sweep across many pages is main-loop work: the fast path does ONE focused visit, and a grabbed sweep answers "INSUFFICIENT" from a single read (ENG-355).
+    if len(set(re.findall(r'https?://[^\s<>"\')\]]+', prompt))) >= 3:
         return False
     return bool(P_BROWSY_RE.search(prompt))
 

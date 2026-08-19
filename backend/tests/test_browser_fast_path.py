@@ -189,3 +189,19 @@ def test_connected_integration_names_route_native_not_browser():
     assert fp.browsy_beyond_connected("go to slack.com and read the pricing page", ["slack"]) is True
     assert fp.browsy_beyond_connected("add a row to my Notion tracker", ["notion"]) is False
     assert fp.browsy_beyond_connected("send a linkedin message to my recruiter", ["slack", "notion"]) is True
+
+
+def test_multi_url_sweep_not_eligible():
+    """ENG-355: 3+ distinct URLs is a sweep; the fast path does one visit and a grabbed sweep answered INSUFFICIENT."""
+    from backend.apps.agents.browser.browser_fast_path import fast_path_eligible
+    sweep = ("fetch https://en.wikipedia.org/wiki/A and https://en.wikipedia.org/wiki/B "
+             "and https://en.wikipedia.org/wiki/C and report each")
+    assert fast_path_eligible(sweep, "agent", "d1", True, False) is False
+
+
+def test_single_and_double_url_still_eligible():
+    from backend.apps.agents.browser.browser_fast_path import fast_path_eligible
+    one = "open https://news.ycombinator.com and tell me the top story"
+    two = "compare https://a.com/x with https://b.com/y and tell me which loads"
+    assert fast_path_eligible(one, "agent", "d1", True, False) is True
+    assert fast_path_eligible(two, "agent", "d1", True, False) is True
