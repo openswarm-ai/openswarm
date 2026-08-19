@@ -1000,6 +1000,12 @@ const dashboardLayoutSlice = createSlice({
           posY = pos.y;
         }
       }
+      // Two same-instant creations can compute the same spot (the docked sibling is invisible to occupancy); a card must never fully cover another, so push below the column instead.
+      for (;;) {
+        const clash = Object.values(state.viewCards).find((c) => Math.abs(c.x - posX) < 40 && Math.abs(c.y - posY) < 40);
+        if (!clash) break;
+        posY = clash.y + clash.height + GRID_GAP;
+      }
       const cardKey = viewCardKey(outputId, instance);
       state.viewCards[cardKey] = {
         output_id: outputId,
