@@ -376,6 +376,9 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
     const currentExists = flat.some((m) => m.value === settings.default_model);
     if (currentExists) return;
 
+    // Nothing real connected means the synthesized free row is the whole list; persisting it would brand haiku as the user's default forever (ENG-343).
+    if (!flat.some((m) => m.billing_kind !== 'free')) return;
+
     const fallback = pickFallbackModel(byProvider);
     if (!fallback || fallback.value === settings.default_model) return;
 

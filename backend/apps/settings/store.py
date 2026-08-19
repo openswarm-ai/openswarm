@@ -84,6 +84,9 @@ def migrate_legacy_fields(raw: dict) -> dict:
     if raw.get("connection_mode") == "free-trial":
         raw["connection_mode"] = "own_key"
         raw.pop("free_trial_token", None)
+        # The free lane's forced Haiku default must not outlive the lane (ENG-343): dropping the field lets the real default take over.
+        if raw.get("default_model") == "haiku":
+            raw.pop("default_model", None)
     return raw
 
 
