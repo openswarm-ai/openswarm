@@ -134,6 +134,10 @@ class Messaging(AgentManagerProtocol):
             client_message_id=client_message_id,
         )
         session.messages.append(user_msg)
+        # Status flips BEFORE the snapshot: the old order persisted a stale "completed" from the
+        # prior turn, so a dirty death during a follow-up turn was invisible to the boot-time crash
+        # detector (drilled live: round-2 kill -9 resumed nothing because disk said completed).
+        session.status = "running"
         snapshot_session_now(session)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
@@ -279,6 +283,8 @@ class Messaging(AgentManagerProtocol):
             attached_skills=target_msg.attached_skills,
         )
         session.messages.append(edited_msg)
+        # Same status-before-snapshot rule as send_message: a stale terminal status on disk hides a mid-turn dirty death from the crash detector.
+        session.status = "running"
         snapshot_session_now(session)
 
         await ws_manager.send_to_session(session_id, "agent:message", {
