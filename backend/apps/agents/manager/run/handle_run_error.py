@@ -204,7 +204,9 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # re-blocks, which is the "hit a snag" flicker Alex reported, and a compaction recap that
         # re-sends each turn bricks the whole chat. One honest card; a recap-bearing session gets
         # one silent retry WITHOUT the recap, which is the only self-heal that can work.
-        if getattr(session, "compacted_through_msg_id", None) and not getattr(session, "policy_retry_used", False):
+        # Gate on "a recap could have been sent", not on the compaction mark: every fresh-session
+        # spawn with history carries the recap, and the drill proved the block fires there too.
+        if len(session.messages) > 1 and not getattr(session, "policy_retry_used", False):
             session.policy_retry_used = True
             session.suppress_recap_once = True
             session.pending_continuation = True
