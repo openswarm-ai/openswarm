@@ -87,6 +87,9 @@ def migrate_legacy_fields(raw: dict) -> dict:
         # The free lane's forced Haiku default must not outlive the lane (ENG-343): dropping the field lets the real default take over.
         if raw.get("default_model") == "haiku":
             raw.pop("default_model", None)
+    # Installs migrated BEFORE the line above shipped are already own_key with haiku stranded as their global default (Eric's own dev install had it); nobody wants haiku as a durable default, per-session picks stay untouched.
+    if raw.get("default_model") == "haiku" and raw.get("connection_mode") != "free-trial":
+        raw.pop("default_model", None)
     return raw
 
 
