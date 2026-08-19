@@ -15,6 +15,8 @@ export interface RuntimePreviewState {
   isNewMode: boolean;
   // True until the runtime:status frame lands; prevents placeholder flash on remount when Vite is up.
   isHydrating: boolean;
+  // The bind poll gave up: the spinner must become an honest failure state, not spin forever.
+  bootFailed: boolean;
 }
 
 export interface RuntimePreviewOptions {
@@ -31,6 +33,7 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
   const [frontendUrl, setFrontendUrl] = useState<string | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
+  const [bootFailed, setBootFailed] = useState(false);
   // Pin latest onLog so callback identity changes don't tear down/respawn the runtime.
   const onLogRef = useRef(onLog);
   onLogRef.current = onLog;
@@ -80,6 +83,7 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
               const fu = msg.data?.frontend_url ?? null;
               setFrontendUrl(fu || null);
               setIsNewMode(!!msg.data?.is_new_mode);
+              setBootFailed(!!msg.data?.boot_failed && !fu);
               setIsHydrating(false);
             } else if (msg.event === 'runtime:log') {
               const stream = msg.data?.stream || 'stdout';
@@ -120,7 +124,7 @@ export function useRuntimePreviewUrl(opts: RuntimePreviewOptions): RuntimePrevie
     };
   }, [workspaceId, enabled, instance]);
 
-  return { frontendUrl, isNewMode, isHydrating };
+  return { frontendUrl, isNewMode, isHydrating, bootFailed };
 }
 
 export interface PickPreviewUrlOptions {

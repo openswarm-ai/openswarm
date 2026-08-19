@@ -87,6 +87,21 @@ interface Props {
 }
 
 // The app card's loading state while its runtime spins up. One soft pulse, calm copy, and an honest hint only after 9s, a freshly-imported app installs its deps on first open, which is the slow case worth explaining instead of leaving the user staring at a dead screen.
+const BootFailedBody: React.FC<{ onRetry: () => void }> = ({ onRetry }) => {
+  const c = useClaudeTokens();
+  return (
+    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.25, px: 3, textAlign: 'center' }}>
+      <Typography sx={{ fontSize: '0.875rem', color: c.text.primary }}>Preview didn't start</Typography>
+      <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, maxWidth: 260 }}>
+        The app's dev server never came up. The Terminal tab has the exact error.
+      </Typography>
+      <Box role="button" onClick={onRetry} sx={{ mt: 0.5, px: 1.5, py: 0.5, borderRadius: 1, border: `1px solid ${c.border.medium}`, cursor: 'pointer', fontSize: '0.8rem', color: c.text.primary, '&:hover': { bgcolor: c.bg.elevated } }}>
+        Try again
+      </Box>
+    </Box>
+  );
+};
+
 const BootingBody: React.FC = () => {
   const c = useClaudeTokens();
   const [slow, setSlow] = useState(false);
@@ -1012,7 +1027,7 @@ const DashboardOutputPreview: React.FC<{
   const tokens = useClaudeTokens();
   const dispatch = useAppDispatch();
   const workspaceId = output.workspace_id ?? null;
-  const { frontendUrl, isNewMode, isHydrating } = useRuntimePreviewUrl({
+  const { frontendUrl, isNewMode, isHydrating, bootFailed } = useRuntimePreviewUrl({
     workspaceId,
     enabled: !!workspaceId,
     onLog: onRuntimeLog,
@@ -1111,6 +1126,9 @@ const DashboardOutputPreview: React.FC<{
   }
 
   if (isBooting) {
+    if (bootFailed) {
+      return <BootFailedBody onRetry={() => { const tok = getAuthToken(); void fetch(`${API_BASE}/outputs/workspace/${workspaceId}/runtime/restart?instance=${instance}`, { method: 'POST', headers: tok ? { Authorization: `Bearer ${tok}` } : {} }).catch(() => {}); }} />;
+    }
     return <BootingBody />;
   }
 

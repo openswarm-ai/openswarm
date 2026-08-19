@@ -497,6 +497,7 @@ def runtime_status_payload(workspace_id: str, instance: int = 1) -> dict:
         "running": rt.running,
         # 'spawned' vs 'serving': ready flips only once the primary port answered the bind poll (and un-flips when the process dies or is frozen).
         "ready": rt.ready,
+        "boot_failed": bool(getattr(rt, "boot_failed", False)),
         # True when the app is served as a built bundle with no dev-server process (ENG-209).
         "serve_static": rt.serve_static,
         "port": rt.port,

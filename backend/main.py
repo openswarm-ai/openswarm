@@ -315,6 +315,7 @@ async def websocket_runtime_logs(websocket: WebSocket, workspace_id: str, instan
                 # The property is the one honest gate (crashed/suspended vite -> None, static -> serve URL); a duplicate running check here nulled every serve-static app's URL, whose card then waited forever on a process that never exists (the "Starting preview" wedge).
                 "frontend_url": rt.frontend_url,
                 "is_new_mode": rt.is_new_mode,
+                "boot_failed": bool(getattr(rt, "boot_failed", False)),
             },
         }
 

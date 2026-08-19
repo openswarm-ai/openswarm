@@ -113,6 +113,8 @@ class AppRuntime:
         self.serve_static: bool = False
         # New-mode only: flips True once something is actually listening on frontend_port (we kick off a background poll task in p_start_new_mode). frontend_url returns null until this flips, so the preview pane doesn't try to navigate to an unbound port and show a "Site can't be reached" error mid-npm-install.
         self.p_frontend_ready: bool = False
+        # Set when the bind poll gave up; the status payload carries it so the card can stop spinning honestly.
+        self.boot_failed = False
         # True only while a live bind-poll task owns the global vite boot lock; start() releases it otherwise.
         self.p_boot_lock_handed_off: bool = False
         # True while the process tree is SIGSTOP'd in the idle pool. A frozen vite still holds its port but can't answer it, so frontend_url must stay null while suspended (else the webview loads a dead port = the ERR_FAILED on fast app-switching).
@@ -427,6 +429,8 @@ class AppRuntime:
                     pass
                 await asyncio.sleep(FRONTEND_BIND_POLL_INTERVAL)
             # Timed out; keep the runtime up (Terminal might show useful errors) but surface why the preview never appeared.
+            # boot_failed reaches the CARD: the log line lands in a Terminal most users never open, so the spinner span "Starting preview" forever (Alex's report).
+            self.boot_failed = True
             self.p_broadcast(LogLine(
                 "runtime",
                 f"[runtime] frontend did NOT bind on port {port} after "
