@@ -18,6 +18,8 @@ from backend.apps.agents.manager.streaming.upsert_message import upsert_message
 from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 from backend.apps.agents.manager.streaming import thinking as thinking_mod
 
+logger = logging.getLogger(__name__)
+
 # The block types drive isinstance DISPATCH, so they must be real at runtime; imported inside the handler because by stream time the SDK is already resident (the turn's presence check imported it), keeping the 350ms sdk+mcp chain off the boot graph.
 from typing import TYPE_CHECKING
 
@@ -117,6 +119,21 @@ async def handle_assistant_message(
             or ("authentication token has expired" in lower_text)
             or ("provided authentication token" in lower_text and ("401" in lower_text or "expired" in lower_text))
         )
+        # One door for everything the provider says, so classify the class here instead of adding a fifth phrasing above; measured 14/14 caught, 0 false positives on 2035 real assistant messages.
+        from backend.apps.agents.manager.streaming.provider_error_speech import (
+            AUTH as P_ERR_AUTH,
+            classify_provider_error,
+            is_transient,
+            user_facing_sentence,
+        )
+        p_provider_error = None
+        if not looks_like_router_auth_error:
+            p_provider_error = classify_provider_error(asst_text)
+            if p_provider_error is not None and p_provider_error.kind == P_ERR_AUTH:
+                # Same failure the phrase list was written for, so it goes to the same healer; two mechanisms for one condition is the ENG-252 mistake.
+                looks_like_router_auth_error = True
+                p_provider_error = None
+
         if looks_like_router_auth_error:
             from backend.apps.agents.manager.streaming.auth_retry import try_auth_self_heal
             p_is_codex = "codex/" in lower_text or "[codex" in lower_text
@@ -175,6 +192,45 @@ async def handle_assistant_message(
                     "session_id": session_id,
                     "message": err_msg.model_dump(mode="json"),
                 })
+        elif p_provider_error is not None:
+            # The provider failed, the agent never spoke; say what happens next and, when waiting fixes it, do the waiting for them.
+            from backend.apps.agents.manager.streaming.auth_retry import try_transient_self_heal
+
+            p_delay = 0
+            p_healed = False
+            if is_transient(p_provider_error):
+                p_delay = min(int(p_provider_error.reset_seconds or 0), 900)
+                p_healed = try_transient_self_heal(session, delay_s=p_delay)
+
+            if p_healed:
+                p_copy = user_facing_sentence(p_provider_error, session.model or "")
+            else:
+                p_copy = (
+                    user_facing_sentence(p_provider_error, session.model or "")
+                    if not is_transient(p_provider_error)
+                    else (
+                        "The model provider kept returning a temporary error, so this step could "
+                        "not finish. Send your message again, or switch this agent to another "
+                        "model."
+                    )
+                )
+            p_card = Message(
+                id=uuid4().hex,
+                role="system",
+                content=p_copy,
+                branch_id=session.active_branch_id,
+            )
+            session.messages.append(p_card)
+            logger.warning(
+                f"Agent {session_id}: provider returned {p_provider_error.kind} "
+                f"(status={p_provider_error.status}, lane={p_provider_error.lane}) as assistant "
+                f"text; surfaced as a card instead of the agent's own words "
+                f"(retry_queued={p_healed}, delay={p_delay}s)"
+            )
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id,
+                "message": p_card.model_dump(mode="json"),
+            })
         else:
             asst_msg = Message(
                 id=turn.stream_text_msg_id or uuid4().hex,

@@ -36,3 +36,35 @@ def try_auth_self_heal(session: AgentSession, delay_s: int = 0) -> bool:
     session.pending_continuation_prompt = AUTH_RETRY_PROMPT
     session.pending_continuation_delay_s = max(0, delay_s)
     return True
+
+
+TRANSIENT_RETRY_PROMPT = (
+    "The model provider returned a temporary error instead of an answer on your last step, and it "
+    "has now cleared. Redo that one step, then carry on where you left off."
+)
+
+# Two is the whole budget: looping past it trades a visible stop for an invisible one, which is worse.
+TRANSIENT_RETRY_MAX = 2
+
+
+@typechecked
+def try_transient_self_heal(session: AgentSession, delay_s: int = 0) -> bool:
+    """Queue a hidden retry for a provider error that waiting can actually fix.
+
+    Separate budget from the auth one-shot on purpose: these arrive by the same door (assistant
+    TEXT, no exception) but for opposite reasons, and sharing a counter would let a rate limit
+    consume the retry an expired token needs moments later.
+
+    No fresh session here, unlike the auth path. A rate limit is the provider's verdict on the
+    ACCOUNT, so rebuilding the CLI costs a respawn and changes nothing (there is a standing test
+    that a 429 must not respawn the CLI); the connection case is handled by simply waiting.
+    """
+    if session.pending_continuation:
+        return False
+    if session.transient_retry_count >= TRANSIENT_RETRY_MAX:
+        return False
+    session.transient_retry_count += 1
+    session.pending_continuation = True
+    session.pending_continuation_prompt = TRANSIENT_RETRY_PROMPT
+    session.pending_continuation_delay_s = max(0, delay_s)
+    return True

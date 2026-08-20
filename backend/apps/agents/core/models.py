@@ -157,6 +157,8 @@ class AgentSession(BaseModel):
     # Input-token level history must regrow past before another proactive prune may commit; a rebuild busts the prompt cache, so one per runway, never one per turn.
     proactive_prune_rearm_tokens: int = 0
     lane_credential_dead: bool = False
+    # Transient provider errors arrive as assistant TEXT, so no upstream retry sees them; budgeted apart from auth_retry_used so a rate limit cannot spend the expired-token retry.
+    transient_retry_count: int = 0
     reconnect_attempts: int = 0
     # True while a turn is parked waiting for the connection back; persisted so a quit DURING the wait is still an owed turn at next boot.
     awaiting_reconnect: bool = False

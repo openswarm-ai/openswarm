@@ -119,3 +119,109 @@ async def test_output_tokens_accumulate_onto_turn():
             p_asst([TextBlock(text="hi")], usage={"input_tokens": 10, "output_tokens": 42}),
             session, session.id, turn, thinking, {}, {})
     assert turn.output_tokens == 42
+
+
+# --- provider errors must never wear the agent's face (ENG stop-cause #10) ------------------------
+#
+# The strings below are verbatim from backend/data/sessions on 2026-08-20, where 14 of 2049
+# assistant messages were raw provider errors rendered as the agent speaking. Inventing the shape
+# would have tested my memory of a 429 rather than the one Gemini actually sends.
+
+REAL_GEMINI_SHORT_QUOTA = (
+    "API Error: Request rejected (429) · [antigravity/gemini-3-flash] [429]: Individual quota "
+    "reached. Please upgrade your subscription to increase your limits. Resets in "
+    "(reset after 1m 56s)"
+)
+REAL_GEMINI_LONG_QUOTA = (
+    "API Error: Request rejected (429) · [antigravity/gemini-3-flash] [429]: Individual quota "
+    "reached. Please upgrade your subscription to increase your limits. Resets in 125h40m51s. "
+    "(reset after 2m)"
+)
+REAL_CLAUDE_CONNECTION = "API Error: Unable to connect. Is the computer able to access the url?"
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_never_reaches_the_user_as_the_agents_own_words():
+    session, turn, thinking = p_fixt()
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+            thinking, {}, {})
+    assert not any(m.role == "assistant" for m in session.messages), \
+        "the provider spoke, not the agent; committing it as assistant text is the bug"
+    p_sys = [m for m in session.messages if m.role == "system"]
+    assert len(p_sys) == 1
+    body = p_sys[0].content
+    assert "429" not in body and "API Error" not in body, "no provider jargon reaches the user"
+    assert "upgrade your subscription" not in body.lower(), "no vendor upsell in our voice"
+
+
+@pytest.mark.asyncio
+async def test_a_short_rate_limit_resumes_itself_rather_than_asking_the_user():
+    session, turn, thinking = p_fixt()
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+            thinking, {}, {})
+    assert session.pending_continuation is True, "a 2-minute wait is ours to do, not the user's"
+    assert session.pending_continuation_delay_s == 116, "wait the window the provider named"
+    assert session.auth_retry_used is False, "a rate limit must not spend the expired-token retry"
+
+
+@pytest.mark.asyncio
+async def test_a_five_day_quota_tells_the_user_instead_of_parking_forever():
+    session, turn, thinking = p_fixt()
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_GEMINI_LONG_QUOTA)]), session, session.id, turn,
+            thinking, {}, {})
+    assert session.pending_continuation is False, \
+        "parking on a multi-day reset is a silent stop wearing a retry's clothes"
+    body = [m for m in session.messages if m.role == "system"][0].content
+    assert "switch" in body.lower(), "give the one action that actually works"
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_connection_parks_and_promises_resume():
+    session, turn, thinking = p_fixt()
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_CLAUDE_CONNECTION)]), session, session.id, turn,
+            thinking, {}, {})
+    assert session.pending_continuation is True
+    body = [m for m in session.messages if m.role == "system"][0].content
+    assert "resend" in body.lower() or "do not need" in body.lower()
+
+
+@pytest.mark.asyncio
+async def test_the_transient_budget_is_two_then_it_says_so():
+    """Section 5: the fix must not trade a visible stop for an endless invisible one."""
+    session, turn, thinking = p_fixt()
+    for _ in range(3):
+        session.pending_continuation = False  # dispatcher consumes it between turns
+        with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+            await assistant_message.handle_assistant_message(
+                p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+                thinking, {}, {})
+    assert session.transient_retry_count == 2, "budget is two, not unbounded"
+    assert session.pending_continuation is False, "the third failure stops retrying"
+    assert "send your message again" in session.messages[-1].content.lower()
+
+
+@pytest.mark.asyncio
+async def test_the_agent_can_still_talk_about_an_error_it_saw():
+    """NEGATIVE CONTROL. Without this, the fix quietly deletes a real capability (VERIFICATION 5b).
+
+    A user asking "why did my deploy fail" gets an answer that necessarily contains status codes.
+    If that answer is swallowed as a provider error, this fix is a worse bug than the one it cures.
+    """
+    session, turn, thinking = p_fixt()
+    prose = ("I read the logs: the server returned a 429 rate limit on three requests and a 401 on "
+             "one. I added a backoff, and the API Error you saw should stop.")
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=prose)]), session, session.id, turn, thinking, {}, {})
+    assert any(m.role == "assistant" and "429" in str(m.content) for m in session.messages), \
+        "the agent's own analysis must reach the user intact"
+    assert not any(m.role == "system" for m in session.messages)
+    assert session.pending_continuation is False

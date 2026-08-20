@@ -8,7 +8,6 @@ solved it with a second, independent trigger (MIT, NousResearch/hermes-agent).
 
 from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.manager.session.proactive_prune import (
-    MIN_RECLAIM_TOKENS,
     PROACTIVE_PRUNE_TOKENS,
     arm_proactive_prune,
     should_proactively_prune,
