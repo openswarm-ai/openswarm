@@ -139,12 +139,12 @@ function installVoiceHotkey(getMainWindow) {
   // ---- fn/Globe primary tier (macOS): the native watcher, since no JS tap can see keycode 63 ----
   let fnProc = null;
   let quitReaperWired = false;
-  const startFnWatcher = () => {
+  const startFnWatcher = (noPrompt) => {
     if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) return;
     resolveFnWatcherBinary((bin) => {
       if (!bin) { console.log('[voice] no fn watcher binary, legacy hotkey stays primary'); return; }
       if (combo.special !== 'fn' || fnProc) return; // rebound or raced while compiling
-      startFnWatcherWith(bin);
+      startFnWatcherWith(bin, noPrompt === true);
     });
   };
   // Kill fn-watchers left by a previous OpenSwarm that died badly. will-quit is the ONLY thing that
@@ -170,11 +170,11 @@ function installVoiceHotkey(getMainWindow) {
     lastFnPokeMs = now;
     try { fnProc.stdin.write('r\n'); } catch (_) {}
   };
-  const startFnWatcherWith = (bin) => {
+  const startFnWatcherWith = (bin, noPrompt) => {
     sweepStrayFnWatchers(bin);
     try {
       // stdin stays open on purpose: "r\n" re-arms the tap, and EOF tells an orphaned watcher to die.
-      fnProc = spawn(bin, [], { stdio: ['pipe', 'pipe', 'ignore'] });
+      fnProc = spawn(bin, noPrompt ? ['--no-prompt'] : [], { stdio: ['pipe', 'pipe', 'ignore'] });
     } catch (e) {
       console.log('[voice] fn watcher spawn failed:', e && e.message);
       fnProc = null;
@@ -304,6 +304,10 @@ function installVoiceHotkey(getMainWindow) {
   };
   try {
     if (fs.existsSync(path.join(app.getPath('userData'), 'dictation-used'))) armNativeTiers();
+    // No marker yet: fn is the DEFAULT hotkey, and the watcher is the only thing that can see it,
+    // so probe it in --no-prompt mode. Machines with Input Monitoring already granted get a working
+    // fn immediately; ungranted machines exit silently and never see a boot-time TCC prompt (ENG-341).
+    else if (combo.special === 'fn') startFnWatcher(true);
   } catch (_) {}
   app.on('browser-window-focus', () => { unregisterFallbackShortcut(); pokeFnWatcher(); });
   app.on('browser-window-blur', registerVoiceShortcut);
@@ -326,6 +330,14 @@ function installVoiceHotkey(getMainWindow) {
   const installVoiceHoldRelay = (contents) => {
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+      // A bare Fn keydown Chromium happens to deliver while focused is both dictation intent
+      // (full-arm the tiers, prompt lands with context) and a press that must WORK right now.
+      if (combo.special === 'fn' && !primaryProven() && (input.key === 'Fn' || input.code === 'Fn')) {
+        armNativeTiers();
+        sendFallbackToggle();
+        event.preventDefault();
+        return;
+      }
       if (inputMatchesCombo(input)) {
         if (!primaryProven()) sendFallbackToggle();
         event.preventDefault();
@@ -347,6 +359,7 @@ function installVoiceHotkey(getMainWindow) {
     fallbackCombo = combo.special ? parseCombo(LEGACY_COMBO) : combo;
     if (UiohookKeyRef && !combo.special) tapKeycode = uiohookKeycodeFor(combo.key, UiohookKeyRef);
     if (tiersArmed) startFnWatcher();
+    else if (combo.special === 'fn') startFnWatcher(true);
     unregisterFallbackShortcut();
     registerVoiceShortcut();
     console.log('[voice] hotkey set to', combo.accel);

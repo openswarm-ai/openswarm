@@ -3,6 +3,16 @@
 // tap: needs the same Input Monitoring grant the app already requests, never swallows anything.
 import CoreGraphics
 import Foundation
+import IOKit.hid
+
+// --no-prompt: the boot-time probe must never raise the Input Monitoring TCC prompt (ENG-341);
+// IOHIDCheckAccess answers silently, so granted machines arm and everyone else exits clean.
+if CommandLine.arguments.contains("--no-prompt")
+    && IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
+    print("e no-permission")
+    fflush(stdout)
+    exit(0)
+}
 
 var fnDown = false
 var tapRef: CFMachPort?
