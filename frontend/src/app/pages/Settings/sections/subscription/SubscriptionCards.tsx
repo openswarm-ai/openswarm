@@ -17,13 +17,7 @@ import { API_BASE } from '@/shared/config';
 import { SUBSCRIPTION_PROVIDERS } from './subscriptionProviders';
 import SubscriptionCard from './SubscriptionCard';
 import { runConnectFlow } from './subscriptionConnect';
-
-/** What POST /agents/subscriptions/disconnect answers; `ok` is the backend's verified end state, never a guess. */
-interface DisconnectResponse {
-  ok?: boolean;
-  removed?: number;
-  error?: string;
-}
+import { performDisconnect } from './subscriptionDisconnect';
 
 function isProviderActive(connections: SubscriptionConnection[], providerId: string): boolean {
   return connections.some((p) => p.provider === providerId && (p.isActive || p.testStatus === 'active'));
@@ -117,32 +111,24 @@ const SubscriptionCards: React.FC = () => {
         return;
       }
       const data = await r.json();
-      runConnectFlow({ providerId, data, setConnecting, setUserCode, setPollTimer, fetchStatus, refreshPickerModels, markConnected });
+      runConnectFlow({ providerId, data, setConnecting, setUserCode, setPollTimer, fetchStatus, refreshPickerModels, markConnected, setConnectError });
     } catch { setConnecting(null); }
   };
 
   const handleDisconnect = async (providerId: string) => {
     if (disconnecting) return;
     setConfirmingDisconnect(null);
-    setDisconnectError(null);
-    setDisconnecting(providerId);
     // No settle delay: the backend only answers ok after re-reading 9Router, so the lane is already gone.
-    try {
-      const r = await fetch(`${API_BASE}/agents/subscriptions/disconnect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: providerId }),
-      });
-      const data = (await r.json().catch(() => ({}))) as DisconnectResponse;
-      if (!r.ok || !data.ok) {
-        setDisconnectError({ provider: providerId, message: data.error || 'Could not disconnect. Please try again.' });
-      }
-    } catch {
-      setDisconnectError({ provider: providerId, message: 'Could not reach OpenSwarm. Please try again.' });
-    }
-    await fetchStatus();
-    refreshPickerModels();
-    setDisconnecting(null);
+    // Body lives in subscriptionDisconnect.ts so the "spinner always releases" invariant is reachable
+    // by the test runner, which has no DOM on purpose.
+    await performDisconnect({
+      providerId,
+      apiBase: API_BASE,
+      fetchStatus,
+      refreshPickerModels,
+      setDisconnectError,
+      setDisconnecting,
+    });
   };
 
   // 4s safety-net poller while connecting; clears Connecting state whenever 9Router reports the provider isActive (handles Windows postMessage failures).

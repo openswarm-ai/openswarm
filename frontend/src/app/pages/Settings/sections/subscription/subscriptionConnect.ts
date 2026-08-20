@@ -1,5 +1,7 @@
 import { API_BASE } from '@/shared/config';
 
+// A timeout that only clears the spinner leaves the user with nothing to read.
+const TIMED_OUT = 'Connecting timed out. The sign-in window may have been closed or never finished. Click Connect to try again.';
 interface ConnectCtx {
   providerId: string;
   data: any;
@@ -9,6 +11,7 @@ interface ConnectCtx {
   fetchStatus: (opts?: { preserveTransient?: boolean }) => Promise<any>;
   refreshPickerModels: () => void;
   markConnected: (provider: string) => void;
+  setConnectError?: (v: string | null) => void;
 }
 
 // Device-code OAuth flow: popup + dual poller (device-code + status) + focus-listener safety net + 5min hard timeout.
@@ -115,7 +118,7 @@ function runDeviceCodeFlow(ctx: ConnectCtx) {
     if (!stopped) window.addEventListener('focus', onFocus);
   }, 2000);
 
-  // 5-minute hard timeout; cleans up everything.
+  // 5-minute hard timeout; cleans up everything AND says so.
   setTimeout(() => {
     if (stopped) return;
     stopped = true;
@@ -123,8 +126,7 @@ function runDeviceCodeFlow(ctx: ConnectCtx) {
     clearInterval(devicePollTimer);
     clearInterval(statusPollTimer);
     setPollTimer(null);
-    setConnecting(null);
-    setUserCode('');
+    setConnecting(null); setUserCode(''); ctx.setConnectError?.(TIMED_OUT);
     if (devicePopup && !devicePopup.closed) {
       try { devicePopup.close(); } catch {}
     }
@@ -280,7 +282,7 @@ function runAuthCodeFlow(ctx: ConnectCtx) {
     if (ipcUnsub) ipcUnsub();
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('focus', onFocus);
-    setConnecting(null);
+    setConnecting(null); ctx.setConnectError?.(TIMED_OUT);
   }, timeoutMs);
 }
 
@@ -291,6 +293,6 @@ export function runConnectFlow(ctx: ConnectCtx) {
   } else if (ctx.data.flow === 'authorization_code') {
     runAuthCodeFlow(ctx);
   } else {
-    ctx.setConnecting(null);
+    ctx.setConnecting(null); ctx.setConnectError?.('This provider could not start a sign-in. Please try again.');
   }
 }
