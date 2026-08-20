@@ -3,7 +3,6 @@ be shot at the first deadline; a stale one must; nothing survives the late deadl
 kills in one loaded evening were every one of the "MCP disconnected" reports."""
 import os
 import tempfile
-import time
 from backend.apps.agents.manager.streaming.unwedge_sidecar import (
     HEARTBEAT_FRESH_S,
     LATE_WEDGE_SECONDS,

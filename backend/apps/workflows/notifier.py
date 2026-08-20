@@ -42,7 +42,7 @@ def notify_workflow_paused_by_guard(wf: Workflow) -> None:
                         "workflow, then re-enable its schedule."),
         }
         asyncio.get_running_loop().create_task(
-            ws_manager.broadcast("workflow:schedule_paused_by_guard", payload))
+            ws_manager.broadcast_global("workflow:schedule_paused_by_guard", payload))
     except Exception:
         logger.debug("guard-pause notify failed", exc_info=True)
 

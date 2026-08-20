@@ -67,7 +67,9 @@ class SessionPersistence(AgentManagerProtocol):
         that cannot resume just keeps its amber chip."""
         for sid in list(getattr(self, "crash_resume_queue", []) or []):
             try:
-                await self.send_message(
+                # send_message lives on the Messaging mixin; AgentManager composes both.
+                p_send = getattr(self, "send_message")
+                await p_send(
                     sid,
                     "[Automated message from OpenSwarm itself, not written by your user] The app "
                     "restarted while you were mid-task; nothing was lost. Continue exactly where "
