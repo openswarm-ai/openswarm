@@ -35,12 +35,19 @@ logger = logging.getLogger(__name__)
 
 
 @typechecked
-def p_absorb_repeat_card(session: AgentSession, error_msg: Message) -> None:
+def absorb_repeat_card(session: AgentSession, error_msg: Message) -> None:
     """Append the error card, unless the branch tail is already the IDENTICAL card with nothing
     after it: a retry ladder re-failing the same way then bumps the existing card instead of
     stacking a wall of clones (field screenshot 2026-08-19). A user message in between always
-    yields a fresh card, each ask deserves its own honest answer."""
-    p_tail = [m for m in session.messages if getattr(m, "branch_id", None) in (None, session.active_branch_id)]
+    yields a fresh card, each ask deserves its own honest answer.
+
+    HIDDEN messages do not count as that user message. Our own self-heal continuations are hidden
+    user-role sends, so counting them re-opened the exact clone wall this exists to stop: a live
+    codex drill on 2026-08-20 produced FIVE identical "still refreshing" cards, one per retry,
+    because each retry's hidden prompt had displaced the previous card from the tail."""
+    p_tail = [m for m in session.messages
+              if getattr(m, "branch_id", None) in (None, session.active_branch_id)
+              and not getattr(m, "hidden", False)]
     if p_tail and p_tail[-1].role == "system" and p_tail[-1].content == error_msg.content:
         error_msg.id = p_tail[-1].id
         p_tail[-1].timestamp = error_msg.timestamp
@@ -97,7 +104,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "with a larger window."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         p_ovf_payload = {
             "session_id": session_id,
             "reason": "long_context_required" if p_tier_gate else "context_overflow",
@@ -144,7 +151,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "api.anthropic.com; retrying won't help until one of those changes."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
@@ -160,7 +167,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "are kept either way."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
@@ -216,7 +223,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "OpenSwarm Pro."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:free_trial_exhausted", {
             "session_id": session_id,
             "message": friendly_msg,
@@ -248,7 +255,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "or starting a fresh chat about this topic, usually clears it."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
@@ -263,7 +270,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "another option in Settings → Models."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:out_of_credits", {
             "session_id": session_id,
             "message": friendly_msg,
@@ -283,6 +290,25 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or "401" in p_combined)
         )
         # Every sub lane gets ONE silent self-heal before any card; only a missing credential (config problem, retry fails identically) goes straight to the card. Codex waits out its rotation window first.
+        # A lane the router had ALREADY given up on before this turn is a dead credential, so the
+        # rotation story is false and the wait is doomed; say the true thing straight away.
+        if getattr(session, "lane_credential_dead", False):
+            from backend.apps.agents.manager.run.lane_preflight import RECONNECT_COPY
+            p_prov = (session.provider or "").lower()
+            friendly_msg = RECONNECT_COPY.get(
+                p_prov,
+                "This model's sign-in expired and could not be renewed. Reconnect it in Settings, "
+                "then Models. Waiting will not clear this one.")
+            error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+            absorb_repeat_card(session, error_msg)
+            await ws_manager.send_to_session(session_id, "agent:auth_error", {
+                "session_id": session_id, "reason": "credential_expired",
+                "message": friendly_msg, "model": session.model,
+            })
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id, "message": error_msg.model_dump(mode="json"),
+            })
+            return
         if "no credentials for provider" not in p_combined:
             from backend.apps.agents.manager.streaming.auth_retry import try_auth_self_heal
             if try_auth_self_heal(session, delay_s=75 if p_codex_rotation else 5):
@@ -341,7 +367,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             )
             reason = "anthropic_auth_invalid"
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         try:
             from backend.apps.service.client import submit_diagnostic
             submit_diagnostic({
@@ -368,7 +394,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # Upstream rejected the model code itself (e.g. Codex 1211 on a ChatGPT plan that lacks our GPT ids). Track it; the friendly "add an API key / pick another model" card is rendered frontend-side.
         p_report_model_error("unknown_model", session_id, session, turn, e, p_stderr_tail)
         error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
@@ -378,7 +404,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # where the fix is entirely on our side of the wire.
         p_report_model_error("router_unavailable", session_id, session, turn, e, p_stderr_tail)
         error_msg = Message(role="system", content=f"Error: {str(e)}", branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
@@ -400,7 +426,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         if p_cause and "check stderr" in str(e).lower():
             p_card_text += f"\n\nRuntime log tail:\n{p_cause}"
         error_msg = Message(role="system", content=p_card_text, branch_id=session.active_branch_id)
-        p_absorb_repeat_card(session, error_msg)
+        absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),

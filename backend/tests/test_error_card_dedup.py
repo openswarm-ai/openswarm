@@ -3,7 +3,7 @@ identical "hit a snag" clones (field screenshot 2026-08-19); a user message in b
 earns a fresh card."""
 
 from backend.apps.agents.core.models import AgentSession, Message
-from backend.apps.agents.manager.run.handle_run_error import p_absorb_repeat_card
+from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
 
 
 def p_card(text: str) -> Message:
@@ -13,30 +13,68 @@ def p_card(text: str) -> Message:
 def test_identical_consecutive_card_is_absorbed():
     s = AgentSession(name="t", model="sonnet")
     first = p_card("That one failed.")
-    p_absorb_repeat_card(s, first)
+    absorb_repeat_card(s, first)
     repeat = p_card("That one failed.")
-    p_absorb_repeat_card(s, repeat)
+    absorb_repeat_card(s, repeat)
     assert len(s.messages) == 1
     assert repeat.id == first.id, "the bump must reuse the id so the frontend updates in place"
 
 
 def test_a_user_message_in_between_earns_a_fresh_card():
     s = AgentSession(name="t", model="sonnet")
-    p_absorb_repeat_card(s, p_card("That one failed."))
+    absorb_repeat_card(s, p_card("That one failed."))
     s.messages.append(Message(role="user", content="try again", branch_id="main"))
-    p_absorb_repeat_card(s, p_card("That one failed."))
+    absorb_repeat_card(s, p_card("That one failed."))
     assert len([m for m in s.messages if m.role == "system"]) == 2
 
 
 def test_different_error_text_always_appends():
     s = AgentSession(name="t", model="sonnet")
-    p_absorb_repeat_card(s, p_card("Error A"))
-    p_absorb_repeat_card(s, p_card("Error B"))
+    absorb_repeat_card(s, p_card("Error A"))
+    absorb_repeat_card(s, p_card("Error B"))
     assert len(s.messages) == 2
 
 
 def test_other_branch_cards_do_not_mask():
     s = AgentSession(name="t", model="sonnet")
     s.messages.append(Message(role="system", content="Same text", branch_id="side"))
-    p_absorb_repeat_card(s, p_card("Same text"))
+    absorb_repeat_card(s, p_card("Same text"))
     assert len(s.messages) == 2, "a card on another branch is invisible here and must not absorb"
+
+
+def test_our_own_hidden_retries_do_not_earn_fresh_cards():
+    """A live codex drill (2026-08-20) produced FIVE identical "still refreshing" cards on one ask.
+    Each self-heal retry sends a HIDDEN user-role continuation, which displaced the previous card
+    from the tail, so the dedup saw "a user message came in" and appended a clone. Our own
+    machinery was manufacturing the wall it was written to prevent."""
+    from backend.apps.agents.core.models import AgentSession, Message
+    from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
+
+    s = AgentSession(name="t", model="gpt-5.6", dashboard_id="d")
+    s.messages.append(Message(role="user", content="do the thing", branch_id=s.active_branch_id))
+    card = "GPT subscription token is still refreshing."
+
+    for _ in range(5):
+        absorb_repeat_card(s, Message(role="system", content=card, branch_id=s.active_branch_id))
+        # what every self-heal retry does next
+        s.messages.append(Message(role="user", content="[Automated message] retry",
+                                  branch_id=s.active_branch_id, hidden=True))
+
+    shown = [m for m in s.messages if m.role == "system" and not m.hidden]
+    assert len(shown) == 1, f"one honest card per ask, got {len(shown)}"
+
+
+def test_a_real_user_message_still_earns_a_fresh_card():
+    """Negative control: the rule only ignores OUR sends. A human asking again deserves its own
+    answer, even if the answer is the same bad news."""
+    from backend.apps.agents.core.models import AgentSession, Message
+    from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
+
+    s = AgentSession(name="t", model="gpt-5.6", dashboard_id="d")
+    card = "GPT subscription token is still refreshing."
+    absorb_repeat_card(s, Message(role="system", content=card, branch_id=s.active_branch_id))
+    s.messages.append(Message(role="user", content="try again please", branch_id=s.active_branch_id))
+    absorb_repeat_card(s, Message(role="system", content=card, branch_id=s.active_branch_id))
+
+    shown = [m for m in s.messages if m.role == "system"]
+    assert len(shown) == 2, "each real ask gets its own honest answer"

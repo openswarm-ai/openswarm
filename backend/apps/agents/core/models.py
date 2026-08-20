@@ -153,6 +153,8 @@ class AgentSession(BaseModel):
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
     # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.
+    # True when the preflight found the router had already given up on this lane, so an auth failure this turn is a dead credential, not a rotation window worth waiting out.
+    lane_credential_dead: bool = False
     reconnect_attempts: int = 0
     # True while a turn is parked waiting for the connection back; persisted so a quit DURING the wait is still an owed turn at next boot.
     awaiting_reconnect: bool = False

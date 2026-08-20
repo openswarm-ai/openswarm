@@ -207,6 +207,26 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         p_router_model_id = p_resolve_model_id_early(session.model, load_settings())
         p_api_type_for_session = p_get_api_type_early(session.model)
 
+        # Never spend a turn on a lane the router has already given up on: the live 2026-08-20 drill burned two minutes and six cards on a credential that had been dead for 89 hours. This heals it if it can, and tells the truth immediately if it cannot.
+        from backend.apps.agents.manager.run.lane_preflight import preflight_lane
+        p_lane_problem = await preflight_lane(p_router_model_id, session)
+        if p_lane_problem:
+            p_card = Message(role="system", content=p_lane_problem, branch_id=session.active_branch_id)
+            from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
+            absorb_repeat_card(session, p_card)
+            session.status = "error"
+            await ws_manager.send_to_session(session_id, "agent:auth_error", {
+                "session_id": session_id,
+                "reason": "credential_expired",
+                "message": p_lane_problem,
+                "model": session.model,
+            })
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id,
+                "message": p_card.model_dump(mode="json"),
+            })
+            return
+
         builtin_perms = load_builtin_permissions()
 
         # Builtins default to always_allow (frictionless); path_gate still force-prompts on catastrophic patterns (rm -rf), OS-scheduling, and sensitive paths, so poisoned-email -> destructive-command is still caught. Flip Bash to "ask" in the UI for a prompt on every command. Bind turn + stderr first: build_agent_options can raise early (no provider) and the except hands both to handle_run_error.
