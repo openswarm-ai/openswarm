@@ -396,8 +396,9 @@ def submit_session_close(session_dump: dict, activity: Optional[dict] = None) ->
 def submit_diagnostic(diagnostic: dict) -> None:
     # Unit tests exercise real code paths that call this; their envelopes reached PROD analytics
     # and polluted the exact numbers we diagnose users with (found 2026-08-19: 8 phantom
-    # "compacted=0 at 190K" rows were the ENG-354 seam test).
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    # "compacted=0 at 190K" rows were the ENG-354 seam test). A test that installed the test sink
+    # is deliberately capturing, so only the sink-less case is blocked.
+    if os.environ.get("PYTEST_CURRENT_TEST") and test_sink is None:
         return
     try:
         from backend.apps.service.ring_buffer import snapshot
