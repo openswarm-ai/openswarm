@@ -49,6 +49,19 @@ class SessionPersistence(AgentManagerProtocol):
                         self.crash_resume_queue.append(sid)
                     else:
                         logger.warning(f"crash-resume breaker: session {sid} was mid-turn at {count} consecutive dirty deaths; leaving it for the manual chip")
+            elif data.get("awaiting_reconnect") and data.get("closed_at") is None:
+                # Parked mid-outage when the app went down. The file says "completed" only because
+                # the wait was dispatched as a continuation, so the status check above cannot see
+                # it; without this the task the user never chose to end just evaporates.
+                data["awaiting_reconnect"] = False
+                dirty = True
+                count = int(data.get("crash_interrupt_count", 0) or 0) + 1
+                data["crash_interrupt_count"] = count
+                if count <= 1:
+                    self.crash_resume_queue.append(sid)
+                else:
+                    logger.warning(f"crash-resume breaker: session {sid} was parked mid-outage at {count} consecutive dirty deaths; leaving it for the manual chip")
+
             # Mode migration: Chat was merged into Ask. Rewrite mode="chat" so old sessions keep loading after the chat.json file is gone.
             if data.get("mode") == "chat":
                 data["mode"] = "ask"

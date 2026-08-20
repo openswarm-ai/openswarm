@@ -152,6 +152,9 @@ class Messaging(AgentManagerProtocol):
             session.empty_finish_progress_mark = 0
             session.empty_finish_surfaced = False
             session.auth_retry_used = False
+            # A human is here and driving, so an earlier outage stops counting against the next one.
+            session.reconnect_attempts = 0
+            session.awaiting_reconnect = False
         # Fire a background aux LLM call to generate a 3-6 word verb-phrase describing this turn ("Auditing the pull request", "Drafting your email"). The narrator pill swaps from its heuristic verb to this label as soon as it lands, usually ~500ms-1s into the turn, which is exactly when "Thinking…" starts feeling generic. Provider-agnostic via resolve_aux_model. Non-blocking; failure is silent and the heuristic stays.
         if not hidden and prompt:
             try:

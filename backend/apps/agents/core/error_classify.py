@@ -329,6 +329,17 @@ def is_cert_failure(exc: BaseException, extra_text: str = "") -> bool:
 
 
 @typechecked
+def is_connection_lost(exc: BaseException) -> bool:
+    """True when the transport itself died, as opposed to the provider answering with a refusal.
+
+    Both arrive as "transient", but they want different recoveries: a dead socket leaves the CLI
+    holding a corpse and must respawn, while a 429 is a healthy connection carrying a NO, where
+    respawning just spends a process to be told the same thing.
+    """
+    return isinstance(exc, p_get_transient_exc_types())
+
+
+@typechecked
 def is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
     # The Claude CLI's underlying ProcessError stringifies to a generic "Command failed with exit code 1 / Check stderr output for details"; the real cause (rate_limit_error / No pool capacity available / 429 / overloaded) only surfaces in the subprocess's stderr stream, which we capture via the SDK's `stderr` callback and pass in as extra_text. Classify against both so we catch capacity errors regardless of which channel carried the message.
     combined = f"{exc!s}\n{extra_text}".strip()

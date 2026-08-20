@@ -50,7 +50,13 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
         already resumes the work, so the stale continuation quietly stands down."""
         if delay_s > 0:
             p_before = len(getattr(self.sessions.get(session_id), "messages", []) or [])
-            await asyncio.sleep(delay_s)
+            p_parked = self.sessions.get(session_id)
+            if p_parked is not None and getattr(p_parked, "awaiting_reconnect", False):
+                # An outage wait is a CEILING, not a sentence: a blind sleep strands the user long after their wifi returned. Rotation waits keep the flat sleep, where the window IS the point.
+                from backend.apps.agents.manager.run.reconnect_resume import wait_for_reconnect
+                await wait_for_reconnect(p_parked, delay_s)
+            else:
+                await asyncio.sleep(delay_s)
             p_session = self.sessions.get(session_id)
             if p_session is None:
                 return
@@ -229,6 +235,9 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     force_respawn=p_force_respawn,
                 )
             session.status = "completed"
+            # The turn got through, so the outage is over: the next unrelated blip starts from a full budget.
+            from backend.apps.agents.manager.run.reconnect_resume import clear_reconnect_wait
+            clear_reconnect_wait(session)
 
             # Silent-quit seal: a turn that ran tools and ended with no visible answer gets ONE hidden continue nudge (dispatched by the auto-continuation block below); a second silent quit in the same ask surfaces as-is rather than looping.
             try:

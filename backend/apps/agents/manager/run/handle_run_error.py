@@ -21,6 +21,7 @@ from backend.apps.agents.core.error_classify import (
     is_auth_error,
     is_cert_failure,
     is_cli_binary_missing,
+    is_connection_lost,
     is_unknown_model_error,
     parse_retry_after,
 )
@@ -178,6 +179,17 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             logger.debug("submit_diagnostic cli_binary_missing failed", exc_info=True)
     elif is_transient_capacity_error(e, extra_text=p_stderr_tail):
         # A genuine throttle (429/overload/capacity) that already burned the whole silent-backoff budget (the only way one reaches here). It's a limit, not a failure, so don't append a system-message card; emit a transient signal for the muted pill and mark the turn completed so it doesn't read as an error.
+        # 335s of ladder is a blip's worth of patience, and a closed lid or switched network outlasts it, so park and retry before conceding a turn the user never chose to end.
+        from backend.apps.agents.manager.run.reconnect_resume import arm_reconnect_resume
+        p_delay = arm_reconnect_resume(session, parse_retry_after(e, p_stderr_tail), is_connection_lost(e))
+        if p_delay is not None:
+            logger.info(f"Agent {session_id}: connection lost past the in-turn budget; retrying in {p_delay}s")
+            await ws_manager.send_to_session(session_id, "agent:reconnect_wait", {
+                "session_id": session_id,
+                "retry_in_s": p_delay,
+                "attempt": session.reconnect_attempts,
+            })
+            return
         session.status = "completed"
         if turn.stream_text_msg_id:
             try:

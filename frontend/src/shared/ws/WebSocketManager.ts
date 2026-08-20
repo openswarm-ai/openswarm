@@ -14,6 +14,8 @@ import {
   updateSessionContext,
   setContextOverflow,
   setRateLimited,
+  setReconnectWait,
+  clearReconnectWait,
   setProviderRetrying,
   setContextRecovered,
   setAppDepsChanged,
@@ -474,6 +476,8 @@ class WebSocketManager {
           }
           if (data.status === 'running' && session_id) {
             store.dispatch(trackAgentNotification(session_id));
+            // The parked-for-reconnect pill describes a wait that just ended; leaving it up outlives the recovery it was announcing.
+            store.dispatch(clearReconnectWait({ sessionId: session_id }));
           }
           // Native OS notification when an agent finishes while the user is elsewhere: workflows already had this; long chat tasks deserve the same "it's done" tap on both platforms. Sub-agents stay silent (their parent's finish is the story).
           if (data.status === 'completed' && session_id && document.hidden) {
@@ -711,6 +715,17 @@ class WebSocketManager {
           store.dispatch(setRateLimited({
             sessionId: session_id,
             retryAfterS: typeof data.retry_after_s === 'number' ? data.retry_after_s : null,
+          }));
+        }
+        break;
+
+      case 'agent:reconnect_wait':
+        // The turn is PARKED, not over: it retries itself on a widening schedule, and an agent that looks idle for fifteen minutes reads as broken.
+        if (session_id) {
+          store.dispatch(setReconnectWait({
+            sessionId: session_id,
+            retryInS: typeof data.retry_in_s === 'number' ? data.retry_in_s : null,
+            attempt: typeof data.attempt === 'number' ? data.attempt : null,
           }));
         }
         break;

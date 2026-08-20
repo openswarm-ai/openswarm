@@ -152,6 +152,10 @@ class AgentSession(BaseModel):
     suppress_recap_once: bool = False
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
+    # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.
+    reconnect_attempts: int = 0
+    # True while a turn is parked waiting for the connection back; persisted so a quit DURING the wait is still an owed turn at next boot.
+    awaiting_reconnect: bool = False
     # Seconds the auto-continuation dispatcher sleeps before sending (codex rotation windows last 1-2 min; an instant retry lands inside the same window and burns the one-shot budget).
     pending_continuation_delay_s: int = 0
     # Memory prompt block frozen at first compose (prefix-cache discipline: mid-chat fact writes must

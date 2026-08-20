@@ -118,6 +118,8 @@ export interface AgentSession {
   framework_overhead_tokens?: number;
   context_overflow?: { reason: string; message: string; at: string } | null;
   rate_limited?: { retry_after_s: number | null; at: string } | null;
+  // Parked waiting for the connection back; unlike the pills above this can last minutes, so the UI has to say so.
+  reconnect_wait?: { retry_in_s: number | null; attempt: number | null; at: string } | null;
   provider_retrying?: { attempt: number | null; delay_ms: number | null; at: string } | null;
   context_recovered?: { at: string } | null;
   // Set when a view-builder turn installed/changed deps, so the app card does a HARD reload (Vite restart) at turn-finish instead of the soft one. Reset when the next turn starts.
@@ -1051,6 +1053,25 @@ const agentsSlice = createSlice({
       if (session) session.rate_limited = null;
     },
 
+    setReconnectWait(
+      state,
+      action: PayloadAction<{ sessionId: string; retryInS: number | null; attempt: number | null }>
+    ) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) {
+        session.reconnect_wait = {
+          retry_in_s: action.payload.retryInS,
+          attempt: action.payload.attempt,
+          at: new Date().toISOString(),
+        };
+      }
+    },
+
+    clearReconnectWait(state, action: PayloadAction<{ sessionId: string }>) {
+      const session = state.sessions[action.payload.sessionId];
+      if (session) session.reconnect_wait = null;
+    },
+
     setAppDepsChanged(state, action: PayloadAction<{ sessionId: string }>) {
       const session = state.sessions[action.payload.sessionId];
       if (session) session.app_deps_changed = true;
@@ -1543,6 +1564,8 @@ export const {
   setContextOverflow,
   setRateLimited,
   clearRateLimited,
+  setReconnectWait,
+  clearReconnectWait,
   setProviderRetrying,
   clearProviderRetrying,
   setContextRecovered,

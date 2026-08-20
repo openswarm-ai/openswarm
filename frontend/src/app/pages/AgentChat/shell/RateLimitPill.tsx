@@ -99,3 +99,46 @@ export const RateLimitPill: React.FC<{ sessionId: string }> = ({ sessionId }) =>
     </Fade>
   );
 };
+
+/** The connection dropped for longer than the in-turn retry ladder covers, so the turn is PARKED
+ * rather than finished: it wakes itself on a widening schedule and continues where it left off.
+ * This is the one pill that must NOT auto-clear on a short timer, because the wait it describes can
+ * be fifteen minutes; an agent sitting silent that long is exactly what makes people force-quit and
+ * lose the task. It clears when the next turn actually lands. */
+export const ReconnectWaitPill: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const c = useClaudeTokens();
+  const rw = useAppSelector((s) => s.agents.sessions[sessionId]?.reconnect_wait);
+
+  const label = (() => {
+    const secs = rw?.retry_in_s ?? 0;
+    if (!secs) return 'Connection lost, retrying';
+    const mins = Math.round(secs / 60);
+    return mins >= 1 ? `Connection lost, retrying in ~${mins} min` : 'Connection lost, retrying shortly';
+  })();
+  const lastLabel = useRef(label);
+  if (rw) lastLabel.current = label;
+
+  return (
+    <Fade in={!!rw} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
+      <Box
+        title="Your work is saved. The agent is waiting for the connection and will pick up where it left off, with nothing for you to click."
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0.6,
+          alignSelf: 'flex-start',
+          mx: 2,
+          mb: 1,
+          px: 1.25,
+          py: 0.5,
+          borderRadius: 999,
+          bgcolor: c.bg.secondary,
+          color: c.text.tertiary,
+        }}
+      >
+        <AutorenewIcon sx={{ fontSize: 14, animation: 'osw-retry-spin 1.6s linear infinite', '@keyframes osw-retry-spin': { to: { transform: 'rotate(360deg)' } } }} />
+        <Typography sx={{ fontSize: '0.75rem', fontWeight: 500 }}>{lastLabel.current}</Typography>
+      </Box>
+    </Fade>
+  );
+};
