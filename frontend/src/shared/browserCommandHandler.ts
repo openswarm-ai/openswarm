@@ -2200,6 +2200,14 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
 }
 
 // The registry is renderer-local and a card briefly unregisters on remount / tab-switch; a command landing in that gap shouldn't hard-fail. Wait a bounded window for (re)registration before giving up, so the error stays a real "card is gone" signal rather than a transient race.
+// Cards woken from a snapshot in the last few seconds; stamped on the result so the backend knows the slowness was a remount, not a hang.
+const lastWakeAt = new Map<string, number>();
+const WAKE_REPORT_WINDOW_MS = 20_000;
+function wokeRecently(browserId: string): boolean {
+  const t = lastWakeAt.get(browserId);
+  return t !== undefined && Date.now() - t < WAKE_REPORT_WINDOW_MS;
+}
+
 async function awaitWebview(browserId: string, tabId?: string, action?: string): Promise<BrowserWebview | undefined> {
   // A live auth popup OWNS its card's commands (ENG-279): the user-visible action is in the popup,
   // so tools drive it there until it closes, then fall back to the card's webview automatically.
@@ -2208,6 +2216,8 @@ async function awaitWebview(browserId: string, tabId?: string, action?: string):
   // A suspended (snapshot-swapped) card has no webview at all; wake it and wait out the remount + page reload before the command touches it.
   const wasSuspended = !!store.getState().dashboardLayout.suspendedBrowserCards[browserId];
   if (wasSuspended) store.dispatch(resumeBrowserCard(browserId));
+  // Remember the wake so the result can say so: the backend's dead-card gate cannot otherwise tell a card that spent 12s remounting from one that hung, and it evicted healthy parked cards under parallel load.
+  if (wasSuspended) lastWakeAt.set(browserId, Date.now());
   const deadline = Date.now() + (wasSuspended ? 12000 : 2000);
   let wv = getWebview(browserId, tabId);
   while (!wv && Date.now() < deadline) {
@@ -2386,6 +2396,7 @@ async function runBrowserCommand(
     dashboardWs.send('browser:result', {
       request_id,
       error: `Browser card '${browser_id}'${tab_id ? ` tab '${tab_id}'` : ''} not found or not an Electron webview`,
+      woke_from_park: wokeRecently(browser_id),
     });
     return;
   }
@@ -2497,7 +2508,7 @@ async function runBrowserCommand(
   }
   // Ride the pre-handler wait back with the result: a renderer console.log never reaches the main
   // process, and from the backend a slow GATE and a slow HANDLER look identical.
-  dashboardWs.send('browser:result', { request_id, ...result, gate_ms: p_gateMs, total_ms: Date.now() - p_gateT0 });
+  dashboardWs.send('browser:result', { request_id, ...result, gate_ms: p_gateMs, total_ms: Date.now() - p_gateT0, woke_from_park: wokeRecently(browser_id) });
 }
 
 export function initBrowserCommandHandler(): () => void {
