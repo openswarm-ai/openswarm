@@ -1296,14 +1296,8 @@ async def run_browser_agent(
             and not cancel_event.is_set() and not preloaded_perception
             and os.environ.get("OSW_DEADCARD_EVICT", "1") != "0"):
         try:
-            # The renderer parks webviews past its live cap (8) as snapshots and takes up to 12s to
-            # remount one on the next command (awaitWebview). A 6s probe called every parked card
-            # dead, evicted it, and the child then "declared done without a single action". That
-            # is the whole parallel-browser ghost bug (field report 2026-08-20): solo runs never hit
-            # the cap, so it only ever bit with several agents each driving their own browser.
             p_dead_probe = await asyncio.wait_for(
-                execute_browser_tool("BrowserGetText", {}, browser_id, tab_id),
-                timeout=PARKED_WAKE_BUDGET_S)
+                execute_browser_tool("BrowserGetText", {}, browser_id, tab_id), timeout=6.0)
             p_card_dead_early = not (isinstance(p_dead_probe, dict)
                                      and (str(p_dead_probe.get("url") or "")
                                           or str(p_dead_probe.get("text") or "")))
@@ -3491,11 +3485,6 @@ def find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | Non
 
 # The renderer needs a beat to unmount the <webview> and let Electron free its renderer process. Recovery spawns its fresh card the instant this returns, so we hold here until the teardown has almost certainly landed, else the new card mounts next to a still-freeing dead one and eats the same 15s starvation cap. Failure-path only, so its cost is invisible next to the cap it prevents.
 P_EVICT_SETTLE_S = 1.5
-
-
-# Must exceed awaitWebview's 12s suspended-wake deadline in the renderer, or a merely parked card
-# reads as dead. Kept as a single number so the two sides can never drift apart silently again.
-PARKED_WAKE_BUDGET_S = 15.0
 
 
 async def evict_dead_card(dashboard_id: str | None, browser_id: str) -> None:

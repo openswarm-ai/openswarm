@@ -13,7 +13,7 @@ BROWSER_CMD_TIMEOUT_DEFAULT = 15.0   # modest load headroom; still "short" so a 
 BROWSER_CMD_TIMEOUTS = {
     "navigate": 25.0,     # a real page load can be slow (more leash under load)
     "replay_route": 20.0, # an API fetch can be slow
-    "wait": 16.0,         # smart-wait self-caps well under this; the 12s floor is the renderer's suspended-card wake, which a wait on a parked card pays first
+    "wait": 12.0,         # smart-wait already caps itself well under this
     "perform_action": 35.0, # session-borrow shims pack navigate + wait + scrape into ONE command, so it needs more than navigate alone
     "browser_fetch": 32.0,  # offscreen window: load + settle + DOM read on an arbitrary (maybe slow/JS-heavy) page
     "browser_search": 45.0, # tries up to 3 engines sequentially, each a full load + settle

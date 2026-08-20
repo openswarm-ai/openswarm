@@ -239,7 +239,7 @@ P_READ_TOOLS = {
 
 
 # A card the agent can't make progress on, EITHER gone (closed/dashboard not open; unrecoverable) OR hung (a wedged tab where every command times out / the page never responds). Both look the same to the agent: retrying just burns time (the 20-minute LinkedIn spin), so we fail fast. The streak (reset on any good result) absorbs a one-off transient; only a SUSTAINED pattern trips it, so a merely-busy page that recovers is never mistaken for dead.
-CARD_GONE_MARKERS = (
+P_CARD_GONE_MARKERS = (
     "not an electron webview",   # card closed / destroyed
     "no dashboard is connected", # dashboard view not mounted
     "command timed out",         # hung: the command never came back
@@ -249,13 +249,8 @@ CARD_GONE_LIMIT = 2  # consecutive misses before we give up (absorbs a transient
 
 
 def card_is_unavailable(result: dict) -> bool:
-    # A card the renderer just remounted from a snapshot is slow, not gone. Past the live-webview cap
-    # (8) every extra browser agent's card gets parked, the next command spends up to 12s waking it,
-    # and without this the gate evicted healthy cards two at a time (the parallel-browser ghost runs).
-    if result.get("woke_from_park"):
-        return False
     err = str(result.get("error") or "").lower()
-    return any(m in err for m in CARD_GONE_MARKERS)
+    return any(m in err for m in P_CARD_GONE_MARKERS)
 
 
 # Errors where the action MISSED but the page is alive (stale index after a reshuffle, a transient overlay covering the target, off-screen). The page itself is fine, so re-attaching the CURRENT element list to the error lets the model re-act next turn instead of burning a turn re-listing. This NEVER retries the action (no double-send risk); it only enriches the error with fresh state.
@@ -270,7 +265,7 @@ def recoverable_tool_error(err: str) -> bool:
     """True for a 'the action missed but the page is alive' error worth showing
     fresh state for. False for a dead card (handled separately) or no error."""
     e = (err or "").lower()
-    if not e or any(m in e for m in CARD_GONE_MARKERS):
+    if not e or any(m in e for m in P_CARD_GONE_MARKERS):
         return False
     return any(m in e for m in P_RECOVERABLE_ERR_MARKERS)
 
