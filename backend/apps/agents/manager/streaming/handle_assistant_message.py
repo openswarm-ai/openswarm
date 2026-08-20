@@ -220,7 +220,10 @@ async def handle_assistant_message(
                 content=p_copy,
                 branch_id=session.active_branch_id,
             )
-            session.messages.append(p_card)
+            # A retry ladder re-failing the same way must bump one card, not stack clones; the live
+            # drill produced three before this line existed.
+            from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
+            absorb_repeat_card(session, p_card)
             logger.warning(
                 f"Agent {session_id}: provider returned {p_provider_error.kind} "
                 f"(status={p_provider_error.status}, lane={p_provider_error.lane}) as assistant "

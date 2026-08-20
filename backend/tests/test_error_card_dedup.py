@@ -78,3 +78,34 @@ def test_a_real_user_message_still_earns_a_fresh_card():
 
     shown = [m for m in s.messages if m.role == "system"]
     assert len(shown) == 2, "each real ask gets its own honest answer"
+
+
+def test_an_empty_thinking_pill_does_not_break_the_dedup():
+    """Found by the live provider-error drill 2026-08-20, invisible to every unit test here.
+
+    Each retry leaves a non-hidden `thinking` message with empty content sitting in the tail. It
+    renders as nothing, but it displaced the previous card from the tail scan, so a re-failing
+    ladder stacked three identical cards on screen while this suite stayed green.
+    """
+    s = AgentSession(name="t", model="sonnet")
+    first = p_card("Lost the connection to the model.")
+    absorb_repeat_card(s, first)
+    s.messages.append(Message(role="thinking", content="", branch_id="main"))
+    repeat = p_card("Lost the connection to the model.")
+    absorb_repeat_card(s, repeat)
+    p_cards = [m for m in s.messages if m.role == "system"]
+    assert len(p_cards) == 1, "an invisible pill must not earn the user a duplicate card"
+    assert repeat.id == first.id
+
+
+def test_a_thinking_pill_with_real_content_still_breaks_the_dedup():
+    """NEGATIVE CONTROL. Only the EMPTY pill is invisible; real thinking is content the user saw,
+    so a card after it is genuinely new and must not be absorbed into the older one."""
+    s = AgentSession(name="t", model="sonnet")
+    first = p_card("Lost the connection to the model.")
+    absorb_repeat_card(s, first)
+    s.messages.append(Message(role="thinking", content="Let me try that again.", branch_id="main"))
+    repeat = p_card("Lost the connection to the model.")
+    absorb_repeat_card(s, repeat)
+    p_cards = [m for m in s.messages if m.role == "system"]
+    assert len(p_cards) == 2, "visible thinking separates the two failures"

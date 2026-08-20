@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 
 @typechecked
+def p_renders_as_nothing(msg: Message) -> bool:
+    """An empty thinking pill occupies the tail while showing the user nothing, which silently broke the dedup below (live drill 2026-08-20: three identical cards)."""
+    return msg.role == "thinking" and not str(msg.content or "").strip()
+
+
+@typechecked
 def absorb_repeat_card(session: AgentSession, error_msg: Message) -> None:
     """Append the error card, unless the branch tail is already the IDENTICAL card with nothing
     after it: a retry ladder re-failing the same way then bumps the existing card instead of
@@ -47,7 +53,8 @@ def absorb_repeat_card(session: AgentSession, error_msg: Message) -> None:
     because each retry's hidden prompt had displaced the previous card from the tail."""
     p_tail = [m for m in session.messages
               if getattr(m, "branch_id", None) in (None, session.active_branch_id)
-              and not getattr(m, "hidden", False)]
+              and not getattr(m, "hidden", False)
+              and not p_renders_as_nothing(m)]
     if p_tail and p_tail[-1].role == "system" and p_tail[-1].content == error_msg.content:
         error_msg.id = p_tail[-1].id
         p_tail[-1].timestamp = error_msg.timestamp
