@@ -96,6 +96,51 @@ if $SIGN_MODE; then
         echo "See script header for details."
         exit 1
     fi
+
+    # Pin the signing identity by SHA-1, never by name. `security find-identity` reports
+    # FIVE entries all called "Developer ID Application: Haik Decie (Y26NUZH4NG)": one live
+    # cert, and four copies of the 2026-08 cert whose private key died with the old Mac.
+    # The dead copies still list as "valid" and only fail at the moment they are asked to
+    # sign, so leaving auto-discovery to guess is a coin flip between a real build and a
+    # crash forty minutes into packing a 4.8 GB .app.
+    : "${CSC_NAME:=DDA5A43B430F88DE89A34B4EA908355E3C3274C6}"
+    export CSC_NAME
+    if ! security find-identity -v -p codesigning | grep -q "$CSC_NAME"; then
+        echo "ERROR: signing identity $CSC_NAME is not in the keychain."
+        echo "       Import the Developer ID Application cert AND its private key, then retry."
+        exit 1
+    fi
+    # Presence is not usability, and that distinction is the whole reason this exists: a cert
+    # whose private key is missing or locked still reports valid. The only honest test is a
+    # signature, so spend one here on a scratch file instead of discovering it at the end.
+    _sigprobe_dir="$(mktemp -d)"
+    cp /bin/echo "$_sigprobe_dir/probe"
+    if ! codesign --force --sign "$CSC_NAME" --timestamp=none "$_sigprobe_dir/probe" 2>/dev/null; then
+        rm -rf "$_sigprobe_dir"
+        echo "ERROR: identity $CSC_NAME is present but cannot sign."
+        echo "       Its private key is missing or the login keychain is locked."
+        echo "       Try: security unlock-keychain ~/Library/Keychains/login.keychain-db"
+        exit 1
+    fi
+    rm -rf "$_sigprobe_dir"
+
+    # The embedded profile is load-bearing, not decorative: entitlements request
+    # keychain-access-groups, which macOS honors only when an embedded profile lists the
+    # very cert that signed the app. A profile built for the PREVIOUS cert signs without a
+    # single complaint and then loses passkeys and Touch ID at runtime -- a green build that
+    # ships broken, which is the worst shape a failure can take. So check it here.
+    _pp="$PROJECT_ROOT/electron/build/embedded.provisionprofile"
+    if [[ -f "$_pp" ]]; then
+        if ! security cms -D -i "$_pp" 2>/dev/null | python3 -c 'import sys,plistlib,hashlib; d=plistlib.loads(sys.stdin.buffer.read()); sys.exit(0 if sys.argv[1].upper() in [hashlib.sha1(c).hexdigest().upper() for c in d.get("DeveloperCertificates",[])] else 1)' "$CSC_NAME"; then
+            echo "ERROR: $_pp does not list the signing certificate $CSC_NAME."
+            echo "       The profile was issued for a different cert, so keychain-access-groups"
+            echo "       (passkeys / Touch ID) would silently stop working in the shipped app."
+            echo "       Regenerate it: developer.apple.com -> Profiles -> + -> Developer ID,"
+            echo "       selecting the certificate that matches $CSC_NAME."
+            exit 1
+        fi
+    fi
+    echo "==> Signing identity pinned and proven: $CSC_NAME"
     # A signed build is a build users actually run, so its Widevine VMP signature
     # is mandatory: the afterPack hook hard-fails on a missing/failed signature
     # instead of shipping a DMG whose Spotify/Netflix audio is silently dead.
