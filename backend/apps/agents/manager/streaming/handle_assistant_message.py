@@ -198,7 +198,13 @@ async def handle_assistant_message(
 
             p_delay = 0
             p_healed = False
-            if is_transient(p_provider_error):
+            # A verdict waiting cannot change ends the ask's recovery ladder. Without this, the
+            # retries kept running after we had already told the user to switch models, and each
+            # one added a card contradicting that advice (packaged drill: seven cards, three
+            # mutually exclusive instructions, twice).
+            if not is_transient(p_provider_error):
+                session.provider_verdict_final = True
+            elif not session.provider_verdict_final:
                 p_delay = min(int(p_provider_error.reset_seconds or 0), 900)
                 p_healed = try_transient_self_heal(session, delay_s=p_delay)
 
@@ -220,10 +226,25 @@ async def handle_assistant_message(
                 content=p_copy,
                 branch_id=session.active_branch_id,
             )
-            # A retry ladder re-failing the same way must bump one card, not stack clones; the live
-            # drill produced three before this line existed.
-            from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
-            absorb_repeat_card(session, p_card)
+            # Dedup by KIND, not by exact string. The identical-card absorber never engaged here
+            # because consecutive cards alternated wording (spent plan / rate limit / spent plan),
+            # so the same underlying failure stacked a wall. One card per kind per ask; a repeat
+            # rewrites it in place so the newest wording wins without adding a row.
+            p_prev_kind = getattr(session, "last_provider_error_kind", "")
+            p_existing = None
+            if p_prev_kind == p_provider_error.kind:
+                for m in reversed(session.messages):
+                    if m.role == "system" and not getattr(m, "hidden", False):
+                        p_existing = m
+                        break
+            if p_existing is not None:
+                p_existing.content = p_copy
+                p_existing.timestamp = p_card.timestamp
+                p_card = p_existing
+            else:
+                from backend.apps.agents.manager.run.handle_run_error import absorb_repeat_card
+                absorb_repeat_card(session, p_card)
+            session.last_provider_error_kind = p_provider_error.kind
             logger.warning(
                 f"Agent {session_id}: provider returned {p_provider_error.kind} "
                 f"(status={p_provider_error.status}, lane={p_provider_error.lane}) as assistant "

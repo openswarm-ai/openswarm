@@ -138,6 +138,11 @@ REAL_GEMINI_LONG_QUOTA = (
     "(reset after 2m)"
 )
 REAL_CLAUDE_CONNECTION = "API Error: Unable to connect. Is the computer able to access the url?"
+# A genuine "slow down", with no claim that the plan is spent. This one IS worth waiting out.
+TRUE_RATE_LIMIT = (
+    "API Error: Request rejected (429) · [antigravity/gemini-3-flash] [429]: slow down. "
+    "(reset after 2m)"
+)
 
 
 @pytest.mark.asyncio
@@ -161,10 +166,10 @@ async def test_a_short_rate_limit_resumes_itself_rather_than_asking_the_user():
     session, turn, thinking = p_fixt()
     with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
         await assistant_message.handle_assistant_message(
-            p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+            p_asst([TextBlock(text=TRUE_RATE_LIMIT)]), session, session.id, turn,
             thinking, {}, {})
     assert session.pending_continuation is True, "a 2-minute wait is ours to do, not the user's"
-    assert session.pending_continuation_delay_s == 116, "wait the window the provider named"
+    assert session.pending_continuation_delay_s == 120, "wait the window the provider named"
     assert session.auth_retry_used is False, "a rate limit must not spend the expired-token retry"
 
 
@@ -201,7 +206,7 @@ async def test_the_transient_budget_is_two_then_it_says_so():
         session.pending_continuation = False  # dispatcher consumes it between turns
         with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
             await assistant_message.handle_assistant_message(
-                p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+                p_asst([TextBlock(text=TRUE_RATE_LIMIT)]), session, session.id, turn,
                 thinking, {}, {})
     assert session.transient_retry_count == 2, "budget is two, not unbounded"
     assert session.pending_continuation is False, "the third failure stops retrying"
@@ -225,3 +230,64 @@ async def test_the_agent_can_still_talk_about_an_error_it_saw():
         "the agent's own analysis must reach the user intact"
     assert not any(m.role == "system" for m in session.messages)
     assert session.pending_continuation is False
+
+
+@pytest.mark.asyncio
+async def test_a_spent_plan_is_never_retried_however_short_its_window():
+    """Packaged drill 2026-08-20: the same 'quota reached' envelope carries a 5-day reset one turn
+    and a 2-minute one the next, so a window-only reading told the user to switch models and then,
+    seconds later, to sit tight. A spent plan is spent whatever number rides along."""
+    session, turn, thinking = p_fixt()
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+            thinking, {}, {})
+    assert session.pending_continuation is False, "waiting cannot refill a plan"
+    assert session.provider_verdict_final is True
+    body = [m for m in session.messages if m.role == "system"][0].content
+    assert "automatically" not in body.lower(), "never promise a resume that cannot happen"
+    assert "switch" in body.lower()
+
+
+@pytest.mark.asyncio
+async def test_a_final_verdict_stops_the_ladder_and_the_cards():
+    """The wall: after a terminal verdict the ladder kept retrying and every retry added a card
+    contradicting the one before it. Seven cards, three mutually exclusive instructions."""
+    session, turn, thinking = p_fixt()
+    for text in (REAL_GEMINI_SHORT_QUOTA, TRUE_RATE_LIMIT, REAL_GEMINI_SHORT_QUOTA):
+        session.pending_continuation = False
+        with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+            await assistant_message.handle_assistant_message(
+                p_asst([TextBlock(text=text)]), session, session.id, turn, thinking, {}, {})
+    p_cards = [m for m in session.messages if m.role == "system"]
+    assert len(p_cards) == 1, f"one verdict per ask, got {len(p_cards)}"
+    assert session.transient_retry_count == 0, "no retries after a terminal verdict"
+
+
+@pytest.mark.asyncio
+async def test_the_same_kind_twice_rewrites_one_card_instead_of_stacking():
+    session, turn, thinking = p_fixt()
+    for _ in range(3):
+        session.pending_continuation = False
+        with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+            await assistant_message.handle_assistant_message(
+                p_asst([TextBlock(text=REAL_CLAUDE_CONNECTION)]), session, session.id, turn,
+                thinking, {}, {})
+    assert len([m for m in session.messages if m.role == "system"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_different_kind_still_earns_its_own_card():
+    """NEGATIVE CONTROL. Dedup by kind must not swallow a genuinely different failure, or the user
+    stops being told when the problem changes underneath them."""
+    session, turn, thinking = p_fixt()
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_CLAUDE_CONNECTION)]), session, session.id, turn,
+            thinking, {}, {})
+        session.pending_continuation = False
+        await assistant_message.handle_assistant_message(
+            p_asst([TextBlock(text=REAL_GEMINI_SHORT_QUOTA)]), session, session.id, turn,
+            thinking, {}, {})
+    p_cards = [m for m in session.messages if m.role == "system"]
+    assert len(p_cards) == 2, "connection and quota are different problems"

@@ -14,6 +14,8 @@ from backend.apps.agents.manager.run.empty_finish import (
     NUDGE_PROMPT,
     maybe_nudge_empty_finish,
     turn_finished_empty,
+    EXHAUSTED_NOTE,
+    EXHAUSTED_NOTE_NO_PROGRESS,
 )
 
 
@@ -110,11 +112,11 @@ def test_loop_renudges_while_progressing_then_caps(monkeypatch) -> None:
     asyncio.run(main())
     assert continues == []
     assert session.empty_finish_nudges == NUDGE_HARD_CAP
-    p_sys = [m for m in session.messages if m.role == "system" and "without a final report" in str(m.content)]
+    p_sys = [m for m in session.messages if m.role == "system" and str(m.content) in (EXHAUSTED_NOTE, EXHAUSTED_NOTE_NO_PROGRESS)]
     assert len(p_sys) == 1, "exhaustion surfaces exactly once"
     # A second exhausted quit in the same ask must NOT stack another line.
     asyncio.run(main())
-    p_sys = [m for m in session.messages if m.role == "system" and "without a final report" in str(m.content)]
+    p_sys = [m for m in session.messages if m.role == "system" and str(m.content) in (EXHAUSTED_NOTE, EXHAUSTED_NOTE_NO_PROGRESS)]
     assert len(p_sys) == 1
 
 

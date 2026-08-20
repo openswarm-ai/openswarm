@@ -24,7 +24,12 @@ from typing import List
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession, Message
-from backend.apps.agents.manager.run.empty_finish import EXHAUSTED_NOTE, P_ANSWER_TOOL_MARKERS
+from backend.apps.agents.manager.run.empty_finish import (
+    EXHAUSTED_NOTE,
+    EXHAUSTED_NOTE_NO_PROGRESS,
+    P_ANSWER_TOOL_MARKERS,
+    turn_showed_work,
+)
 from backend.apps.agents.manager.session.history_compaction import get_branch_messages
 
 logger = logging.getLogger(__name__)
@@ -81,8 +86,11 @@ def ensure_turn_spoke(session: AgentSession, session_id: str) -> bool:
     if not turn_left_the_user_with_nothing(session):
         return False
 
+    # Point at work only when there is work to point at; a turn that did nothing gets the copy
+    # that names an action the user can actually take.
+    p_note = EXHAUSTED_NOTE if turn_showed_work(session) else EXHAUSTED_NOTE_NO_PROGRESS
     session.messages.append(
-        Message(role="system", content=EXHAUSTED_NOTE, branch_id=session.active_branch_id)
+        Message(role="system", content=p_note, branch_id=session.active_branch_id)
     )
     logger.warning(
         f"Agent {session_id}: turn ended with nothing readable and no detector claimed it; "

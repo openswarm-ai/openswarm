@@ -41,10 +41,18 @@ P_ROUTER_STAMP = re.compile(r"\[[a-z0-9._-]+/[a-z0-9._-]+\]\s*\[(\d{3})\]", re.I
 # A bare status inside the envelope, e.g. "Request rejected (429)".
 P_STATUS = re.compile(r"\((\d{3})\)|\b(4\d{2}|5\d{2})\b")
 
-# "Resets in 125h40m51s" / "(reset after 2m)" / "(reset after 1m 56s)".
+# "Resets in 125h40m51s" / "(reset after 2m)" / "(reset after 1m 56s)". Gemini sends BOTH in one
+# envelope, and they mean different things: the first is when the subscription quota actually
+# resets, the second is only the router's own retry hint. Reading whichever came first made the
+# same 429 say "5 days, switch models" one turn and "2 minutes, do nothing" the next (packaged
+# drill 2026-08-20, seven contradictory cards in one ask), so collect them all and trust the longest.
 P_RESET = re.compile(
     r"reset(?:s)?\s+(?:in|after)\s+((?:\d+\s*[hms]\s*)+)", re.I
 )
+
+# Wording that means the plan itself is spent, not that we are going too fast. Waiting cannot fix it.
+P_SUBSCRIPTION_SPENT = ("quota reached", "upgrade your subscription", "exceeded your quota",
+                        "subscription limit", "plan limit")
 
 AUTH = "auth"
 QUOTA = "quota"
@@ -59,6 +67,9 @@ class ProviderError(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     kind: str
+    # True when the provider said the PLAN is spent rather than that we are going too fast; the
+    # reset window is unreliable for this (same condition, sometimes 5 days, sometimes 2 minutes).
+    subscription_spent: bool
     status: Optional[int]
     lane: Optional[str]
     reset_seconds: Optional[int]
@@ -117,10 +128,9 @@ def classify_provider_error(text: str) -> Optional[ProviderError]:
         if m:
             status = int(m.group(1) or m.group(2))
 
-    reset_seconds = None
-    reset_m = P_RESET.search(stripped)
-    if reset_m:
-        reset_seconds = parse_duration(reset_m.group(1))
+    p_windows = [parse_duration(m.group(1)) for m in P_RESET.finditer(stripped)]
+    p_windows = [w for w in p_windows if w]
+    reset_seconds = max(p_windows) if p_windows else None
 
     # Status first: it is the provider's own verdict. Words only for shapes carrying no status at all.
     if status in (401, 403):
@@ -139,7 +149,8 @@ def classify_provider_error(text: str) -> Optional[ProviderError]:
         kind = UNKNOWN
 
     return ProviderError(
-        kind=kind, status=status, lane=lane, reset_seconds=reset_seconds, raw=stripped
+        kind=kind, status=status, lane=lane, reset_seconds=reset_seconds, raw=stripped,
+        subscription_spent=any(w in low for w in P_SUBSCRIPTION_SPENT),
     )
 
 
@@ -173,6 +184,13 @@ def user_facing_sentence(err: ProviderError, model: str) -> str:
         who = model
 
     if err.kind == QUOTA:
+        if err.subscription_spent:
+            # Only quote a window big enough to BE a quota reset. A couple of minutes is the
+            # router's retry hint, and repeating it as the plan's reset time is just a wrong fact.
+            p_when = (f" It resets in {p_humanize_window(err.reset_seconds)}."
+                      if err.reset_seconds and err.reset_seconds > 6 * 3600 else "")
+            return (f"{who} has used up its subscription allowance.{p_when} Switch this agent to "
+                    "another model to keep going.")
         if err.reset_seconds and err.reset_seconds > 6 * 3600:
             return (
                 f"{who} has hit its subscription limit and will not reset for "
@@ -218,5 +236,8 @@ def is_transient(err: ProviderError) -> bool:
     if err.kind in (CONNECTION, OVERLOADED):
         return True
     if err.kind == QUOTA:
+        # An exhausted plan does not heal by waiting; parking on it is a silent stop in disguise.
+        if err.subscription_spent:
+            return False
         return err.reset_seconds is not None and err.reset_seconds <= 6 * 3600
     return False

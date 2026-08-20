@@ -28,8 +28,16 @@ FINAL_NUDGE_PROMPT = (
 # Post-cap honesty: the machinery is out of nudges and the turn STILL ended silent, so say so in
 # the transcript instead of leaving a Done pill over a wall of tool rows.
 EXHAUSTED_NOTE = (
-    "The agent stopped working without a final report. Ask it to summarize, or check the tool "
-    "results above for where it got to."
+    "The agent stopped before reporting back. Its work so far is above; send a message to carry on "
+    "from there."
+)
+
+# Same situation, no work to point at. The old single string told a user with an empty transcript to
+# "check the tool results above" when there were none, and to "ask it to summarize" when there was
+# nothing to summarize: two instructions that cannot be followed, on the turn they are most alarmed.
+EXHAUSTED_NOTE_NO_PROGRESS = (
+    "The agent could not get started on this one. Send your message again, or switch this agent to "
+    "another model."
 )
 
 logger = logging.getLogger(__name__)
@@ -52,17 +60,17 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
         # tail is still the user's own message. Nudging it would re-send a prompt the model just
         # refused, so say so instead of ending mute.
         if p_turn_produced_nothing(session):
-            p_surface_exhausted(session, session_id)
+            surface_exhausted(session, session_id)
         return False
     if session.empty_finish_nudges >= NUDGE_HARD_CAP:
-        p_surface_exhausted(session, session_id)
+        surface_exhausted(session, session_id)
         return False
     p_tool_calls = p_count_tool_calls(session)
     if session.empty_finish_nudges >= 1 and p_tool_calls <= session.empty_finish_progress_mark:
         # The nudge bought no new work, so re-nudging would ping-pong a model with nothing left.
         # Refusing is right; ending the ask in SILENCE is not, and that is what the user actually
         # reports as "the agent just stopped" (Haik's poke storms).
-        p_surface_exhausted(session, session_id)
+        surface_exhausted(session, session_id)
         return False
     session.empty_finish_progress_mark = p_tool_calls
     # At high context the silent quit is usually the model choking on the prompt itself, so
@@ -111,17 +119,53 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     return True
 
 @typechecked
-def p_surface_exhausted(session: AgentSession, session_id: str) -> None:
+def p_recovery_retry_pending(session: AgentSession) -> bool:
+    """True when the queued continuation is a retry for a PROVIDER failure, not a nudge of ours."""
+    if not getattr(session, "pending_continuation", False):
+        return False
+    from backend.apps.agents.manager.streaming.auth_retry import (
+        AUTH_RETRY_PROMPT,
+        TRANSIENT_RETRY_PROMPT,
+    )
+    from backend.apps.agents.manager.run.reconnect_resume import RECONNECT_PROMPT
+    return getattr(session, "pending_continuation_prompt", "") in (
+        AUTH_RETRY_PROMPT, TRANSIENT_RETRY_PROMPT, RECONNECT_PROMPT,
+    )
+
+
+@typechecked
+def turn_showed_work(session: AgentSession) -> bool:
+    """Whether anything the note could point at actually exists since the user last spoke."""
+    from backend.apps.agents.manager.session.history_compaction import get_branch_messages
+    msgs = [m for m in get_branch_messages(session) if not getattr(m, "hidden", False)]
+    p_last_user = -1
+    for i, m in enumerate(msgs):
+        if getattr(m, "role", "") == "user":
+            p_last_user = i
+    return any(getattr(m, "role", "") in ("tool_call", "tool_result")
+               for m in msgs[p_last_user + 1:])
+
+
+@typechecked
+def surface_exhausted(session: AgentSession, session_id: str) -> None:
     """All nudges spent and the turn still ended mute: put one honest system line in the
     transcript, once per exhaustion (the flag resets with the counters on a real user message)."""
     if getattr(session, "empty_finish_surfaced", False):
+        return
+    # A RECOVERY retry means the turn is still going, so saying it stopped is a lie told at the
+    # worst possible moment. The nudge ladder also rides pending_continuation, and its whole purpose
+    # is to end in this very message, so the flag alone is the wrong test: key on whose continuation
+    # it is. Leave empty_finish_surfaced unset either way, so the honest line still fires if the
+    # recovery itself ends mute.
+    if getattr(session, "awaiting_reconnect", False) or p_recovery_retry_pending(session):
         return
     session.empty_finish_surfaced = True
     try:
         import asyncio
         from backend.apps.agents.core.models import Message
         from backend.apps.agents.core.ws_manager import ws_manager
-        p_msg = Message(role="system", content=EXHAUSTED_NOTE, branch_id=session.active_branch_id)
+        p_note = EXHAUSTED_NOTE if turn_showed_work(session) else EXHAUSTED_NOTE_NO_PROGRESS
+        p_msg = Message(role="system", content=p_note, branch_id=session.active_branch_id)
         session.messages.append(p_msg)
         asyncio.get_running_loop().create_task(ws_manager.send_to_session(session_id, "agent:message", {
             "session_id": session_id,

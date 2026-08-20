@@ -159,6 +159,12 @@ class AgentSession(BaseModel):
     lane_credential_dead: bool = False
     # Transient provider errors arrive as assistant TEXT, so no upstream retry sees them; budgeted apart from auth_retry_used so a rate limit cannot spend the expired-token retry.
     transient_retry_count: int = 0
+    # Set once the provider gives a verdict waiting cannot change (a spent plan, a dead credential).
+    # Further recovery retries after that only produce cards contradicting the one we already showed.
+    provider_verdict_final: bool = False
+    # The last provider-error KIND surfaced this ask. Cards alternated (spent/rate-limit/spent) so
+    # the identical-string dedup never engaged and the user got a wall of contradictions.
+    last_provider_error_kind: str = ""
     reconnect_attempts: int = 0
     # True while a turn is parked waiting for the connection back; persisted so a quit DURING the wait is still an owed turn at next boot.
     awaiting_reconnect: bool = False
