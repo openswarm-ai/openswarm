@@ -46,7 +46,14 @@ async def test_first_token_expiry_heals_silently(monkeypatch):
     with patch.object(assistant_message.ws_manager, "send_to_session", new=fake_send):
         await assistant_message.handle_assistant_message(
             p_asst([TextBlock(text=txt)]), session, session.id, turn, thinking, {}, {})
-    assert not any(m.role == "system" for m in session.messages), "no banner on the first expiry"
+    # ENG-361 amended this contract: the codex retry now waits ~75s to clear the rotation window,
+    # and a minute of nothing reads as a hang, so ONE slim "retrying automatically" notice is
+    # expected. What must never appear is the reconnect BANNER, because there is nothing for the
+    # user to do. The distinction is the whole point: a notice informs, a banner assigns homework.
+    p_sys = [m for m in session.messages if m.role == "system"]
+    assert len(p_sys) == 1, "exactly one slim notice, not a wall"
+    assert "no action needed" in p_sys[0].content.lower()
+    assert "reconnect" not in p_sys[0].content.lower(), "never demand a reconnect on the first expiry"
     assert not any(m.role == "assistant" for m in session.messages)
     assert "agent:auth_error" not in events
     assert session.auth_retry_used is True

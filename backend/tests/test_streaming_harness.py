@@ -5,6 +5,7 @@ coverage), so it pins the observable contract: streamed text lands as an assista
 tool calls are recorded, and the turn completes."""
 
 import asyncio
+import os
 
 import pytest
 import claude_agent_sdk
@@ -181,6 +182,14 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
     import backend.apps.agents.agent_manager as am
     import backend.apps.agents.manager.run.RunOptions as run_opts
 
+    # Supply the packaged shape this strip exists for: a bundle site-packages entry that must be
+    # dropped, next to the debugger dir that must survive.
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        os.pathsep.join(["/Applications/OpenSwarm.app/Contents/Resources/python-env/lib/site-packages",
+                         "/opt/openswarm/debugger"]),
+    )
+
     settings = AppSettings(anthropic_api_key="sk-ant-test123", connection_mode="own_key")
     monkeypatch.setattr(am, "load_settings", lambda: settings, raising=True)
     monkeypatch.setattr(run_opts, "load_settings", lambda: settings, raising=True)
@@ -208,6 +217,13 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
     asyncio.run(mgr.run_agent_loop(session.id, "hi"))
 
     env = captured["options"].env
+    # PYTHONPATH rides along stripped of site-packages (ENG-347: the bundle shadowed agent venvs).
+    # The loop only forwards a PYTHONPATH the ambient shell actually set, so the fixture below
+    # supplies one; without it this asserted whatever the developer's terminal happened to export
+    # and failed on any machine that exported nothing.
+    p_pp = env.pop("PYTHONPATH", None)
+    assert p_pp is not None and "site-packages" not in p_pp
+    assert "debugger" in p_pp, "the debugger injection dir is the one entry that survives"
     # Direct key, no 9router proxy; the CLI's own auto-memory is force-disabled on every spawn (ENG-222).
     assert env == {"ANTHROPIC_API_KEY": "sk-ant-test123", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 

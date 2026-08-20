@@ -10,7 +10,7 @@ from backend.apps.agents.manager.run.handle_run_error import handle_run_error
 from backend.apps.agents.manager.streaming.state import TurnState
 
 
-def p_drive_error(monkeypatch, exc, stderr=None):
+def p_drive_error(monkeypatch, exc, stderr=None, session=None):
     events = []
 
     async def fake_send(session_id, event, data):
@@ -20,7 +20,10 @@ def p_drive_error(monkeypatch, exc, stderr=None):
     # Diagnostics are fire-and-forget network; keep the tests offline.
     import backend.apps.service.client as service_client
     monkeypatch.setattr(service_client, "submit_diagnostic", lambda payload: None, raising=True)
-    session = AgentSession(name="t", model="sonnet", dashboard_id="d")
+    # Passing a session back in drives a SECOND failure on the same ask, which is the only way to
+    # test a once-per-ask budget: a fresh session would silently hand it a fresh budget too.
+    if session is None:
+        session = AgentSession(name="t", model="sonnet", dashboard_id="d")
     asyncio.run(handle_run_error(exc, session, session.id, TurnState(), stderr or []))
     return session, events
 
@@ -113,9 +116,29 @@ def test_out_of_credits_does_not_respawn_the_cli(monkeypatch):
     assert session.needs_fresh_session is False
 
 
-def test_auth_failure_does_not_respawn_the_cli(monkeypatch):
+def test_auth_failure_self_heals_once_then_stops_respawning(monkeypatch):
+    # ENG-361 amended the older "never respawn on auth" rule: every sub lane now gets ONE silent
+    # self-heal before any card, and a fresh CLI is exactly how the stale token gets dropped. The
+    # rule that still matters is that it happens ONCE; a credential that fails twice is genuinely
+    # dead, and respawning forever would just hide it behind an endless retry.
     session, _ = p_drive_error(monkeypatch, Exception("401 invalid authentication credentials"))
+    assert session.needs_fresh_session is True, "one rebuild is the heal"
+    assert session.auth_retry_used is True
+    assert not [m for m in session.messages if m.role == "system"], "no card on the first expiry"
+
+    session.needs_fresh_session = False
+    session.pending_continuation = False
+    p_drive_error(monkeypatch, Exception("401 invalid authentication credentials"), session=session)
+    assert session.needs_fresh_session is False, "the budget is spent; stop respawning"
+    assert [m for m in session.messages if m.role == "system"], "the second failure is honest"
+
+
+def test_missing_credential_never_burns_a_retry(monkeypatch):
+    # Negative control: a config problem retries identically, so it must card immediately instead
+    # of spending a rebuild and a wait on a request that cannot succeed.
+    session, _ = p_drive_error(monkeypatch, Exception("No credentials for provider: claude (401)"))
     assert session.needs_fresh_session is False
+    assert [m for m in session.messages if m.role == "system"], "straight to the honest card"
 
 
 def test_rate_limit_does_not_respawn_the_cli(monkeypatch):

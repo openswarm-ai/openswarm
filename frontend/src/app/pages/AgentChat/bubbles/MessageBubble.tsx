@@ -887,6 +887,7 @@ const MessageBubble: React.FC<Props> = React.memo((props) => {
     const { body: sysBody, note: sysNote } = extractPlatformNote(rawSysText);
     const sysText = sysNote || sysBody;
     // A raw subprocess/API failure ("Command failed with exit code 1", API Error JSON) is dev jargon, and the same failure is already shown as a friendly card on the assistant side. Swallow just that stderr dump so the user sees one calm card, not jargon beneath it.
+    // Widen this at your peril: the silent-quit seal's honest lines ride the same system role, and swallowing one turns a stopped agent back into an unexplained Done pill. backend/tests/test_empty_finish.py pins that they survive.
     if (/Command failed with exit code|API Error:|invalid_request_error|"type"\s*:\s*"error"|Check stderr output/i.test(sysText)) {
       return null;
     }

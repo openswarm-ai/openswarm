@@ -47,12 +47,22 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     if getattr(session, "pending_continuation", False):
         return False
     if not turn_finished_empty(session):
+        # A turn that produced NOTHING at all (no text, no tool call) leaves the same Done pill
+        # over an empty chat, and the tail-walk above can't see it: with nothing persisted the
+        # tail is still the user's own message. Nudging it would re-send a prompt the model just
+        # refused, so say so instead of ending mute.
+        if p_turn_produced_nothing(session):
+            p_surface_exhausted(session, session_id)
         return False
     if session.empty_finish_nudges >= NUDGE_HARD_CAP:
         p_surface_exhausted(session, session_id)
         return False
     p_tool_calls = p_count_tool_calls(session)
     if session.empty_finish_nudges >= 1 and p_tool_calls <= session.empty_finish_progress_mark:
+        # The nudge bought no new work, so re-nudging would ping-pong a model with nothing left.
+        # Refusing is right; ending the ask in SILENCE is not, and that is what the user actually
+        # reports as "the agent just stopped" (Haik's poke storms).
+        p_surface_exhausted(session, session_id)
         return False
     session.empty_finish_progress_mark = p_tool_calls
     # At high context the silent quit is usually the model choking on the prompt itself, so
@@ -124,6 +134,20 @@ def p_surface_exhausted(session: AgentSession, session_id: str) -> None:
 
 # A turn legitimately ENDS on these tools: the rendered widget or delegation IS the answer.
 P_ANSWER_TOOL_MARKERS = ("openswarm-ui", "ShowUI", "AskUI", "AskUserQuestion")
+
+
+@typechecked
+def p_turn_produced_nothing(session: AgentSession) -> bool:
+    """True when the model returned an empty hand: no reply, no tool work, nothing the user can
+    read. Thinking does not count, because a collapsed reasoning trace is not an answer, and a
+    thinking-only end_turn is the exact shape of the quits users report."""
+    msgs: List = [
+        m for m in get_branch_messages(session)
+        if not getattr(m, "hidden", False) and getattr(m, "role", "") != "thinking"
+    ]
+    if not msgs or getattr(msgs[-1], "role", "") != "user":
+        return False
+    return not any(getattr(m, "role", "") in ("assistant", "tool_call") for m in msgs)
 
 
 @typechecked

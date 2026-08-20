@@ -91,3 +91,28 @@ def test_the_recovery_ledger_counts_auth_resumes():
     src = inspect.getsource(TurnRunner)
     assert "auth-resume" in src.split("record_recovery", 1)[0] or "p_auth_retry_attempt" in src.split("record_recovery", 1)[1].split(")", 2)[1], \
         "a survived auth blip must land in the near-miss ledger"
+
+
+def test_codex_rotation_resume_waits_past_the_rotation_window():
+    """A codex token rotates every 1-2 minutes, so the turn-level resume has to clear the window.
+    At 20s it retried into the same expiry and spent the single attempt for nothing, which meant
+    the ENG-361 self-heal downstream never got a say (drill D6/C5, 2026-08-20)."""
+    from backend.apps.agents.core.error_classify import CODEX_ROTATION_RESUME_WAIT
+    for text in (
+        "[codex/gpt-5.6] API Error: 401 authentication token is expired",
+        "cx/gpt-5.4: token expired",
+        "API Error 401 on gpt-5.6-terra: authentication token has expired",
+    ):
+        assert auth_resume_wait(Exception(text), 0) == CODEX_ROTATION_RESUME_WAIT, text
+    assert CODEX_ROTATION_RESUME_WAIT > 60, "must outlast the rotation window"
+
+
+def test_non_codex_auth_failures_keep_the_short_resume():
+    """Negative control: only the rotating lane pays the long wait; a plain bad key must still
+    come back fast, or every Anthropic 401 gets a minute of dead air."""
+    for text in (
+        "API Error: 401 authentication_error invalid x-api-key",
+        "Request failed: 401 Unauthorized",
+        "Invalid bearer token",
+    ):
+        assert auth_resume_wait(Exception(text), 0) == 20, text

@@ -215,3 +215,73 @@ def test_vanishing_quit_on_repeat_session_is_claimed():
     assert turn_finished_empty(s) is False, "first-time session: user tail stays unclaimed"
     s.empty_finish_total = 1
     assert turn_finished_empty(s) is True, "repeat session: the vanishing quit is claimed"
+
+
+def p_system_lines(session) -> list:
+    return [m for m in session.messages if m.role == "system"]
+
+
+def test_stalled_continuation_still_tells_the_user() -> None:
+    """The anti-ping-pong guard is right to refuse a second nudge, but the ask must not end in
+    silence: that Done-pill-over-tool-rows is exactly what users report as 'it just stopped'
+    (drill D3/C4, 2026-08-20)."""
+    s = p_session(("user", "audit the repo"),
+                  ("tool_call", {"tool": "Bash", "input": {}}),
+                  ("tool_result", {"text": "ok"}))
+    assert maybe_nudge_empty_finish(s, "sid") is True
+    s.pending_continuation = False
+    # The nudge bought nothing at all.
+    assert maybe_nudge_empty_finish(s, "sid") is False
+    assert s.empty_finish_nudges == 1, "still no second nudge"
+    assert len(p_system_lines(s)) == 1, "but the user is told once"
+
+    # And it stays once, however many stalled quits follow.
+    s.pending_continuation = False
+    assert maybe_nudge_empty_finish(s, "sid") is False
+    assert len(p_system_lines(s)) == 1
+
+
+def test_turn_that_produced_nothing_is_not_silent() -> None:
+    """No text, no tool call, nothing persisted: the tail-walk cannot see it, so the honest line
+    is the only thing standing between the user and an empty Done pill (drill D4/C3/C5)."""
+    s = p_session(("user", "read all 16 files and report the magic word"))
+    assert maybe_nudge_empty_finish(s, "sid") is False, "nudging would re-send a refused prompt"
+    assert len(p_system_lines(s)) == 1, "the user gets an honest line instead of silence"
+
+
+def test_a_working_turn_is_never_given_the_exhausted_line() -> None:
+    """Negative control: a turn that actually answered must stay clean."""
+    s = p_session(("user", "hi"), ("assistant", "here is your answer"))
+    assert maybe_nudge_empty_finish(s, "sid") is False
+    assert p_system_lines(s) == [], "an answered turn earns no card"
+
+
+def test_a_turn_still_holding_tool_work_is_not_called_empty_handed() -> None:
+    """Negative control for the produced-nothing seal: tool work exists, so this is the ordinary
+    nudge path, not the empty-handed one."""
+    s = p_session(("user", "task"),
+                  ("tool_call", {"tool": "Read", "input": {}}),
+                  ("tool_result", {"text": "x"}))
+    assert maybe_nudge_empty_finish(s, "sid") is True, "ordinary silent quit still nudges"
+    assert p_system_lines(s) == [], "and says nothing yet, because work may still land"
+
+
+def test_the_honest_lines_survive_the_frontends_jargon_filter() -> None:
+    """The seal only works if the user can SEE the line. MessageBubble.tsx deliberately swallows
+    raw subprocess/API dumps rendered as system messages, so an honest note that happens to match
+    those patterns would be added by the backend and then silently dropped by the UI: the exact
+    silence this whole issue is about, just moved one layer up. Kept here rather than in a .tsx
+    test so it lives beside the text it guards and cannot drift from it."""
+    import re
+    from backend.apps.agents.manager.run.empty_finish import EXHAUSTED_NOTE
+
+    # Mirrors the swallow test in frontend/src/app/pages/AgentChat/bubbles/MessageBubble.tsx.
+    p_swallowed = re.compile(
+        r'Command failed with exit code|API Error:|invalid_request_error'
+        r'|"type"\s*:\s*"error"|Check stderr output',
+        re.IGNORECASE,
+    )
+    assert not p_swallowed.search(EXHAUSTED_NOTE), (
+        "the exhausted note would be swallowed by the UI's dev-jargon filter"
+    )
+    assert EXHAUSTED_NOTE.strip(), "an empty note renders as nothing at all"

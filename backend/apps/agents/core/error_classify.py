@@ -61,6 +61,20 @@ P_SUBSCRIPTION_STATE_PATTERNS = re.compile(
 
 AUTH_RESUME_WAIT_CAP = 120
 
+# A codex/GPT subscription token rotates every 1-2 minutes; anything shorter than the window just
+# retries into the same expiry.
+CODEX_ROTATION_RESUME_WAIT = 75
+
+P_CODEX_ROTATION_PATTERNS = re.compile(
+    r"(?:\[?codex/|\bcx/|\bgpt-[0-9])"
+    r".*?"
+    r"(?:authentication\s+token\s+(?:is|has)\s+expired|token\s+expired|\b401\b)"
+    r"|(?:authentication\s+token\s+(?:is|has)\s+expired|token\s+expired|\b401\b)"
+    r".*?"
+    r"(?:\[?codex/|\bcx/|\bgpt-[0-9])",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 @typechecked
 def auth_resume_wait(exc: BaseException, attempt: int, extra_text: str = "") -> Optional[int]:
@@ -95,6 +109,12 @@ def auth_resume_wait(exc: BaseException, attempt: int, extra_text: str = "") -> 
     hinted = parse_retry_after(exc, extra_text)
     if hinted is not None:
         return min(hinted + 5, AUTH_RESUME_WAIT_CAP)
+    # Codex tokens rotate on a 1-2 minute cadence, so a 20s resume lands back INSIDE the same
+    # window and spends the one attempt on a failure that was always going to fail. This is the
+    # turn-level twin of the ENG-361 wait: without it that fix never gets a say, because this
+    # retry runs first (drill C5/D6, 2026-08-20).
+    if P_CODEX_ROTATION_PATTERNS.search(combined):
+        return CODEX_ROTATION_RESUME_WAIT
     return 20
 
 
