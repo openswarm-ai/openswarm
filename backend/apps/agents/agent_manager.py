@@ -378,6 +378,16 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             p_is_live_task = self.tasks.get(session_id) is asyncio.current_task()
             if p_is_live_task:
                 self.live_partial.pop(session_id, None)
+                # The floor: every terminal path funnels through here, so "turn ended with nothing readable" stops being representable instead of being caught shape by shape.
+                try:
+                    from backend.apps.agents.manager.run.turn_spoke import ensure_turn_spoke
+                    if ensure_turn_spoke(session, session_id):
+                        await ws_manager.send_to_session(session_id, "agent:message", {
+                            "session_id": session_id,
+                            "message": session.messages[-1].model_dump(mode="json"),
+                        })
+                except Exception:
+                    logger.exception("terminal turn-spoke invariant failed")
             if session_id in self.sessions and p_is_live_task:
                 # For canvas-launched App Builder sessions, the workspace folder IS the session_id (see launch_agent), so meta.json lives at outputs_workspace/<session_id>/meta.json. Read it and propagate name/description into the Output row before the terminal status fires; without this, the row stays "Untitled App" forever because no React component polls the file on the canvas path. Best-effort, only acts when the row's name is still the default placeholder.
                 if session.mode == "view-builder":

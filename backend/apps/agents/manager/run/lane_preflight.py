@@ -70,9 +70,15 @@ def provider_for_model(resolved_model: str) -> Optional[str]:
 
 @typechecked
 def connection_is_dead(conn: Dict) -> bool:
-    """A connection the router has given up on. Deliberately narrow: only the states that mean a dispatch is guaranteed to fail, never a slow or merely idle one."""
-    if conn.get("testStatus") == "unavailable":
-        return True
+    """A credential that needs the USER, as opposed to one having a bad minute.
+
+    Only auth-shaped failures qualify. `testStatus: "unavailable"` alone does NOT: the router
+    stamps it for rate limits and upstream 5xx too, and a live 2026-08-20 run proved the cost of
+    conflating them, telling Eric to reconnect a Google account whose credential was valid for
+    another half hour and merely 429'd. Advising a reconnect for a throttle is the same lie as
+    "just rotated" for a dead token, pointing the other way, so the bar here is evidence that
+    waiting cannot help: 401 or 403.
+    """
     return conn.get("errorCode") in (401, 403)
 
 
@@ -120,11 +126,18 @@ async def preflight_lane(resolved_model: str,
             f"lane preflight: {provider} is {dead.get('testStatus')} (errorCode={dead.get('errorCode')}); "
             "bouncing the router once, then letting the turn decide"
         )
+        p_back_up = False
         try:
             from backend.apps.nine_router.bounce_after_connect import bounce_router_after_connect
-            await bounce_router_after_connect(provider)
+            p_back_up = await bounce_router_after_connect(provider)
         except Exception:
             logger.debug("lane preflight bounce failed", exc_info=True)
+        if not p_back_up:
+            # Dispatching into a router that has not come back is a guaranteed connection error, and
+            # the user would read that as the model failing rather than us restarting something.
+            logger.warning("lane preflight: the router did not come back after the bounce; not dispatching into it")
+            return ("The local AI connection is restarting. This clears itself in a few seconds; "
+                    "send your message again.")
         # Deliberately no post-bounce health re-read: see the module docstring. Dispatch is the test.
         return None
 

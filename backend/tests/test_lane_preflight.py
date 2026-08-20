@@ -117,10 +117,46 @@ def test_unreadable_health_lets_the_turn_proceed(monkeypatch):
 
 
 def test_only_terminal_states_count_as_dead():
-    assert lp.connection_is_dead({"testStatus": "unavailable"}) is True
+    # "unavailable" alone is NOT enough: the router stamps it for throttles and 5xx as well, so it
+    # cannot distinguish a dead credential from a bad minute (corrected after a live false positive).
+    assert lp.connection_is_dead({"testStatus": "unavailable"}) is False
     assert lp.connection_is_dead({"errorCode": 401}) is True
     assert lp.connection_is_dead({"errorCode": 403}) is True
     # A slow, rate-limited or merely idle connection is NOT dead; grounding those would be the bug.
     assert lp.connection_is_dead({"testStatus": "active", "errorCode": 429}) is False
     assert lp.connection_is_dead({"testStatus": "active", "errorCode": 502}) is False
     assert lp.connection_is_dead({}) is False
+
+
+def test_never_dispatches_into_a_router_that_did_not_come_back(monkeypatch):
+    """A bounce that fails to restart leaves nothing listening. Dispatching into that is a
+    guaranteed connection error the user would read as the model failing, rather than as us
+    restarting something underneath them."""
+    async def fake_get_providers():
+        return P_DEAD
+
+    async def failed_bounce(provider):
+        return False
+
+    import backend.apps.nine_router as nr
+    import backend.apps.nine_router.bounce_after_connect as ba
+    monkeypatch.setattr(nr, "get_providers", fake_get_providers, raising=True)
+    monkeypatch.setattr(ba, "bounce_router_after_connect", failed_bounce, raising=True)
+
+    msg = asyncio.run(lp.preflight_lane("cx/gpt-5.6"))
+    assert msg and "restarting" in msg.lower()
+    assert "reconnect" not in msg.lower(), "this is our restart, not the user's credential"
+
+
+def test_a_rate_limited_lane_is_not_a_dead_credential():
+    """Live 2026-08-20: antigravity sat at testStatus=unavailable with errorCode=429 and a
+    credential valid for another 30 minutes. Telling that user to reconnect is the same lie as
+    "just rotated" for a dead token, aimed the other way."""
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 429}) is False
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 503}) is False
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": None}) is False
+
+
+def test_only_auth_shaped_failures_send_the_user_to_settings():
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 401}) is True
+    assert lp.connection_is_dead({"testStatus": "active", "errorCode": 403}) is True

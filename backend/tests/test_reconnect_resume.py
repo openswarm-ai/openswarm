@@ -210,3 +210,25 @@ def test_a_dead_socket_respawns_the_cli_but_a_429_does_not(monkeypatch):
     throttled, _ = p_drive(monkeypatch, Exception("429 rate_limit_error: overloaded"))
     assert throttled.needs_fresh_session is False, "a refusal is not a broken pipe"
     assert throttled.awaiting_reconnect is True, "but it is still worth waiting out"
+
+
+def test_a_spent_budget_stops_pretending_the_turn_is_parked(monkeypatch):
+    """Live catch, 2026-08-20 (rate-limited Gemini): after three outage rounds the budget is gone
+    and the ask is over, but awaiting_reconnect stayed True. The terminal floor deliberately keeps
+    quiet for parked turns, so the stale flag muzzled it and the run ended in total silence: the
+    precise failure both features exist to prevent, created by one of them."""
+    session = p_session()
+    for _ in RECONNECT_BACKOFFS:
+        session.pending_continuation = False
+        p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session)
+    assert session.awaiting_reconnect is True, "still parked while the budget lasts"
+
+    session.pending_continuation = False
+    p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session)
+    assert session.awaiting_reconnect is False, "budget spent: the turn is over, not parked"
+
+    # And with the flag honest, the floor can finally speak for this session.
+    from backend.apps.agents.manager.run.turn_spoke import ensure_turn_spoke
+    session.messages.append(Message(role="tool_call", content={"tool": "Read"},
+                                    branch_id=session.active_branch_id))
+    assert ensure_turn_spoke(session, "sid") is True

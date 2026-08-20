@@ -154,6 +154,8 @@ class AgentSession(BaseModel):
     crash_interrupt_count: int = 0
     # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.
     # True when the preflight found the router had already given up on this lane, so an auth failure this turn is a dead credential, not a rotation window worth waiting out.
+    # Input-token level history must regrow past before another proactive prune may commit; a rebuild busts the prompt cache, so one per runway, never one per turn.
+    proactive_prune_rearm_tokens: int = 0
     lane_credential_dead: bool = False
     reconnect_attempts: int = 0
     # True while a turn is parked waiting for the connection back; persisted so a quit DURING the wait is still an owed turn at next boot.

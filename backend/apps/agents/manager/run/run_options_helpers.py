@@ -25,6 +25,30 @@ def merge_hard_blocked_tools(effective_disallowed: List[str]) -> List[str]:
 # `manager` is the AgentManager; it isn't annotated because typing it would import agent_manager back into a module agent_manager already imports (a cycle). Same reason self is never annotated.
 @typechecked
 async def pre_send_context_guard(manager, session: AgentSession, session_id: str) -> None:
+    # The second trigger (hermes lift): the threshold below fires at a percentage of the window,
+    # which on a 1M lane almost never arrives, so history rides untouched to the cliff. This one
+    # fires on COST and pays for its own cache miss.
+    try:
+        from backend.apps.agents.manager.session.proactive_prune import (
+            arm_proactive_prune,
+            estimate_aged_rebuild_tokens,
+            should_proactively_prune,
+        )
+        if should_proactively_prune(session):
+            arm_proactive_prune(session)
+            await ws_manager.send_to_session(session_id, "agent:context_status", {
+                "session_id": session_id,
+                "reason": "compacted",
+                "compacted_through_msg_id": session.compacted_through_msg_id,
+            })
+            await manager.emit_context_update(
+                session_id, session,
+                input_tokens=estimate_aged_rebuild_tokens(session),
+                output_tokens=session.tokens.get("output", 0),
+            )
+    except Exception:
+        logger.exception("proactive prune failed; proceeding without it")
+
     try:
         if manager.maybe_compact(session):
             # A mark alone never applies on the resume path (the CLI replays its own untrimmed transcript), so pay for the rebuild too: next turn drops the SDK convo and rebuilds with the cutoff + distilled summary. One respawn per compaction epoch is the price of never reaching the wall.

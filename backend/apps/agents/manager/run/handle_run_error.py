@@ -189,6 +189,14 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # 335s of ladder is a blip's worth of patience, and a closed lid or switched network outlasts it, so park and retry before conceding a turn the user never chose to end.
         from backend.apps.agents.manager.run.reconnect_resume import arm_reconnect_resume
         p_delay = arm_reconnect_resume(session, parse_retry_after(e, p_stderr_tail), is_connection_lost(e))
+        if p_delay is None:
+            # Budget spent: this turn is OVER, not parked. Leaving the flag set muzzles the
+            # terminal floor (which stays quiet for parked turns) and the ask ends in silence,
+            # which is the exact failure the floor exists to prevent. Caught live on a rate-limited
+            # Gemini run, 2026-08-20: status=completed, awaiting_reconnect=True, attempts=3, and
+            # not one word to the user.
+            from backend.apps.agents.manager.run.reconnect_resume import clear_reconnect_wait
+            clear_reconnect_wait(session)
         if p_delay is not None:
             logger.info(f"Agent {session_id}: connection lost past the in-turn budget; retrying in {p_delay}s")
             await ws_manager.send_to_session(session_id, "agent:reconnect_wait", {
