@@ -64,13 +64,6 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
             if p_tail:
                 logger.info(f"continuation for {session_id} superseded by a user message during the {delay_s}s wait")
                 return
-        # Defence in depth against the resurrection above: the flag may have been armed before the
-        # stop, or set by a path that never learned about it. A stopped session is the user's
-        # decision and outranks any self-heal we queued.
-        p_now = self.sessions.get(session_id)
-        if p_now is None or p_now.status in ("stopped", "error"):
-            logger.info(f"continuation for {session_id} stood down: session is {getattr(p_now, 'status', 'gone')}")
-            return
         try:
             await self.send_message(session_id, prompt, hidden=True)
         except Exception:
@@ -357,10 +350,7 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     p_cont = session.pending_continuation_prompt or "Continue."
                     session.pending_continuation = False
                     session.pending_continuation_prompt = None
-                    # Never relabel a session the user stopped; that flip is what let the error path
-                    # hand a dead agent back to the dispatcher as if it were healthy.
-                    if session.status != "stopped":
-                        session.status = "completed"
+                    session.status = "completed"
                     p_cont_delay = int(getattr(session, "pending_continuation_delay_s", 0) or 0)
                     session.pending_continuation_delay_s = 0
                     asyncio.create_task(self.dispatch_hidden_continuation(session_id, p_cont, p_cont_delay))

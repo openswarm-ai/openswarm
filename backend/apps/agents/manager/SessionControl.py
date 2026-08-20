@@ -43,17 +43,6 @@ class SessionControl(AgentManagerProtocol):
 
             # Only a LIVE turn can be stopped. A finished session's task lingers in the registry, and shutdown stops every task it finds, so an unconditional flip relabelled every completed chat "stopped" on restart and hung a Resume button off a conversation that was already answered.
             p_was_live = session.status in ("running", "waiting_approval")
-            # Stop must disarm every queued injection, not just the live turn. A self-heal, nudge or
-            # retry armed moments earlier survives the stop, sleeps out its delay (up to 15 minutes)
-            # and then sends itself, which is how a stopped agent walks back from the dead minutes
-            # later and starts typing (field report 2026-08-20: "it'll resurrect itself and pop up
-            # out of nowhere"). Cleared unconditionally: a finished session with a stale flag would
-            # resurrect just as happily.
-            session.pending_continuation = False
-            session.pending_continuation_prompt = None
-            session.pending_continuation_delay_s = 0
-            session.pending_continuation_toolless = False
-            session.awaiting_reconnect = False
             if p_was_live:
                 session.status = "stopped"
                 session.needs_fresh_session = True
