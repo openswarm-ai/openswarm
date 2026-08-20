@@ -44,6 +44,26 @@ MAX_CONCURRENT_TURNS = int(os.environ.get("OSW_MAX_CONCURRENT_TURNS", "8") or "0
 
 class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnRunner, RunOptions, RunSupport):
     @typechecked
+    async def dispatch_hidden_continuation(self, session_id: str, prompt: str, delay_s: int) -> None:
+        """Send the self-heal continuation after delay_s (codex rotation windows need ~75s; an
+        instant retry lands inside the same window). A user message during the wait wins: it
+        already resumes the work, so the stale continuation quietly stands down."""
+        if delay_s > 0:
+            p_before = len(getattr(self.sessions.get(session_id), "messages", []) or [])
+            await asyncio.sleep(delay_s)
+            p_session = self.sessions.get(session_id)
+            if p_session is None:
+                return
+            p_tail = [m for m in p_session.messages[p_before:] if getattr(m, "role", "") == "user"]
+            if p_tail:
+                logger.info(f"continuation for {session_id} superseded by a user message during the {delay_s}s wait")
+                return
+        try:
+            await self.send_message(session_id, prompt, hidden=True)
+        except Exception:
+            logger.exception(f"delayed continuation send failed for {session_id}")
+
+    @typechecked
     def __init__(self):
         self.sessions: Dict[str, AgentSession] = {}
         from backend.apps.agents.core.flight_recorder import set_sessions_provider
@@ -223,12 +243,10 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     p_continuation_prompt = session.pending_continuation_prompt or "Continue."
                     session.pending_continuation = False
                     session.pending_continuation_prompt = None
-                    asyncio.create_task(self.send_message(
-                        session_id,
-                        p_continuation_prompt,
-                        hidden=True,
-                    ))
-                    logger.info(f"Auto-continuing session {session_id} with hidden prompt")
+                    p_cont_delay = int(getattr(session, "pending_continuation_delay_s", 0) or 0)
+                    session.pending_continuation_delay_s = 0
+                    asyncio.create_task(self.dispatch_hidden_continuation(session_id, p_continuation_prompt, p_cont_delay))
+                    logger.info(f"Auto-continuing session {session_id} with hidden prompt (delay={p_cont_delay}s)")
             except Exception:
                 logger.exception("auto-continuation dispatch failed")
         except asyncio.CancelledError:
@@ -304,8 +322,10 @@ class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionContr
                     session.pending_continuation = False
                     session.pending_continuation_prompt = None
                     session.status = "completed"
-                    asyncio.create_task(self.send_message(session_id, p_cont, hidden=True))
-                    logger.info(f"Auto-continuing session {session_id} after a self-healing error path")
+                    p_cont_delay = int(getattr(session, "pending_continuation_delay_s", 0) or 0)
+                    session.pending_continuation_delay_s = 0
+                    asyncio.create_task(self.dispatch_hidden_continuation(session_id, p_cont, p_cont_delay))
+                    logger.info(f"Auto-continuing session {session_id} after a self-healing error path (delay={p_cont_delay}s)")
             except Exception:
                 logger.exception("error-path continuation dispatch failed")
         except BaseException as e:

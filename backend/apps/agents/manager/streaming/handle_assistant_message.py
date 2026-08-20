@@ -119,14 +119,31 @@ async def handle_assistant_message(
         )
         if looks_like_router_auth_error:
             from backend.apps.agents.manager.streaming.auth_retry import try_auth_self_heal
+            p_is_codex = "codex/" in lower_text or "[codex" in lower_text
             # First expiry in this ask heals silently (fresh CLI + hidden retry); the banner is
             # reserved for the second failure, when the credential is genuinely dead (ENG-294).
-            if not try_auth_self_heal(session):
-                if "codex/" in lower_text or "[codex" in lower_text:
+            # Codex retries wait ~75s so they land AFTER the 1-2 minute rotation window instead of
+            # inside it (an instant retry re-fails and burns the one-shot budget).
+            p_healed = try_auth_self_heal(session, delay_s=75 if p_is_codex else 5)
+            if p_healed and p_is_codex:
+                p_notice = Message(
+                    id=uuid4().hex,
+                    role="system",
+                    content="GPT subscription token just rotated (automatic, every couple minutes). Retrying your request automatically in about a minute, no action needed.",
+                    branch_id=session.active_branch_id,
+                )
+                session.messages.append(p_notice)
+                await ws_manager.send_to_session(session_id, "agent:message", {
+                    "session_id": session_id,
+                    "message": p_notice.model_dump(mode="json"),
+                })
+            if not p_healed:
+                if p_is_codex:
                     friendly = (
-                        "GPT subscription token expired. Open Settings → Models and click "
-                        "Reconnect on the OpenAI / GPT row to refresh, should take ~10s, "
-                        "then send your message again."
+                        "GPT subscription token is still refreshing. This usually clears on "
+                        "its own; wait a minute and send your message again. If it keeps "
+                        "happening, open Settings → Models and click Reconnect on the "
+                        "OpenAI / GPT row."
                     )
                     reason = "codex_token_expired"
                 elif "gemini-cli/" in lower_text or "[gemini" in lower_text:

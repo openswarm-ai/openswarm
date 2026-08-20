@@ -152,6 +152,8 @@ class AgentSession(BaseModel):
     suppress_recap_once: bool = False
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
+    # Seconds the auto-continuation dispatcher sleeps before sending (codex rotation windows last 1-2 min; an instant retry lands inside the same window and burns the one-shot budget).
+    pending_continuation_delay_s: int = 0
     # Memory prompt block frozen at first compose (prefix-cache discipline: mid-chat fact writes must
     # not shift the prompt bytes). Excluded from persistence so a resumed session re-snapshots fresh.
     memory_snapshot: Optional[str] = Field(default=None, exclude=True)
