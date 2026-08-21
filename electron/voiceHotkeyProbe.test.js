@@ -38,3 +38,55 @@ test('a focused bare Fn keydown arms the tiers and toggles', () => {
 test('the probe flag reaches the spawn argv', () => {
   assert.match(hotkeySrc, /spawn\(bin, noPrompt \? \['--no-prompt'\] : \[\]/);
 });
+
+// ---- The deaf-tap class (Eric, exp.20, and the same "99% of devices" report) ----
+// tapCreate hands back a valid port even with Input Monitoring DENIED, and that tap then never
+// delivers an event. So "the watcher process is alive" was read as "fn works" by every layer above
+// it, and a permanently dead key looked identical to a key nobody had pressed yet. Measured live on
+// a dev machine: `p denied` followed by a successful `t ok`.
+
+test('the watcher reports its permission instead of leaving it to be inferred', () => {
+  assert.match(swiftSrc, /print\(hidGranted \? "p granted" : "p denied"\)/,
+    'permission must be stated on stdout, not guessed from the process still being alive');
+});
+
+test('a watcher without the grant refuses to run, so alive means working', () => {
+  const guard = swiftSrc.split('if !hidGranted {')[1] || '';
+  assert.match(guard, /e no-permission/);
+  assert.match(guard, /exit\(0\)/);
+  const guardAt = swiftSrc.indexOf('if !hidGranted {');
+  assert.ok(guardAt > -1 && guardAt < swiftSrc.indexOf('guard armTap()'),
+    'the refusal must come before the tap, or a deaf tap still gets created');
+});
+
+test('the grant is REQUESTED on the intent path and never on the boot probe', () => {
+  assert.match(swiftSrc, /if !hidGranted && !isProbe \{\s*\n\s*hidGranted = IOHIDRequestAccess\(kIOHIDRequestTypeListenEvent\)/,
+    'a denied machine can only be fixed by asking; the probe must still stay silent (ENG-341)');
+});
+
+test('the tap proves it is on the wire, separately from any fn press', () => {
+  assert.match(swiftSrc, /if !wireAlive \{/);
+  assert.match(swiftSrc, /print\("w"\)/);
+});
+
+test('every way fn can fail tells the user which chord still works', () => {
+  for (const reason of ['input-monitoring-denied', 'no-watcher-binary', 'tap-deaf']) {
+    assert.ok(hotkeySrc.includes(reason), `unhandled fn failure mode: ${reason}`);
+  }
+  assert.match(hotkeySrc, /notifyPrimaryUnusable\(`watcher-exit-\$\{code\}`\)/,
+    'a watcher that exits leaves no primary, so it must notify too');
+  assert.match(hotkeySrc, /fallback: fallbackCombo\.accel/,
+    'the notice is only useful if it names the chord that works');
+});
+
+test('the notice is remembered, not just fired', () => {
+  // Arming happens at boot and the renderer subscribes later, so a pure event reaches nobody.
+  assert.match(hotkeySrc, /lastHotkeyIssue = \{ ok: false, reason, fallback: fallbackCombo\.accel \}/);
+  assert.match(hotkeySrc, /ipcMain\.handle\('voice:hotkey-issue', \(\) => lastHotkeyIssue\)/);
+});
+
+test('a key that starts working retracts its own warning', () => {
+  const provenBlock = hotkeySrc.split("fn watcher PROVEN")[1].slice(0, 400);
+  assert.match(provenBlock, /lastHotkeyIssue = null/);
+  assert.match(provenBlock, /voice:primary-usable/);
+});

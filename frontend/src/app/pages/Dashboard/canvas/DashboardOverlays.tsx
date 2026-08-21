@@ -8,6 +8,7 @@ import WorkflowRunningToast from '@/app/pages/Workflows/WorkflowRunningToast';
 import WorkflowNoticeToast from '@/app/pages/Workflows/WorkflowNoticeToast';
 import MissedRunsToast from '@/app/pages/Workflows/MissedRunsToast';
 import ProviderHealthToast from '@/app/components/overlays/ProviderHealthToast';
+import VoiceHotkeyToast from '@/app/components/overlays/VoiceHotkeyToast';
 import ScheduleOfferToast from '@/app/components/nudges/ScheduleOfferToast';
 import PrepKeepToast from '@/app/components/nudges/PrepKeepToast';
 import type { AgentSession } from '@/shared/state/agentsSlice';
@@ -167,6 +168,7 @@ const DashboardOverlays: React.FC<DashboardOverlaysProps> = ({
 
       {/* Launch nudge when a subscription login died while the app was closed */}
       <ProviderHealthToast />
+      <VoiceHotkeyToast />
 
       {/* One-shot dependency beat: first completed personalized starter offers to become a weekly job */}
       <ScheduleOfferToast dashboardId={dashboardId} />

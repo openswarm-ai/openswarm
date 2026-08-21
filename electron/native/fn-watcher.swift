@@ -5,21 +5,43 @@ import CoreGraphics
 import Foundation
 import IOKit.hid
 
-// --no-prompt: the boot-time probe must never raise the Input Monitoring TCC prompt (ENG-341);
-// IOHIDCheckAccess answers silently, so granted machines arm and everyone else exits clean.
-if CommandLine.arguments.contains("--no-prompt")
-    && IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
+// Permission is REPORTED, never inferred. A live process used to be the only evidence anyone had
+// that the tap worked, and that read is simply wrong: tapCreate can hand back a port that never
+// delivers an event, which is how a dead fn key looked identical to a key nobody pressed.
+let isProbe = CommandLine.arguments.contains("--no-prompt")
+var hidGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+// The probe stays silent (ENG-341 keeps the install flow prompt-free), but a user who is actually
+// trying to dictate has earned the one prompt that can fix it. Without this the grant could only
+// ever be discovered, never requested, so a denied machine stayed denied forever.
+if !hidGranted && !isProbe {
+    hidGranted = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+}
+print(hidGranted ? "p granted" : "p denied")
+fflush(stdout)
+
+// Without the grant the tap is DEAF, not absent: tapCreate happily returns a port that never
+// delivers an event, which is exactly how a dead fn key passed for a live one. Refuse to run in
+// that state so that "watcher alive" means "fn works" and nothing downstream has to guess.
+if !hidGranted {
     print("e no-permission")
     fflush(stdout)
     exit(0)
 }
 
 var fnDown = false
+// Proof the tap is on the wire at all. Without it, "no fn events" is ambiguous between a deaf tap
+// and an untouched key, and that ambiguity is what made this unfixable from a log.
+var wireAlive = false
 var tapRef: CFMachPort?
 var srcRef: CFRunLoopSource?
 
 let callback: CGEventTapCallBack = { _, type, event, _ in
     if type == .flagsChanged {
+        if !wireAlive {
+            wireAlive = true
+            print("w")
+            fflush(stdout)
+        }
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         if keycode == 63 {
             let down = event.flags.contains(.maskSecondaryFn)
@@ -60,6 +82,8 @@ guard armTap() else {
     fflush(stdout)
     exit(1)
 }
+print("t ok")
+fflush(stdout)
 
 // The parent pokes "r\n" when the app gains focus: another app's tap registered after ours sits
 // AHEAD of ours (head-insert) and can eat fn before we see it, with no disable event to catch, so

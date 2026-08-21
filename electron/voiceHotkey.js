@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, systemPreferences } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, shell, systemPreferences } = require('electron');
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -28,6 +28,8 @@ const fs = require('fs');
 const DEFAULT_COMBO = process.platform === 'darwin' ? 'Fn' : process.platform === 'win32' ? 'Ctrl+Meta' : 'Ctrl+Shift+d';
 const LEGACY_COMBO = process.platform === 'darwin' ? 'Meta+Shift+d' : 'Ctrl+Shift+d';
 const TAP_FRESH_MS = 200;
+// How long a tap may stay silent before we stop calling it "awaiting proof" and call it broken.
+const FN_PROOF_GRACE_MS = 60_000;
 const FALLBACK_DEFER_MS = 90;
 
 // "Meta+Shift+d" (renderer parts format, same as new_agent_shortcut) -> matcher pieces.
@@ -101,6 +103,11 @@ function installVoiceHotkey(getMainWindow) {
   let fallbackCombo = combo.special ? parseCombo(LEGACY_COMBO) : combo;
   let tapProven = false;
   let fnProven = false;
+  // What the watcher TOLD us, as opposed to what we guessed from it still being alive.
+  let fnPermission = 'unknown';
+  let fnWireAlive = false;
+  let unusableNotified = false;
+  let lastHotkeyIssue = null;
   let lastTapKeyMs = 0;
   let registeredAccel = null;
 
@@ -118,6 +125,23 @@ function installVoiceHotkey(getMainWindow) {
       if (combo.special !== 'fn' && Date.now() - lastTapKeyMs < TAP_FRESH_MS) return;
       send('voice:toggle');
     }, FALLBACK_DEFER_MS);
+  };
+
+  // A dictation key that does nothing, forever, with nothing said, is the actual bug here: fn is
+  // the default, only the native watcher can see it, and app-scoped mode registers no global
+  // fallback, so a deaf tap left the user with no trigger AND no signal. Whenever the primary
+  // cannot serve, say so once and name the chord that does work right now.
+  const notifyPrimaryUnusable = (reason) => {
+    if (unusableNotified || primaryProven()) return;
+    unusableNotified = true;
+    // Remembered, not just fired: arming happens at boot and the renderer subscribes later, so a
+    // pure event is delivered to nobody and the warning goes silent again (caught live).
+    lastHotkeyIssue = { ok: false, reason, fallback: fallbackCombo.accel };
+    console.log(`[voice] fn primary unusable (${reason}); dictation falls back to ${fallbackCombo.accel}`);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('voice:primary-unusable', { reason, fallback: fallbackCombo.accel });
+    }
   };
 
   // Only the tier that can actually SERVE the primary combo may retire the fallbacks: the uiohook
@@ -142,7 +166,11 @@ function installVoiceHotkey(getMainWindow) {
   const startFnWatcher = (noPrompt) => {
     if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) return;
     resolveFnWatcherBinary((bin) => {
-      if (!bin) { console.log('[voice] no fn watcher binary, legacy hotkey stays primary'); return; }
+      if (!bin) {
+        console.log('[voice] no fn watcher binary, legacy hotkey stays primary');
+        notifyPrimaryUnusable('no-watcher-binary');
+        return;
+      }
       if (combo.special !== 'fn' || fnProc) return; // rebound or raced while compiling
       startFnWatcherWith(bin, noPrompt === true);
     });
@@ -187,11 +215,27 @@ function installVoiceHotkey(getMainWindow) {
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl).trim();
         buf = buf.slice(nl + 1);
-        if (line === 'd' || line === 'u') {
+        if (line === 'p granted' || line === 'p denied') {
+          fnPermission = line.slice(2);
+          console.log(`[voice] fn watcher Input Monitoring: ${fnPermission}`);
+          if (fnPermission === 'denied') notifyPrimaryUnusable('input-monitoring-denied');
+        } else if (line === 't ok') {
+          console.log('[voice] fn watcher tap created');
+        } else if (line === 'w') {
+          fnWireAlive = true;
+          console.log('[voice] fn watcher wire alive (tap is receiving key events)');
+        } else if (line === 'd' || line === 'u') {
           if (!fnProven) {
             fnProven = true;
             unregisterFallbackShortcut();
             console.log('[voice] fn watcher PROVEN (events flowing), fn hold-to-talk enabled');
+            // Withdraw the fallback notice, or a key that started working keeps telling the user it is broken.
+            lastHotkeyIssue = null;
+            if (unusableNotified) {
+              unusableNotified = false;
+              const w = getMainWindow();
+              if (w && !w.isDestroyed()) w.webContents.send('voice:primary-usable');
+            }
           }
           if (combo.special === 'fn') send(line === 'd' ? 'voice:hold-down' : 'voice:hold-up');
         } else if (line.startsWith('e')) {
@@ -201,6 +245,7 @@ function installVoiceHotkey(getMainWindow) {
     });
     fnProc.on('exit', (code) => {
       console.log(`[voice] fn watcher exited code=${code}; legacy hotkey resumes`);
+      notifyPrimaryUnusable(`watcher-exit-${code}`);
       fnProc = null;
       fnProven = false;
       registerVoiceShortcut();
@@ -210,6 +255,12 @@ function installVoiceHotkey(getMainWindow) {
       app.on('will-quit', () => { try { fnProc && fnProc.kill('SIGKILL'); } catch (_) {} });
     }
     console.log('[voice] fn watcher armed (awaiting first event to prove Input Monitoring)');
+    // Armed is not working. If the tap is still deaf after a spell of real use, that is a dead key,
+    // not a shy one, and the user deserves to hear it rather than keep pressing a key that no
+    // longer does anything (it regressed silently once already).
+    setTimeout(() => {
+      if (fnProc && !primaryProven() && !fnWireAlive) notifyPrimaryUnusable('tap-deaf');
+    }, FN_PROOF_GRACE_MS);
     // macOS's own Globe-key action (emoji picker by default) fires on a quick fn tap alongside us;
     // tell the renderer once so it can point the user at "Press Globe key to: Do Nothing".
     require('child_process').exec('defaults read com.apple.HIToolbox AppleFnUsageType', (err, out) => {
@@ -371,6 +422,19 @@ function installVoiceHotkey(getMainWindow) {
     if (!worksAnywhere) unregisterFallbackShortcut();
     else if (tiersArmed && BrowserWindow.getFocusedWindow() === null) registerVoiceShortcut();
   });
+
+  // The grant is the ONLY thing that fixes a denied fn key, and macOS will not re-prompt once the
+  // user has said no, so hand them the exact pane instead of a dead key and a shrug.
+  ipcMain.handle('voice:open-input-monitoring', () => {
+    if (process.platform !== 'darwin') return false;
+    try {
+      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent');
+      return true;
+    } catch (_) { return false; }
+  });
+
+  // Pull, so a renderer that mounts (or reloads) after arming still learns the truth.
+  ipcMain.handle('voice:hotkey-issue', () => lastHotkeyIssue);
 
   ipcMain.handle('voice:hold-capable', () => tapProven || fnProven);
   // Settings' "Hold to talk" fires the Accessibility prompt; Input Monitoring has no Electron API,

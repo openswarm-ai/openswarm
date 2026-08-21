@@ -127,6 +127,20 @@ contextBridge.exposeInMainWorld('openswarm', {
     ipcRenderer.on('voice:hold-up', up);
     return () => { ipcRenderer.removeListener('voice:hold-down', down); ipcRenderer.removeListener('voice:hold-up', up); };
   },
+  // Fires when the dictation primary (fn) cannot work, with the chord that does, and again if it
+  // recovers. Without a surface for this a denied grant was a key that silently did nothing forever.
+  onVoiceHotkeyIssue: (cb) => {
+    const bad = (_e, info) => cb({ ok: false, ...(info || {}) });
+    const good = () => cb({ ok: true });
+    ipcRenderer.on('voice:primary-unusable', bad);
+    ipcRenderer.on('voice:primary-usable', good);
+    return () => {
+      ipcRenderer.removeListener('voice:primary-unusable', bad);
+      ipcRenderer.removeListener('voice:primary-usable', good);
+    };
+  },
+  openInputMonitoringSettings: () => ipcRenderer.invoke('voice:open-input-monitoring'),
+  getVoiceHotkeyIssue: () => ipcRenderer.invoke('voice:hotkey-issue'),
   // Fires once at fn-watcher arm when macOS's own Globe-key action is still active (emoji picker on tap).
   onVoiceGlobeConflict: (cb) => {
     const h = () => cb();
