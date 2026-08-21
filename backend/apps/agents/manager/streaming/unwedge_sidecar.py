@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 # the recovery as a hiccup rather than a hang. Anything that legitimately blocks (a human, a
 # delegated run) is exempt by name below, so this deadline never races real work.
 WEDGE_SECONDS = 25.0
-# A sidecar whose heartbeat still beats is ALIVE with one slow tool, not wedged; give it this long
-# before concluding the call is hung anyway (measured: 5 healthy-sidecar kills in one loaded evening
-# were every one of Haik's "MCP disconnected" reports, ENG-353).
+# A sidecar whose heartbeat still beats is ALIVE with one slow tool, not wedged (measured: 5 healthy-sidecar kills in one loaded evening were every one of Haik's "MCP disconnected" reports, ENG-353); it is re-checked here.
 LATE_WEDGE_SECONDS = 120.0
+# Still heartbeating at the late deadline means a genuinely long call; only this long dies regardless, so a hung per-call thread cannot hang the session forever (ENG-368).
+HARD_WEDGE_SECONDS = 300.0
 HEARTBEAT_FRESH_S = 12.0
 
 P_CORE_PREFIX = "mcp__openswarm-core__"
@@ -93,10 +93,9 @@ def heartbeat_age(session_id: str) -> float:
 
 @typechecked
 def wedge_verdict(outstanding_s: float, hb_age: float) -> str:
-    """kill | extend | wait. Stale heartbeat = the PROCESS is wedged, kill at the first deadline.
-    Fresh heartbeat = alive with a slow call: extend once, and only a call still outstanding at the
-    late deadline dies (a hung per-call thread must not hang the session forever)."""
-    if outstanding_s >= LATE_WEDGE_SECONDS:
+    """kill | extend. A stale heartbeat is a wedged PROCESS: kill at whichever deadline sees it. A fresh
+    one is a slow call: keep extending until the hard ceiling (a hung thread must not hang the session)."""
+    if outstanding_s >= HARD_WEDGE_SECONDS:
         return "kill"
     if hb_age > HEARTBEAT_FRESH_S:
         return "kill"
@@ -177,10 +176,11 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         outstanding = time.time() - started
         verdict = wedge_verdict(outstanding, heartbeat_age(session_id))
         if verdict == "extend":
+            p_next = LATE_WEDGE_SECONDS if outstanding < LATE_WEDGE_SECONDS else HARD_WEDGE_SECONDS
             logger.info(
                 f"Agent {session_id}: core tool {tool_name} outstanding {outstanding:.0f}s but the "
-                f"sidecar heartbeat is fresh (alive, slow); re-checking at {LATE_WEDGE_SECONDS:.0f}s")
-            loop.call_later(LATE_WEDGE_SECONDS - outstanding, p_check)
+                f"sidecar heartbeat is fresh (alive, slow); re-checking at {p_next:.0f}s")
+            loop.call_later(max(1.0, p_next - outstanding), p_check)
             return
         # ps + kill are blocking; keep them off the event loop. A daemon thread, not the loop's
         # default executor: executor workers are non-daemon and a per-test loop that closes without

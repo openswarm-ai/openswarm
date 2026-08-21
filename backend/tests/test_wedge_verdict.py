@@ -4,6 +4,7 @@ kills in one loaded evening were every one of the "MCP disconnected" reports."""
 import os
 import tempfile
 from backend.apps.agents.manager.streaming.unwedge_sidecar import (
+    HARD_WEDGE_SECONDS,
     HEARTBEAT_FRESH_S,
     LATE_WEDGE_SECONDS,
     WEDGE_SECONDS,
@@ -20,8 +21,12 @@ def test_fresh_heartbeat_extends_instead_of_killing():
     assert wedge_verdict(WEDGE_SECONDS + 1, 2.0) == "extend"
 
 
-def test_late_deadline_kills_even_with_fresh_heartbeat():
-    assert wedge_verdict(LATE_WEDGE_SECONDS + 1, 0.5) == "kill"
+def test_late_deadline_with_fresh_heartbeat_extends_to_the_hard_ceiling():
+    # ENG-368: an alive sidecar mid-way through a long call is not wedged; only the hard ceiling ends it.
+    assert wedge_verdict(LATE_WEDGE_SECONDS + 1, 0.5) == "extend"
+    assert wedge_verdict(LATE_WEDGE_SECONDS + 1, HEARTBEAT_FRESH_S + 1) == "kill"
+    assert wedge_verdict(HARD_WEDGE_SECONDS + 1, 0.5) == "kill"
+    assert HARD_WEDGE_SECONDS > LATE_WEDGE_SECONDS > WEDGE_SECONDS
 
 
 def test_missing_heartbeat_reads_as_wedged():
