@@ -78,11 +78,15 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     p_repeat = getattr(session, "empty_finish_total", 0) >= 1
     session.empty_finish_total = getattr(session, "empty_finish_total", 0) + 1
     p_floor = int((0.4 if p_repeat else 0.8) * compact_trigger_tokens(session))
+    # Only rebuild when the rebuild would actually BUY something. Every rebuild re-sends an authored recap, and on the subscription lane that is a refusable request; rebuilding on every repeat quit above the 40% floor is what took fleet policy blocks from 1 install to 7 the day exp.16 shipped this. A quit right after a rebuild has nothing left to reclaim so it stops paying, while a quit after history genuinely regrew still compacts, which is the ENG-354 stuck-forever case. Reclaim, not a token watermark: session.tokens["input"] still reads the pre-compaction value until a turn reports, so anything keyed on it re-fires anyway.
+    from backend.apps.agents.manager.session.proactive_prune import MIN_RECLAIM_TOKENS, estimate_aged_rebuild_tokens
+    # Measured against the REPORTED input, not our local history: a rebuild's win is discarding the CLI's own untrimmed transcript (which is what input counts) and replacing it with our compact recap. Comparing our history to itself said "nothing to reclaim" for exactly the ENG-354 sessions whose bloat lives in the CLI.
+    p_reclaim = p_input - estimate_aged_rebuild_tokens(session)
     # Drill seam: the ENG-354 negative control runs the exp.14 behavior (no compact) on identical bits.
     p_disabled = p_os.environ.get("OSW_DISABLE_EMPTY_FINISH_COMPACT") == "1"
-    if not p_disabled and p_input >= p_floor and maybe_compact(session, force=True):
+    if not p_disabled and p_input >= p_floor and p_reclaim >= MIN_RECLAIM_TOKENS and maybe_compact(session, force=True):
         session.needs_fresh_session = True
-        logger.warning(f"Agent {session_id}: empty finish at {p_input} input tokens (repeat={p_repeat}); compacted history before the nudge")
+        logger.warning(f"Agent {session_id}: empty finish at {p_input} input tokens (repeat={p_repeat}); compacted history before the nudge, reclaiming ~{p_reclaim}")
     session.empty_finish_nudges += 1
     session.pending_continuation = True
     p_final = session.empty_finish_nudges >= NUDGE_HARD_CAP
