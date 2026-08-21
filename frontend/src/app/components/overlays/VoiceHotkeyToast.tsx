@@ -15,6 +15,7 @@ const PRETTY: Record<string, string> = {
   'input-monitoring-denied': 'OpenSwarm does not have Input Monitoring permission',
   'tap-deaf': 'the fn key is not reaching OpenSwarm',
   'no-watcher-binary': 'the fn key helper is missing',
+  'native-tap-unavailable': 'the shortcut helper could not start',
 };
 
 export default function VoiceHotkeyToast() {

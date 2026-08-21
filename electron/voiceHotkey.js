@@ -122,7 +122,12 @@ function installVoiceHotkey(getMainWindow) {
   // handles none, and ambient typing was suppressing the legacy chord entirely (caught live).
   const sendFallbackToggle = () => {
     setTimeout(() => {
-      if (combo.special !== 'fn' && Date.now() - lastTapKeyMs < TAP_FRESH_MS) return;
+      if (combo.special !== 'fn' && Date.now() - lastTapKeyMs < TAP_FRESH_MS) {
+        console.log('[voice] fallback toggle suppressed (a live tap is serving the primary)');
+        return;
+      }
+      const focused = BrowserWindow.getFocusedWindow() !== null;
+      console.log(`[voice] fallback toggle -> voice:toggle (focused=${focused}, anywhere=${worksAnywhere})`);
       send('voice:toggle');
     }, FALLBACK_DEFER_MS);
   };
@@ -349,7 +354,11 @@ function installVoiceHotkey(getMainWindow) {
   const armNativeTiers = () => {
     if (tiersArmed) return;
     tiersArmed = true;
-    tryStartNativeTap();
+    const tapOk = tryStartNativeTap();
+    // Ctrl+Win is the Windows fn-equivalent and ONLY this tap can see it, so a tap that never loads
+    // is the same dead key as a deaf fn watcher. Off macOS there is no TCC to blame, which is
+    // exactly why it would otherwise fail with nothing said at all.
+    if (tapOk === false && combo.special === 'ctrlmeta') notifyPrimaryUnusable('native-tap-unavailable');
     startFnWatcher();
     registerVoiceShortcut();
   };
@@ -360,7 +369,25 @@ function installVoiceHotkey(getMainWindow) {
     // fn immediately; ungranted machines exit silently and never see a boot-time TCC prompt (ENG-341).
     else if (combo.special === 'fn') startFnWatcher(true);
   } catch (_) {}
-  app.on('browser-window-focus', () => { unregisterFallbackShortcut(); pokeFnWatcher(); });
+  // Coming back from System Settings is the moment a denial most likely just became a grant, and a
+  // NEW child process gets a fresh TCC verdict, so retry there instead of demanding a relaunch.
+  let lastGrantRetryMs = 0;
+  // Gated on the user having actually gone to the pane. Retrying on EVERY focus re-raised the
+  // notice the user had just dismissed, which is its own small betrayal, and spawned a doomed
+  // watcher each time for a grant nobody was changing.
+  let sentToGrantPane = false;
+  const retryFnAfterGrant = () => {
+    if (!sentToGrantPane) return;
+    if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) return;
+    const now = Date.now();
+    if (now - lastGrantRetryMs < 5000) return;
+    lastGrantRetryMs = now;
+    sentToGrantPane = false;
+    unusableNotified = false;
+    lastHotkeyIssue = null;
+    startFnWatcher(true);
+  };
+  app.on('browser-window-focus', () => { unregisterFallbackShortcut(); pokeFnWatcher(); retryFnAfterGrant(); });
   app.on('browser-window-blur', registerVoiceShortcut);
 
   // The focused-window relay matches the FALLBACK chord: special primaries (fn, Ctrl+Win) are
@@ -383,6 +410,11 @@ function installVoiceHotkey(getMainWindow) {
       if (input.type !== 'keyDown' || input.isAutoRepeat) return;
       // A bare Fn keydown Chromium happens to deliver while focused is both dictation intent
       // (full-arm the tiers, prompt lands with context) and a press that must WORK right now.
+      if (input.key === 'Fn' || input.code === 'Fn') {
+        // Whether Chromium delivers a bare Fn at all decides if a permission-free fn is even
+        // possible; on most Macs it never arrives, which is why the native watcher exists.
+        console.log('[voice] Chromium delivered a bare Fn key event to the focused window');
+      }
       if (combo.special === 'fn' && !primaryProven() && (input.key === 'Fn' || input.code === 'Fn')) {
         armNativeTiers();
         sendFallbackToggle();
@@ -390,6 +422,7 @@ function installVoiceHotkey(getMainWindow) {
         return;
       }
       if (inputMatchesCombo(input)) {
+        console.log(`[voice] fallback chord seen in focused window (${fallbackCombo.accel}), primaryProven=${primaryProven()}`);
         if (!primaryProven()) sendFallbackToggle();
         event.preventDefault();
       }
@@ -429,6 +462,7 @@ function installVoiceHotkey(getMainWindow) {
     if (process.platform !== 'darwin') return false;
     try {
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent');
+      sentToGrantPane = true;
       return true;
     } catch (_) { return false; }
   });
