@@ -405,9 +405,16 @@ function installVoiceHotkey(getMainWindow) {
       (!c.mods.shift || input.shift);
   };
 
+  const relayProven = new Set();
   const installVoiceHoldRelay = (contents) => {
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+      // The relay is the ONLY path a chord has while app-scoped, so knowing it is actually wired
+      // beats inferring it from an absence of complaints.
+      if (!relayProven.has(contents.id)) {
+        relayProven.add(contents.id);
+        console.log(`[voice] relay live on webContents ${contents.id} (${contents.getType()}), first key=${input.key}`);
+      }
       // A bare Fn keydown Chromium happens to deliver while focused is both dictation intent
       // (full-arm the tiers, prompt lands with context) and a press that must WORK right now.
       if (input.key === 'Fn' || input.code === 'Fn') {
