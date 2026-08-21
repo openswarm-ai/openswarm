@@ -215,14 +215,8 @@ async function p_bootServer(resourceDir, userDataDir, extended = true) {
 // settled-rejected promise forever so every later call kept throwing "model-downloading" even after
 // the model finished. Clearing on rejection here lets the next call retry cleanly.
 async function ensureServer(resourceDir, userDataDir) {
-  // The accuracy-first default may not be on disk yet: pull it in the background while the bundled
-  // fallback serves this dictation; the model-switch check below hot-swaps once it lands. Only runs
-  // when the user actually dictates, so an idle install never silently downloads 190MB.
-  if (!whisperModels.isInstalled(userDataDir, selectedModelId)
-      && !(process.env.OPENSWARM_WHISPER_MODEL && fs.existsSync(process.env.OPENSWARM_WHISPER_MODEL))
-      && !whisperModels.downloadStatus().downloading) {
-    whisperModels.downloadModel(userDataDir, selectedModelId);
-  }
+  // The user's pick may still be missing (boot prefetch running or failed): pull it now, let whatever IS installed serve this dictation, and the model-switch check below hot-swaps once it lands.
+  prefetchModel(resourceDir, userDataDir);
   // A warm server is only reusable if it holds the file we would load now: a model switch, or the
   // user's pick finishing its download while a fallback was serving, has to re-boot.
   if (proc && port && resolveModel(resourceDir, userDataDir) !== loadedModelFile) stopServer();
@@ -255,6 +249,16 @@ async function transcribe(resourceDir, userDataDir, wavBuffer) {
   if (!res.ok) throw new Error(`whisper-http-${res.status}`);
   const text = (await res.text()).trim();
   return text;
+}
+
+// Shipped builds carry no model (build-whisper.sh stages only the server), so a fresh install used to pay the 190MB download under its first dictation press; pulled at boot instead, and refused where no engine could ever run it.
+function prefetchModel(resourceDir, userDataDir) {
+  if (!fs.existsSync(resolveBinary(resourceDir))) return false;
+  if (process.env.OPENSWARM_WHISPER_MODEL && fs.existsSync(process.env.OPENSWARM_WHISPER_MODEL)) return false;
+  if (whisperModels.isInstalled(userDataDir, selectedModelId)) return false;
+  if (whisperModels.downloadStatus().downloading) return false;
+  whisperModels.downloadModel(userDataDir, selectedModelId);
+  return true;
 }
 
 // A user who has never dictated should not pay a model-resident whisper-server for 10 minutes
@@ -327,4 +331,4 @@ async function reprimeAfterWake() {
   return true;
 }
 
-module.exports = { ensureServer, warmInBackground, reprimeAfterWake, transcribe, stopServer, isWarm, setModel, setDictionary, selectedModel, resolveBinary, resolveModel, modelStatus, markUsed, hasBeenUsed };
+module.exports = { ensureServer, warmInBackground, prefetchModel, reprimeAfterWake, transcribe, stopServer, isWarm, setModel, setDictionary, selectedModel, resolveBinary, resolveModel, modelStatus, markUsed, hasBeenUsed };

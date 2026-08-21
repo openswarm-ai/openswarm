@@ -2671,6 +2671,8 @@ app.whenReady().then(async () => {
     // Warm the dictation model well after the window is up, so the first phrase transcribes at the
     // steady-state speed instead of waiting out a cold model load under the user's keypress.
     const warmDelay = setTimeout(() => {
+      const fetching = whisperService.prefetchModel(voiceResourceDir(), voiceUserDataDir());
+      if (fetching) console.log('[voice] prefetching the dictation model so the first press never waits on a download');
       const started = whisperService.warmInBackground(voiceResourceDir(), voiceUserDataDir());
       console.log(started ? '[voice] warming whisper in background' : '[voice] skipping boot warm (no model, or dictation never used on this install)');
     }, 8000);

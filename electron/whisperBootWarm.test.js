@@ -50,3 +50,39 @@ test('marker alone does not defeat the no-model download guard', () => {
   whisperService.markUsed(data);
   assert.strictEqual(whisperService.warmInBackground(res, data), false);
 });
+
+// The boot prefetch is the other half: it may download, but only where a whisper-server can ever
+// run the file, never over an env override, never twice, and never once the pick is already on disk.
+test('prefetch refuses when no whisper-server binary is reachable', () => {
+  const { res, data } = freshDirs();
+  const saved = process.env.OPENSWARM_WHISPER_BIN;
+  delete process.env.OPENSWARM_WHISPER_BIN;
+  try {
+    if (fs.existsSync('/opt/homebrew/bin/whisper-server')) return; // a brew install on this machine is a reachable engine; the next test covers the decision
+    assert.strictEqual(whisperService.prefetchModel(res, data), false);
+  } finally {
+    if (saved !== undefined) process.env.OPENSWARM_WHISPER_BIN = saved;
+  }
+});
+
+test('prefetch skips an env-pinned model and an already-installed pick', () => {
+  const { res, data } = freshDirs();
+  const fakeBin = path.join(res, 'whisper-server');
+  fs.writeFileSync(fakeBin, '#!/bin/sh\n');
+  const fakeModel = path.join(res, 'fake-model.bin');
+  fs.writeFileSync(fakeModel, 'x');
+  process.env.OPENSWARM_WHISPER_MODEL = fakeModel;
+  try {
+    assert.strictEqual(whisperService.prefetchModel(res, data), false);
+  } finally {
+    delete process.env.OPENSWARM_WHISPER_MODEL;
+  }
+  const whisperModels = require('./voice/whisperModels');
+  const m = whisperModels.MODELS.find((x) => x.id === whisperModels.DEFAULT_MODEL_ID);
+  fs.mkdirSync(path.join(data, 'whisper'), { recursive: true });
+  const f = fs.openSync(path.join(data, 'whisper', m.file), 'w');
+  fs.ftruncateSync(f, m.bytes);
+  fs.closeSync(f);
+  assert.strictEqual(whisperModels.isInstalled(data, m.id), true);
+  assert.strictEqual(whisperService.prefetchModel(res, data), false);
+});
