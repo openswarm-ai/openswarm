@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppSelector } from '@/shared/hooks';
+import { store } from '@/shared/state/store';
+import { selectViewportCoveringCardId } from '@/shared/state/dashboardLayoutSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
 import { clipboardCardToSelectedElement } from '@/app/pages/AgentChat/ChatInput/hooks/pasteCards';
@@ -239,12 +241,15 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     }
   }, [toolbarOpen, toolbarPrefill, toolbarPrefillMode]);
 
-  // Dictation with no field focused lands HERE instead of vanishing: the composer opens with the transcript typed in, unsent.
+  // Dictation with no field focused lands HERE instead of vanishing: the composer opens with the transcript typed in, unsent. Claiming = cancelling the event; a card that owns the screen hides this composer, so the words stay unclaimed and fall to the clipboard instead of into a toolbar nobody can see.
   useEffect(() => {
     if (!isActive) return;
     const onDictation = (e: Event): void => {
       const text = (e as CustomEvent).detail?.text;
-      if (typeof text === 'string' && text.trim()) handleStarter(text);
+      if (typeof text !== 'string' || !text.trim()) return;
+      if (selectViewportCoveringCardId(store.getState())) return;
+      e.preventDefault();
+      handleStarter(text);
     };
     window.addEventListener('openswarm:dictation-fallback', onDictation);
     return () => window.removeEventListener('openswarm:dictation-fallback', onDictation);

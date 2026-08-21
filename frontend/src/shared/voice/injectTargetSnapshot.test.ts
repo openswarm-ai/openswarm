@@ -4,7 +4,12 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { setInjectSnapshot, clearInjectSnapshot, takeInjectSnapshot, isUsableTarget } from './injectTargetSnapshot.ts';
 
-const field = (connected = true) => ({ tagName: 'TEXTAREA', isConnected: connected, isContentEditable: false }) as unknown as HTMLElement;
+// Rendered by default: the predicate refuses anything with no layout box (a composer inside a collapsed card is display:none).
+const el = (tagName: string, o: { connected?: boolean; editable?: boolean; rendered?: boolean } = {}) => ({
+  tagName, isConnected: o.connected ?? true, isContentEditable: o.editable ?? false,
+  getClientRects: () => ((o.rendered ?? true) ? [{}] : []),
+}) as unknown as HTMLElement;
+const field = (connected = true) => el('TEXTAREA', { connected });
 
 beforeEach(() => clearInjectSnapshot());
 
@@ -20,9 +25,9 @@ test('a detached field is refused, so a dead origin can never be the destination
 });
 
 test('a non-typeable element never wins', () => {
-  assert.equal(isUsableTarget({ tagName: 'DIV', isConnected: true, isContentEditable: false } as unknown as HTMLElement), false);
-  assert.equal(isUsableTarget({ tagName: 'DIV', isConnected: true, isContentEditable: true } as unknown as HTMLElement), true);
-  assert.equal(isUsableTarget({ tagName: 'WEBVIEW', isConnected: true, isContentEditable: false } as unknown as HTMLElement), true);
+  assert.equal(isUsableTarget(el('DIV')), false);
+  assert.equal(isUsableTarget(el('DIV', { editable: true })), true);
+  assert.equal(isUsableTarget(el('WEBVIEW')), true);
 });
 
 test('taking consumes it, so one take can never leak into the next', () => {
@@ -42,11 +47,20 @@ test('a cancelled take leaves nothing behind', () => {
 // injectAtFocus needs a live DOM, so what is pinned here is the predicate that decides whether the
 // live element is allowed to win at all. Getting this wrong is how the text lands in a stranger's box.
 test('a live click target only beats the origin when it is really typeable', () => {
-  const typeable = { tagName: 'INPUT', isConnected: true, isContentEditable: false } as unknown as HTMLElement;
-  const button = { tagName: 'BUTTON', isConnected: true, isContentEditable: false } as unknown as HTMLElement;
-  const body = { tagName: 'BODY', isConnected: true, isContentEditable: false } as unknown as HTMLElement;
+  const typeable = el('INPUT');
+  const button = el('BUTTON');
+  const body = el('BODY');
   assert.equal(isUsableTarget(typeable), true, 'clicking another field must take the text');
   assert.equal(isUsableTarget(button), false, 'clicking a button must NOT take the text');
   assert.equal(isUsableTarget(body), false, 'clicking empty space must NOT take the text');
   assert.equal(isUsableTarget(null), false);
+});
+
+test('a hidden field is refused: a collapsed card\'s composer cannot take a caret', () => {
+  const hidden = el('DIV', { editable: true, rendered: false });
+  assert.equal(isUsableTarget(hidden), false);
+  setInjectSnapshot({ el: hidden, browserId: null });
+  const taken = takeInjectSnapshot();
+  assert.equal(taken.el, null);
+  assert.equal(taken.targetLost, true, 'it was aimed at and then hidden, which is a lost target, not no target');
 });

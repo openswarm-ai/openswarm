@@ -18,6 +18,7 @@ import { AttachmentChips } from './AttachmentChips';
 import { EditorSurface } from './EditorSurface';
 import { ChatInputToolbar } from '../toolbar/ChatInputToolbar';
 import { ChatInputOverlays } from './ChatInputOverlays';
+import { setLastFocusedComposer } from '@/shared/composerFocus';
 
 type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'auto';
 interface ModeConf { label: string; icon: React.ReactNode; color: string }
@@ -113,6 +114,7 @@ export const ChatInputView: React.FC<Props> = (p) => {
     <Box
       ref={p.containerRef}
       data-osw-composer={p.sessionId ?? 'dashboard'}
+      onFocusCapture={() => setLastFocusedComposer(p.sessionId ?? 'dashboard')}
       onDragOver={p.handleDragOver}
       onDragLeave={p.handleDragLeave}
       onDrop={p.handleDrop}

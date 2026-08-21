@@ -15,9 +15,9 @@ export function clearInjectSnapshot(): void {
   p_snapshot = null;
 }
 
-/** A snapshot is only worth honoring while its element is still attached and still typeable. */
+/** A snapshot is only worth honoring while its element is still attached, still typeable, and still rendered: a composer inside a collapsed card is display:none and can't take a caret. */
 export function isUsableTarget(el: HTMLElement | null): boolean {
-  if (!el || !el.isConnected) return false;
+  if (!el || !el.isConnected || el.getClientRects().length === 0) return false;
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'WEBVIEW' || el.isContentEditable;
 }
 
