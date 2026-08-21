@@ -19,13 +19,14 @@ if !hidGranted && !isProbe {
 print(hidGranted ? "p granted" : "p denied")
 fflush(stdout)
 
-// Without the grant the tap is DEAF, not absent: tapCreate happily returns a port that never
-// delivers an event, which is exactly how a dead fn key passed for a live one. Refuse to run in
-// that state so that "watcher alive" means "fn works" and nothing downstream has to guess.
+// Denied is REPORTED and then we keep going on purpose. Exiting here looks tidier, but a running
+// tap is the only thing that makes macOS list the app under Input Monitoring, so quitting removes
+// the very switch the user is being sent to flip (caught the hard way: "it just takes me to
+// Settings and nothing else"). The ambiguity that started all this is already gone, because the
+// parent trusts the reported permission and never the fact that this process is alive.
 if !hidGranted {
     print("e no-permission")
     fflush(stdout)
-    exit(0)
 }
 
 var fnDown = false

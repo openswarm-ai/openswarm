@@ -245,6 +245,9 @@ function installVoiceHotkey(getMainWindow) {
           if (combo.special === 'fn') send(line === 'd' ? 'voice:hold-down' : 'voice:hold-up');
         } else if (line.startsWith('e')) {
           console.log('[voice] fn watcher error:', line);
+          // The watcher deliberately stays alive when denied (it keeps the app listed in the
+          // Input Monitoring pane), so liveness proves nothing and this line is the signal.
+          if (line.includes('no-permission')) notifyPrimaryUnusable('input-monitoring-denied');
         }
       }
     });

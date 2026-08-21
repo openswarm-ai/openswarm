@@ -37,11 +37,14 @@ test('live protocol: armed watcher survives pokes and exits on EOF', { skip: pro
   let out = ''; p.stdout.on('data', (c) => { out += String(c); });
   let exitCode = null; p.on('exit', (c) => { exitCode = c; });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  for (let waited = 0; !out.includes('r') && exitCode === null && waited < 4000; waited += 100) await sleep(100);
+  const ready = () => out.includes('t ok') || out.includes('p denied');
+  for (let waited = 0; !ready() && exitCode === null && waited < 4000; waited += 100) await sleep(100);
   try {
-    // No boot marker = no grant, or a Gatekeeper-wedged machine hanging fresh binaries at
-    // _dyld_start (both seen live); asserting against a process that never ran proves nothing.
-    if (exitCode !== null || !out.includes('r')) return;
+    // The re-arm protocol can only be exercised with the grant. This used to be inferred from the
+    // process still being alive, which is precisely the ambiguity the watcher now reports its way
+    // out of: ask it, do not guess. (A Gatekeeper-wedged machine hanging a fresh binary at
+    // _dyld_start still lands in the same skip, since it never reports at all.)
+    if (exitCode !== null || out.includes('p denied') || !out.includes('t ok')) return;
     p.stdin.write('r\n'); p.stdin.write('r\n');
     await sleep(500);
     assert.equal(exitCode, null, 'pokes must not kill the watcher');

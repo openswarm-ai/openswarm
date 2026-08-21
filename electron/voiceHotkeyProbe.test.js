@@ -52,13 +52,17 @@ test('the watcher reports its permission instead of leaving it to be inferred', 
     'permission must be stated on stdout, not guessed from the process still being alive');
 });
 
-test('a watcher without the grant refuses to run, so alive means working', () => {
-  const guard = swiftSrc.split('if !hidGranted {')[1] || '';
+test('a denied watcher reports it and STAYS ALIVE, or the Settings pane has nothing to flip', () => {
+  // Exiting on denial looked tidy and silently removed the only mechanism that lists the app under
+  // Input Monitoring, so "Open Settings" led to a pane with no OpenSwarm row in it.
+  const guard = swiftSrc.split('if !hidGranted {')[1].split('}')[0];
   assert.match(guard, /e no-permission/);
-  assert.match(guard, /exit\(0\)/);
-  const guardAt = swiftSrc.indexOf('if !hidGranted {');
-  assert.ok(guardAt > -1 && guardAt < swiftSrc.indexOf('guard armTap()'),
-    'the refusal must come before the tap, or a deaf tap still gets created');
+  assert.ok(!/exit\(/.test(guard), 'must not exit: a live tap is what keeps the app listed in the pane');
+});
+
+test('denial is carried by the reported line, never by liveness', () => {
+  assert.match(hotkeySrc, /line\.includes\('no-permission'\)\) notifyPrimaryUnusable\('input-monitoring-denied'\)/,
+    'with the process staying alive, the stdout report is the only honest signal');
 });
 
 test('the grant is REQUESTED on the intent path and never on the boot probe', () => {
