@@ -60,6 +60,7 @@ class Messaging(AgentManagerProtocol):
         forced_tools: Optional[List[str]] = None,
         attached_skills: Optional[List] = None,
         hidden: bool = False,
+        by_user: bool = False,
         selected_browser_ids: Optional[List[str]] = None,
         selected_app_output_ids: Optional[List[str]] = None,
         selected_setting_ids: Optional[List[str]] = None,
@@ -71,18 +72,18 @@ class Messaging(AgentManagerProtocol):
             data = load_session_data(session_id)
             if data:
                 session = AgentSession(**data)
-                # This disk reload (and the closed_at wipe below) is how a late watchdog retry reopened a card the user had closed; a machine send must not revive it.
-                if hidden and session.ended_by_user:
+                # This disk reload (and the closed_at wipe below) is how a late watchdog retry reopened a card the user had closed; a MACHINE send must not revive it (a human's own Resume click carries by_user and may).
+                if hidden and not by_user and session.ended_by_user:
                     return
                 apply_context_window(session)
                 session.closed_at = None
                 self.sessions[session_id] = session
             else:
                 raise ValueError(f"Session {session_id} not found")
-        # Every automatic resume arrives hidden; a human's Stop or close outranks all of them, and only the human's own (never hidden) next message lifts the hold.
-        if hidden and session.ended_by_user:
+        # Every automatic resume arrives hidden; a human's Stop or close outranks all of them. `hidden` only means "do not render a user bubble", so the Resume chip's own click is hidden too and used to be swallowed here, leaving the chip to reappear forever (Eric, live, 2026-08-21). Authorship is what this guard cares about, so it asks by_user.
+        if hidden and not by_user and session.ended_by_user:
             return
-        if not hidden and session.ended_by_user:
+        if session.ended_by_user and (not hidden or by_user):
             session.ended_by_user = False
 
         existing = self.tasks.get(session_id)

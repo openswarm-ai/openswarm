@@ -1078,6 +1078,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       mode,
       model,
       hidden: true,
+      // Hidden so no user bubble renders, but a HUMAN clicked it: without this the backend's stopped-session guard swallows the send and the chip reappears forever.
+      byUser: true,
     }));
   }, [id, mode, model, dispatch]);
 

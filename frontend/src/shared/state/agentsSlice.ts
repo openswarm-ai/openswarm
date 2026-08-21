@@ -249,6 +249,8 @@ export interface SendMessagePayload {
   forcedTools?: string[];
   attachedSkills?: Array<{ id: string; name: string; content: string }>;
   hidden?: boolean;
+  /** A human clicked for this (the Resume chip), even though it is hidden so no user bubble renders. */
+  byUser?: boolean;
   selectedBrowserIds?: string[];
   selectedAppIds?: string[];
   selectedSettingIds?: string[];
@@ -260,7 +262,7 @@ function _genOptimisticId(): string {
 
 export const sendMessage = createAsyncThunk(
   'agents/sendMessage',
-  async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, selectedBrowserIds, selectedAppIds, selectedSettingIds }: SendMessagePayload, { dispatch }) => {
+  async ({ sessionId, prompt, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, hidden, byUser, selectedBrowserIds, selectedAppIds, selectedSettingIds }: SendMessagePayload, { dispatch }) => {
     // Mint client id and dispatch optimistic bubble before awaiting the network; id round-trips for echo dedupe.
     const clientMessageId = _genOptimisticId();
     dispatch(addOptimisticMessage({
@@ -277,7 +279,7 @@ export const sendMessage = createAsyncThunk(
       const res = await fetch(`${AGENTS_API}/sessions/${sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds, client_message_id: clientMessageId }),
+        body: JSON.stringify({ prompt, mode, model, provider, images, context_paths: contextPaths, forced_tools: forcedTools, attached_skills: attachedSkills, hidden, by_user: byUser ?? false, selected_browser_ids: selectedBrowserIds, selected_app_output_ids: selectedAppIds, selected_setting_ids: selectedSettingIds, client_message_id: clientMessageId }),
       });
       if (!res.ok) throw new Error(`send failed: ${res.status}`);
     } catch (err) {

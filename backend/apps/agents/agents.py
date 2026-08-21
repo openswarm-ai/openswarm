@@ -212,6 +212,7 @@ async def send_message(session_id: str, body: dict):
         forced_tools=body.get("forced_tools"),
         attached_skills=body.get("attached_skills"),
         hidden=body.get("hidden", False),
+        by_user=body.get("by_user", False),
         selected_browser_ids=body.get("selected_browser_ids"),
         selected_app_output_ids=body.get("selected_app_output_ids"),
         selected_setting_ids=body.get("selected_setting_ids"),

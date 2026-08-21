@@ -205,3 +205,36 @@ def test_a_standalone_browser_run_with_no_parent_proceeds():
     """NEGATIVE CONTROL: a run that never had a parent is not an orphan; it must not self-cancel."""
     assert p_child_entry_check(None) is False
     assert p_child_entry_check("") is False
+
+
+# --- the human's own Resume click is not a machine send ------------------------------------------
+
+
+def test_the_resume_chip_lifts_the_hold_but_the_watchdog_still_cannot():
+    """Live regression (Eric, 2026-08-21): clicking Resume on a user-stopped chat did nothing and the
+    amber chip came straight back, forever. The chip's send is `hidden` only so no user bubble
+    renders; this guard cares about AUTHORSHIP, so it must ask by_user, not hidden. Both directions
+    pinned here: the human's click runs a turn and clears the hold, a machine's identical hidden send
+    still does not."""
+    started, real = p_spy_loop()
+    try:
+        # A machine send (the watchdog's resend) stays blocked: no turn, hold intact.
+        machine = p_live("machine")
+        machine.status = "stopped"
+        machine.ended_by_user = True
+        asyncio.run(agent_manager.send_message(machine.id, "Continue.", hidden=True))
+        assert started == [], "a machine send must never revive a user-stopped chat"
+        assert machine.ended_by_user is True, "the hold must survive a machine send"
+
+        # The human's Resume click: same hidden flag, but by_user, so it runs and lifts the hold.
+        human = p_live("human")
+        human.status = "stopped"
+        human.ended_by_user = True
+        asyncio.run(agent_manager.send_message(human.id, "Continue your previous response.", hidden=True, by_user=True))
+        assert started == [human.id], "the user's own Resume click must actually run a turn"
+        assert human.ended_by_user is False, "the human lifted their own hold"
+    finally:
+        agent_manager.run_agent_loop = real
+        for s in list(agent_manager.sessions.values()):
+            if s.name in ("machine", "human"):
+                agent_manager.sessions.pop(s.id, None)
