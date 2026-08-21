@@ -357,12 +357,16 @@ function installVoiceHotkey(getMainWindow) {
   const armNativeTiers = () => {
     if (tiersArmed) return;
     tiersArmed = true;
+    // ORDER IS LOAD-BEARING (rdar://7381305 / FB7381305): once AXIsProcessTrustedWithOptions has
+    // been called, IOHIDRequestAccess stops raising the Input Monitoring dialog entirely. Electron's
+    // isTrustedAccessibilityClient IS that call, and tryStartNativeTap makes it, so asking for the
+    // tap first is what silently ate the fn prompt. Ask for Input Monitoring FIRST, always.
+    startFnWatcher();
     const tapOk = tryStartNativeTap();
     // Ctrl+Win is the Windows fn-equivalent and ONLY this tap can see it, so a tap that never loads
     // is the same dead key as a deaf fn watcher. Off macOS there is no TCC to blame, which is
     // exactly why it would otherwise fail with nothing said at all.
     if (tapOk === false && combo.special === 'ctrlmeta') notifyPrimaryUnusable('native-tap-unavailable');
-    startFnWatcher();
     registerVoiceShortcut();
   };
   try {

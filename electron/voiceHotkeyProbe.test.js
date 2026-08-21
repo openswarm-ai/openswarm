@@ -121,3 +121,17 @@ test('the intent path spawns WITHOUT --no-prompt, or nothing is ever asked', () 
   const fn = hotkeySrc.split('const askForFnPermission')[1].slice(0, 400);
   assert.match(fn, /startFnWatcher\(\);/, 'a --no-prompt spawn here would silently never prompt');
 });
+
+// ---- rdar://7381305: the AX check poisons the Input Monitoring prompt ----
+// Once AXIsProcessTrustedWithOptions has run, IOHIDRequestAccess never raises its dialog again.
+// Electron's isTrustedAccessibilityClient IS that call, so arming the uiohook tap before the fn
+// watcher silently ate the one prompt that can fix a dead fn key. Order is the whole fix.
+
+test('Input Monitoring is requested BEFORE any Accessibility check', () => {
+  const arm = hotkeySrc.split('const armNativeTiers = () => {')[1].split('};')[0];
+  const fnAt = arm.indexOf('startFnWatcher()');
+  const axAt = arm.indexOf('tryStartNativeTap()');
+  assert.ok(fnAt > -1 && axAt > -1, 'both tiers must still be armed');
+  assert.ok(fnAt < axAt,
+    'rdar://7381305: an AX check first kills the Input Monitoring dialog, so fn must ask first');
+});
