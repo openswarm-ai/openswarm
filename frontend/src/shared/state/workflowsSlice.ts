@@ -206,6 +206,8 @@ interface State {
   runningToast: RunningToast | null;
   /** One-off explanation for something the user asked for that the server refused. */
   noticeToast: string | null;
+  /** The item as it was before each in-flight optimistic write, keyed by opId (or the thunk requestId), so a failed PATCH rolls the UI back instead of leaving a switch that lies. */
+  pendingPatches: Record<string, { id: string; before: Workflow }>;
   runControlPending: Record<string, WorkflowRunControlAction>;
   deleted: Workflow[];
   deletedLoading: boolean;
@@ -213,7 +215,7 @@ interface State {
   settleSeq: number;
 }
 
-const initialState: State = { items: {}, runs: {}, openCards: {}, loaded: false, loading: false, paused: false, active: [], cloudSmsEnabled: false, allRuns: [], allRunsLoading: false, runningToast: null, noticeToast: null, runControlPending: {}, deleted: [], deletedLoading: false, settleSeq: 0 };
+const initialState: State = { items: {}, runs: {}, openCards: {}, loaded: false, loading: false, paused: false, active: [], cloudSmsEnabled: false, allRuns: [], allRunsLoading: false, runningToast: null, noticeToast: null, pendingPatches: {}, runControlPending: {}, deleted: [], deletedLoading: false, settleSeq: 0 };
 
 function mergeRunIntoState(state: State, r: WorkflowRun) {
   const arr = state.runs[r.workflow_id] || [];
@@ -351,9 +353,17 @@ export const applyGeneratedMetadata = createAsyncThunk(
 );
 
 // Optimistic concurrency via If-Match: server 409s on stale writes; rejectWithValue lets FE distinguish.
+export interface UpdateWorkflowArg {
+  id: string;
+  patch: Partial<Workflow>;
+  ifMatch?: string | null;
+  /** Set when useWorkflowPatch already applied the optimistic patch under this key; the thunk then leaves the store alone until the server answers. */
+  opId?: string;
+}
+
 export const updateWorkflow = createAsyncThunk<
   Workflow,
-  { id: string; patch: Partial<Workflow>; ifMatch?: string | null },
+  UpdateWorkflowArg,
   { rejectValue: { kind: 'stale' | 'network' | 'server'; message: string; current_updated_at?: string } }
 >(
   'workflows/update',
@@ -384,6 +394,13 @@ export const updateWorkflow = createAsyncThunk<
     }
   },
 );
+
+// One workflow, fresh from disk. The stale-write recovery needs THIS, not the list fetch: the list thunk skips itself while another load is in flight, and a skipped resync left the store holding an updated_at the server had already moved past, so the very next toggle 409'd again.
+export const refreshWorkflow = createAsyncThunk<Workflow, string>('workflows/refresh', async (id) => {
+  const res = await fetch(`${API}/${id}`);
+  if (!res.ok) throw new Error(`refresh failed ${res.status}`);
+  return (await res.json()) as Workflow;
+});
 
 type CommitDraftArg = string | { id: string; model?: string; keep_session?: boolean };
 
@@ -587,6 +604,14 @@ const slice = createSlice({
     dismissNoticeToast(state) {
       state.noticeToast = null;
     },
+    // The optimistic half of a serialized write (useWorkflowPatch): applied the instant the user acts, even while an earlier PATCH to the same workflow is still in flight.
+    applyOptimisticPatch(state, action: { payload: { opId: string; id: string; patch: Partial<Workflow> } }) {
+      const { opId, id, patch } = action.payload;
+      const before = state.items[id];
+      if (!before) return;
+      state.pendingPatches[opId] = { id, before };
+      state.items[id] = { ...before, ...patch };
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -599,13 +624,30 @@ const slice = createSlice({
       })
       .addCase(fetchWorkflows.rejected, (state) => { state.loading = false; state.loaded = true; })
       .addCase(createWorkflow.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
-      // Optimistic: reflect the patch in the store immediately so store-driven UI (the schedule test-first banner, status, etc.) updates the instant the user edits, not after the PATCH round-trips (which awaits an aux relabel LLM call server-side). fulfilled overwrites with server truth; a 409 stale triggers a refetch in useWorkflowPatch.
+      // Optimistic: reflect the patch in the store immediately so store-driven UI (the schedule test-first banner, status, etc.) updates the instant the user edits, not after the PATCH round-trips (which awaits an aux relabel LLM call server-side). fulfilled overwrites with server truth; rejected rolls back to the snapshot and says why.
       .addCase(updateWorkflow.pending, (state, action) => {
-        const { id, patch } = action.meta.arg;
-        const cur = state.items[id];
-        if (cur) state.items[id] = { ...cur, ...patch };
+        const { id, patch, opId } = action.meta.arg;
+        if (opId) return;
+        const before = state.items[id];
+        if (!before) return;
+        state.pendingPatches[action.meta.requestId] = { id, before };
+        state.items[id] = { ...before, ...patch };
       })
-      .addCase(updateWorkflow.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; state.settleSeq += 1; })
+      .addCase(updateWorkflow.fulfilled, (state, action) => {
+        delete state.pendingPatches[action.meta.arg.opId ?? action.meta.requestId];
+        state.items[action.payload.id] = action.payload;
+        state.settleSeq += 1;
+      })
+      .addCase(updateWorkflow.rejected, (state, action) => {
+        const key = action.meta.arg.opId ?? action.meta.requestId;
+        const pend = state.pendingPatches[key];
+        delete state.pendingPatches[key];
+        if (pend) state.items[pend.id] = pend.before;
+        state.noticeToast = action.payload?.kind === 'stale'
+          ? 'This workflow changed somewhere else, so your edit was not saved. It has been reloaded; try again.'
+          : `Couldn't save that change (${action.payload?.message ?? 'network error'}). Try again in a moment.`;
+      })
+      .addCase(refreshWorkflow.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; })
       .addCase(commitDraft.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; state.settleSeq += 1; })
       .addCase(discardDraft.fulfilled, (state, action) => { state.items[action.payload.id] = action.payload; state.settleSeq += 1; })
       .addCase(deleteWorkflow.rejected, (state, action) => {
@@ -692,5 +734,6 @@ export const {
   removeWorkflow,
   dismissRunningToast,
   dismissNoticeToast,
+  applyOptimisticPatch,
 } = slice.actions;
 export default slice.reducer;

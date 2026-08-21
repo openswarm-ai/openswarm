@@ -7,7 +7,8 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { API_BASE } from '@/shared/config';
 import type { Workflow } from '@/shared/state/workflowsSlice';
-import { openWorkflowCard, updateWorkflow } from '@/shared/state/workflowsSlice';
+import { openWorkflowCard } from '@/shared/state/workflowsSlice';
+import { useWorkflowPatch } from './app/useWorkflowPatch';
 import { addWorkflowCard } from '@/shared/state/dashboardLayoutSlice';
 import { useWorkflowMenu } from '@/app/pages/Workflows/app/useWorkflowMenu';
 import { WEEKDAY_FULL, WEEKDAY_LABEL_SHORT, addDays, sameDay, startOfMonthGrid, startOfWeek, formatTime, formatHourLabel } from './scheduleUtils';
@@ -40,6 +41,7 @@ type ListRow =
 export default function ScheduleCalendar({ view, density, onSelectWorkflow, refDate }: Props) {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const patch = useWorkflowPatch();
   const workflowItems = useAppSelector((s) => s.workflows.items);
   // Object.values inside the selector returned a fresh array per store notification; derive once per items identity.
   const workflows = useMemo(() => Object.values(workflowItems), [workflowItems]);
@@ -259,13 +261,11 @@ export default function ScheduleCalendar({ view, density, onSelectWorkflow, refD
                       const wf = workflows.find((w) => w.id === wid);
                       if (!wf) return;
                       // Build the patched schedule: new hour, and for weekly schedules swap on_days to just the target weekday. Daily/monthly only get the new hour.
-                      const sched = { ...wf.schedule, hour } as typeof wf.schedule;
-                      if (sched.repeat_unit === 'week') sched.on_days = [targetWeekday];
-                      dispatch(updateWorkflow({
-                        id: wf.id,
-                        patch: { schedule: sched as any },
-                        ifMatch: wf.updated_at || null,
-                      }));
+                      patch(wf, (cur) => {
+                        const sched = { ...cur.schedule, hour };
+                        if (sched.repeat_unit === 'week') sched.on_days = [targetWeekday];
+                        return { schedule: sched };
+                      });
                     }}
                     sx={{ height: SLOT_H, borderLeft: `1px solid ${c.border.subtle}`, borderTop: hourIdx === 0 ? 'none' : `1px solid ${c.border.subtle}`, position: 'relative', overflow: 'hidden' }}>
                     <EventStack

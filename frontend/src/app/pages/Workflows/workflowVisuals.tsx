@@ -7,8 +7,7 @@ import Typography from '@mui/material/Typography';
 import Popover from '@mui/material/Popover';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import { useAppDispatch } from '@/shared/hooks';
-import { updateWorkflow } from '@/shared/state/workflowsSlice';
+import { useWorkflowPatch } from './app/useWorkflowPatch';
 import ScheduleIcon from '@mui/icons-material/ScheduleRounded';
 import NotificationsIcon from '@mui/icons-material/NotificationsRounded';
 import SmsIcon from '@mui/icons-material/SmsRounded';
@@ -168,19 +167,12 @@ export function PermissionChip({ workflow }: { workflow: Workflow }) {
 
 export function ScheduleChip({ workflow }: { workflow: Workflow }) {
   const c = useClaudeTokens();
-  const dispatch = useAppDispatch();
+  const patch = useWorkflowPatch();
   const enabled = workflow.schedule.enabled && isScheduleConfigured(workflow.schedule);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  // Inline edit: time + AM/PM only. Anything richer should open the full editor. Saves on change with optimistic updated_at If-Match.
+  // Inline edit: time + AM/PM only. Anything richer should open the full editor. Saves on change through the serialized, rollback-on-failure patch path.
   const sched = workflow.schedule;
-  const patchSched = (patch: Partial<typeof sched>) => {
-    const next = { ...sched, ...patch };
-    dispatch(updateWorkflow({
-      id: workflow.id,
-      patch: { schedule: next as any },
-      ifMatch: workflow.updated_at || null,
-    }));
-  };
+  const patchSched = (p: Partial<typeof sched>) => patch(workflow, (cur) => ({ schedule: { ...cur.schedule, ...p } }));
   return (
     <>
       <Tooltip title={enabled ? `Click to tweak time. Full editor lives in the Edit tab.` : 'Not scheduled'}>

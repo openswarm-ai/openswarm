@@ -23,7 +23,7 @@ const ScheduleCard: React.FC<{ workflow: Workflow }> = ({ workflow }) => {
   const enabled = sched.enabled;
   const onCloud = workflow.execution_target === 'cloud';
 
-  const patchSched = (p: Partial<ScheduleConfig>) => patch(workflow, { schedule: { ...sched, ...p } });
+  const patchSched = (p: Partial<ScheduleConfig>) => patch(workflow, (cur) => ({ schedule: { ...cur.schedule, ...p } }));
 
   // The "Run at" field is an uncontrolled native time input so React doesn't reset the segment's pending-digit state between keystrokes (a controlled value made typing 4 then 5 land 05 instead of 45). To still reflect edits from elsewhere (e.g. the agent reschedules), push the store time in imperatively, and only when it actually differs from what's shown.
   const timeRef = useRef<HTMLInputElement>(null);

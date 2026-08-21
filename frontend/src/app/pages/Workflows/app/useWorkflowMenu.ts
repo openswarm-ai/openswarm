@@ -34,7 +34,10 @@ export function useWorkflowMenu(): (e: React.MouseEvent, wf: Workflow, opts: Wor
         },
         {
           label: wf.schedule.enabled ? 'Pause schedule' : 'Resume schedule',
-          onClick: () => patch(wf, { schedule: { ...wf.schedule, enabled: !wf.schedule.enabled } }),
+          onClick: () => {
+            const enabled = !wf.schedule.enabled;
+            patch(wf, (cur) => ({ schedule: { ...cur.schedule, enabled } }));
+          },
         },
         { label: 'Edit', onClick: opts.onEdit },
         { kind: 'separator' },
