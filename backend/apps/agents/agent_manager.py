@@ -70,6 +70,27 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
             await self.send_message(session_id, prompt, hidden=True)
         except Exception:
             logger.exception(f"delayed continuation send failed for {session_id}")
+            # The arming site set "running" so the user is never told a continuing turn had finished; if the continuation never reaches a turn, that promise has to be released here or the card spins forever on a session with no task.
+            await self.p_settle_unstarted_continuation(session_id)
+
+    @typechecked
+    async def p_settle_unstarted_continuation(self, session_id: str) -> None:
+        """Put a session back to a terminal state when its armed continuation never became a turn."""
+        p_session = self.sessions.get(session_id)
+        if p_session is None or p_session.status != "running":
+            return
+        p_task = getattr(self, "tasks", {}).get(session_id)
+        if p_task is not None and not p_task.done():
+            return
+        p_session.status = "completed"
+        try:
+            await ws_manager.send_to_session(session_id, "agent:status", {
+                "session_id": session_id,
+                "status": p_session.status,
+                "session": p_session.model_dump(mode="json"),
+            })
+        except Exception:
+            logger.debug("settle broadcast failed", exc_info=True)
 
     @typechecked
     def __init__(self):
@@ -275,6 +296,8 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
                     p_continuation_prompt = session.pending_continuation_prompt or "Continue."
                     session.pending_continuation = False
                     session.pending_continuation_prompt = None
+                    # Arming a continuation IS still running. The terminal broadcast in the finally reads session.status, and leaving it "completed" told the user the agent had finished while the harness was about to keep working (it may even sleep first): measured on Alex's install, 13 of 63 slow recoveries ended with him typing "hello?" to a chat that was never done.
+                    session.status = "running"
                     p_cont_delay = int(getattr(session, "pending_continuation_delay_s", 0) or 0)
                     session.pending_continuation_delay_s = 0
                     asyncio.create_task(self.dispatch_hidden_continuation(session_id, p_continuation_prompt, p_cont_delay))
@@ -353,7 +376,8 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
                     p_cont = session.pending_continuation_prompt or "Continue."
                     session.pending_continuation = False
                     session.pending_continuation_prompt = None
-                    session.status = "completed"
+                    # Same rule at the error door: a self-heal that is about to re-run must not report a terminal state first.
+                    session.status = "running"
                     p_cont_delay = int(getattr(session, "pending_continuation_delay_s", 0) or 0)
                     session.pending_continuation_delay_s = 0
                     asyncio.create_task(self.dispatch_hidden_continuation(session_id, p_cont, p_cont_delay))

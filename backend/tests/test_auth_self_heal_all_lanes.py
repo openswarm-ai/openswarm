@@ -81,11 +81,30 @@ def test_dispatcher_stands_down_when_the_user_beats_the_delay(monkeypatch):
         sent.append(sid)
     mgr.send_message = p_fake_send
 
+    s.status = "running"
+
     async def p_fast_sleep(_):
         s.messages.append(Message(role="user", content="user got here first"))
     monkeypatch.setattr(p_am.asyncio, "sleep", p_fast_sleep)
     asyncio.run(mgr.dispatch_hidden_continuation("sid", "redo it", 75))
     assert sent == [], "a user message during the wait already resumes the work"
+    assert s.status == "running", "the user's message owns the session; a stale continuation must not write status"
+
+
+def test_a_continuation_that_never_sends_releases_the_running_status(monkeypatch):
+    """"running" promises a turn follows. If the send dies, the promise is released or the card spins forever."""
+    from backend.apps.agents import agent_manager as p_am
+    mgr = p_am.AgentManager.__new__(p_am.AgentManager)
+    s = p_session()
+    s.status = "running"
+    mgr.sessions = {"sid": s}
+
+    async def p_exploding_send(sid, prompt, **kw):
+        raise RuntimeError("CLI never came up")
+    mgr.send_message = p_exploding_send
+
+    asyncio.run(mgr.dispatch_hidden_continuation("sid", "redo it", 0))
+    assert s.status == "completed"
 
 
 def test_dispatcher_sends_after_a_quiet_wait(monkeypatch):

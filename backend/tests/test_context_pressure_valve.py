@@ -62,6 +62,19 @@ def p_install_run_fakes(monkeypatch, run_turn_fake) -> None:
     monkeypatch.setattr(agent_manager_module, "save_session", lambda sid, data: None)
 
 
+def p_capture_status(monkeypatch) -> list:
+    """Record the status the UI actually receives, not just the one left on the object."""
+    from backend.apps.agents.core.ws_manager import ws_manager
+    seen: list = []
+
+    async def fake_send(session_id, event, data):
+        if event == "agent:status":
+            seen.append(data.get("status"))
+
+    monkeypatch.setattr(ws_manager, "send_to_session", fake_send)
+    return seen
+
+
 def test_valve_retries_once_through_fresh_path(monkeypatch) -> None:
     session = p_seed_session()
     calls: list = []
@@ -188,6 +201,42 @@ def test_midturn_break_completes_and_fires_the_hidden_continuation(monkeypatch) 
 
     p_install_run_fakes(monkeypatch, fake_run_turn)
     monkeypatch.setattr(agent_manager, "send_message", fake_send_message)
+    statuses = p_capture_status(monkeypatch)
+
+    async def main():
+        await agent_manager.run_agent_loop(session.id, "audit everything")
+        await asyncio.sleep(0)
+
+    asyncio.run(main())
+    # The card must never read Done while the harness is committed to continuing: that is what made
+    # a field user type "hello?" into a chat that was still working.
+    assert "completed" not in statuses, f"told the UI a continuing turn had finished: {statuses}"
+    assert session.status == "running"
+    assert session.needs_fresh_session is True
+    assert session.pending_continuation is False
+    assert continues == [{"prompt": CONTINUATION_PROMPT, "hidden": True}]
+
+
+def test_a_continuation_that_never_starts_releases_the_running_status(monkeypatch) -> None:
+    """The other direction: "running" is a promise that a turn follows. If the continuation never
+    becomes one, the promise is released, or the card spins forever on a session with no task."""
+    from backend.apps.agents.manager.context_budget import CONTINUATION_PROMPT
+    session = p_seed_session()
+    statuses = p_capture_status(monkeypatch)
+
+    async def fake_run_turn(sess, session_id, prompt_content, options, options_kwargs,
+                            turn, thinking, stderr, resolved_model, api_type,
+                            global_settings, force_respawn=False):
+        turn.context_break_fired = True
+        sess.needs_fresh_session = True
+        sess.pending_continuation = True
+        sess.pending_continuation_prompt = CONTINUATION_PROMPT
+
+    async def exploding_send_message(session_id, prompt, hidden=False, **kwargs):
+        raise RuntimeError("CLI never came up")
+
+    p_install_run_fakes(monkeypatch, fake_run_turn)
+    monkeypatch.setattr(agent_manager, "send_message", exploding_send_message)
 
     async def main():
         await agent_manager.run_agent_loop(session.id, "audit everything")
@@ -195,6 +244,4 @@ def test_midturn_break_completes_and_fires_the_hidden_continuation(monkeypatch) 
 
     asyncio.run(main())
     assert session.status == "completed"
-    assert session.needs_fresh_session is True
-    assert session.pending_continuation is False
-    assert continues == [{"prompt": CONTINUATION_PROMPT, "hidden": True}]
+    assert statuses[-1] == "completed"
