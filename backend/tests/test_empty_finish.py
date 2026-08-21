@@ -287,3 +287,4 @@ def test_the_honest_lines_survive_the_frontends_jargon_filter() -> None:
         "the exhausted note would be swallowed by the UI's dev-jargon filter"
     )
     assert EXHAUSTED_NOTE.strip(), "an empty note renders as nothing at all"
+

@@ -207,6 +207,19 @@ def p_tool_name_of(msg: object) -> str:
 
 
 @typechecked
+def p_text_of(content: object) -> str:
+    """The visible text of an assistant message whatever shape its writer used (a plain string, a
+    content-block list, a dict block); a structured final answer used to score as a silent quit."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return str(content.get("text") or "")
+    if isinstance(content, list):
+        return "".join(p_text_of(c) for c in content)
+    return ""
+
+
+@typechecked
 def turn_finished_empty(session: AgentSession) -> bool:
     """True when the branch's last visible message is a tool result whose call was ordinary work
     (not a UI/answer tool): the model did things and then said nothing."""
@@ -217,8 +230,7 @@ def turn_finished_empty(session: AgentSession) -> bool:
             continue
         role = getattr(m, "role", "")
         if role == "assistant":
-            text = m.content if isinstance(m.content, str) else ""
-            return not text.strip()
+            return not p_text_of(m.content).strip()
         if role == "tool_result":
             continue
         if role == "tool_call":

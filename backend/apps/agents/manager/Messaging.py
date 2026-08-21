@@ -159,6 +159,8 @@ class Messaging(AgentManagerProtocol):
             session.empty_finish_progress_mark = 0
             session.empty_finish_surfaced = False
             session.auth_retry_used = False
+            # The repeat-quit floor and the vanishing-quit rule key on this; one false positive used to arm both for the session's life (ENG-364).
+            session.empty_finish_total = 0
             # A human is here and driving, so an earlier outage stops counting against the next one.
             session.reconnect_attempts = 0
             session.awaiting_reconnect = False

@@ -18,6 +18,7 @@ from backend.apps.agents.core.error_classify import (
     is_transient_capacity_error,
     is_free_trial_exhausted,
     is_out_of_tokens,
+    has_auth_status,
     is_auth_error,
     is_cert_failure,
     is_cli_binary_missing,
@@ -302,7 +303,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         p_combined = f"{e!s}\n{p_stderr_tail}".lower()
         p_codex_rotation = (
             ("codex/" in p_combined or "[codex/" in p_combined or p_model.startswith(("cx/", "gpt-")))
-            and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or "401" in p_combined)
+            and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or has_auth_status(p_combined))
         )
         # Every sub lane gets ONE silent self-heal before any card; only a missing credential (config problem, retry fails identically) goes straight to the card. Codex waits out its rotation window first.
         # A lane the router had ALREADY given up on before this turn is a dead credential, so the
@@ -343,7 +344,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # Codex/OpenAI subscription tokens rotate every ~2-3 minutes, the user sees the rotation window as a 401 with "reset after 1m 59s" or similar. Don't ask them to reconnect; just tell them to wait it out and retry.
         if (
             ("codex/" in p_combined or "[codex/" in p_combined or p_model.startswith(("cx/", "gpt-")))
-            and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or "401" in p_combined)
+            and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or has_auth_status(p_combined))
         ):
             friendly_msg = (
                 "GPT subscription token just rotated, this is "

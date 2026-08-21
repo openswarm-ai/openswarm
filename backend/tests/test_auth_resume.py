@@ -116,3 +116,33 @@ def test_non_codex_auth_failures_keep_the_short_resume():
         "Invalid bearer token",
     ):
         assert auth_resume_wait(Exception(text), 0) == 20, text
+
+
+def test_a_traceback_line_number_is_not_an_auth_failure():
+    """ENG-365: `line 401,` in a Python traceback and `:401:12` in a node stack read as a bare 401,
+    which stalled healthy GPT runs 75s behind a false "token just rotated" notice."""
+    from backend.apps.agents.core.error_classify import NON_TRANSIENT_PATTERNS, has_auth_status, is_auth_error
+    for text in (
+        'Traceback (most recent call last):\n  File "/app/x.py", line 401, in run\n    raise ValueError("boom")',
+        "TypeError: cannot read properties of undefined\n    at handler (/app/error.js:401:12)",
+        "processed 14010 rows, 4031 skipped, 403 bytes written",
+    ):
+        assert auth_resume_wait(Exception("cx/gpt-5.4 process exited 1"), 0, extra_text=text) is None, text
+        assert not is_auth_error(Exception("process exited 1"), extra_text=text), text
+        assert not has_auth_status(text), text
+        assert not NON_TRANSIENT_PATTERNS.search(text), text
+
+
+def test_real_auth_statuses_still_count():
+    from backend.apps.agents.core.error_classify import has_auth_status, is_auth_error
+    for text in (
+        "API Error: 401 authentication token is expired",
+        "Request failed: 401 Unauthorized",
+        "HTTP 403 Forbidden",
+        "status_code=401",
+        "Error code: 401 - {'type': 'authentication_error'}",
+        "upstream says: invalid token (401)",
+        "No credentials for provider: claude (401)",
+    ):
+        assert has_auth_status(text), text
+        assert is_auth_error(Exception(text)), text

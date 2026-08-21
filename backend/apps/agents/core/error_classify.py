@@ -34,6 +34,20 @@ P_TRANSLATION_ERROR_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# A 401/403 only counts with auth context around it: a traceback's "line 401," or a node stack's ":401:12" is not a sign-in failure, and matching them bare stalled healthy GPT runs 75s behind a false "token just rotated" notice (ENG-365).
+AUTH_STATUS_RE = (
+    r"(?:\b(?:http|status(?:_code)?|error(?:\s+code)?|code|response|request\s+failed|got|received|returned|responded(?:\s+with)?)\b\s*[:=]?\s*\(?\s*(?:401|403)\b"
+    r"|\b(?:401|403)\b[^\n]{0,24}?\b(?:unauthori[sz]ed|forbidden|client\s+error|authentication(?:_error)?|invalid|expired|token|credentials?|subscription|bearer|api[_\s-]?key|upstream|provider|api)\b"
+    r"|\(\s*(?:401|403)\s*\))"
+)
+P_AUTH_STATUS = re.compile(AUTH_STATUS_RE, re.IGNORECASE)
+
+
+@typechecked
+def has_auth_status(text: str) -> bool:
+    return bool(P_AUTH_STATUS.search(text))
+
+
 # Patterns that look rate-limit-ish but are actually non-transient (user quota, auth, context-window tier gate). Must NOT retry, upgrading, reauthing, or trimming context is required. The long-context-required variant is what Anthropic returns when an OAuth Pro/Max account ships a request whose input exceeds the 200K standard tier and would need the "extra usage" tier; the user can't recover by waiting, so we surface it instead of looping.
 NON_TRANSIENT_PATTERNS = re.compile(
     r"(?:usage\s+cap\s+exceeded"
@@ -46,7 +60,7 @@ NON_TRANSIENT_PATTERNS = re.compile(
     r"|long\s+context\s+(?:requests?\s+)?(?:requires?|not\s+(?:available|enabled))"
     r"|free_trial_exhausted|used\s+your\s+free"
     r"|blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy"
-    r"|401|403)",
+    r"|" + AUTH_STATUS_RE + r")",
     re.IGNORECASE,
 )
 
@@ -68,8 +82,8 @@ CODEX_ROTATION_RESUME_WAIT = 75
 P_CODEX_ROTATION_PATTERNS = re.compile(
     r"(?:\[?codex/|\bcx/|\bgpt-[0-9])"
     r".*?"
-    r"(?:authentication\s+token\s+(?:is|has)\s+expired|token\s+expired|\b401\b)"
-    r"|(?:authentication\s+token\s+(?:is|has)\s+expired|token\s+expired|\b401\b)"
+    r"(?:authentication\s+token\s+(?:is|has)\s+expired|token\s+expired|" + AUTH_STATUS_RE + r")"
+    r"|(?:authentication\s+token\s+(?:is|has)\s+expired|token\s+expired|" + AUTH_STATUS_RE + r")"
     r".*?"
     r"(?:\[?codex/|\bcx/|\bgpt-[0-9])",
     re.IGNORECASE | re.DOTALL,
@@ -94,8 +108,8 @@ def auth_resume_wait(exc: BaseException, attempt: int, extra_text: str = "") -> 
     if is_translation_error(exc, extra_text):
         return None
     if not re.search(
-        r"\b(?:401|403)\b"
-        r"|unauthori[sz]ed"
+        AUTH_STATUS_RE
+        + r"|unauthori[sz]ed"
         r"|invalid\s+authentication"
         r"|invalid.*api[_\s-]?key"
         r"|invalid.*token"
@@ -228,8 +242,8 @@ def is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
     if re.search(r"reset\s+after|try\s+again\s+in", combined, re.IGNORECASE):
         return False
     return bool(re.search(
-        r"\b(401|403)\b"
-        r"|invalid\s+authentication\s+credentials"
+        AUTH_STATUS_RE
+        + r"|invalid\s+authentication\s+credentials"
         r"|invalid.*api[_\s-]?key"
         r"|missing\s+bearer\s+token"
         r"|unauthori[sz]ed"
