@@ -61,10 +61,11 @@ def test_every_user_message_append_site_snapshots():
     # The chokepoint audit: a new send path that forgets the snapshot reintroduces the bug for that
     # path only, which is exactly how the class comes back. Enumerate the sites.
     import backend.apps.agents.manager.AgentLaunch as launch
+    import backend.apps.agents.manager.EditMessage as edit_message
     import backend.apps.agents.manager.Messaging as messaging
     import backend.apps.agents.manager.SpawnAgentRun as spawn
 
-    for mod, expected_appends in ((messaging, 2), (launch, 1), (spawn, 1)):
+    for mod, expected_appends in ((messaging, 1), (edit_message, 1), (launch, 1), (spawn, 1)):
         src = open(mod.__file__).read()
         appends = src.count('.messages.append(user_msg)') + src.count('.messages.append(edited_msg)')
         snaps = src.count('snapshot_session_now(')

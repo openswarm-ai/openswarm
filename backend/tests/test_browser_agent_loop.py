@@ -632,6 +632,8 @@ def test_skill_keys_on_parent_user_message_so_reformulations_share_a_skill(monke
 
     class p_Parent:
         messages = [p_Msg("user", 'search Wikipedia for "Ada Lovelace"')]
+        status = "running"
+        ended_by_user = False
     monkeypatch.setattr(am_mod.agent_manager, "get_session", lambda sid: p_Parent(), raising=False)
 
     # Run 1: ONE reformulation of the request -> learns a skill keyed on the parent's user message (not this delegated wording).
@@ -672,6 +674,8 @@ def test_skill_key_falls_back_to_delegated_task_on_multi_quote_message(monkeypat
 
     class p_Parent:
         messages = [p_Msg("user", 'search Wikipedia for "Ada Lovelace" and also "Grace Hopper"')]
+        status = "running"
+        ended_by_user = False
     monkeypatch.setattr(am_mod.agent_manager, "get_session", lambda sid: p_Parent(), raising=False)
 
     primary = FakeLLM([

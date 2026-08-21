@@ -216,6 +216,10 @@ def delegation_children_settled(session_id: str, since: float) -> bool:
     the watchdog shot a healthy sidecar mid-run (39 kills + 40 force-ended turns in one afternoon
     of concurrent load, measured 2026-08-16 on the packaged build)."""
     from backend.apps.agents.agent_manager import agent_manager
+    # A user's Stop stops the children first, so they read as terminal and the outstanding call looked like a lost result; stage 3 then force-ended the turn and resent RETRY_PROMPT into the session the user had just stopped, every ~150s (reproduced twice, 2026-08-20). A human ending the parent is not a lost result.
+    p_parent = agent_manager.sessions.get(session_id)
+    if p_parent is not None and getattr(p_parent, "ended_by_user", False):
+        return False
     kids = []
     for s in agent_manager.sessions.values():
         if getattr(s, "parent_session_id", None) != session_id or getattr(s, "mode", "") != "browser-agent":
@@ -272,14 +276,14 @@ def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> No
             # armed above can never fire; the turn has to be ENDED for anything to move. A
             # cancelled turn skips the continuation hook by design, so dispatch the retry here.
             logger.warning("delegation recovery stage 3: force-ending the wedged turn on %s", session_id[:8])
-            loop.create_task(p_force_recover(session_id, getattr(ctx, "session", None)))
+            loop.create_task(force_recover(session_id, getattr(ctx, "session", None)))
             return
         loop.call_later(DELEGATION_CHECK_SECONDS, p_check)
 
     loop.call_later(DELEGATION_CHECK_SECONDS, p_check)
 
 
-async def p_force_recover(session_id: str, session: object) -> None:
+async def force_recover(session_id: str, session: object) -> None:
     from backend.apps.agents.agent_manager import agent_manager
     try:
         if session is not None:

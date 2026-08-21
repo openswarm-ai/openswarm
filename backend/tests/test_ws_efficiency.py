@@ -131,7 +131,7 @@ def test_history_closed_only_filters_open_sessions(monkeypatch):
         ("open1", {"id": "open1", "name": "open chat", "closed_at": None, "dashboard_id": None}),
         ("closed1", {"id": "closed1", "name": "closed chat", "closed_at": "2026-07-01T00:00:00", "dashboard_id": None}),
     ]
-    import backend.apps.agents.manager.session.SessionLifecycle as lifecycle_mod
+    import backend.apps.agents.manager.session.SessionHistory as lifecycle_mod
     monkeypatch.setattr(lifecycle_mod, "load_all_session_data", lambda: list(rows))
     # get_history also merges LIVE sessions, so pin them empty or a leftover from another test leaks in.
     monkeypatch.setattr(agent_manager, "sessions", {})
@@ -145,7 +145,7 @@ def test_history_closed_only_filters_open_sessions(monkeypatch):
 def test_history_includes_live_sessions_missing_from_disk(monkeypatch):
     """Boot deletes the file of every still-open session, so history must merge memory or your current chats vanish."""
     from backend.apps.agents.core.models import AgentSession
-    import backend.apps.agents.manager.session.SessionLifecycle as lifecycle_mod
+    import backend.apps.agents.manager.session.SessionHistory as lifecycle_mod
 
     rows = [("closed1", {"id": "closed1", "name": "closed chat", "closed_at": "2026-07-01T00:00:00", "dashboard_id": None})]
     monkeypatch.setattr(lifecycle_mod, "load_all_session_data", lambda: list(rows))

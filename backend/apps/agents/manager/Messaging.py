@@ -1,6 +1,6 @@
-"""Turn-producing message operations for AgentManager (send + edit), the ones that append a
-user Message and spawn the agent loop. Session-control ops (stop / approve / branch / update)
-live in SessionControl. Pure relocation: self.* resolves across the MRO as before."""
+"""Turn-producing message operations for AgentManager (send + queue), the ones that append a
+user Message and spawn the agent loop. Editing a prior message lives in EditMessage; session-control
+ops (stop / approve / branch / update) live in SessionControl. Pure relocation: self.* resolves across the MRO as before."""
 
 import asyncio
 import logging
@@ -8,9 +8,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
-from uuid import uuid4
 
-from backend.apps.agents.core.models import AgentSession, Message, MessageBranch
+from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.agents.manager.run_browser_fast_path import run_browser_fast_path
@@ -71,12 +70,20 @@ class Messaging(AgentManagerProtocol):
             data = load_session_data(session_id)
             if data:
                 session = AgentSession(**data)
+                # This disk reload (and the closed_at wipe below) is how a late watchdog retry reopened a card the user had closed; a machine send must not revive it.
+                if hidden and session.ended_by_user:
+                    return
                 apply_context_window(session)
                 session.closed_at = None
                 self.sessions[session_id] = session
             else:
                 raise ValueError(f"Session {session_id} not found")
-        
+        # Every automatic resume arrives hidden; a human's Stop or close outranks all of them, and only the human's own (never hidden) next message lifts the hold.
+        if hidden and session.ended_by_user:
+            return
+        if not hidden and session.ended_by_user:
+            session.ended_by_user = False
+
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
             # A mid-turn message used to be silently dropped here (no bubble, no trace); queue it and the turn task's done callback replays it.
@@ -226,94 +233,3 @@ class Messaging(AgentManagerProtocol):
             selected_setting_ids=qm.selected_setting_ids,
             client_message_id=qm.client_message_id,
         ))
-
-    @typechecked
-    async def edit_message(self, session_id: str, message_id: str, new_content: str):
-        """Edit a prior user message, creating a new branch (fork)."""
-        session = self.sessions.get(session_id)
-        if not session:
-            raise ValueError(f"Session {session_id} not found")
-
-        existing = self.tasks.get(session_id)
-        if existing and not existing.done():
-            existing.cancel()
-            try:
-                await existing
-            except asyncio.CancelledError:
-                pass
-
-        target_msg = None
-        for i, msg in enumerate(session.messages):
-            if msg.id == message_id:
-                target_msg = msg
-                break
-
-        if not target_msg or target_msg.role != "user":
-            raise ValueError("Can only edit user messages")
-
-        fork_point_id = message_id
-        fork_parent_branch = target_msg.branch_id
-
-        msg_branch = session.branches.get(target_msg.branch_id)
-        if msg_branch and msg_branch.fork_point_message_id:
-            branch_user_msgs = [
-                m for m in session.messages
-                if m.branch_id == target_msg.branch_id and m.role == "user"
-            ]
-            if branch_user_msgs and branch_user_msgs[0].id == message_id:
-                fork_point_id = msg_branch.fork_point_message_id
-                fork_parent_branch = msg_branch.parent_branch_id or "main"
-
-        new_branch_id = uuid4().hex
-        new_branch = MessageBranch(
-            id=new_branch_id,
-            parent_branch_id=fork_parent_branch,
-            fork_point_message_id=fork_point_id,
-        )
-        session.branches[new_branch_id] = new_branch
-        session.active_branch_id = new_branch_id
-        session.needs_fresh_session = True
-
-
-        edited_msg = Message(
-            role="user",
-            content=new_content,
-            branch_id=new_branch_id,
-            parent_id=target_msg.parent_id,
-            images=target_msg.images,
-            context_paths=target_msg.context_paths,
-            forced_tools=target_msg.forced_tools,
-            attached_skills=target_msg.attached_skills,
-        )
-        session.messages.append(edited_msg)
-        # Same status-before-snapshot rule as send_message: a stale terminal status on disk hides a mid-turn dirty death from the crash detector.
-        session.status = "running"
-        snapshot_session_now(session)
-
-        await ws_manager.send_to_session(session_id, "agent:message", {
-            "session_id": session_id,
-            "message": edited_msg.model_dump(mode="json"),
-        })
-        await ws_manager.send_to_session(session_id, "agent:branch_created", {
-            "session_id": session_id,
-            "branch": new_branch.model_dump(mode="json"),
-            "active_branch_id": new_branch_id,
-        })
-
-        session.status = "running"
-        await ws_manager.send_to_session(session_id, "agent:status", {
-            "session_id": session_id,
-            "status": "running",
-            "session": session.model_dump(mode="json"),
-        })
-
-        task = asyncio.create_task(self.run_agent_loop(
-            session_id, new_content,
-            images=target_msg.images,
-            context_paths=target_msg.context_paths,
-            forced_tools=target_msg.forced_tools,
-            attached_skills=target_msg.attached_skills,
-            fork_session=True,
-        ))
-        self.register_turn_task(session_id, task)
-

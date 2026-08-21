@@ -162,6 +162,8 @@ class AgentSession(BaseModel):
     # Set once the provider gives a verdict waiting cannot change (a spent plan, a dead credential).
     # Further recovery retries after that only produce cards contradicting the one we already showed.
     provider_verdict_final: bool = False
+    # A HUMAN ended this session (Stop, close, delete). Every automatic resume path (delegation watchdog retry, crash auto-resume, hidden continuation, a read reviving it from disk) stands down; only the human's own next message clears it.
+    ended_by_user: bool = False
     # The last provider-error KIND surfaced this ask. Cards alternated (spent/rate-limit/spent) so
     # the identical-string dedup never engaged and the user got a wall of contradictions.
     last_provider_error_kind: str = ""

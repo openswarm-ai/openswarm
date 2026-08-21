@@ -221,6 +221,10 @@ async def send_message(session_id: str, body: dict):
 
 @agents.router.post("/sessions/{session_id}/stop")
 async def stop_agent(session_id: str):
+    # Only a human reaches this route; the watchdogs call stop_agent directly and THEIR stops may resend. Stamp here so the two can be told apart downstream.
+    p_s = agent_manager.sessions.get(session_id)
+    if p_s is not None:
+        p_s.ended_by_user = True
     await agent_manager.stop_agent(session_id)
     # A stopped turn's parked AskUI waits would otherwise zombie for 600s and eat the next click (ENG-232).
     from backend.apps.agents.ui_request_bridge import cancel_session_waits
@@ -336,6 +340,9 @@ async def duplicate_session(session_id: str, body: dict = {}):
 
 @agents.router.post("/sessions/{session_id}/close")
 async def close_session(session_id: str):
+    p_s = agent_manager.sessions.get(session_id)
+    if p_s is not None:
+        p_s.ended_by_user = True
     try:
         await agent_manager.close_session(session_id)
     except ValueError as e:

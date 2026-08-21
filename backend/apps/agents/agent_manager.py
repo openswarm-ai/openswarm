@@ -24,6 +24,8 @@ from backend.apps.agents.manager.session.SessionLifecycle import SessionLifecycl
 from backend.apps.agents.manager.SpawnAgentRun import SpawnAgentRun
 from backend.apps.agents.manager.session.SessionPersistence import SessionPersistence
 from backend.apps.agents.manager.Messaging import Messaging, QueuedMessage
+from backend.apps.agents.manager.EditMessage import EditMessage
+from backend.apps.agents.manager.session.SessionHistory import SessionHistory
 from backend.apps.agents.manager.SessionControl import SessionControl
 from backend.apps.agents.manager.AgentLaunch import AgentLaunch
 from backend.apps.agents.manager.MockAgent import MockAgent
@@ -42,7 +44,7 @@ os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "3600000")
 MAX_CONCURRENT_TURNS = int(os.environ.get("OSW_MAX_CONCURRENT_TURNS", "8") or "0")
 
 
-class AgentManager(SessionLifecycle, SessionPersistence, Messaging, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnRunner, RunOptions, RunSupport):
+class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messaging, EditMessage, SessionControl, AgentLaunch, SpawnAgentRun, MockAgent, TurnRunner, RunOptions, RunSupport):
     @typechecked
     async def dispatch_hidden_continuation(self, session_id: str, prompt: str, delay_s: int) -> None:
         """Send the self-heal continuation after delay_s (codex rotation windows need ~75s; an

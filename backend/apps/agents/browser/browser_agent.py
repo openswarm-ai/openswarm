@@ -1088,10 +1088,26 @@ async def run_browser_agent(
     agent_manager.cancel_events[session_id] = cancel_event
     agent_manager.sessions[session_id] = session
 
-    # If parent was already stopped before we registered, bail immediately
+    # If the parent was stopped, user-ended, or already PURGED before we registered, bail now. A child
+    # spends its first seconds in prestage with no cancel_event yet, so a close that lands in that
+    # window stops every sibling it can see and misses this one; close_session then purges the
+    # parent, the old `parent.status == "stopped"` check saw None, and the orphan ran its whole task
+    # on a closed card (Eric's "it came back for a bit", 2026-08-20: born 18:32:08, parent closed
+    # 18:32:12, still driving Amazon minutes later). No parent in memory is the same verdict as a
+    # stopped one: nobody is waiting for this result.
     if parent_session_id:
-        parent = agent_manager.sessions.get(parent_session_id)
-        if parent and parent.status == "stopped":
+        # Live parent first; a CLOSED parent is purged from memory but its on-disk record still says
+        # ended_by_user, so fall back to that. Never cancel on mere absence: a parent that is simply
+        # not cached yet is not a closed one (the loop's own skill tests model that shape).
+        parent = agent_manager.get_session(parent_session_id)
+        p_ended = False
+        if parent is not None:
+            p_ended = parent.status == "stopped" or bool(getattr(parent, "ended_by_user", False))
+        else:
+            from backend.apps.agents.manager.session.session_store import load_session_data
+            p_rec = load_session_data(parent_session_id) or {}
+            p_ended = bool(p_rec.get("ended_by_user")) or p_rec.get("status") == "stopped"
+        if p_ended:
             cancel_event.set()
 
     await ws_manager.send_to_session(session_id, "agent:status", {

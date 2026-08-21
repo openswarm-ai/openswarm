@@ -60,7 +60,7 @@ async def test_two_settled_checks_fire_the_recovery(monkeypatch):
     # The watchdog keeps counting past stage 2; stub stage 3 so no stray task touches the real manager.
     async def p_noop(sid, session):
         fired.setdefault("stage3", sid)
-    monkeypatch.setattr(u, "p_force_recover", p_noop)
+    monkeypatch.setattr(u, "force_recover", p_noop)
 
     sess = AgentSession(id="par-2", name="p", model="sonnet")
     ctx = P_Ctx(sess, {"tu-1": 0.0})
