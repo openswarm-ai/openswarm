@@ -354,6 +354,9 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
   const settingsLoaded = useAppSelector((s) => s.settings.loaded);
   const byProvider = useAppSelector((s) => s.models.byProvider);
   const modelsLoaded = useAppSelector((s) => s.models.loaded);
+  // Availability is a live fact (a router bounce or a provider cooldown drops models out of /models); the catalog is a static one. Retiring a user's model on availability silently moved whole chats to another vendor, which is how a GPT chat started returning Anthropic policy blocks (ENG-386).
+  const knownValues = useAppSelector((s) => s.models.knownValues);
+  const catalogComplete = useAppSelector((s) => s.models.catalogComplete);
   // Until 9Router answers, /models omits subscription models, so the saved default can look "no longer available" when it's really just not loaded yet. Reconciling then would clobber a real sub user's default down to a fallback (and persist it). Only reconcile against the complete list.
   const nineRouterUp = useAppSelector((s) => s.subscriptions.status?.running === true);
   // A primitive fingerprint, not the sessions map: subscribing the app ROOT to whole sessions re-rendered it on every stream tick; this only changes when some session's MODEL changes.
@@ -372,9 +375,11 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
     if (pendingRef.current) return;
     if (Object.keys(byProvider).length === 0) return;
 
+    if (!catalogComplete || knownValues.length === 0) return;
     const flat = Object.values(byProvider).flat();
     const currentExists = flat.some((m) => m.value === settings.default_model);
     if (currentExists) return;
+    if (knownValues.includes(settings.default_model)) return;
 
     // Nothing real connected means the synthesized free row is the whole list; persisting it would brand haiku as the user's default forever (ENG-343).
     if (!flat.some((m) => m.billing_kind !== 'free')) return;
@@ -389,7 +394,7 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
         pendingRef.current = false;
       });
     setSessionSwitch({ toFreeTrial: connectionMode === 'free-trial', runs: freeTrialRemaining ?? null, toLabel: fallback.label });
-  }, [settingsLoaded, modelsLoaded, nineRouterUp, connectionMode, freeTrialRemaining, byProvider, settings, dispatch]);
+  }, [settingsLoaded, modelsLoaded, nineRouterUp, connectionMode, freeTrialRemaining, byProvider, knownValues, catalogComplete, settings, dispatch]);
 
   // Same staleness per session: a session pinned to a now-gone model (e.g. gpt-5.4-api after its key is disconnected) snags on the next send since the send carries that model, so reconcile open sessions to the valid default/fallback and warn once.
   useEffect(() => {
@@ -402,10 +407,13 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
     if (valid.size === 0) return;
     const fallback = pickFallbackModel(byProvider);
     if (!fallback) return;
+    // A model absent from the catalog is genuinely gone; one merely absent from today's list is a provider we cannot reach this second, and moving the chat off it is never ours to do silently.
+    if (!catalogComplete || knownValues.length === 0) return;
+    const known = new Set(knownValues);
     const target = valid.has(settings.default_model) ? settings.default_model : fallback.value;
     let switched = false;
     for (const sess of Object.values(store.getState().agents.sessions)) {
-      if (sess.model && !valid.has(sess.model)) {
+      if (sess.model && !known.has(sess.model)) {
         // The switch is store-only, and the metadata poll re-hydrates the dead model from disk every
         // few seconds, so re-announcing meant the banner returned forever for anyone holding a chat
         // pinned to a retired model. Fix it every time (the next send must carry a live model), tell
@@ -423,7 +431,7 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
       const toLabel = flat.find((m) => m.value === target)?.label ?? target;
       setSessionSwitch({ toFreeTrial: connectionMode === 'free-trial', runs: freeTrialRemaining ?? null, toLabel });
     }
-  }, [settingsLoaded, modelsLoaded, nineRouterUp, connectionMode, freeTrialRemaining, byProvider, sessionModelsKey, settings, dispatch]);
+  }, [settingsLoaded, modelsLoaded, nineRouterUp, connectionMode, freeTrialRemaining, byProvider, knownValues, catalogComplete, sessionModelsKey, settings, dispatch]);
 
   return (
     <>

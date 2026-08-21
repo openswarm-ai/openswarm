@@ -20,12 +20,18 @@ export interface ModelOption {
 
 interface ModelsState {
   byProvider: Record<string, ModelOption[]>;
+  /** Every model that EXISTS, independent of creds or router state. Availability says "usable now"; only this says "still exists". */
+  knownValues: string[];
+  /** False when a configured provider could not be enumerated, so nothing may be retired from the catalog this tick. */
+  catalogComplete: boolean;
   loaded: boolean;
   failed: boolean;
 }
 
 const initialState: ModelsState = {
   byProvider: {},
+  knownValues: [],
+  catalogComplete: false,
   loaded: false,
   failed: false,
 };
@@ -34,8 +40,11 @@ export const fetchModels = createAsyncThunk('models/fetchModels', async () => {
   const res = await fetch(`${AGENTS_API}/models`);
   if (!res.ok) throw new Error('Failed to fetch models');
   const data = await res.json();
-  const models = data.models || data;
-  return models as Record<string, ModelOption[]>;
+  return {
+    byProvider: (data.models || data) as Record<string, ModelOption[]>,
+    knownValues: (data.known_values ?? []) as string[],
+    catalogComplete: data.catalog_complete !== false,
+  };
 });
 
 const modelsSlice = createSlice({
@@ -45,7 +54,9 @@ const modelsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchModels.fulfilled, (state, action) => {
-        state.byProvider = action.payload;
+        state.byProvider = action.payload.byProvider;
+        state.knownValues = action.payload.knownValues;
+        state.catalogComplete = action.payload.catalogComplete;
         state.loaded = true;
       })
       .addCase(fetchModels.rejected, (state) => {

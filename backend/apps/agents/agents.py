@@ -864,7 +864,15 @@ async def list_models():
         if visible:
             result[provider_name] = visible
 
+    # Availability answers "can you use this right now"; the CATALOG answers "does this model still exist".
+    # Only the second one may retire a user's pinned model, or a router bounce silently moves their chat to another vendor (ENG-386).
+    p_catalog: list[str] = [
+        m["value"] for p_models in BUILTIN_MODELS.values() for m in p_models if m.get("value")
+    ]
+    p_catalog_complete = True
+
     # Fetch OpenRouter catalog directly (independent of 9Router) so picker fills the moment a key lands.
+    or_models: list[dict] = []
     if has_openrouter_key:
         try:
             from backend.apps.agents.providers.registry import fetch_openrouter_models
@@ -872,6 +880,10 @@ async def list_models():
         except Exception as e:
             logger.debug(f"OpenRouter catalog fetch failed: {e}")
             or_models = []
+        # A key we could not enumerate means we cannot vouch for the catalog, so nothing may be retired from it this tick.
+        if not or_models:
+            p_catalog_complete = False
+        p_catalog += [m["value"] for m in or_models if m.get("value")]
         if or_models:
             by_vendor: dict[str, list[dict]] = {}
             from backend.apps.agents.providers.registry import (
@@ -941,6 +953,7 @@ async def list_models():
                 "billing_kind": "api_key",
                 "tiers": [3, 3, 1],
             })
+        p_catalog += [e["value"] for e in entries]
         if entries:
             result[cp_name] = entries
 
@@ -954,7 +967,12 @@ async def list_models():
                 hr["billing_kind"] = "free"
             result["Anthropic"] = haiku_rows
 
-    return {"models": result, "notes": notes}
+    return {
+        "models": result,
+        "notes": notes,
+        "known_values": sorted(set(p_catalog)),
+        "catalog_complete": p_catalog_complete,
+    }
 
 
 @agents.router.post("/subscriptions/disconnect")
