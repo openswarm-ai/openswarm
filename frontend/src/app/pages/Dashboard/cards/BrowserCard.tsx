@@ -89,7 +89,7 @@ const CHROME_TEXT = '#3c3744';
 const CHROME_TEXT_MUTED = '#8a8494';
 
 import { useElementSelection } from '@/app/components/editor/ElementSelectionContext';
-import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
+import { useCanvasWindowResize } from './useCanvasWindowResize';
 
 
 // Pill-preview capture cadence: fast until the card has handed the pill a frame, slow upkeep after.
@@ -1041,69 +1041,12 @@ const BrowserCard: React.FC<Props> = ({
     };
   }, [isDragging, finalizeDrag, abortDrag]);
 
-  const resizeRef = useRef<{
-    dir: ResizeDir; startX: number; startY: number;
-    origX: number; origY: number; origW: number; origH: number;
-  } | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [localResize, setLocalResize] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-
-  const handleResizeDown = useCallback(
-    (dir: ResizeDir) => (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const popped = tiling.untileForResize();
-      if (popped) setLocalResize(popped);
-      resizeRef.current = {
-        dir, startX: e.clientX, startY: e.clientY,
-        origX: popped?.x ?? cardX, origY: popped?.y ?? cardY, origW: popped?.w ?? cardWidth, origH: popped?.h ?? cardHeight,
-      };
-      setIsResizing(true);
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    [cardX, cardY, cardWidth, cardHeight, tiling],
-  );
-
-  const computeResize = useCallback(
-    (e: React.PointerEvent) => {
-      if (!resizeRef.current) return null;
-      const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
-      const zoom = getCanvasState().zoom;
-      const dx = (e.clientX - startX) / zoom;
-      const dy = (e.clientY - startY) / zoom;
-      let newX = origX, newY = origY, newW = origW, newH = origH;
-      if (dir.includes('e')) newW = origW + dx;
-      if (dir.includes('w')) { newW = origW - dx; newX = origX + dx; }
-      if (dir.includes('s')) newH = origH + dy;
-      if (dir.includes('n')) { newH = origH - dy; newY = origY + dy; }
-      if (newW < MIN_W) { if (dir.includes('w')) newX = origX + origW - MIN_W; newW = MIN_W; }
-      if (newH < MIN_H) { if (dir.includes('n')) newY = origY + origH - MIN_H; newH = MIN_H; }
-      return { x: newX, y: newY, w: newW, h: newH };
-    },
-    [getCanvasState],
-  );
-
-  const handleResizeMove = useCallback(
-    (e: React.PointerEvent) => {
-      const result = computeResize(e);
-      if (result) setLocalResize(result);
-    },
-    [computeResize],
-  );
-
-  const handleResizeUp = useCallback((e: React.PointerEvent) => {
-    if (!resizeRef.current) return;
-    const result = computeResize(e);
-    if (result) {
-      dispatch(setBrowserCardPosition({ browserId, x: result.x, y: result.y }));
-      dispatch(setBrowserCardSize({ browserId, width: result.w, height: result.h }));
-    }
-    resizeRef.current = null;
-    setLocalResize(null);
-    setIsResizing(false);
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [computeResize, dispatch, browserId]);
+  const commitResizePosition = useCallback((x: number, y: number) => { dispatch(setBrowserCardPosition({ browserId, x, y })); }, [dispatch, browserId]);
+  const commitResizeSize = useCallback((w: number, h: number) => { dispatch(setBrowserCardSize({ browserId, width: w, height: h })); }, [dispatch, browserId]);
+  const { isResizing, live: localResize, handles: resizeHandles } = useCanvasWindowResize({
+    cardX, cardY, cardWidth, cardHeight, minWidth: MIN_W, minHeight: MIN_H,
+    getCanvasState, onCommitPosition: commitResizePosition, onCommitSize: commitResizeSize, untileForResize: tiling.untileForResize,
+  });
 
   const displayX = localResize?.x ?? localDragPos?.x ?? cardX;
   const displayY = localResize?.y ?? localDragPos?.y ?? cardY;
@@ -2000,20 +1943,12 @@ const BrowserCard: React.FC<Props> = ({
       </Box>
 
       {/* Resize handles; a docked mini's size follows the slot, so grabbing an edge used to pop it out of the chat mid-gesture. */}
-      {!dockActive && RESIZE_HANDLE_DEFS.map(({ dir, css }) => (
+      {!dockActive && resizeHandles.map(({ dir, style, ...handlers }) => (
         <Box
           key={dir}
           className="resize-handle"
-          onPointerDown={handleResizeDown(dir)}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeUp}
-          sx={{
-            position: 'absolute',
-            cursor: RESIZE_CURSOR[dir],
-            opacity: 0,
-            zIndex: 20,
-            ...css,
-          }}
+          {...handlers}
+          sx={{ ...style, opacity: 0, zIndex: 20 }}
         />
       ))}
 

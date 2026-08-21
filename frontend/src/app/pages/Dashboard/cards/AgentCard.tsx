@@ -61,7 +61,7 @@ import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canv
 import { setCardSidecar } from '@/shared/state/workflowsSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
-import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
+import { useCanvasWindowResize } from './useCanvasWindowResize';
 
 /** Extract up to 3 substantive user-prompt steps to seed a workflow. */
 function isWorkflowSuggestionTool(toolName: unknown, mcpServer?: unknown): boolean {
@@ -557,93 +557,16 @@ const AgentCard: React.FC<Props> = ({
   }, [finalizeDrag]);
   useDragEndBackstops(isDragging, finalizeDrag, abortDrag);
 
-  const resizeRef = useRef<{
-    dir: ResizeDir;
-    startX: number;
-    startY: number;
-    origX: number;
-    origY: number;
-    origW: number;
-    origH: number;
-  } | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [localResize, setLocalResize] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-
-  const handleResizeDown = useCallback(
-    (dir: ResizeDir) => (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      let effectiveX = cardX;
-      let effectiveY = cardY;
-      let effectiveW = Math.max(cardWidth, MIN_W);
-      let effectiveH = expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : cardHeight;
-      const popped = tiling.untileForResize();
-      if (popped) {
-        effectiveX = popped.x; effectiveY = popped.y; effectiveW = popped.w; effectiveH = popped.h;
-        setLocalResize({ x: effectiveX, y: effectiveY, w: effectiveW, h: effectiveH });
-      }
-      resizeRef.current = {
-        dir,
-        startX: e.clientX,
-        startY: e.clientY,
-        origX: effectiveX,
-        origY: effectiveY,
-        origW: effectiveW,
-        origH: effectiveH,
-      };
-      setIsResizing(true);
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    [cardX, cardY, cardWidth, cardHeight, expanded, tiling],
-  );
-
-  const computeResize = useCallback(
-    (e: React.PointerEvent) => {
-      if (!resizeRef.current) return null;
-      const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
-      const z = getCanvasState().zoom;
-      const dx = (e.clientX - startX) / z;
-      const dy = (e.clientY - startY) / z;
-
-      let newX = origX, newY = origY, newW = origW, newH = origH;
-
-      if (dir.includes('e')) newW = origW + dx;
-      if (dir.includes('w')) { newW = origW - dx; newX = origX + dx; }
-      if (dir.includes('s')) newH = origH + dy;
-      if (dir.includes('n')) { newH = origH - dy; newY = origY + dy; }
-
-      // An enlarged card can't be shrunk below its content-showing height, else the user resizes the
-      // chat down until the transcript vanishes (which felt broken). Collapsed cards keep the tiny floor.
-      const minH = expanded ? EXPANDED_OVERLAY_H : MIN_H;
-      if (newW < MIN_W) { if (dir.includes('w')) newX = origX + origW - MIN_W; newW = MIN_W; }
-      if (newH < minH) { if (dir.includes('n')) newY = origY + origH - minH; newH = minH; }
-
-      return { x: newX, y: newY, w: newW, h: newH };
-    },
-    [getCanvasState, expanded],
-  );
-
-  const handleResizeMove = useCallback(
-    (e: React.PointerEvent) => {
-      const result = computeResize(e);
-      if (result) setLocalResize(result);
-    },
-    [computeResize],
-  );
-
-  const handleResizeUp = useCallback((e: React.PointerEvent) => {
-    if (!resizeRef.current) return;
-    const result = computeResize(e);
-    if (result) {
-      dispatch(setCardPosition({ sessionId: session.id, x: result.x, y: result.y }));
-      dispatch(setCardSize({ sessionId: session.id, width: result.w, height: result.h }));
-    }
-    resizeRef.current = null;
-    setLocalResize(null);
-    setIsResizing(false);
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [computeResize, dispatch, session.id]);
+  const commitResizePosition = useCallback((x: number, y: number) => { dispatch(setCardPosition({ sessionId: session.id, x, y })); }, [dispatch, session.id]);
+  const commitResizeSize = useCallback((w: number, h: number) => { dispatch(setCardSize({ sessionId: session.id, width: w, height: h })); }, [dispatch, session.id]);
+  // An enlarged card can't be shrunk below its content-showing height, else the user resizes the chat down until the transcript vanishes. Collapsed cards keep the tiny floor.
+  const { isResizing, live: localResize, handles: resizeHandles } = useCanvasWindowResize({
+    cardX, cardY,
+    cardWidth: Math.max(cardWidth, MIN_W),
+    cardHeight: expanded ? Math.max(EXPANDED_OVERLAY_H, cardHeight) : cardHeight,
+    minWidth: MIN_W, minHeight: expanded ? EXPANDED_OVERLAY_H : MIN_H,
+    getCanvasState, onCommitPosition: commitResizePosition, onCommitSize: commitResizeSize, untileForResize: tiling.untileForResize,
+  });
 
   const handleRemove = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -1003,17 +926,13 @@ const AgentCard: React.FC<Props> = ({
         }),
       }}
     >
-      {!pillMode && RESIZE_HANDLE_DEFS.map(({ dir, css }) => (
+      {!pillMode && resizeHandles.map(({ dir, style, ...handlers }) => (
         <Box
           key={dir}
-          onPointerDown={handleResizeDown(dir)}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeUp}
+          {...handlers}
           onClick={(e) => e.stopPropagation()}
           sx={{
-            position: 'absolute',
-            ...css,
-            cursor: RESIZE_CURSOR[dir],
+            ...style,
             zIndex: 20,
             userSelect: 'none',
             touchAction: 'none',

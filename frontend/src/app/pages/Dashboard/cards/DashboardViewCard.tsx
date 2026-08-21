@@ -40,7 +40,7 @@ import {
   RuntimeLogLine,
 } from '@/shared/hooks/useRuntimePreviewUrl';
 import { postAppConsoleLine, terminalLineFromStream } from '@/shared/appTerminal';
-import { RESIZE_HANDLE_DEFS, RESIZE_CURSOR, type ResizeDir } from './cardResizeHandles';
+import { useCanvasWindowResize } from './useCanvasWindowResize';
 
 type AppCardView = 'preview' | 'code' | 'terminal' | 'history';
 
@@ -514,69 +514,12 @@ const DashboardViewCard: React.FC<Props> = ({
   }, [finalizeDrag]);
   useDragEndBackstops(isDragging, finalizeDrag, abortDrag);
 
-  const resizeRef = useRef<{
-    dir: ResizeDir; startX: number; startY: number;
-    origX: number; origY: number; origW: number; origH: number;
-  } | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [localResize, setLocalResize] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-
-  const handleResizeDown = useCallback(
-    (dir: ResizeDir) => (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const popped = tiling.untileForResize();
-      if (popped) setLocalResize(popped);
-      resizeRef.current = {
-        dir, startX: e.clientX, startY: e.clientY,
-        origX: popped?.x ?? cardX, origY: popped?.y ?? cardY, origW: popped?.w ?? cardWidth, origH: popped?.h ?? cardHeight,
-      };
-      setIsResizing(true);
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    [cardX, cardY, cardWidth, cardHeight, tiling],
-  );
-
-  const computeResize = useCallback(
-    (e: React.PointerEvent) => {
-      if (!resizeRef.current) return null;
-      const { dir, startX, startY, origX, origY, origW, origH } = resizeRef.current;
-      const zoom = getCanvasState().zoom;
-      const dx = (e.clientX - startX) / zoom;
-      const dy = (e.clientY - startY) / zoom;
-      let newX = origX, newY = origY, newW = origW, newH = origH;
-      if (dir.includes('e')) newW = origW + dx;
-      if (dir.includes('w')) { newW = origW - dx; newX = origX + dx; }
-      if (dir.includes('s')) newH = origH + dy;
-      if (dir.includes('n')) { newH = origH - dy; newY = origY + dy; }
-      if (newW < MIN_W) { if (dir.includes('w')) newX = origX + origW - MIN_W; newW = MIN_W; }
-      if (newH < MIN_H) { if (dir.includes('n')) newY = origY + origH - MIN_H; newH = MIN_H; }
-      return { x: newX, y: newY, w: newW, h: newH };
-    },
-    [getCanvasState],
-  );
-
-  const handleResizeMove = useCallback(
-    (e: React.PointerEvent) => {
-      const result = computeResize(e);
-      if (result) setLocalResize(result);
-    },
-    [computeResize],
-  );
-
-  const handleResizeUp = useCallback((e: React.PointerEvent) => {
-    if (!resizeRef.current) return;
-    const result = computeResize(e);
-    if (result) {
-      dispatch(setViewCardPosition({ outputId: cardKey, x: result.x, y: result.y }));
-      dispatch(setViewCardSize({ outputId: cardKey, width: result.w, height: result.h }));
-    }
-    resizeRef.current = null;
-    setLocalResize(null);
-    setIsResizing(false);
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [computeResize, dispatch, cardKey]);
+  const commitResizePosition = useCallback((x: number, y: number) => { dispatch(setViewCardPosition({ outputId: cardKey, x, y })); }, [dispatch, cardKey]);
+  const commitResizeSize = useCallback((w: number, h: number) => { dispatch(setViewCardSize({ outputId: cardKey, width: w, height: h })); }, [dispatch, cardKey]);
+  const { isResizing, live: localResize, handles: resizeHandles } = useCanvasWindowResize({
+    cardX, cardY, cardWidth, cardHeight, minWidth: MIN_W, minHeight: MIN_H,
+    getCanvasState, onCommitPosition: commitResizePosition, onCommitSize: commitResizeSize, untileForResize: tiling.untileForResize,
+  });
 
   const handleRemove = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -944,20 +887,12 @@ const DashboardViewCard: React.FC<Props> = ({
       </Box>
 
       {/* Resize handles */}
-      {!isMinimized && RESIZE_HANDLE_DEFS.map(({ dir, css }) => (
+      {!isMinimized && resizeHandles.map(({ dir, style, ...handlers }) => (
         <Box
           key={dir}
           className="resize-handle"
-          onPointerDown={handleResizeDown(dir)}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeUp}
-          sx={{
-            position: 'absolute',
-            cursor: RESIZE_CURSOR[dir],
-            opacity: 0,
-            zIndex: RESIZE_HANDLE_Z,
-            ...css,
-          }}
+          {...handlers}
+          sx={{ ...style, opacity: 0, zIndex: RESIZE_HANDLE_Z }}
         />
       ))}
 
