@@ -85,3 +85,7 @@ frontend/tsconfig.tsbuildinfo
 # dictation runtime artifacts (model download + first-use marker), never shipped via git
 electron/whisper/
 electron/dictation-used
+
+# local release credentials (Apple + castlabs EVS) sourced by publish.sh; NEVER committed
+.release.env
+.release.env.local

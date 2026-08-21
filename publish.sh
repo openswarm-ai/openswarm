@@ -24,6 +24,8 @@ chmod +x "$PUBLISH_ABSPATH"
 
 PROJECT_ROOT="$(dirname "$PUBLISH_ABSPATH")"
 cd "$PROJECT_ROOT"
+# Local release credentials (Apple notarization + castlabs EVS/Widevine), gitignored. Sourcing here means a push never stalls on a missing cred once .release.env exists. See .release.env.example.
+if [ -f "$PROJECT_ROOT/.release.env" ]; then set -a; . "$PROJECT_ROOT/.release.env"; set +a; echo "==> sourced .release.env"; fi
 
 # electron-builder auto-detects prerelease from semver suffix in electron/package.json
 # (e.g. "1.0.37-exp.1" publishes as GitHub Pre-release; "1.0.37" publishes as stable).
