@@ -356,6 +356,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const lastVisibleItemRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandle>(null);
   const isAtBottomRef = useRef(true);
+  // Follow-intent is decided by the USER's gestures, never by where a layout shift left the viewport: a wheel-up, a touch drag, a scrollbar drag, or a keyboard jump within this window is a real scroll-away; any other drift off the bottom while following is layout noise and gets re-pinned.
+  const userScrollIntentUntilRef = useRef(0);
+  const scrollbarDragRef = useRef(false);
+  const transcriptContentRef = useRef<HTMLDivElement | null>(null);
   const pendingInitialBottomScrollRef = useRef(false);
   const initialBottomScrollSettledRef = useRef(false);
   const renderItemsLengthRef = useRef(0);
@@ -642,6 +646,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [id, session?.status, messageCount, hasStreaming, dispatch]);
 
   const SCROLL_THRESHOLD = 50;
+  const USER_SCROLL_INTENT_MS = 400;
 
   // Reserved pixel height for a render item: the measured height once we have one, otherwise a content-aware estimate (cached per id). The spacer math and the window solver both go through this so unmounted spacers, freshly-mounted placeholders, and the real rendered bubble all reserve the same space.
   const reservedHeightForItem = useCallback((item: RenderItem | undefined): number => {
@@ -752,10 +757,16 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    // Measure against the real content bottom, not the locked-height pad below it.
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
-    isAtBottomRef.current = atBottom;
-    setShowScrollButton(!atBottom);
+    if (atBottom) {
+      isAtBottomRef.current = true;
+    } else if (isAtBottomRef.current) {
+      const userScrolled = scrollbarDragRef.current || performance.now() < userScrollIntentUntilRef.current;
+      if (userScrolled) isAtBottomRef.current = false;
+      // Following, and nobody asked to leave: a buffered flush, an image, a tool card or a content-visibility box just grew under us. Re-pin instead of silently unfollowing.
+      else el.scrollTop = el.scrollHeight;
+    }
+    setShowScrollButton(!isAtBottomRef.current);
     // Slide the mounted window to follow the viewport (loads newer/older items and unloads ones that drifted past the buffer on either side).
     scheduleWindowRecompute();
   }, [scheduleWindowRecompute]);
@@ -772,6 +783,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       // Google Maps model: a plain wheel over a chat you haven't clicked INTO belongs to the canvas, so let it through instead of swallowing it here (this is what made zoom look dead over any chat).
       const cardId = el.closest('[data-select-id]')?.getAttribute('data-select-id') ?? null;
       if (cardId && cardId !== getScrollFocusedCard()) return;
+      if (e.deltaY < 0) userScrollIntentUntilRef.current = performance.now() + USER_SCROLL_INTENT_MS;
       const atTop = el.scrollTop <= 0;
       const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
       const scrollingDown = e.deltaY > 0;
@@ -782,7 +794,25 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       e.stopPropagation();
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    const markIntent = (): void => { userScrollIntentUntilRef.current = performance.now() + USER_SCROLL_INTENT_MS; };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home' || (e.key === ' ' && e.shiftKey)) markIntent();
+    };
+    // A press on the scrollbar gutter (the container is the target, past its client box) is a thumb drag until the pointer lifts anywhere.
+    const onPointerDown = (e: PointerEvent): void => {
+      if (e.target !== el || e.offsetX < el.clientWidth) return;
+      scrollbarDragRef.current = true;
+      window.addEventListener('pointerup', () => { scrollbarDragRef.current = false; }, { once: true });
+    };
+    el.addEventListener('touchmove', markIntent, { passive: true });
+    el.addEventListener('keydown', onKeyDown);
+    el.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchmove', markIntent);
+      el.removeEventListener('keydown', onKeyDown);
+      el.removeEventListener('pointerdown', onPointerDown);
+    };
   }, []);
 
   const scrollToBottomRafRef = useRef<number | null>(null);
@@ -805,7 +835,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       const c = scrollContainerRef.current;
       if (!c) { scrollToBottomRafRef.current = null; return; }
       c.scrollTop = c.scrollHeight;
-      lastScrollHeightRef.current = c.scrollHeight;
       isAtBottomRef.current = true;
       if (++frame < FRAMES) {
         scrollToBottomRafRef.current = requestAnimationFrame(pin);
@@ -821,22 +850,32 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const scrollRafRef = useRef<number | null>(null);
   const pinRafRef = useRef<number | null>(null);
   const initialPinRafRef = useRef<number | null>(null);
-  const lastScrollHeightRef = useRef<number>(0);
   // Shared scroll-stick routine. Used both by the structural-events useEffect below (new message lands / stream starts/ends) and by StreamingBubble's onStreamGrew callback (per-delta growth). RAF + height-grew gate ensures we only set scrollTop when needed.
+  // Distance-based, not height-delta-based: a viewport that drifted off the bottom without the total height changing (scroll anchoring, a placeholder swap of equal size) used to strand forever because "height unchanged" skipped the correction.
+  const pinIfFollowing = useCallback((el: HTMLElement) => {
+    if (!isAtBottomRef.current) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) el.scrollTop = el.scrollHeight;
+  }, []);
   const stickToBottomIfNeeded = useCallback(() => {
     if (!isAtBottomRef.current) return;
     if (scrollRafRef.current != null) return;
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = null;
-      if (!isAtBottomRef.current) return;
       const el = scrollContainerRef.current;
-      if (!el) return;
-      const newHeight = el.scrollHeight;
-      if (newHeight === lastScrollHeightRef.current) return;
-      lastScrollHeightRef.current = newHeight;
-      el.scrollTop = newHeight;
+      if (el) pinIfFollowing(el);
     });
-  }, []);
+  }, [pinIfFollowing]);
+  // Anything that grows the transcript between streams (tool cards, images, embeds, a buffered 1Hz flush, content-visibility boxes resolving) re-pins here; the structural effect below only sees message-count changes.
+  useEffect(() => {
+    const content = transcriptContentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      const el = scrollContainerRef.current;
+      if (el) pinIfFollowing(el);
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [pinIfFollowing]);
   useEffect(() => {
     stickToBottomIfNeeded();
     // Structural triggers only: a new message lands or a stream starts/ends. Streaming content updates trigger this via <StreamingBubble onStreamGrew={stickToBottomIfNeeded} /> instead so AgentChat stays dormant during the 30Hz delta storm.
@@ -848,15 +887,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     let raf = 0;
     const pin = () => {
       const el = scrollContainerRef.current;
-      if (el && isAtBottomRef.current && el.scrollHeight !== lastScrollHeightRef.current) {
-        lastScrollHeightRef.current = el.scrollHeight;
-        el.scrollTop = el.scrollHeight;
-      }
+      if (el) pinIfFollowing(el);
       raf = requestAnimationFrame(pin);
     };
     raf = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(raf);
-  }, [streamingMessageId]);
+  }, [streamingMessageId, pinIfFollowing]);
 
   // Stream-end re-stick. When a stream finishes, the live bubble (smooth-revealed text) is replaced by the committed bubble rendering FULL markdown with contentVisibility placeholders; as those resolve, Chromium's overflow-anchor re-anchors to an EARLIER element (the user message), yanking the view up to "the top of the user input". A single deferred scroll loses the race because that anchor shift fires an onScroll that flips isAtBottomRef false before we run. Fix: snapshot the "was following" intent the moment streaming stops (captured continuously during the stream, before any completion re-render), then pin to bottom across a short multi-frame window that OVERRIDES the layout-induced flip. A genuine user scroll-away (wheel/touch) during that window aborts the pin, honoring "unless the user scrolls up".
   const prevStreamingIdRef = useRef<string | null>(null);
@@ -884,7 +920,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     const pin = () => {
       if (pinAbortRef.current) { cleanup(); return; }
       const c = scrollContainerRef.current;
-      if (c) { c.scrollTop = c.scrollHeight; lastScrollHeightRef.current = c.scrollHeight; isAtBottomRef.current = true; }
+      if (c) { c.scrollTop = c.scrollHeight; isAtBottomRef.current = true; }
       if (++frame < FRAMES) { pinRafRef.current = requestAnimationFrame(pin); }
       else cleanup();
     };
@@ -1450,7 +1486,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
         if (!c) return;
         lastVisibleItemRef.current?.scrollIntoView({ block: 'end' });
         c.scrollTop = Math.max(0, Math.min(c.scrollTop, c.scrollHeight - c.clientHeight));
-        lastScrollHeightRef.current = c.scrollHeight;
         isAtBottomRef.current = true;
         setShowScrollButton(false);
         if (++frame < FRAMES) {
@@ -1762,7 +1797,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             {/* The welcome greeting is the FIRST thing and it's the agent talking, no user message above it, so give it real air under the header instead of sitting flush at the top. */}
             {/* Non-welcome chats still need headroom: at pt 0 the first user bubble's top edge clipped under the header. */}
             {/* Fullscreen carries the window title bar OVER the transcript, so the first message (and any attachment chips above it) needs to start below that chrome, not under it. */}
-            <Box sx={{ pt: fullscreenChat ? 7 : session.is_welcome_draft ? 4 : 2 }}>
+            <Box ref={transcriptContentRef} sx={{ pt: fullscreenChat ? 7 : session.is_welcome_draft ? 4 : 2 }}>
             {session.context_overflow && (() => {
               const reason = session.context_overflow.reason;
               const isAuth = reason === 'openswarm_pro_auth_expired' || reason === 'anthropic_auth_invalid' || reason === 'auth_error';
