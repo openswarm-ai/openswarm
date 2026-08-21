@@ -211,6 +211,9 @@ def stage_upload(raw: bytes, filename: str) -> tuple[str, Manifest, list[str]]:
                 raise BundleError("this .swarm was made by a newer OpenSwarm; please update")
             return sandbox, manifest, warnings
         return stage_skill_from_zip(raw, filename, warnings)
+    # A .swarm that is not a zip is a broken or renamed bundle, and a screenshot or a PDF must never be reinterpreted as a skill to install (ENG-376).
+    if os.path.splitext(filename or "")[1].lower() not in (".md", ".markdown"):
+        raise BundleError("unrecognized file; expected a .swarm bundle or a .md skill")
     return p_stage_skill_from_markdown(raw, filename, warnings)
 
 

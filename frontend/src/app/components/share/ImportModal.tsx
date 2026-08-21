@@ -1,4 +1,4 @@
-// Confirmation surface shown only for bundles that carry something with a consequence (an app that runs code, or actions that must be connected). Safe bundles never reach here; the entry point auto-imports them. This is purely presentational: the entry point owns preflight, commit, and navigation.
+// Confirmation surface shown only for bundles that carry something with a consequence (an app that runs code, a skill that rides every future turn, or actions that must be connected). Safe bundles never reach here; the entry point auto-imports them. This is purely presentational: the entry point owns preflight, commit, and navigation.
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';

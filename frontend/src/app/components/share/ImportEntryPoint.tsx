@@ -17,6 +17,7 @@ import ImportDigest, { DigestHandle } from './ImportDigest';
 import ImportModal from './ImportModal';
 import { importCommit, importPreflight } from './shareApi';
 import { ImportPreflight } from './shareTypes';
+import { importNeedsConfirm } from './importNeedsConfirm';
 import { DragVerdict, UNSUPPORTED_DROP_MESSAGE, firstImportable, judgeDrag, looksImportable } from './dragImportability';
 
 export const IMPORT_OPEN_EVENT = 'openswarm:import-open';
@@ -27,15 +28,6 @@ const DIGEST_MS = 820; // keep in step with ImportDigest's wave so the blast rea
 const DEST: Record<string, (id: string) => string | null> = {
   dashboard: (id) => `/dashboard/${id}`,
 };
-
-// A bundle needs a confirm only if it can run code (an app) or wants actions connected; everything else is inert data and imports straight away.
-function needsConfirm(pf: ImportPreflight): boolean {
-  const s = pf.summary;
-  const hasApp = s.root.type === 'app' || s.includes.some((i) => i.type === 'app');
-  const hasAction = s.requirements.some((r) => r.kind === 'mcp_action');
-  const risky = !!pf.review && pf.review.verdict !== 'clean';
-  return hasApp || hasAction || risky;
-}
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -99,7 +91,7 @@ const ImportEntryPoint: React.FC = () => {
         setToast({ msg: e?.message || "We couldn't read this file.", sev: 'error' });
         return;
       }
-      if (needsConfirm(pf)) {
+      if (importNeedsConfirm(pf)) {
         confirmRef.current = true;
         setConfirm(pf);
       } else {

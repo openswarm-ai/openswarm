@@ -620,3 +620,20 @@ def test_newer_format_version_rejected(skill_store):
         zf.writestr("entities/x/payload.json", json.dumps({"slug": "n", "name": "n", "content": "c"}))
     with pytest.raises(BundleError):
         closure.stage_upload(buf.getvalue(), "x.swarm")
+
+
+def test_a_non_zip_swarm_is_refused_not_reread_as_a_skill(skill_store):
+    """ENG-376: any UTF-8 bytes named .swarm used to import as a markdown skill with no confirm."""
+    with pytest.raises(BundleError):
+        closure.stage_upload(b"just some text", "notes.swarm")
+
+
+def test_only_markdown_may_import_as_a_bare_skill(skill_store):
+    with pytest.raises(BundleError):
+        closure.stage_upload(b"hello", "notes.txt")
+    with pytest.raises(BundleError):
+        closure.stage_upload(b"\x89PNG\r\n", "shot.png")
+    sandbox, manifest, p_w = closure.stage_upload(b"# still fine", "Trick.markdown")
+    import shutil
+    shutil.rmtree(sandbox, ignore_errors=True)
+    assert manifest.root.type == EntityType.skill
