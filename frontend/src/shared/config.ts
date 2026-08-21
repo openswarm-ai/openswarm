@@ -10,6 +10,13 @@ const port =
   8324;
 const host = window.location.hostname || 'localhost';
 
+/** The backend port as of NOW. Prefer this over the boot-time snapshot when the number leaves the app (the Google sign-in hand-off POSTs the bearer back to it): preload captures `__OPENSWARM_PORT__` once, and a slow first-run port scan leaves it null, which used to send the cloud to a bare 8324 nobody was listening on. */
+export function getBackendPort(): number {
+  const ow = _w.openswarm;
+  const live = ow && typeof ow.getBackendPortLive === 'function' ? ow.getBackendPortLive() : null;
+  return typeof live === 'number' && live > 0 ? live : port;
+}
+
 export const API_BASE = `http://${host}:${port}/api`;
 export const WS_BASE = `ws://${host}:${port}`;
 // Must match openswarm-cloud's PUBLIC_BASE_URL (fly.toml) and the Google OAuth redirect URI.

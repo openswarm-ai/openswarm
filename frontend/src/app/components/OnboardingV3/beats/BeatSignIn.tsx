@@ -5,7 +5,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchSettings } from '@/shared/state/settingsSlice';
-import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
+import { OPENSWARM_DEFAULT_PROXY_URL, getBackendPort } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import SignInDialog from '@/app/components/overlays/SignInDialog';
@@ -17,6 +17,8 @@ import { googleStartUrl } from '@/shared/googleStartUrl';
 // setup are tied to a real account. Google hands off through the external browser and lands out-of-band
 // (the cloud page POSTs the bearer to the local backend), so we poll settings until user_id appears.
 // Email reuses the proven SignInDialog (magic-link 6-digit code) on top of the beat.
+const GOOGLE_STALL_MS = 60_000;
+
 const BeatSignIn: React.FC<{
   c: ClaudeTokens;
   onNext: () => void;
@@ -28,6 +30,7 @@ const BeatSignIn: React.FC<{
   const proxyUrl = useAppSelector((s) => s.settings.data.openswarm_proxy_url || OPENSWARM_DEFAULT_PROXY_URL);
   const installId = useAppSelector((s) => s.settings.data.installation_id ?? '');
   const [waitingGoogle, setWaitingGoogle] = useState(false);
+  const [stalled, setStalled] = useState(false);
   const [notReady, setNotReady] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const signedIn = !!userId;
@@ -38,11 +41,17 @@ const BeatSignIn: React.FC<{
     return () => window.clearInterval(id);
   }, [signedIn, waitingGoogle, dispatch]);
 
+  // The hand-off can die silently (browser blocked the localhost POST, wrong port, the tab was closed), and "Waiting for your browser" forever was the whole bug report. Past a minute, say so, offer the retry, and record it.
+  useEffect(() => {
+    if (signedIn || !waitingGoogle || stalled) return undefined;
+    const id = window.setTimeout(() => { setStalled(true); report('signin', 'google_handoff_stalled'); }, GOOGLE_STALL_MS);
+    return () => window.clearTimeout(id);
+  }, [signedIn, waitingGoogle, stalled]);
+
   const onGoogle = (): void => {
     if (signedIn) return;
-    report('signin', 'google_clicked');
-    const localPort = (window as unknown as { __OPENSWARM_PORT__?: number }).__OPENSWARM_PORT__ || 8324;
-    const startUrl = googleStartUrl(proxyUrl, installId, localPort);
+    report('signin', stalled ? 'google_retry_clicked' : 'google_clicked');
+    const startUrl = googleStartUrl(proxyUrl, installId, getBackendPort());
     // First run is exactly when settings may not have landed yet, so this beat is the likeliest
     // place to catch a not-ready install. Say so on the row instead of opening a broken page.
     if (!startUrl) { setNotReady(true); return; }
@@ -50,11 +59,12 @@ const BeatSignIn: React.FC<{
     const api = (window as unknown as { openswarm?: { openExternal?: (u: string) => void } }).openswarm;
     if (api?.openExternal) api.openExternal(startUrl);
     else window.open(startUrl, '_blank');
+    setStalled(false);
     setWaitingGoogle(true);
   };
 
   const rows: Array<{ id: string; name: string; icon: React.ReactNode; onClick: () => void; hint?: string }> = [
-    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 20, color: '#4285F4' }} />, onClick: onGoogle, hint: notReady ? 'Still starting up, try again in a second' : (waitingGoogle && !signedIn ? 'Waiting for your browser...' : undefined) },
+    { id: 'google', name: 'Continue with Google', icon: <GoogleIcon sx={{ fontSize: 20, color: '#4285F4' }} />, onClick: onGoogle, hint: notReady ? 'Still starting up, try again in a second' : stalled ? 'Still waiting. Click to open the sign-in page again' : (waitingGoogle && !signedIn ? 'Waiting for your browser...' : undefined) },
     { id: 'email', name: 'Continue with email', icon: <EmailIcon sx={{ fontSize: 20, color: '#6f6e6a' }} />, onClick: () => { if (!signedIn) setEmailOpen(true); } },
   ];
 

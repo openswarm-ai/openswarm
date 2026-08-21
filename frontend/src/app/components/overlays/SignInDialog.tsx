@@ -17,7 +17,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { activateSignin, fetchSettings } from '@/shared/state/settingsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
+import { OPENSWARM_DEFAULT_PROXY_URL, getBackendPort } from '@/shared/config';
 import { report } from '@/shared/serviceClient';
 import { googleStartUrl } from '@/shared/googleStartUrl';
 
@@ -50,7 +50,7 @@ export default function SignInDialog({ onClose, initialStage = 'choose', mandato
 
   const onGoogle = () => {
     report('signin', 'google_clicked');
-    const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
+    const localPort = getBackendPort();
     const startUrl = googleStartUrl(cloudBase, installId, localPort);
     if (!startUrl) {
       setErrMsg('Still finishing startup. Give it a second and try again.');
@@ -116,7 +116,7 @@ export default function SignInDialog({ onClose, initialStage = 'choose', mandato
     setBusy(true);
     try {
       report('signin', 'email_verify_submitted');
-      const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
+      const localPort = getBackendPort();
       const res = await fetch(`${cloudBase}/api/auth/email/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

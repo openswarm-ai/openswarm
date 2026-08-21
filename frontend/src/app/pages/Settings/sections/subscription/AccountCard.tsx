@@ -5,7 +5,7 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { signOut } from '@/shared/state/settingsSlice';
-import { OPENSWARM_DEFAULT_PROXY_URL } from '@/shared/config';
+import { OPENSWARM_DEFAULT_PROXY_URL, getBackendPort } from '@/shared/config';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import SignInDialog from '@/app/components/overlays/SignInDialog';
 import { googleStartUrl } from '@/shared/googleStartUrl';
@@ -46,7 +46,7 @@ const AccountCard: React.FC = () => {
 
   const onSignIn = () => {
     // Pass local_port so the bearer-handoff page POSTs to the right backend (Electron binds in 8324..8424).
-    const localPort = (window as any).__OPENSWARM_PORT__ || 8324;
+    const localPort = getBackendPort();
     const startUrl = googleStartUrl(proxyUrl, installId, localPort);
     // No error surface on this card, so the honest move is to do nothing visible rather than send
     // them to a black cloud error page. Settings land within a second and the click then works.

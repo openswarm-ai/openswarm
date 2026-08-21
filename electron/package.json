@@ -31,6 +31,14 @@
     "electron-builder-squirrel-windows": "^26.8.1"
   },
   "build": {
+    "protocols": [
+      {
+        "name": "OpenSwarm",
+        "schemes": [
+          "openswarm"
+        ]
+      }
+    ],
     "appId": "com.clusterlabs.openswarm",
     "productName": "OpenSwarm",
     "afterPack": "./build/after-pack.js",
