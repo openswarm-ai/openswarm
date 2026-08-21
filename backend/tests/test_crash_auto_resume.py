@@ -93,3 +93,22 @@ def test_resume_failure_is_per_session_and_non_fatal(manager, tmp_path, monkeypa
     monkeypatch.setattr(manager, "send_message", p_flaky_send)
     asyncio.run(manager.auto_resume_crashed_turns())
     assert len(sent) == 1
+
+
+def test_a_terminal_system_card_tail_is_not_owed(manager, tmp_path, monkeypatch):
+    """ENG-366: an overflow card, an exhausted note or a notice is the END of that ask; a dirty death
+    after it must not poke a finished chat back to life with a hidden continue."""
+    p_write_session(tmp_path, monkeypatch, "s-card", "running",
+                    [p_msg("user", "do work"), p_msg("tool_call"), p_msg("system", "This chat exceeded the model's context window")])
+    asyncio.run(manager.reconcile_on_startup())
+    assert manager.crash_resume_queue == []
+
+
+def test_a_system_notice_with_an_armed_continuation_is_owed(manager, tmp_path, monkeypatch):
+    data = p_write_session(tmp_path, monkeypatch, "s-wait", "running",
+                           [p_msg("user", "do work"), p_msg("system", "token rotated, retrying in a minute")])
+    data["pending_continuation"] = True
+    with open(os.path.join(str(tmp_path), "s-wait.json"), "w") as f:
+        json.dump(data, f)
+    asyncio.run(manager.reconcile_on_startup())
+    assert manager.crash_resume_queue == ["s-wait"]

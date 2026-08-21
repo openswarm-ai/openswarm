@@ -74,3 +74,21 @@ def test_unwritable_dir_fails_open(tmp_path, monkeypatch):
     g.record_boot()
     g.mark_firing("wf1")
     g.clear_firing("wf1")
+
+
+def test_a_watchdog_death_implicates_nobody(tmp_path, monkeypatch):
+    """ENG-366: the loop watchdog's own hard exit is a frozen backend, not a workflow's doing; a
+    workflow mid-fire at three such deaths in a row must stay unimplicated and untripped, while the
+    same three deaths without the marker trip it (the control)."""
+    p_fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(g, "consume_watchdog_exit_marker", lambda: True)
+    for t in (1000.0, 1010.0, 1020.0):
+        g.mark_firing("wf1")
+        g.record_boot(now=t)
+    assert g.is_tripped("wf1", now=1020.0) is False
+    p_fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(g, "consume_watchdog_exit_marker", lambda: False)
+    for t in (1000.0, 1010.0, 1020.0):
+        g.mark_firing("wf1")
+        g.record_boot(now=t)
+    assert g.is_tripped("wf1", now=1020.0) is True

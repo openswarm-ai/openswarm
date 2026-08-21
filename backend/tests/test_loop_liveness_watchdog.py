@@ -85,3 +85,19 @@ print("SURVIVED")
 """
     r = p_run_child(code)
     assert r.returncode == 0 and "SURVIVED" in r.stdout
+
+
+def test_the_exit_leaves_a_marker_the_next_boot_can_consume(tmp_path, monkeypatch):
+    """ENG-366: record_boot reads this marker to tell a watchdog restart from a workflow-caused death."""
+    import os
+    marker = str(tmp_path / "loop-watchdog-exit")
+    monkeypatch.setattr(w, "WATCHDOG_EXIT_MARKER", marker)
+    monkeypatch.setattr(w, "DUMP_PATH", str(tmp_path / "dump.log"))
+    exits = []
+    monkeypatch.setattr(os, "_exit", lambda code: exits.append(code))
+    w.dump_and_exit(3)
+    assert exits == [w.RESTART_EXIT_CODE]
+    assert os.path.exists(marker)
+    assert w.consume_watchdog_exit_marker() is True
+    assert not os.path.exists(marker)
+    assert w.consume_watchdog_exit_marker() is False

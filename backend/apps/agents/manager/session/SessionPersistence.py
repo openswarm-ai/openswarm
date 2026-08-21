@@ -41,7 +41,9 @@ class SessionPersistence(AgentManagerProtocol):
                 marked += 1
                 branch = data.get("active_branch_id") or "main"
                 p_msgs = [m for m in data.get("messages", []) if (m.get("branch_id") or "main") == branch]
-                p_owed = bool(p_msgs) and p_msgs[-1].get("role") != "assistant"
+                p_tail_role = p_msgs[-1].get("role") if p_msgs else None
+                # A system-role tail is a card (overflow, exhausted, a notice): terminal unless a continuation was armed behind it, so a finished chat is never poked back to life (ENG-366).
+                p_owed = bool(p_msgs) and p_tail_role != "assistant" and (p_tail_role != "system" or bool(data.get("pending_continuation")))
                 if p_was_running and p_owed and data.get("closed_at") is None:
                     count = int(data.get("crash_interrupt_count", 0) or 0) + 1
                     data["crash_interrupt_count"] = count

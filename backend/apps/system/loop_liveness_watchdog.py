@@ -29,15 +29,27 @@ from backend.config.paths import DATA_ROOT
 logger = logging.getLogger(__name__)
 
 PROBE_INTERVAL_S = 30.0
-PROBE_TIMEOUT_S = 10.0
+# 20s, not 10s: a big session persist to a slow mount or the unwedger's 10s ps timeout can hold the loop that long and still be alive; a frozen loop is frozen forever, so the longer probe costs 30s of detection and nothing else (ENG-366).
+PROBE_TIMEOUT_S = 20.0
 MAX_STRIKES = 3
 # 75 = EX_TEMPFAIL, hermes's "restart me" exit language; Electron respawns any non-zero exit.
 RESTART_EXIT_CODE = 75
 DUMP_PATH = os.path.join(DATA_ROOT, "loop-watchdog-dump.log")
+# Left behind by a watchdog exit so the next boot knows the last life died of a frozen loop, not of whatever workflow happened to be mid-fire.
+WATCHDOG_EXIT_MARKER = os.path.join(DATA_ROOT, "loop-watchdog-exit")
 
 
 @typechecked
-def p_dump_and_exit(strikes: int) -> None:
+def consume_watchdog_exit_marker() -> bool:
+    try:
+        os.unlink(WATCHDOG_EXIT_MARKER)
+        return True
+    except OSError:
+        return False
+
+
+@typechecked
+def dump_and_exit(strikes: int) -> None:
     try:
         logger.critical(f"backend event loop missed {strikes} consecutive liveness probes; dumping stacks and exiting {RESTART_EXIT_CODE} so Electron respawns a working process")
     except Exception:
@@ -52,6 +64,11 @@ def p_dump_and_exit(strikes: int) -> None:
         pass
     try:
         faulthandler.dump_traceback(all_threads=True)
+    except Exception:
+        pass
+    try:
+        with open(WATCHDOG_EXIT_MARKER, "w", encoding="utf-8") as fh:
+            fh.write(f"{time.time():.0f}\n")
     except Exception:
         pass
     os._exit(RESTART_EXIT_CODE)
@@ -95,7 +112,7 @@ def start_loop_liveness_watchdog(loop: "asyncio.AbstractEventLoop") -> Optional[
             strikes += 1
             logger.warning(f"backend event loop missed liveness probe ({strikes}/{MAX_STRIKES})")
             if strikes >= MAX_STRIKES and not stop_event.is_set():
-                p_dump_and_exit(strikes)
+                dump_and_exit(strikes)
                 return
 
     try:

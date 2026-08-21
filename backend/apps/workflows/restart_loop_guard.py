@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 
 from typeguard import typechecked
 
+from backend.apps.system.loop_liveness_watchdog import consume_watchdog_exit_marker
 from backend.apps.workflows.storage import DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,12 @@ def record_boot(now: Optional[float] = None) -> List[float]:
     boots = [float(t) for t in state.get("boots", []) if isinstance(t, (int, float)) and t >= ts - WINDOW_SECONDS]
     boots.append(ts)
     implicated = dict(state.get("implicated", {}))
+    # A death by our own loop watchdog is a frozen backend, not a workflow's doing; implicating whatever was mid-fire would pause innocent schedules (ENG-366).
+    p_watchdog_death = consume_watchdog_exit_marker()
     for wf_id in list(state.get("firing", {}) or {}):
+        if p_watchdog_death:
+            logger.warning(f"restart-loop guard: workflow {wf_id} was mid-fire when the loop watchdog restarted the backend; not implicated")
+            continue
         implicated[wf_id] = int(implicated.get(wf_id, 0)) + 1
         logger.warning(f"restart-loop guard: workflow {wf_id} was mid-fire when the last backend life died (implication #{implicated[wf_id]})")
     p_save({"boots": boots, "implicated": implicated, "firing": {}})
