@@ -10,7 +10,7 @@ arguments, so the agent can re-run any call whose detail it still needs."""
 
 import hashlib
 import json
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from typeguard import typechecked
 
