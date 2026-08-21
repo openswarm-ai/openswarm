@@ -71,19 +71,19 @@ def test_a_malformed_entry_is_ignored_rather_than_read_as_broken():
 
 
 class P_Session:
-    needs_fresh_session = False
+    needs_respawn = False
 
 
 def test_a_failed_connect_arms_a_fresh_cli_session():
     s = P_Session()
     assert note_core_mcp_health(s, "sess-1", p_init([{"name": "openswarm-core", "status": "failed"}])) is True
-    assert s.needs_fresh_session is True, "a toolless session stays toolless until the CLI respawns"
+    assert s.needs_respawn is True, "a toolless session stays toolless until the CLI respawns"
 
 
 def test_a_healthy_connect_changes_nothing():
     s = P_Session()
     assert note_core_mcp_health(s, "sess-2", p_init([{"name": "openswarm-core", "status": "connected"}])) is False
-    assert s.needs_fresh_session is False
+    assert s.needs_respawn is False
 
 
 def test_the_turn_runner_consults_this_on_init():

@@ -46,7 +46,7 @@ def test_an_outage_parks_the_turn_instead_of_ending_it(monkeypatch):
     assert session.pending_continuation is True, "the work is queued to continue"
     assert session.pending_continuation_delay_s == RECONNECT_BACKOFFS[0]
     assert session.awaiting_reconnect is True
-    assert session.needs_fresh_session is True, "the CLI died with the outage; resume on a fresh one"
+    assert session.needs_respawn is True, "the CLI died with the outage; a new process resumes the transcript"
     assert not [m for m in session.messages if m.role == "system"], "no card: nothing is over yet"
     assert "agent:reconnect_wait" in [e for e, _ in events]
     assert "agent:rate_limited" not in [e for e, _ in events]
@@ -204,11 +204,11 @@ def test_a_dead_socket_respawns_the_cli_but_a_429_does_not(monkeypatch):
     respawning for that spends a whole process to be told the same thing (caught by the existing
     test_rate_limit_does_not_respawn_the_cli when this shipped ungated)."""
     dead, _ = p_drive(monkeypatch, ConnectionError("Connection reset by peer"))
-    assert dead.needs_fresh_session is True
+    assert dead.needs_respawn is True
     assert dead.awaiting_reconnect is True
 
     throttled, _ = p_drive(monkeypatch, Exception("429 rate_limit_error: overloaded"))
-    assert throttled.needs_fresh_session is False, "a refusal is not a broken pipe"
+    assert throttled.needs_respawn is False, "a refusal is not a broken pipe"
     assert throttled.awaiting_reconnect is True, "but it is still worth waiting out"
 
 

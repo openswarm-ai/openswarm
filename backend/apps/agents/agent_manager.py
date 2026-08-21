@@ -235,7 +235,8 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
         turn = TurnState()
         p_stderr_buffer: List[str] = []
         # Read BEFORE build_agent_options consumes these flags: a fresh-session/fork request must force the persistent client to respawn (same branch id would otherwise fingerprint-match a client still holding the old transcript).
-        p_force_respawn = bool(session.needs_fresh_session or session.needs_fork or fork_session)
+        p_force_respawn = bool(session.needs_fresh_session or session.needs_fork or fork_session or session.needs_respawn)
+        session.needs_respawn = False
         try:
             logger.info(f"[SPAWN-PHASE] run-loop start session={session_id[:8]} t={time.monotonic():.3f}")
             (options, options_kwargs, prompt_content, p_stderr_buffer,

@@ -21,8 +21,9 @@ AUTH_RETRY_PROMPT = (
 
 @typechecked
 def try_auth_self_heal(session: AgentSession, delay_s: int = 0) -> bool:
-    """Queue the one hidden retry on a fresh CLI. False = budget spent or a continuation is
-    already pending, and the caller should show the honest banner instead.
+    """Queue the one hidden retry on a new CLI process that resumes the same transcript (the
+    process is what holds the stale token; the conversation is fine). False = budget spent or a
+    continuation is already pending, and the caller should show the honest banner instead.
 
     delay_s: codex tokens ROTATE on a 1-2 minute cadence; an instant retry lands inside the same
     rotation window, burns the one-shot budget, and the user then gets a banner for a condition
@@ -31,7 +32,7 @@ def try_auth_self_heal(session: AgentSession, delay_s: int = 0) -> bool:
     if session.auth_retry_used or session.pending_continuation:
         return False
     session.auth_retry_used = True
-    session.needs_fresh_session = True
+    session.needs_respawn = True
     session.pending_continuation = True
     session.pending_continuation_prompt = AUTH_RETRY_PROMPT
     session.pending_continuation_delay_s = max(0, delay_s)

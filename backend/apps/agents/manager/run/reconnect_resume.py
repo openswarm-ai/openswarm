@@ -59,9 +59,9 @@ def arm_reconnect_resume(session: AgentSession, retry_after_s: Optional[int] = N
 
     session.reconnect_attempts = attempts + 1
     session.awaiting_reconnect = True
-    # Only a dead transport leaves the CLI holding a corpse; a 429 is a healthy pipe carrying a NO, and respawning for that spends a process to be told the same thing.
+    # Only a dead transport leaves the CLI holding a corpse; a 429 is a healthy pipe carrying a NO, and respawning for that spends a process to be told the same thing. The new process resumes the same transcript.
     if connection_lost:
-        session.needs_fresh_session = True
+        session.needs_respawn = True
     session.pending_continuation = True
     session.pending_continuation_prompt = RECONNECT_PROMPT
     session.pending_continuation_delay_s = delay

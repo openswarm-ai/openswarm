@@ -132,6 +132,8 @@ class AgentSession(BaseModel):
     needs_fork: bool = False
     # Stronger than needs_fork: drop resume= and replay history into a fresh sdk_session_id; fork_session alone won't re-read mcp_servers.
     needs_fresh_session: bool = False
+    # A new CLI process that RESUMES the same transcript (dead transport, stale token, core sidecar never connected); unlike needs_fresh_session nothing is rebuilt, so no history is ever re-authored as text (ENG-382).
+    needs_respawn: bool = False
     # Auto-continue: agent loop dispatches a hidden turn at end-of-loop using pending_continuation_prompt. Race-free vs background tasks.
     pending_continuation: bool = False
     pending_continuation_prompt: Optional[str] = None
@@ -147,10 +149,10 @@ class AgentSession(BaseModel):
     empty_finish_progress_mark: int = 0
     # One honest "stopped without a report" line per exhausted nudge budget; resets with the budget.
     empty_finish_surfaced: bool = False
-    # What a fresh CLI session may carry as history: "full" (asks, the model's own replies as gists, tool trail), "minimal" (asks + tool calls, zero model text), "none". Ratchets DOWN when a provider policy filter blocks a recap-bearing turn and never back up: Anthropic's anti-distillation classifier reads a replay of the model's own outputs as "duplicating model outputs" (Alex, 57 blocks in 4 days, every one at spawn).
-    history_prefix_mode: Literal["full", "minimal", "none"] = "full"
+    # What a fresh CLI session may carry as history: "minimal" (the user's asks, the tool trail, a model-written summary of the dropped span; never the model's own replies verbatim) or "none". Ratchets to "none" when a provider policy filter blocks a recap-bearing turn and never back up: on the subscription lane Anthropic's anti-distillation classifier blocked 192 of our recap turns in 14 days (0 on API keys), reading replayed model text as "duplicating model outputs".
+    history_prefix_mode: Literal["minimal", "none"] = "minimal"
     # What the LAST spawned turn actually carried, so a block can tell a recap-caused refusal from a plain one.
-    history_prefix_sent: Literal["full", "minimal", "none"] = "none"
+    history_prefix_sent: Literal["minimal", "none"] = "none"
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
     # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.

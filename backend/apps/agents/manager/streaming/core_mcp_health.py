@@ -55,19 +55,18 @@ def core_mcp_failed_to_connect(init_payload: object) -> bool:
 
 @typechecked
 def note_core_mcp_health(session: object, session_id: str, init_payload: object) -> bool:
-    """Arm a fresh-session rebuild when the core server did not connect. The next turn respawns the
-    CLI (the machinery ENG-258 already uses for unclassified failures), which is the only cure:
-    MCP registration happens once at connect, so a toolless session stays toolless forever.
-    Returns whether it armed."""
+    """Arm a CLI respawn when the core server did not connect. MCP registration happens once at
+    connect, so a toolless session stays toolless forever; the new process resumes the same
+    transcript (nothing about the conversation changed, so nothing is rebuilt). Returns whether it armed."""
     if not core_mcp_failed_to_connect(init_payload):
         return False
     status = core_mcp_status(init_payload)
     logger.warning(
         f"Agent {session_id}: core MCP server reported '{status}', not connected; "
-        "arming a fresh CLI session so the agent is not left without its tools"
+        "arming a CLI respawn so the agent is not left without its tools"
     )
     try:
-        session.needs_fresh_session = True   # type: ignore[attr-defined]
+        session.needs_respawn = True   # type: ignore[attr-defined]
     except Exception:
         return False
     try:

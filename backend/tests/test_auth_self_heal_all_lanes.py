@@ -27,7 +27,7 @@ def test_delay_lands_on_the_session():
     s = p_session()
     assert try_auth_self_heal(s, delay_s=75) is True
     assert s.pending_continuation_delay_s == 75
-    assert s.pending_continuation is True and s.needs_fresh_session is True
+    assert s.pending_continuation is True and s.needs_respawn is True
 
 
 def test_budget_is_one_per_ask():

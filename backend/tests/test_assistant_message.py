@@ -57,7 +57,7 @@ async def test_first_token_expiry_heals_silently(monkeypatch):
     assert not any(m.role == "assistant" for m in session.messages)
     assert "agent:auth_error" not in events
     assert session.auth_retry_used is True
-    assert session.needs_fresh_session is True, "the fresh CLI is what drops the stale token"
+    assert session.needs_respawn is True, "a new CLI process is what drops the stale token; the transcript stays"
     assert session.pending_continuation is True and session.pending_continuation_prompt
     assert turn.number == 1, "healing must not skip the turn bookkeeping"
 

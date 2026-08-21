@@ -122,14 +122,14 @@ def test_auth_failure_self_heals_once_then_stops_respawning(monkeypatch):
     # rule that still matters is that it happens ONCE; a credential that fails twice is genuinely
     # dead, and respawning forever would just hide it behind an endless retry.
     session, _ = p_drive_error(monkeypatch, Exception("401 invalid authentication credentials"))
-    assert session.needs_fresh_session is True, "one rebuild is the heal"
+    assert session.needs_respawn is True, "one respawn on the same transcript is the heal"
     assert session.auth_retry_used is True
     assert not [m for m in session.messages if m.role == "system"], "no card on the first expiry"
 
-    session.needs_fresh_session = False
+    session.needs_respawn = False
     session.pending_continuation = False
     p_drive_error(monkeypatch, Exception("401 invalid authentication credentials"), session=session)
-    assert session.needs_fresh_session is False, "the budget is spent; stop respawning"
+    assert session.needs_respawn is False, "the budget is spent; stop respawning"
     assert [m for m in session.messages if m.role == "system"], "the second failure is honest"
 
 
