@@ -29,7 +29,9 @@ test('rebinding to fn before tiers are armed also probes', () => {
 });
 
 test('a focused bare Fn keydown arms the tiers and toggles', () => {
-  const relay = hotkeySrc.split('installVoiceHoldRelay')[1].slice(0, 900);
+  // Bounded by the region's real end, not a magic character count: a fixed slice silently stops
+  // covering the code it is supposed to guard the moment anyone adds a line above it.
+  const relay = hotkeySrc.split('installVoiceHoldRelay')[1].split("web-contents-created")[0];
   assert.match(relay, /input\.key === 'Fn'/);
   assert.match(relay, /armNativeTiers\(\)/);
   assert.match(relay, /sendFallbackToggle\(\)/);
