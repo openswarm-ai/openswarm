@@ -1,16 +1,18 @@
-"""Pins the content-policy-block contract (Alex's bricked-chat class, 57 blocks in 4 days on one
-install): the provider's ToS/AUP refusal is terminal for the bytes that earned it, so the only
-retry is one that carries LESS of the model's own text (full -> minimal -> none, a ratchet for the
-session's life), the block is reported to telemetry at every step, the assistant-text door routes
-it to the same owner instead of carding a retry that never happens, and the recap never replays a
-long reply verbatim."""
+"""Pins the content-policy-block contract (Alex's bricked-chat class: 192 subscription-lane blocks
+in 14 days, 0 on API keys): the recap never carries the model's own replies, a block on a
+recap-bearing turn retries once with no history and the session stays that way, every block is
+reported to telemetry with the shape it sent, and the assistant-text door routes it to the same
+owner instead of carding a retry that never happens."""
 
 import asyncio
 
 from backend.apps.agents.core.error_classify import is_content_policy_block, is_transient_capacity_error
 from backend.apps.agents.core.models import AgentSession, Message
+from backend.apps.agents.manager.run import handle_run_error as hre
 from backend.apps.agents.manager.run.handle_run_error import handle_run_error
-from backend.apps.agents.manager.session.history_compaction import RECAP_REPLY_GIST_CHARS, build_history_prefix
+from backend.apps.agents.session_credential import api_key_twin_model
+from backend.apps.settings.models import AppSettings
+from backend.apps.agents.manager.session.history_compaction import build_history_prefix
 from backend.apps.agents.manager.streaming.state import TurnState
 from backend.apps.service import client as svc
 
@@ -37,8 +39,14 @@ def p_session_with_history() -> AgentSession:
     return s
 
 
-def p_block(s: AgentSession, captured: list, monkeypatch, text: str = TOS_TEXT) -> None:
+def p_settings(**kw) -> AppSettings:
+    return AppSettings(**kw)
+
+
+def p_block(s: AgentSession, captured: list, monkeypatch, text: str = TOS_TEXT, settings: AppSettings | None = None) -> None:
     monkeypatch.setattr(svc, "submit_diagnostic", lambda d: captured.append(d))
+    # The real settings file on a dev box may hold an API key; the failover must be opted into per test.
+    monkeypatch.setattr(hre, "load_settings", lambda: settings or p_settings())
     asyncio.run(handle_run_error(Exception(text), s, "sid-pol", TurnState(), []))
 
 
@@ -55,31 +63,20 @@ def test_tos_block_never_transient():
 
 def test_prefix_mode_defaults():
     s = AgentSession(name="t", model="sonnet")
-    assert s.history_prefix_mode == "full"
+    assert s.history_prefix_mode == "minimal"
     assert s.history_prefix_sent == "none"
 
 
-def test_block_on_a_full_recap_ratchets_to_minimal_and_retries_silently(monkeypatch):
+def test_block_on_a_recap_bearing_turn_drops_to_none_and_retries_silently(monkeypatch):
     captured: list = []
     s = p_session_with_history()
-    s.history_prefix_sent = "full"
-    p_block(s, captured, monkeypatch)
-    assert s.history_prefix_mode == "minimal"
-    assert s.needs_fresh_session is True, "the retry must respawn so the reduced prefix is what goes out"
-    assert s.pending_continuation is True
-    assert not any(m.role == "system" for m in s.messages), "retry turn must be silent, no card yet"
-    assert [d["subkind"] for d in captured if d.get("kind") == "model_error"] == ["policy_block:full"]
-
-
-def test_block_on_a_minimal_recap_ratchets_to_none(monkeypatch):
-    captured: list = []
-    s = p_session_with_history()
-    s.history_prefix_mode = "minimal"
     s.history_prefix_sent = "minimal"
     p_block(s, captured, monkeypatch)
     assert s.history_prefix_mode == "none"
+    assert s.needs_fresh_session is True, "the retry must respawn so the empty prefix is what goes out"
     assert s.pending_continuation is True
-    assert [d["subkind"] for d in captured] == ["policy_block:minimal"]
+    assert not any(m.role == "system" for m in s.messages), "retry turn must be silent, no card yet"
+    assert [d["subkind"] for d in captured if d.get("kind") == "model_error"] == ["policy_block:minimal"]
 
 
 def test_block_with_no_recap_renders_the_honest_terminal_card(monkeypatch):
@@ -104,41 +101,58 @@ def test_a_block_on_a_brand_new_chat_cards_without_blaming_a_recap(monkeypatch):
     cards = [m for m in s.messages if m.role == "system"]
     assert len(cards) == 1
     assert "retried without" not in str(cards[0].content)
-    assert s.history_prefix_mode == "full"
+    assert s.history_prefix_mode == "minimal"
 
 
-def test_recap_is_first_person_not_transcript():
+def test_recap_carries_the_asks_and_the_tool_trail_but_never_the_models_replies():
+    """Claude Code and hermes keep old answers only as model-written summaries; a verbatim replay of
+    the model's own text, in text we author, is what the subscription-lane filter blocks."""
     s = AgentSession(name="t", model="sonnet")
     s.messages.append(Message(role="user", content="find candidates for the role"))
-    s.messages.append(Message(role="assistant", content="I found three strong profiles."))
+    s.messages.append(Message(role="assistant", content="I found three strong profiles, here they are in full."))
+    s.messages.append(Message(role="tool_call", content={"tool": "Bash", "input": {"command": "ls"}}))
+    s.messages.append(Message(role="tool_result", content={"text": "a.txt b.txt"}))
     recap = build_history_prefix(s.messages)
-    assert "You replied:" in recap
-    assert "The user asked:" in recap
-    assert "\nAssistant: " not in recap, "bare transcript labels pattern-match distillation filters"
-    assert "\nUser: " not in recap
+    assert "The user asked: find candidates for the role" in recap
+    assert "three strong profiles" not in recap
+    assert "You replied" not in recap
+    assert "\nAssistant: " not in recap and "\nUser: " not in recap
+    assert "Bash" in recap, "the tool trail stays: commands are re-runnable and are not model prose"
+    assert "a.txt" in recap, "tool results are data the model read, not text it wrote"
     assert "YOUR OWN earlier turns" in recap
 
 
-def test_full_recap_gists_a_long_reply_instead_of_replaying_it():
-    s = AgentSession(name="t", model="sonnet")
-    s.messages.append(Message(role="user", content="draft the email"))
-    reply = "Dear team, " + ("this is the body of a long email. " * 200)
-    s.messages.append(Message(role="assistant", content=reply))
-    recap = build_history_prefix(s.messages)
-    assert reply not in recap
-    assert reply[:RECAP_REPLY_GIST_CHARS] in recap
-    assert "omitted from recap" in recap
+def test_api_key_twin_only_for_a_subscription_lane_with_the_users_own_key():
+    """ENG-383: same Claude, same provider, the user's own key; never the pool, never another vendor."""
+    assert api_key_twin_model("opus-5-cc", p_settings(anthropic_api_key="sk-ant-x")) == "opus-5-api"
+    assert api_key_twin_model("opus-5-cc", p_settings()) is None, "no key, nothing to fail over to"
+    assert api_key_twin_model("opus-5-api", p_settings(anthropic_api_key="sk-ant-x")) is None, "already on the key"
+    assert api_key_twin_model("opus-5-cc", p_settings(anthropic_api_key="sk-ant-x", connection_mode="openswarm-pro")) is None, "the Pro pool never fails over silently"
+    assert api_key_twin_model("gpt-5.5", p_settings(anthropic_api_key="sk-ant-x")) is None, "another provider's block is not Anthropic's key to spend"
 
 
-def test_minimal_recap_carries_zero_model_text():
-    s = AgentSession(name="t", model="sonnet")
-    s.messages.append(Message(role="user", content="send the follow-ups"))
-    s.messages.append(Message(role="assistant", content="Drafting the first one now."))
-    s.messages.append(Message(role="tool_call", content={"tool": "Bash", "input": {"command": "ls"}}))
-    s.messages.append(Message(role="tool_result", content={"text": "a.txt b.txt"}))
-    recap = build_history_prefix(s.messages, mode="minimal")
-    assert "The user asked: send the follow-ups" in recap
-    assert "You replied" not in recap
-    assert "Drafting the first one" not in recap
-    assert "a.txt" not in recap
-    assert "Bash" in recap, "the tool trail stays: commands are re-runnable and are not model prose"
+def test_block_with_no_recap_fails_over_to_the_users_own_api_key(monkeypatch):
+    captured: list = []
+    s = p_session_with_history()
+    s.model = "opus-5-cc"
+    s.history_prefix_mode = "none"
+    s.history_prefix_sent = "none"
+    p_block(s, captured, monkeypatch, settings=p_settings(anthropic_api_key="sk-ant-x"))
+    assert s.model == "opus-5-api"
+    assert s.pending_continuation is True and s.needs_fresh_session is True
+    cards = [m for m in s.messages if m.role == "system"]
+    assert len(cards) == 1 and "API key" in str(cards[0].content) and "declined" not in str(cards[0].content).lower().replace("declined this request on your subscription", "")
+    kinds = [(d.get("kind"), d.get("subkind")) for d in captured]
+    assert ("model_error", "policy_block:none") in kinds, "the block itself is still reported"
+    assert ("recovered", "lane_failover") in kinds, "the failover lands in the near-miss ledger"
+
+
+def test_block_with_no_recap_and_no_key_still_ends_with_the_card(monkeypatch):
+    captured: list = []
+    s = p_session_with_history()
+    s.model = "opus-5-cc"
+    s.history_prefix_mode = "none"
+    s.history_prefix_sent = "none"
+    p_block(s, captured, monkeypatch, settings=p_settings())
+    assert s.model == "opus-5-cc" and s.pending_continuation is False
+    assert [m for m in s.messages if m.role == "system"][0].content.startswith("The model provider declined")

@@ -30,6 +30,7 @@ from backend.apps.agents.core.is_router_unavailable_error import is_router_unava
 from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
 from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
 from backend.apps.agents.core import flight_recorder
+from backend.apps.agents.session_credential import api_key_twin_model
 
 logger = logging.getLogger(__name__)
 
@@ -243,11 +244,11 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "message": error_msg.model_dump(mode="json"),
         })
     elif is_content_policy_block(f"{e!s}\n{p_stderr_tail}"):
-        # The provider's abuse classifier declined the REQUEST, and what it reads as "duplicating model outputs" is OUR recap of the chat on a fresh CLI session (57 blocks in 4 days on one install, every one at spawn, on an email task); deterministic, so the only retry that can pass carries LESS of the model's own text: full -> minimal -> none, one silent retry per step, a ratchet for the session's life, every block reported.
+        # The provider's abuse classifier declined the REQUEST, and on the subscription lane what it reads as "duplicating model outputs" is OUR recap of the chat on a fresh CLI session (192 blocks in 14 days, 0 on API keys); deterministic, so the one retry that can pass carries no history at all, the session stays that way, and every block is reported with the shape it sent.
         p_sent = session.history_prefix_sent
         p_report_model_error(f"policy_block:{p_sent}", session_id, session, turn, e, p_stderr_tail)
         if p_sent != "none":
-            session.history_prefix_mode = "minimal" if p_sent == "full" else "none"
+            session.history_prefix_mode = "none"
             session.needs_fresh_session = True
             session.pending_continuation = True
             session.pending_continuation_prompt = (
@@ -255,7 +256,27 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 "this turn, rely on the visible conversation.")
             logger.warning(f"Agent {session_id}: provider content-policy block on a turn carrying a {p_sent} history prefix; retrying with {session.history_prefix_mode}")
             return
-        p_retried = session.history_prefix_mode != "full"
+        # The subscription lane declined and nothing is left to strip; fleet data says the same request passes on an API key (0 of 328 vs 4.4%), so a user who connected their own Anthropic key continues there, told in one line, instead of losing the ask (ENG-383).
+        p_twin = api_key_twin_model(session.model or "", load_settings())
+        if p_twin:
+            p_from = session.model
+            session.model = p_twin
+            session.needs_fresh_session = True
+            session.pending_continuation = True
+            session.pending_continuation_prompt = "Continue where you left off and finish the task, then answer in plain text."
+            p_notice = Message(
+                role="system",
+                content="Claude declined this request on your subscription; continuing on your Anthropic API key.",
+                branch_id=session.active_branch_id,
+            )
+            absorb_repeat_card(session, p_notice)
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id, "message": p_notice.model_dump(mode="json"),
+            })
+            flight_recorder.record_recovery(session_id, "lane_failover", session.model, 1)
+            logger.warning(f"Agent {session_id}: policy block on the subscription lane; failing over {p_from} -> {p_twin}")
+            return
+        p_retried = session.history_prefix_mode == "none"
         friendly_msg = (
             "The model provider declined this request (its automated policy filter flagged the "
             "conversation's content)"

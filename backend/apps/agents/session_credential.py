@@ -21,9 +21,10 @@ cannot touch them at all, a stronger protection than the guard itself.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Optional, Any, Literal, TYPE_CHECKING
 
 from backend.apps.agents.providers.registry import (
+    BUILTIN_MODELS,
     CUSTOM_VALUE_PREFIX,
     custom_provider_slug_for_lookup,
     find_builtin_model,
@@ -186,3 +187,24 @@ def write_would_suicide(field: str, new_value: Any, powering: PoweringCredential
         return powering.kind == "api_key" and field == powering.protected_field
 
     return False
+
+
+def api_key_twin_model(model_value: str, settings: AppSettings) -> Optional[str]:
+    """The same Claude model on the user's OWN Anthropic API key, when this run was on a subscription
+    lane and such a key is configured; None otherwise. Never the OpenSwarm Pro pool (not their money to
+    spend without a click, and the pool lane takes the same blocks), never a different provider."""
+    powering = resolve_powering_credential(model_value, settings)
+    if powering.kind != "subscription" or powering.provider != "anthropic":
+        return None
+    if not getattr(settings, "anthropic_api_key", None):
+        return None
+    if getattr(settings, "connection_mode", "own_key") in ("openswarm-pro", "free-trial"):
+        return None
+    entry = find_builtin_model(model_value)
+    model_id = (entry or {}).get("model_id")
+    if not model_id:
+        return None
+    for candidate in BUILTIN_MODELS.get("Anthropic", []):
+        if candidate.get("route") == "api" and candidate.get("model_id") == model_id:
+            return str(candidate["value"])
+    return None
