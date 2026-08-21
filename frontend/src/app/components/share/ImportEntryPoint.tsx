@@ -17,6 +17,7 @@ import ImportDigest, { DigestHandle } from './ImportDigest';
 import ImportModal from './ImportModal';
 import { importCommit, importPreflight } from './shareApi';
 import { ImportPreflight } from './shareTypes';
+import { DragVerdict, UNSUPPORTED_DROP_MESSAGE, firstImportable, judgeDrag, looksImportable } from './dragImportability';
 
 export const IMPORT_OPEN_EVENT = 'openswarm:import-open';
 const ACCEPT = '.swarm,.md,.zip';
@@ -26,11 +27,6 @@ const DIGEST_MS = 820; // keep in step with ImportDigest's wave so the blast rea
 const DEST: Record<string, (id: string) => string | null> = {
   dashboard: (id) => `/dashboard/${id}`,
 };
-
-function looksImportable(name: string): boolean {
-  const n = name.toLowerCase();
-  return n.endsWith('.swarm') || n.endsWith('.md') || n.endsWith('.zip');
-}
 
 // A bundle needs a confirm only if it can run code (an app) or wants actions connected; everything else is inert data and imports straight away.
 function needsConfirm(pf: ImportPreflight): boolean {
@@ -50,8 +46,7 @@ const ImportEntryPoint: React.FC = () => {
   const dashboardId = useAppSelector((s) => s.tempState.lastDashboardId) || undefined;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const digestRef = useRef<DigestHandle | null>(null);
-  const depth = useRef(0);
-  const [dragging, setDragging] = useState(false);
+  const [drag, setDrag] = useState<DragVerdict | null>(null);
   const [confirm, setConfirm] = useState<ImportPreflight | null>(null);
   const [committing, setCommitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; sev: 'success' | 'error' } | null>(null);
@@ -90,7 +85,11 @@ const ImportEntryPoint: React.FC = () => {
 
   const handleFile = useCallback(
     async (file: File | null, x: number, y: number) => {
-      if (!file || !looksImportable(file.name) || confirmRef.current) return;
+      if (!file || confirmRef.current) return;
+      if (!looksImportable(file.name)) {
+        setToast({ msg: UNSUPPORTED_DROP_MESSAGE, sev: 'error' });
+        return;
+      }
       // The digest doubles as the spam guard: it refuses to start while busy.
       if (!digestRef.current?.play(x, y)) return;
       let pf: ImportPreflight;
@@ -117,38 +116,54 @@ const ImportEntryPoint: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
-    const onWebview = (t: EventTarget | null) => (t as HTMLElement)?.tagName === 'WEBVIEW';
-    const onEnter = (e: DragEvent) => {
-      if (!hasFiles(e) || onWebview(e.target)) return;
-      depth.current += 1;
-      setDragging(true);
-    };
-    const onLeave = () => {
-      depth.current = Math.max(0, depth.current - 1);
-      if (depth.current === 0) setDragging(false);
-    };
-    const onOver = (e: DragEvent) => {
-      if (hasFiles(e)) e.preventDefault();
-    };
-    const onDrop = (e: DragEvent) => {
-      depth.current = 0;
-      setDragging(false);
-      if (onWebview(e.target)) return;
-      const f = e.dataTransfer?.files?.[0];
-      if (f) {
-        e.preventDefault();
-        void handleFile(f, e.clientX, e.clientY);
+    // Capture phase on purpose: the chat composer stops propagation on its drops, which starved the old bubbling listeners, left the "Drop to add" overlay painted for good and let Chromium open the dropped screenshot in place of the app.
+    const onWebview = (t: EventTarget | null) => (t as HTMLElement | null)?.tagName === 'WEBVIEW';
+    let lastOver = 0;
+    let pulse: number | null = null;
+    const clear = () => {
+      lastOver = 0;
+      setDrag(null);
+      if (pulse !== null) {
+        window.clearInterval(pulse);
+        pulse = null;
       }
     };
-    window.addEventListener('dragenter', onEnter);
-    window.addEventListener('dragleave', onLeave);
-    window.addEventListener('dragover', onOver);
+    const onOver = (e: DragEvent) => {
+      const dt = e.dataTransfer;
+      const itemTypes = dt ? Array.from(dt.items).filter((i) => i.kind === 'file').map((i) => i.type) : [];
+      const verdict = judgeDrag(dt ? Array.from(dt.types) : [], itemTypes);
+      if (verdict === 'no-files' || onWebview(e.target)) {
+        if (lastOver) clear();
+        return;
+      }
+      e.preventDefault();
+      lastOver = Date.now();
+      setDrag(verdict);
+      // dragover keeps firing every few hundred ms while a drag hovers the window, so silence means it left or ended, whichever events we never got.
+      if (pulse === null) pulse = window.setInterval(() => { if (Date.now() - lastOver > 900) clear(); }, 200);
+    };
+    const onLeaveWindow = (e: DragEvent) => {
+      if (e.relatedTarget === null) clear();
+    };
+    const onDropAnywhere = () => clear();
+    const onDrop = (e: DragEvent) => {
+      if (onWebview(e.target)) return;
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (!files.length) return;
+      e.preventDefault();
+      void handleFile(firstImportable(files) ?? files[0], e.clientX, e.clientY);
+    };
+    window.addEventListener('dragover', onOver, true);
+    window.addEventListener('dragleave', onLeaveWindow, true);
+    window.addEventListener('drop', onDropAnywhere, true);
+    window.addEventListener('dragend', onDropAnywhere, true);
     window.addEventListener('drop', onDrop);
     return () => {
-      window.removeEventListener('dragenter', onEnter);
-      window.removeEventListener('dragleave', onLeave);
-      window.removeEventListener('dragover', onOver);
+      clear();
+      window.removeEventListener('dragover', onOver, true);
+      window.removeEventListener('dragleave', onLeaveWindow, true);
+      window.removeEventListener('drop', onDropAnywhere, true);
+      window.removeEventListener('dragend', onDropAnywhere, true);
       window.removeEventListener('drop', onDrop);
     };
   }, [handleFile]);
@@ -166,8 +181,8 @@ const ImportEntryPoint: React.FC = () => {
         }}
       />
       <ImportDigest ref={digestRef} color={c.accent.primary} />
-      <Fade in={dragging} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
-        <Box sx={{ position: 'fixed', inset: 0, zIndex: 2000, pointerEvents: 'none' }}>
+      <Fade in={drag !== null} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
+        <Box data-osw-drop-overlay={drag ?? undefined} sx={{ position: 'fixed', inset: 0, zIndex: 2000, pointerEvents: 'none' }}>
           {/* Full-bleed dim, rounded to match the window so its corners don't
               spill past the OS's rounded corners. */}
           <Box sx={{ position: 'absolute', inset: 0, bgcolor: `${c.bg.page}e6`, borderRadius: '12px' }} />
@@ -178,7 +193,7 @@ const ImportEntryPoint: React.FC = () => {
               position: 'absolute',
               inset: 14,
               borderRadius: '18px',
-              border: `2px dashed ${c.accent.primary}`,
+              border: `2px dashed ${drag === 'unsupported' ? c.text.secondary : c.accent.primary}`,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -186,9 +201,9 @@ const ImportEntryPoint: React.FC = () => {
               gap: 1.5,
             }}
           >
-            <FileDownloadIcon sx={{ fontSize: 40, color: c.accent.primary }} />
+            <FileDownloadIcon sx={{ fontSize: 40, color: drag === 'unsupported' ? c.text.secondary : c.accent.primary }} />
             <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text.primary }}>
-              Drop to add to OpenSwarm
+              {drag === 'unsupported' ? UNSUPPORTED_DROP_MESSAGE : 'Drop to add to OpenSwarm'}
             </Typography>
           </Box>
         </Box>

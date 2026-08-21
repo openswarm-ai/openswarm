@@ -1573,8 +1573,9 @@ function createWindow() {
       const current = mainWindow.webContents.getURL();
       if (current && new URL(url).origin === new URL(current).origin) return;
     } catch (_) {}
-    if (url.startsWith('file://')) return;
     event.preventDefault();
+    // A file:// target here is a dropped file Chromium wants to open IN PLACE of the app (the renderer normally swallows the drop; this is the net under it). It gets neither the window nor a browser card.
+    if (url.startsWith('file://')) return;
     mainWindow.webContents.send('webview-new-window', url, mainWindow.webContents.id);
   });
 
