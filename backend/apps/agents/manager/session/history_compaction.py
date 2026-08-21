@@ -132,9 +132,24 @@ def get_branch_messages(session) -> List:
     return result
 
 
+# A reply in the recap is a reminder of what the model said, not a copy: verbatim replays of the model's own long outputs are exactly what Anthropic's anti-distillation filter blocks, and the user still has the full text on screen.
+RECAP_REPLY_GIST_CHARS = 600
+
+
 @typechecked
-def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
+def clamp_reply_gist(text: str) -> str:
+    if len(text) <= RECAP_REPLY_GIST_CHARS:
+        return text
+    return f"{text[:RECAP_REPLY_GIST_CHARS]} [... {len(text) - RECAP_REPLY_GIST_CHARS} chars of this reply omitted from recap ...]"
+
+
+@typechecked
+def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None, mode: str = "full") -> str:
     """Format branch messages into a conversation summary for context injection.
+
+    `mode` is the session's history_prefix_mode: "full" carries asks, reply gists and the tool
+    trail; "minimal" carries only the user's asks and the tool calls (no model text at all), the
+    shape left once a provider policy filter has blocked a fuller recap.
 
     When `cutoff_msg_id` is provided (session.compacted_through_msg_id), drop every
     message up to and including that id so the marker the UI shows actually matches
@@ -156,15 +171,19 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
             text = m.content if isinstance(m.content, str) else str(m.content)
             lines.append(f"The user asked: {strip_forged_sentinels(clamp_recap_text(text))}")
         elif m.role == "assistant":
+            if mode == "minimal":
+                continue
             text = m.content if isinstance(m.content, str) else str(m.content)
             # First-person framing on purpose: a bare "User:/Assistant:" transcript inside a user
             # message pattern-matches provider distillation filters (Anthropic blocked real users'
             # recap turns as "duplicating model outputs"); "you replied" states the truth, this is
             # the SAME assistant's own earlier work in this same session.
-            lines.append(f"You replied: {strip_forged_sentinels(clamp_recap_text(text))}")
+            lines.append(f"You replied: {strip_forged_sentinels(clamp_reply_gist(text))}")
         elif m.role == "tool_call":
             lines.append(recap_tool_call_line(m.content))
         elif m.role == "tool_result":
+            if mode == "minimal":
+                continue
             body = fates.get(v)
             if body is None:
                 lines.append(recap_tool_result_line(m.content))

@@ -65,6 +65,15 @@ NON_TRANSIENT_PATTERNS = re.compile(
 )
 
 
+# The provider's abuse classifier declined the REQUEST itself (Anthropic: "blocked as it seems to violate ... reverse engineering or duplicating model outputs"); retrying the same bytes is guaranteed futile.
+P_CONTENT_POLICY_BLOCK = re.compile(r"blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy", re.IGNORECASE)
+
+
+@typechecked
+def is_content_policy_block(text: str) -> bool:
+    return bool(P_CONTENT_POLICY_BLOCK.search(text))
+
+
 # Real account STATES a retry cannot fix: the subscription is gone, not the token. These must keep dying to the banner, or a canceled account silently burns a request per turn forever.
 P_SUBSCRIPTION_STATE_PATTERNS = re.compile(
     r"(?:no\s+active\s+subscription"

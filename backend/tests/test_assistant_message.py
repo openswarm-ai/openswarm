@@ -291,3 +291,19 @@ async def test_a_different_kind_still_earns_its_own_card():
             thinking, {}, {})
     p_cards = [m for m in session.messages if m.role == "system"]
     assert len(p_cards) == 2, "connection and quota are different problems"
+
+
+@pytest.mark.asyncio
+async def test_policy_refusal_in_the_assistants_place_is_raised_to_the_run_error_owner():
+    """The CLI hands a policy block over as assistant text; it must reach handle_run_error (recap
+    ratchet + honest card + telemetry) instead of being carded as a retry that never happens."""
+    from backend.apps.agents.manager.streaming.handle_result_message import TurnResultError
+    session, turn, thinking = p_fixt()
+    txt = ("API Error: 400 https://www.anthropic.com/legal/aup). This request was blocked as it seems "
+           "to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.")
+    with patch.object(assistant_message.ws_manager, "send_to_session", new=AsyncMock()):
+        with pytest.raises(TurnResultError):
+            await assistant_message.handle_assistant_message(
+                p_asst([TextBlock(text=txt)]), session, session.id, turn, thinking, {}, {})
+    assert not any(m.role == "system" for m in session.messages), "no card from this door"
+    assert not any(m.role == "assistant" for m in session.messages), "the refusal is never the agent's words"

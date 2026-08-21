@@ -145,3 +145,19 @@ def test_duration_parsing(blob, expected):
 def test_unparseable_duration_is_none_not_zero():
     """Zero would read as 'resume immediately', which is the opposite of what an unknown means."""
     assert parse_duration("soon") is None
+
+
+def test_policy_refusal_is_its_own_kind_and_never_promises_a_retry():
+    """Alex read 'Retrying automatically' before every bricked turn; nothing retried. The 400 with
+    the policy verdict in words must classify as POLICY ahead of its status, and the unknown-error
+    sentence must stop promising a retry it does not queue."""
+    from backend.apps.agents.manager.streaming.provider_error_speech import POLICY, UNKNOWN
+    raw = ("API Error: 400 https://www.anthropic.com/legal/aup). This request was blocked as it seems "
+           "to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.")
+    err = classify_provider_error(raw)
+    assert err is not None and err.kind == POLICY
+    assert is_transient(err) is False
+    assert "policy filter" in user_facing_sentence(err, "opus-5")
+    unknown = classify_provider_error("API Error: 400 something nobody classified")
+    assert unknown is not None and unknown.kind == UNKNOWN
+    assert "Retrying automatically" not in user_facing_sentence(unknown, "opus-5")

@@ -32,6 +32,8 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
+from backend.apps.agents.core.error_classify import is_content_policy_block
+
 # Written by the CLI in front of anything upstream failed with.
 P_ENVELOPE_PREFIX = "api error:"
 
@@ -58,6 +60,7 @@ AUTH = "auth"
 QUOTA = "quota"
 CONNECTION = "connection"
 OVERLOADED = "overloaded"
+POLICY = "policy"
 UNKNOWN = "unknown"
 
 
@@ -132,8 +135,11 @@ def classify_provider_error(text: str) -> Optional[ProviderError]:
     p_windows = [w for w in p_windows if w]
     reset_seconds = max(p_windows) if p_windows else None
 
+    # The policy filter's refusal arrives as a 400 with the verdict in words; it must win over the status so the recap ratchet owns it, never a generic retry.
+    if is_content_policy_block(stripped):
+        kind = POLICY
     # Status first: it is the provider's own verdict. Words only for shapes carrying no status at all.
-    if status in (401, 403):
+    elif status in (401, 403):
         kind = AUTH
     elif status == 429:
         kind = QUOTA
@@ -220,8 +226,15 @@ def user_facing_sentence(err: ProviderError, model: str) -> str:
             f"{who} needs reconnecting. Open Settings, Models, and click Reconnect on that row, "
             "then send your message again."
         )
+    if err.kind == POLICY:
+        return (
+            "The model provider declined this request (its automated policy filter flagged the "
+            "conversation's content). Rephrase your last message, or start a fresh chat about this "
+            "topic."
+        )
+    # No retry is promised here because none is queued: an unknown error is not transient.
     return (
-        "The model provider returned an error instead of an answer. Retrying automatically; if it "
+        "The model provider returned an error instead of an answer. Send your message again; if it "
         "keeps happening, switch this agent to another model."
     )
 

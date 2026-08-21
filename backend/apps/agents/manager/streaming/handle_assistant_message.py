@@ -122,6 +122,7 @@ async def handle_assistant_message(
         # One door for everything the provider says, so classify the class here instead of adding a fifth phrasing above; measured 14/14 caught, 0 false positives on 2035 real assistant messages.
         from backend.apps.agents.manager.streaming.provider_error_speech import (
             AUTH as P_ERR_AUTH,
+            POLICY as P_ERR_POLICY,
             classify_provider_error,
             is_transient,
             user_facing_sentence,
@@ -129,6 +130,10 @@ async def handle_assistant_message(
         p_provider_error = None
         if not looks_like_router_auth_error:
             p_provider_error = classify_provider_error(asst_text)
+            if p_provider_error is not None and p_provider_error.kind == P_ERR_POLICY:
+                # The policy filter answered in the assistant's place. The run-error path owns this failure (recap ratchet, honest card, telemetry); carding "retrying automatically" here while nothing retried was the lie Alex read before every bricked turn.
+                from backend.apps.agents.manager.streaming.handle_result_message import TurnResultError
+                raise TurnResultError(asst_text)
             if p_provider_error is not None and p_provider_error.kind == P_ERR_AUTH:
                 # Same failure the phrase list was written for, so it goes to the same healer; two mechanisms for one condition is the ENG-252 mistake.
                 looks_like_router_auth_error = True

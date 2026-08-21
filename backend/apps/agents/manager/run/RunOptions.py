@@ -266,6 +266,7 @@ class RunOptions(AgentManagerProtocol):
             session.needs_fresh_session = False
             session.needs_fork = False  # superseded by the fresh restart
 
+        session.history_prefix_sent = "none"
         if session.sdk_session_id:
             options_kwargs["resume"] = session.sdk_session_id
             if fork_session or session.needs_fork:
@@ -273,21 +274,18 @@ class RunOptions(AgentManagerProtocol):
             if session.needs_fork:
                 session.needs_fork = False
         elif len(session.messages) > 1:
-            p_suppress = getattr(session, "suppress_recap_once", False)
-            if p_suppress:
-                # A provider policy filter just blocked the recap-bearing request; one turn without it (or its distilled cousin) is the only retry that can pass (Alex's bricked-chat class).
-                session.suppress_recap_once = False
-                history = ""
-            else:
-                history = build_history_prefix(
-                    get_branch_messages(session),
-                    cutoff_msg_id=session.compacted_through_msg_id,
-                )
+            # The mode ratchets down when a provider policy filter blocks a recap-bearing turn (Alex's bricked-chat class): "minimal" carries no model text at all, "none" carries nothing.
+            p_mode = session.history_prefix_mode
+            history = "" if p_mode == "none" else build_history_prefix(
+                get_branch_messages(session),
+                cutoff_msg_id=session.compacted_through_msg_id,
+                mode=p_mode,
+            )
             # Distill the dropped span into a cached aux summary so a rebuild keeps the gist of old turns instead of hard-dropping them. Fail-open: "" -> the plain recap above, exactly today's behavior.
             from backend.apps.agents.manager.session.distill_history import distilled_history_summary
             from backend.apps.agents.manager.session.history_compaction import wrap_platform_note
             logger.info(f"[SPAWN-PHASE] distill start session={session_id[:8]} t={time.monotonic():.3f}")
-            distilled = "" if p_suppress else await distilled_history_summary(session, global_settings)
+            distilled = await distilled_history_summary(session, global_settings) if p_mode == "full" else ""
             logger.info(f"[SPAWN-PHASE] distill done session={session_id[:8]} t={time.monotonic():.3f}")
             if distilled:
                 fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")
@@ -305,6 +303,7 @@ class RunOptions(AgentManagerProtocol):
                     prompt_content = history + "\n\n" + prompt_content
                 elif isinstance(prompt_content, list):
                     prompt_content.insert(0, {"type": "text", "text": history})
+                session.history_prefix_sent = p_mode
 
         # Compaction trigger (Phase 2). Driven by live ctx_used ratio rather than turn count, fires when input_tokens/context_window crosses session.compact_threshold_pct (default 0.65). Cheap, programmatic summarization (no aux LLM call) so this adds zero latency on the user's turn.
         logger.info(f"[SPAWN-PHASE] context-guard start session={session_id[:8]} t={time.monotonic():.3f}")

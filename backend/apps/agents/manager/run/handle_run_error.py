@@ -4,7 +4,6 @@ emits the matching system message + WS event. Pulled out of agent_manager so the
 the file ceiling; pure relocation, no self (operates on the passed run state)."""
 
 import logging
-import re
 from typing import List
 from typeguard import typechecked
 
@@ -20,6 +19,7 @@ from backend.apps.agents.core.error_classify import (
     is_out_of_tokens,
     has_auth_status,
     is_auth_error,
+    is_content_policy_block,
     is_cert_failure,
     is_cli_binary_missing,
     is_connection_lost,
@@ -81,12 +81,6 @@ def p_report_model_error(subkind: str, session_id: str, session: AgentSession, t
         })
     except Exception:
         logger.debug(f"submit_diagnostic {subkind} failed", exc_info=True)
-
-@typechecked
-def p_is_content_policy_block(text: str) -> bool:
-    """The provider refused the request itself on policy grounds; a retry is guaranteed futile."""
-    return bool(re.search(r"blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy", text, re.IGNORECASE))
-
 
 async def handle_run_error(e: Exception, session: AgentSession, session_id: str, turn: TurnState, p_stderr_buffer: List[str]) -> None:
     logger.exception(f"Agent {session_id} error: {e}")
@@ -248,27 +242,26 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
         })
-    elif p_is_content_policy_block(f"{e!s}\n{p_stderr_tail}"):
-        # The provider's abuse classifier declined the REQUEST (Anthropic: "blocked as it seems to
-        # violate ... reverse engineering or duplicating model outputs"). Deterministic: retrying
-        # re-blocks, which is the "hit a snag" flicker Alex reported, and a compaction recap that
-        # re-sends each turn bricks the whole chat. One honest card; a recap-bearing session gets
-        # one silent retry WITHOUT the recap, which is the only self-heal that can work.
-        # Gate on "a recap could have been sent", not on the compaction mark: every fresh-session
-        # spawn with history carries the recap, and the drill proved the block fires there too.
-        if len(session.messages) > 1 and not getattr(session, "policy_retry_used", False):
-            session.policy_retry_used = True
-            session.suppress_recap_once = True
+    elif is_content_policy_block(f"{e!s}\n{p_stderr_tail}"):
+        # The provider's abuse classifier declined the REQUEST, and what it reads as "duplicating model outputs" is OUR recap of the chat on a fresh CLI session (57 blocks in 4 days on one install, every one at spawn, on an email task); deterministic, so the only retry that can pass carries LESS of the model's own text: full -> minimal -> none, one silent retry per step, a ratchet for the session's life, every block reported.
+        p_sent = session.history_prefix_sent
+        p_report_model_error(f"policy_block:{p_sent}", session_id, session, turn, e, p_stderr_tail)
+        if p_sent != "none":
+            session.history_prefix_mode = "minimal" if p_sent == "full" else "none"
+            session.needs_fresh_session = True
             session.pending_continuation = True
             session.pending_continuation_prompt = (
-                "Continue the task exactly where you left off; the session summary was omitted "
+                "Continue the task exactly where you left off; the session summary was reduced "
                 "this turn, rely on the visible conversation.")
-            logger.warning(f"Agent {session_id}: provider content-policy block on a recap-bearing turn; retrying once without the recap")
+            logger.warning(f"Agent {session_id}: provider content-policy block on a turn carrying a {p_sent} history prefix; retrying with {session.history_prefix_mode}")
             return
+        p_retried = session.history_prefix_mode != "full"
         friendly_msg = (
             "The model provider declined this request (its automated policy filter flagged the "
-            "conversation's content). Retrying won't change that. Rephrasing your last message, "
-            "or starting a fresh chat about this topic, usually clears it."
+            "conversation's content)"
+            + (", even after OpenSwarm retried without the session summary" if p_retried else "")
+            + ". Retrying the same request won't change that. Rephrase your last message, or "
+            "start a fresh chat about this topic."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         absorb_repeat_card(session, error_msg)

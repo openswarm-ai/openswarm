@@ -147,9 +147,10 @@ class AgentSession(BaseModel):
     empty_finish_progress_mark: int = 0
     # One honest "stopped without a report" line per exhausted nudge budget; resets with the budget.
     empty_finish_surfaced: bool = False
-    # Content-policy self-heal (one shot per session): the provider blocked a recap-bearing turn, so the next send omits the recap.
-    policy_retry_used: bool = False
-    suppress_recap_once: bool = False
+    # What a fresh CLI session may carry as history: "full" (asks, the model's own replies as gists, tool trail), "minimal" (asks + tool calls, zero model text), "none". Ratchets DOWN when a provider policy filter blocks a recap-bearing turn and never back up: Anthropic's anti-distillation classifier reads a replay of the model's own outputs as "duplicating model outputs" (Alex, 57 blocks in 4 days, every one at spawn).
+    history_prefix_mode: Literal["full", "minimal", "none"] = "full"
+    # What the LAST spawned turn actually carried, so a block can tell a recap-caused refusal from a plain one.
+    history_prefix_sent: Literal["full", "minimal", "none"] = "none"
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
     # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.
