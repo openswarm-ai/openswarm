@@ -92,3 +92,28 @@ test('a key that starts working retracts its own warning', () => {
   assert.match(provenBlock, /lastHotkeyIssue = null/);
   assert.match(provenBlock, /voice:primary-usable/);
 });
+
+// ---- Asking is part of the feature, not a one-shot side effect ----
+// Eric: "if the user clicks it, they should still ask for microphone permission and fn permissions".
+// armNativeTiers is one-shot, so a denied (or dismissed) grant could never be re-requested and the
+// key stayed dead for the life of the install even though the user was willing to grant it.
+
+test('using dictation re-asks for the fn grant, not just the first time', () => {
+  assert.match(hotkeySrc, /const askForFnPermission = \(\) => \{/);
+  const micHandler = hotkeySrc.split("ipcMain.handle('voice:request-mic-access'")[1].slice(0, 300);
+  assert.match(micHandler, /askForFnPermission\(\)/,
+    'the mic prompt and the fn prompt are the same moment of intent');
+  const holdHandler = hotkeySrc.split("ipcMain.handle('voice:request-hold-permission'")[1].slice(0, 300);
+  assert.match(holdHandler, /askForFnPermission\(\)/);
+});
+
+test('the re-ask is throttled so it cannot spawn a watcher per keystroke', () => {
+  const fn = hotkeySrc.split('const askForFnPermission')[1].slice(0, 400);
+  assert.match(fn, /lastFnAskMs/);
+  assert.match(fn, /return;/);
+});
+
+test('the intent path spawns WITHOUT --no-prompt, or nothing is ever asked', () => {
+  const fn = hotkeySrc.split('const askForFnPermission')[1].slice(0, 400);
+  assert.match(fn, /startFnWatcher\(\);/, 'a --no-prompt spawn here would silently never prompt');
+});

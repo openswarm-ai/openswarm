@@ -482,15 +482,31 @@ function installVoiceHotkey(getMainWindow) {
   // but a running tap makes macOS list the app in that pane for the user to flip.
   ipcMain.handle('voice:request-hold-permission', () => {
     armNativeTiers();
+    askForFnPermission();
     if (process.platform === 'darwin' && !tapProven) {
       try { systemPreferences.isTrustedAccessibilityClient(true); } catch (_) {}
     }
     return tapProven;
   });
+  // Deliberately re-asked on every dictation attempt, not once per launch: armNativeTiers is
+  // one-shot, so a user who was denied (or dismissed the prompt) could never be asked again, which
+  // is how a permission you are willing to grant turns into a key that just never works.
+  let lastFnAskMs = 0;
+  const askForFnPermission = () => {
+    if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) return;
+    const now = Date.now();
+    if (now - lastFnAskMs < 10_000) return;
+    lastFnAskMs = now;
+    unusableNotified = false;
+    startFnWatcher();
+  };
+
   // Fires the real TCC mic prompt BEFORE the first capture: with the entitlement present but no
   // prior grant, getUserMedia would still fail once and burn the user's first dictation attempt.
   ipcMain.handle('voice:request-mic-access', async () => {
     armNativeTiers();
+    // Using dictation IS the intent that earns the fn prompt, every time, not just the first.
+    askForFnPermission();
     if (process.platform !== 'darwin') return true;
     try {
       if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true;
