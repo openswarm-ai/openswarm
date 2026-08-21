@@ -58,6 +58,13 @@ def test_second_consecutive_crash_trips_the_breaker(manager, tmp_path, monkeypat
         assert json.load(f)["crash_interrupt_count"] == 2
 
 
+def p_act_like_a_real_app(monkeypatch) -> None:
+    """Auto-resume refuses to dispatch under pytest, because it sends REAL turns and the suite shares
+    the developer's data root (ENG-388). These tests are about the production path, so they opt out."""
+    import backend.apps.agents.manager.session.SessionPersistence as p_sp
+    monkeypatch.setattr(p_sp, "running_under_test", lambda: False)
+
+
 def test_waiting_approval_never_auto_resumes(manager, tmp_path, monkeypatch):
     p_write_session(tmp_path, monkeypatch, "s-appr", "waiting_approval", [p_msg("user"), p_msg("tool_call")])
     asyncio.run(manager.reconcile_on_startup())
@@ -65,6 +72,7 @@ def test_waiting_approval_never_auto_resumes(manager, tmp_path, monkeypatch):
 
 
 def test_auto_resume_sends_one_hidden_continuation(manager, tmp_path, monkeypatch):
+    p_act_like_a_real_app(monkeypatch)
     p_write_session(tmp_path, monkeypatch, "s-cut", "running", [p_msg("user"), p_msg("tool_call")])
     asyncio.run(manager.reconcile_on_startup())
     sent = []
@@ -81,6 +89,7 @@ def test_auto_resume_sends_one_hidden_continuation(manager, tmp_path, monkeypatc
 
 
 def test_resume_failure_is_per_session_and_non_fatal(manager, tmp_path, monkeypatch):
+    p_act_like_a_real_app(monkeypatch)
     p_write_session(tmp_path, monkeypatch, "s-a", "running", [p_msg("user"), p_msg("tool_call")])
     p_write_session(tmp_path, monkeypatch, "s-b", "running", [p_msg("user"), p_msg("tool_call")])
     asyncio.run(manager.reconcile_on_startup())

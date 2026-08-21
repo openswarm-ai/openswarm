@@ -4,6 +4,7 @@ on boot). Split from SessionLifecycle (which handles ONE session at a time) so e
 one concern. self.sessions resolves across the MRO as before."""
 
 import logging
+import sys
 
 from typeguard import typechecked
 
@@ -16,6 +17,13 @@ from backend.apps.agents.manager.session.session_store import (
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 
 logger = logging.getLogger(__name__)
+
+
+def running_under_test() -> bool:
+    """Auto-resume dispatches REAL turns: live credentials, live Bash, in whatever tree the process
+    was started from. A test that boots the app lifespan must never do that to the developer's own
+    chats, so this is the one gate that keeps a suite run from becoming an agent run."""
+    return "pytest" in sys.modules
 
 
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
@@ -80,6 +88,10 @@ class SessionPersistence(AgentManagerProtocol):
         """Fire one hidden continuation into each crash-interrupted session (called after
         restore, off the boot critical path). Failure is per-session and non-fatal: a session
         that cannot resume just keeps its amber chip."""
+        if running_under_test():
+            logger.info("crash-resume: skipped, running under test")
+            self.crash_resume_queue = []
+            return
         for sid in list(getattr(self, "crash_resume_queue", []) or []):
             try:
                 # send_message lives on the Messaging mixin; AgentManager composes both.
