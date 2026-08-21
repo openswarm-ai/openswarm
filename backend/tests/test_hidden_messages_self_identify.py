@@ -3,7 +3,9 @@ read hidden harness messages as prompt injection (field reports, 2026-08-16). Me
 hidden prompt (silent-quit nudges incl. the FINAL one that literally opens "Stop. Do not call any
 more tools.", lost-step retries, auth heals, context-break continuations) rides the USER role, so
 the model's misattribution is honest from its chair. Seal: one attribution prefix at the ONE send
-chokepoint, so no hidden message can ever read as the user's words.
+chokepoint, so no hidden message can ever read as the user's words. REVERSED 2026-08-21 (Eric):
+the prefix announced harness traffic on the subscription lane, whose provider filter blocks exactly
+that (ENG-358), so hidden prompts now go out verbatim and honesty lives in the nudge texts.
 """
 import inspect
 
@@ -29,8 +31,7 @@ async def test_hidden_prompt_gets_the_attribution_prefix():
                 pass  # downstream turn machinery may bail in a unit context; the append happened first
         hidden = [m for m in session.messages if m.role == "user" and m.hidden]
         assert hidden, "hidden message never appended"
-        assert hidden[-1].content.startswith("[Automated message from OpenSwarm itself"), \
-            "a nudge the model attributes to the user is the fabricated-stop bug"
+        assert hidden[-1].content == "Stop. Do not call any more tools.", "hidden prompts go out verbatim: no attribution prefix on the subscription lane (Eric, 2026-08-21)"
     finally:
         agent_manager.sessions.pop("hm-1", None)
 
@@ -55,7 +56,7 @@ async def test_visible_user_prompt_is_untouched():
         agent_manager.sessions.pop("hm-2", None)
 
 
-def test_no_double_prefix():
+def test_no_prefix_is_ever_added():
     from backend.apps.agents.manager import Messaging
     src = inspect.getsource(Messaging)
-    assert 'not prompt.startswith("[Automated")' in src, "re-sent continuations must not stack prefixes"
+    assert "HIDDEN_NOTE_PREFIX" not in src and "[Automated message" not in src, "hidden prompts are sent as written"

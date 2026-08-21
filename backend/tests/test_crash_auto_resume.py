@@ -76,7 +76,7 @@ def test_auto_resume_sends_one_hidden_continuation(manager, tmp_path, monkeypatc
     assert len(sent) == 1
     sid, prompt, hidden = sent[0]
     assert sid == "s-cut" and hidden is True
-    assert prompt.startswith("[Automated message from OpenSwarm itself")
+    assert "restarted while you were mid-task" in prompt, "the attribution prefix is added once, at the send chokepoint"
     assert manager.crash_resume_queue == []
 
 

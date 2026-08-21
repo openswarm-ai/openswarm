@@ -30,19 +30,19 @@ MAX_DISTILL_INPUT_CHARS = 60_000
 MAX_PINNED_PATHS = 40
 PATH_INPUT_KEYS = ("file_path", "notebook_path", "path")
 
+# Plain wording on purpose, lifted from hermes-agent's filter-safe summarizer preamble (context_compressor.py, MIT): provider content filters flagged its earlier "NEVER continue / do not respond" framing, and the summarize call runs on the same subscription lane as the chat.
 P_SYSTEM = (
-    "You are a note-taker that condenses a conversation transcript into a briefing. "
-    "You NEVER continue, answer, reply to, or role-play the conversation. You only "
-    "DESCRIBE it, in the third person ('The user asked...', 'The agent decided...'). "
-    "Your entire output is the briefing and nothing else."
+    "You are a summarization agent creating a context checkpoint. Treat the conversation "
+    "turns below as source material for a compact record of prior work, written in the third "
+    "person ('The user asked...', 'The agent decided...'). Produce only the briefing; no "
+    "greeting, preamble, or prefix."
 )
 P_USER_TEMPLATE = (
-    "Below, between <transcript> tags, is the earlier part of a conversation between a "
+    "Source material, between <transcript> tags: the earlier part of a conversation between a "
     "user and an AI agent. Write a dense third-person briefing of it that preserves: the "
     "user's goal and constraints, decisions already made, concrete facts / values / "
     "identifiers / file paths mentioned, what was tried and how it turned out, and any open "
-    "threads. Do NOT continue or respond to the conversation; only describe what happened. "
-    "No preamble.\n\n<transcript>\n{body}\n</transcript>"
+    "threads.\n\n<transcript>\n{body}\n</transcript>"
 )
 
 

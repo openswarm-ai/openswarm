@@ -274,18 +274,17 @@ class RunOptions(AgentManagerProtocol):
             if session.needs_fork:
                 session.needs_fork = False
         elif len(session.messages) > 1:
-            # The mode ratchets down when a provider policy filter blocks a recap-bearing turn (Alex's bricked-chat class): "minimal" carries no model text at all, "none" carries nothing.
+            # The recap never carries the model's own replies; the mode drops to "none" when a provider policy filter blocks even that (Alex's bricked-chat class).
             p_mode = session.history_prefix_mode
             history = "" if p_mode == "none" else build_history_prefix(
                 get_branch_messages(session),
                 cutoff_msg_id=session.compacted_through_msg_id,
-                mode=p_mode,
             )
             # Distill the dropped span into a cached aux summary so a rebuild keeps the gist of old turns instead of hard-dropping them. Fail-open: "" -> the plain recap above, exactly today's behavior.
             from backend.apps.agents.manager.session.distill_history import distilled_history_summary
             from backend.apps.agents.manager.session.history_compaction import wrap_platform_note
             logger.info(f"[SPAWN-PHASE] distill start session={session_id[:8]} t={time.monotonic():.3f}")
-            distilled = await distilled_history_summary(session, global_settings) if p_mode == "full" else ""
+            distilled = await distilled_history_summary(session, global_settings) if p_mode != "none" else ""
             logger.info(f"[SPAWN-PHASE] distill done session={session_id[:8]} t={time.monotonic():.3f}")
             if distilled:
                 fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")

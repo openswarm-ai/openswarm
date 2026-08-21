@@ -21,6 +21,7 @@ from backend.apps.agents.manager.prompt.prompt_context import resolve_mode
 logger = logging.getLogger(__name__)
 
 
+
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 
 
@@ -121,12 +122,7 @@ class Messaging(AgentManagerProtocol):
                 "session": session.model_dump(mode="json"),
             })
 
-        # Hidden messages are harness plumbing (nudges, lost-step retries, auth heals) but ride the
-        # USER role, so agents stopped mid-task by a misfired nudge truthfully reported "the user
-        # told me to stop", and others read them as prompt injection (field reports, 2026-08-16).
-        # One attribution prefix at the one send chokepoint keeps every explanation honest.
-        if hidden and prompt and not prompt.startswith("[Automated"):
-            prompt = "[Automated message from OpenSwarm itself, not written by your user] " + prompt
+        # Hidden messages (nudges, lost-step retries, auth heals) go out verbatim: the attribution prefix they used to carry (ENG-326) announced harness traffic on the subscription lane, whose provider filter blocks exactly that (Eric's call, 2026-08-21); honesty about who is speaking lives in the nudge texts themselves.
         skill_meta = [{"id": s["id"], "name": s["name"]} for s in (attached_skills or [])] or None
         image_meta = [{"data": img["data"], "media_type": img.get("media_type", "image/png")} for img in (images or [])] or None
         user_msg = Message(

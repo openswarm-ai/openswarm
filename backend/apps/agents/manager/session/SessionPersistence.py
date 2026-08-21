@@ -86,9 +86,8 @@ class SessionPersistence(AgentManagerProtocol):
                 p_send = getattr(self, "send_message")
                 await p_send(
                     sid,
-                    "[Automated message from OpenSwarm itself, not written by your user] The app "
-                    "restarted while you were mid-task; nothing was lost. Continue exactly where "
-                    "you left off; do not redo completed steps.",
+                    "The app restarted while you were mid-task; nothing was lost. Continue exactly "
+                    "where you left off; do not redo completed steps.",
                     hidden=True,
                 )
                 logger.info(f"crash-resume: session {sid} auto-resumed")

@@ -12,18 +12,12 @@ from typeguard import typechecked
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.session.history_compaction import get_branch_messages
 
-NUDGE_PROMPT = (
-    "You ended your turn without reporting anything. Continue exactly where you left off and "
-    "finish the task; when done, always end with your findings or answer as normal text."
-)
+NUDGE_PROMPT = "Finish the task, then answer in plain text."
 
 # The last allowed nudge stops asking for more work: field data (Haik, 2026-08-08, 20 nudges in 5
 # sessions) showed the model reads "continue and finish" as MORE tool calls then another silent
 # quit, so the escalation demands the one thing the user is actually missing: text.
-FINAL_NUDGE_PROMPT = (
-    "Stop. Do not call any more tools. In plain chat text, right now: report what you have done "
-    "so far, what is left, and anything blocking you. Even a partial status is required."
-)
+FINAL_NUDGE_PROMPT = "No more tools. Report what is done, what is left, and what blocks you."
 
 # Post-cap honesty: the machinery is out of nudges and the turn STILL ended silent, so say so in
 # the transcript instead of leaving a Done pill over a wall of tool rows.

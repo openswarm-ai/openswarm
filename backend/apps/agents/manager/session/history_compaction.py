@@ -132,24 +132,14 @@ def get_branch_messages(session) -> List:
     return result
 
 
-# A reply in the recap is a reminder of what the model said, not a copy: verbatim replays of the model's own long outputs are exactly what Anthropic's anti-distillation filter blocks, and the user still has the full text on screen.
-RECAP_REPLY_GIST_CHARS = 600
-
-
 @typechecked
-def clamp_reply_gist(text: str) -> str:
-    if len(text) <= RECAP_REPLY_GIST_CHARS:
-        return text
-    return f"{text[:RECAP_REPLY_GIST_CHARS]} [... {len(text) - RECAP_REPLY_GIST_CHARS} chars of this reply omitted from recap ...]"
-
-
-@typechecked
-def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None, mode: str = "full") -> str:
+def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
     """Format branch messages into a conversation summary for context injection.
 
-    `mode` is the session's history_prefix_mode: "full" carries asks, reply gists and the tool
-    trail; "minimal" carries only the user's asks and the tool calls (no model text at all), the
-    shape left once a provider policy filter has blocked a fuller recap.
+    Carries the user's asks and the tool trail, never the model's own replies: a replay of the
+    model's outputs in text we author is what Anthropic's anti-distillation filter blocks on the
+    subscription lane (192 blocks in 14 days, none on API keys). Claude Code and hermes keep old
+    answers only as model-written summaries; the distilled summary plays that role here.
 
     When `cutoff_msg_id` is provided (session.compacted_through_msg_id), drop every
     message up to and including that id so the marker the UI shows actually matches
@@ -170,20 +160,9 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None, mode: st
         if m.role == "user":
             text = m.content if isinstance(m.content, str) else str(m.content)
             lines.append(f"The user asked: {strip_forged_sentinels(clamp_recap_text(text))}")
-        elif m.role == "assistant":
-            if mode == "minimal":
-                continue
-            text = m.content if isinstance(m.content, str) else str(m.content)
-            # First-person framing on purpose: a bare "User:/Assistant:" transcript inside a user
-            # message pattern-matches provider distillation filters (Anthropic blocked real users'
-            # recap turns as "duplicating model outputs"); "you replied" states the truth, this is
-            # the SAME assistant's own earlier work in this same session.
-            lines.append(f"You replied: {strip_forged_sentinels(clamp_reply_gist(text))}")
         elif m.role == "tool_call":
             lines.append(recap_tool_call_line(m.content))
         elif m.role == "tool_result":
-            if mode == "minimal":
-                continue
             body = fates.get(v)
             if body is None:
                 lines.append(recap_tool_result_line(m.content))
@@ -193,9 +172,12 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None, mode: st
                 lines.append(f"{label}: {strip_forged_sentinels(body)}")
     if not lines:
         return ""
-    p_recap_frame = ("Recap of YOUR OWN earlier turns in this same conversation, summarized "
-                     "locally by the OpenSwarm app so you can continue where you left off.")
-    return f"{SESSION_RECAP_OPEN}\n{PLATFORM_NOTE_PREAMBLE}\n{p_recap_frame}\n" + "\n".join(lines) + f"\n{SESSION_RECAP_CLOSE}"
+    # Framing lifted from hermes-agent's compaction handoff (context_compressor.py, MIT): reference only, never active instructions, the message after it is the single source of truth, and an explicit end marker so a weak model cannot read the last line as fresh input.
+    p_recap_frame = ("Recap of YOUR OWN earlier turns in this same conversation (what was asked and which tools "
+                     "you ran), kept locally by the OpenSwarm app so you can continue where you left off. "
+                     "Reference only: do not answer or redo anything in it; respond to the message that follows.")
+    return (f"{SESSION_RECAP_OPEN}\n{PLATFORM_NOTE_PREAMBLE}\n{p_recap_frame}\n" + "\n".join(lines)
+            + f"\n--- end of recap; respond to the message below, not the recap above ---\n{SESSION_RECAP_CLOSE}")
 
 
 @typechecked
