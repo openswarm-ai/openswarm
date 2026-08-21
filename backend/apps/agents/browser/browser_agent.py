@@ -1121,14 +1121,17 @@ async def run_browser_agent(
                 gt = {}
             url = li.get("url") or gt.get("url") or label_url or ""
             parts = []
+            # seeded=True: these reads are prestage's bookkeeping, not the agent's work. Without the tag
+            # the honesty gate counted them as "content read back" and passed a child that never acted,
+            # so the parent was told "Task completed" for a run that did nothing (2026-08-20).
             if li.get("text") and "error" not in li:
                 parts.append("Interactive elements already on the page:\n" + str(li["text"]))
                 recs.append({"tool": "BrowserListInteractives", "input": {}, "ok": True,
-                             "result_summary": str(li["text"])[:200], "elapsed_ms": 0})
+                             "result_summary": str(li["text"])[:200], "elapsed_ms": 0, "seeded": True})
             if gt.get("text") and "error" not in gt:
                 parts.append("Visible page text (truncated):\n" + str(gt["text"])[:2000])
                 recs.append({"tool": "BrowserGetText", "input": {}, "ok": True,
-                             "result_summary": str(gt["text"])[:200], "elapsed_ms": 0})
+                             "result_summary": str(gt["text"])[:200], "elapsed_ms": 0, "seeded": True})
             block = (
                 "\n\n[Page already loaded and inspected for you, act directly; "
                 "no need to screenshot or list elements again unless it changes]\n"
@@ -2108,7 +2111,12 @@ async def run_browser_agent(
 
             messages.append({"role": "assistant", "content": assistant_content})
 
-            if response.stop_reason != "tool_use":
+            # Decide "keep going" from the reply's CONTENT, never from stop_reason. 9router stamps
+            # Codex tool calls end_turn (wire-captured 6/6 on 2026-08-20), and keying on the label
+            # ended every ChatGPT-sub browser child before its first tool ever ran: one persisted
+            # ReportProgress, no result, no text, the "Ran 1 step" ghost. A tool_use block IS the
+            # request to continue, whatever the router called it.
+            if not tool_uses:
                 break
 
             tool_results = []

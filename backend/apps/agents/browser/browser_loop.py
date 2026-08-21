@@ -486,9 +486,16 @@ def completion_is_honest(
         return False, "declared done without taking a single action"
     actions = [a for a in action_log if a.get("tool") in P_PRODUCTIVE_TOOLS]
     actions_ok = [a for a in actions if a.get("ok")]
+    # Prestage seeds two reads into the log before the model ever runs. They are real page content,
+    # so a model that ANSWERS from them did honest work (a read task needs no further tools). But a
+    # child that produced no answer at all did nothing, and on 2026-08-20 the seeds alone let every
+    # such child pass as "Task completed" while its parent was handed an empty result. The seeds
+    # therefore count only when there is an answer for them to have fed.
+    p_answered = bool(str(summary or "").strip())
     reads_ok = [
         a for a in action_log
         if a.get("tool") in P_READ_TOOLS and a.get("ok")
+        and (p_answered or not a.get("seeded"))
         and str(a.get("result_summary") or "").strip()
     ]
     if actions and not actions_ok:

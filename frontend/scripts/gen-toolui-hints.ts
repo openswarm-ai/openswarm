@@ -60,8 +60,14 @@ async function main(): Promise<void> {
     const mod = await import(path);
     const schema = mod[exportName];
     const js = z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' } as any) as any;
+    // The 420-char cap truncated data-table's REQUIRED `data` field out of the hint (it sat behind
+    // columns' long inner shape), so the model omitted it and every table failed once on
+    // "'data' is a required property" (13 sessions on 2026-08-20). Emit the required key names up
+    // front, untruncatable, then the shape.
+    const topReq: string[] = Array.isArray((js as any).required) ? (js as any).required : [];
     let hint = describe(js, 0);
     if (hint.length > 420) hint = hint.slice(0, 417) + '...';
+    if (topReq.length) hint = `REQUIRED: ${topReq.join(', ')}. ${hint}`;
     out[name] = { hint: `props: ${hint.replace(/"/g, "'")}`, schema: js };
   }
   const dest = new URL('../../backend/apps/agents/toolui_schemas.json', import.meta.url).pathname;

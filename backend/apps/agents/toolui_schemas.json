@@ -1,6 +1,6 @@
 {
  "approval-card": {
-  "hint": "props: {id: str, title: str, role?: 'information'|'decision'|'control'|'state'|'composite', description?: str, icon?: str, metadata?: [{key: str, value: str}], variant?: 'default'|'destructive', confirmLabel?: str, cancelLabel?: str, choice?: 'approved'|'denied'}",
+  "hint": "props: REQUIRED: id, title. {id: str, title: str, role?: 'information'|'decision'|'control'|'state'|'composite', description?: str, icon?: str, metadata?: [{key: str, value: str}], variant?: 'default'|'destructive', confirmLabel?: str, cancelLabel?: str, choice?: 'approved'|'denied'}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -76,7 +76,7 @@
   }
  },
  "audio": {
-  "hint": "props: {id: str, assetId: str, src: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, artwork?: str, durationMs?: num, fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUrl?: str, url?: str}}",
+  "hint": "props: REQUIRED: id, assetId, src. {id: str, assetId: str, src: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, artwork?: str, durationMs?: num, fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUrl?: str, url?: str}}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -123,7 +123,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -195,7 +195,7 @@
   }
  },
  "chart": {
-  "hint": "props: {id: str, type: 'bar'|'line', data: [{}], xKey: str, series: [{key: str, label: str, color?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, colors?: [str], showLegend?: bool, showGrid?: bool}",
+  "hint": "props: REQUIRED: id, type, data, xKey, series. {id: str, type: 'bar'|'line', data: [{}], xKey: str, series: [{key: str, label: str, color?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, colors?: [str], showLegend?: bool, showGrid?: bool}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -242,7 +242,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -328,7 +328,7 @@
   }
  },
  "citation": {
-  "hint": "props: {id: str, href: str, title: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, snippet?: str, domain?: str, favicon?: str, author?: str, publishedAt?: str, type?: 'webpage'|'document'|'article'|'api'|'code'|'other', locale?: str}",
+  "hint": "props: REQUIRED: id, href, title. {id: str, href: str, title: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, snippet?: str, domain?: str, favicon?: str, author?: str, publishedAt?: str, type?: 'webpage'|'document'|'article'|'api'|'code'|'other', locale?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -375,7 +375,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -432,7 +432,7 @@
   }
  },
  "code-block": {
-  "hint": "props: {id: str, code: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, language?: str, lineNumbers?: 'visible'|'hidden', filename?: str, highlightLines?: [num], maxCollapsedLines?: num}",
+  "hint": "props: REQUIRED: id, code. {id: str, code: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, language?: str, lineNumbers?: 'visible'|'hidden', filename?: str, highlightLines?: [num], maxCollapsedLines?: num}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -479,7 +479,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -527,7 +527,7 @@
   }
  },
  "code-diff": {
-  "hint": "props: {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, oldCode?: str, newCode?: str, patch?: str, language?: str, filename?: str, lineNumbers?: 'visible'|'hidden', diffStyle?: 'unified'|'split', maxCollapsedLines?: num}",
+  "hint": "props: REQUIRED: id. {id: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, oldCode?: str, newCode?: str, patch?: str, language?: str, filename?: str, lineNumbers?: 'visible'|'hidden', diffStyle?: 'unified'|'split', maxCollapsedLines?: num}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -574,7 +574,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -627,7 +627,7 @@
   }
  },
  "data-table": {
-  "hint": "props: {id: str, columns: [{key: str, label: str, abbr?: str, sortable?: bool, align?: 'left'|'right'|'center', width?: str, truncate?: bool, priority?: 'primary'|'secondary'|'tertiary', hideOnMobile?: bool, format?: any}], data: [{}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, rowIdKey?: str, defa...",
+  "hint": "props: REQUIRED: id, columns, data. {id: str, columns: [{key: str, label: str, abbr?: str, sortable?: bool, align?: 'left'|'right'|'center', width?: str, truncate?: bool, priority?: 'primary'|'secondary'|'tertiary', hideOnMobile?: bool, format?: any}], data: [{}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, rowIdKey?: str, defa...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -674,7 +674,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -1084,7 +1084,7 @@
   }
  },
  "geo-map": {
-  "hint": "props: {id: str, markers: [{lat: num, lng: num, id?: str, label?: str, description?: str, tooltip?: 'none'|'hover'|'always', icon?: obj|obj|obj}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, routes?: [{points: [obj], id?: str, label?: str, description?: str, tooltip?:...",
+  "hint": "props: REQUIRED: id, markers. {id: str, markers: [{lat: num, lng: num, id?: str, label?: str, description?: str, tooltip?: 'none'|'hover'|'always', icon?: obj|obj|obj}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, routes?: [{points: [obj], id?: str, label?: str, description?: str, tooltip?:...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1131,7 +1131,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -1457,7 +1457,7 @@
   }
  },
  "image": {
-  "hint": "props: {id: str, assetId: str, src: str, alt: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, href?: str, domain?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUr...",
+  "hint": "props: REQUIRED: id, assetId, src, alt. {id: str, assetId: str, src: str, alt: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, href?: str, domain?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', fileSizeBytes?: num, createdAt?: str, locale?: str, source?: {label: str, iconUr...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1504,7 +1504,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -1598,7 +1598,7 @@
   }
  },
  "image-gallery": {
-  "hint": "props: {id: str, images: [{id: str, src: str, alt: str, width: num, height: num, title?: str, caption?: str, source?: obj}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str}",
+  "hint": "props: REQUIRED: id, images. {id: str, images: [{id: str, src: str, alt: str, width: num, height: num, title?: str, caption?: str, source?: obj}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1645,7 +1645,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -1725,7 +1725,7 @@
   }
  },
  "instagram-post": {
-  "hint": "props: {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: [{type: 'image'|'video', url: str, alt: str}], stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
+  "hint": "props: REQUIRED: id, author. {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: [{type: 'image'|'video', url: str, alt: str}], stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1806,7 +1806,7 @@
   }
  },
  "item-carousel": {
-  "hint": "props: {id: str, items: [{id: str, name: str, subtitle?: str, image?: str, color?: str, actions?: [obj]}], title?: str, description?: str}",
+  "hint": "props: REQUIRED: id, items. {id: str, items: [{id: str, name: str, subtitle?: str, image?: str, color?: str, actions?: [obj]}], title?: str, description?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1904,7 +1904,7 @@
   }
  },
  "link-preview": {
-  "hint": "props: {id: str, href: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, image?: str, domain?: str, favicon?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str}",
+  "hint": "props: REQUIRED: id, href. {id: str, href: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, description?: str, image?: str, domain?: str, favicon?: str, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -1951,7 +1951,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -2016,7 +2016,7 @@
   }
  },
  "linkedin-post": {
-  "hint": "props: {id: str, author: {name: str, avatarUrl: str, headline?: str}, text?: str, media?: {type: 'image'|'video', url: str, alt: str}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
+  "hint": "props: REQUIRED: id, author. {id: str, author: {name: str, avatarUrl: str, headline?: str}, text?: str, media?: {type: 'image'|'video', url: str, alt: str}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, stats?: {likes?: num, isLiked?: bool}, createdAt?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2113,7 +2113,7 @@
   }
  },
  "message-draft": {
-  "hint": "props: {id: str, body: str, channel: str, subject: str, to: [str], role?: 'information'|'decision'|'control'|'state'|'composite', outcome?: 'sent'|'cancelled', from?: str, cc?: [str], bcc?: [str]}",
+  "hint": "props: REQUIRED: id, body, channel, subject, to. {id: str, body: str, channel: str, subject: str, to: [str], role?: 'information'|'decision'|'control'|'state'|'composite', outcome?: 'sent'|'cancelled', from?: str, cc?: [str], bcc?: [str]}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2184,7 +2184,7 @@
   }
  },
  "option-list": {
-  "hint": "props: {id: str, options: [{id: str, label: str, description?: str, disabled?: bool}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, selectionMode?: 'multi'|'single', defaultValue?: [str]|str|any, choice?: [str]|str|any, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'd...",
+  "hint": "props: REQUIRED: id, options. {id: str, options: [{id: str, label: str, description?: str, disabled?: bool}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, selectionMode?: 'multi'|'single', defaultValue?: [str]|str|any, choice?: [str]|str|any, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'd...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2231,7 +2231,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -2437,7 +2437,7 @@
   }
  },
  "order-summary": {
-  "hint": "props: {id: str, items: [{id: str, name: str, unitPrice: num, description?: str, imageUrl?: str, quantity?: num}], pricing: {subtotal: num, total: num, tax?: num, taxLabel?: str, shipping?: num, discount?: num, discountLabel?: str, currency?: str}, role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, variant?: 'summary'|'receipt', choice?: {action: str, orderId?: str, confirmedAt?: str}}",
+  "hint": "props: REQUIRED: id, items, pricing. {id: str, items: [{id: str, name: str, unitPrice: num, description?: str, imageUrl?: str, quantity?: num}], pricing: {subtotal: num, total: num, tax?: num, taxLabel?: str, shipping?: num, discount?: num, discountLabel?: str, currency?: str}, role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, variant?: 'summary'|'receipt', choice?: {action: str, orderId?: str, confirmedAt?: str}}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2565,7 +2565,7 @@
   }
  },
  "parameter-slider": {
-  "hint": "props: {id: str, sliders: [{id: str, label: str, min: num, max: num, value: num, step?: num, unit?: str, precision?: num, disabled?: bool, trackClassName?: str, fillClassName?: str, handleClassName?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disa...",
+  "hint": "props: REQUIRED: id, sliders. {id: str, sliders: [{id: str, label: str, min: num, max: num, value: num, step?: num, unit?: str, precision?: num, disabled?: bool, trackClassName?: str, fillClassName?: str, handleClassName?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disa...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2765,7 +2765,7 @@
   }
  },
  "plan": {
-  "hint": "props: {id: str, title: str, todos: [{id: str, label: str, status: 'pending'|'in_progress'|'completed'|'cancelled', description?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, description?: str, maxVisibleTodos?: num}",
+  "hint": "props: REQUIRED: id, title, todos. {id: str, title: str, todos: [{id: str, label: str, status: 'pending'|'in_progress'|'completed'|'cancelled', description?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, description?: str, maxVisibleTodos?: num}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2812,7 +2812,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -2876,7 +2876,7 @@
   }
  },
  "preferences-panel": {
-  "hint": "props: {id: str, sections: [{items: [any], heading?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disabled?: bool, shortcut?: str}]...",
+  "hint": "props: REQUIRED: id, sections. {id: str, sections: [{items: [any], heading?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, title?: str, actions?: [{id: str, label: str, sentence?: str, confirmLabel?: str, variant?: 'default'|'destructive'|'secondary'|'ghost'|'outline', loading?: bool, disabled?: bool, shortcut?: str}]...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -2923,7 +2923,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -3212,7 +3212,7 @@
   }
  },
  "progress-tracker": {
-  "hint": "props: {id: str, steps: [{id: str, label: str, status: 'pending'|'in-progress'|'completed'|'failed', description?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', elapsedTime?: num, choice?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}}",
+  "hint": "props: REQUIRED: id, steps. {id: str, steps: [{id: str, label: str, status: 'pending'|'in-progress'|'completed'|'failed', description?: str}], role?: 'information'|'decision'|'control'|'state'|'composite', elapsedTime?: num, choice?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -3297,7 +3297,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -3315,7 +3315,7 @@
   }
  },
  "question-flow": {
-  "hint": "props: {id: str, step: num, title: str, options: [{id: str, label: str, description?: str, disabled?: bool}], role?: 'information'|'decision'|'control'|'state'|'composite', description?: str, selectionMode?: 'single'|'multi'}",
+  "hint": "props: REQUIRED: id, step, title, options. {id: str, step: num, title: str, options: [{id: str, label: str, description?: str, disabled?: bool}], role?: 'information'|'decision'|'control'|'state'|'composite', description?: str, selectionMode?: 'single'|'multi'}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -3389,7 +3389,7 @@
   }
  },
  "stats-display": {
-  "hint": "props: {id: str, stats: [{key: str, label: str, value: str|num, format?: any, diff?: obj, sparkline?: obj}], role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, description?: str}",
+  "hint": "props: REQUIRED: id, stats. {id: str, stats: [{key: str, label: str, value: str|num, format?: any, diff?: obj, sparkline?: obj}], role?: 'information'|'decision'|'control'|'state'|'composite', title?: str, description?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -3576,7 +3576,7 @@
   }
  },
  "terminal": {
-  "hint": "props: {id: str, command: str, exitCode: num, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, stdout?: str, stderr?: str, durationMs?: num, cwd?: str, truncated?: bool, maxCollapsedLines?: num}",
+  "hint": "props: REQUIRED: id, command, exitCode. {id: str, command: str, exitCode: num, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, stdout?: str, stderr?: str, durationMs?: num, cwd?: str, truncated?: bool, maxCollapsedLines?: num}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -3623,7 +3623,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -3668,7 +3668,7 @@
   }
  },
  "video": {
-  "hint": "props: {id: str, assetId: str, src: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, poster?: str, title?: str, description?: str, href?: str, domain?: str, durationMs?: num, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str, source?: {label: str, iconU...",
+  "hint": "props: REQUIRED: id, assetId, src. {id: str, assetId: str, src: str, role?: 'information'|'decision'|'control'|'state'|'composite', receipt?: {outcome: 'success'|'partial'|'failed'|'cancelled', summary: str, at: str, identifiers?: obj}, poster?: str, title?: str, description?: str, href?: str, domain?: str, durationMs?: num, ratio?: 'auto'|'1:1'|'4:3'|'16:9'|'9:16', fit?: 'cover'|'contain', createdAt?: str, locale?: str, source?: {label: str, iconU...",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -3715,7 +3715,7 @@
       "at": {
        "type": "string",
        "format": "date-time",
-       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
       }
      },
      "required": [
@@ -3808,7 +3808,7 @@
   }
  },
  "x-post": {
-  "hint": "props: {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: {type: 'image'|'video', url: str, alt: str, aspectRatio?: '1:1'|'4:3'|'16:9'|'9:16'}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, quotedPost?: any, stats?: {likes?: num, isLiked?: bool, isReposted?: bool, isBookmarked?: bool}, createdAt?: str}",
+  "hint": "props: REQUIRED: id, author. {id: str, author: {name: str, handle: str, avatarUrl: str, verified?: bool}, text?: str, media?: {type: 'image'|'video', url: str, alt: str, aspectRatio?: '1:1'|'4:3'|'16:9'|'9:16'}, linkPreview?: {url: str, title?: str, description?: str, imageUrl?: str, domain?: str}, quotedPost?: any, stats?: {likes?: num, isLiked?: bool, isReposted?: bool, isBookmarked?: bool}, createdAt?: str}",
   "schema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
