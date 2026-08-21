@@ -127,11 +127,21 @@ test('the intent path spawns WITHOUT --no-prompt, or nothing is ever asked', () 
 // Electron's isTrustedAccessibilityClient IS that call, so arming the uiohook tap before the fn
 // watcher silently ate the one prompt that can fix a dead fn key. Order is the whole fix.
 
-test('Input Monitoring is requested BEFORE any Accessibility check', () => {
-  const arm = hotkeySrc.split('const armNativeTiers = () => {')[1].split('};')[0];
-  const fnAt = arm.indexOf('startFnWatcher()');
-  const axAt = arm.indexOf('tryStartNativeTap()');
-  assert.ok(fnAt > -1 && axAt > -1, 'both tiers must still be armed');
-  assert.ok(fnAt < axAt,
-    'rdar://7381305: an AX check first kills the Input Monitoring dialog, so fn must ask first');
+test('the Accessibility check waits for the Input Monitoring request, by callback not by line order', () => {
+  // Statement order is NOT enough: the dev path compiles the watcher asynchronously, so a plain
+  // "fn first" still let the AX check win on wall-clock and the prompt stayed dead (seen live).
+  const arm = hotkeySrc.split('const armNativeTiers = () => {')[1].split('\n  };')[0];
+  assert.match(arm, /startFnWatcher\(false, armTapOnce\)/,
+    'the tap tier must be handed to the watcher as a completion callback');
+  const tier = arm.split('const armTapTier = () => {')[1].split('    };')[0];
+  assert.match(tier, /tryStartNativeTap\(\)/,
+    'the AX-touching call belongs inside the deferred tier, never inline ahead of the request');
+  assert.match(arm, /setTimeout\(armTapOnce, \d+\)/, 'a wedged compile must not cost the chord tier');
+});
+
+test('the watcher signals when the request is in flight', () => {
+  assert.match(hotkeySrc, /const startFnWatcher = \(noPrompt, asked\) =>/);
+  const body = hotkeySrc.split('const startFnWatcher = (noPrompt, asked) =>')[1].slice(0, 900);
+  assert.ok((body.match(/done\(\)/g) || []).length >= 4,
+    'every exit path must signal, or a failure strands the Accessibility tier forever');
 });

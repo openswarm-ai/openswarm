@@ -168,16 +168,21 @@ function installVoiceHotkey(getMainWindow) {
   // ---- fn/Globe primary tier (macOS): the native watcher, since no JS tap can see keycode 63 ----
   let fnProc = null;
   let quitReaperWired = false;
-  const startFnWatcher = (noPrompt) => {
-    if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) return;
+  // `asked` runs once the Input Monitoring request is actually in flight (or provably never will
+  // be). Anything that touches Accessibility must wait for it; see rdar://7381305.
+  const startFnWatcher = (noPrompt, asked) => {
+    const done = () => { if (typeof asked === 'function') asked(); };
+    if (process.platform !== 'darwin' || combo.special !== 'fn' || fnProc) { done(); return; }
     resolveFnWatcherBinary((bin) => {
       if (!bin) {
         console.log('[voice] no fn watcher binary, legacy hotkey stays primary');
         notifyPrimaryUnusable('no-watcher-binary');
+        done();
         return;
       }
-      if (combo.special !== 'fn' || fnProc) return; // rebound or raced while compiling
+      if (combo.special !== 'fn' || fnProc) { done(); return; }
       startFnWatcherWith(bin, noPrompt === true);
+      done();
     });
   };
   // Kill fn-watchers left by a previous OpenSwarm that died badly. will-quit is the ONLY thing that
@@ -361,13 +366,21 @@ function installVoiceHotkey(getMainWindow) {
     // been called, IOHIDRequestAccess stops raising the Input Monitoring dialog entirely. Electron's
     // isTrustedAccessibilityClient IS that call, and tryStartNativeTap makes it, so asking for the
     // tap first is what silently ate the fn prompt. Ask for Input Monitoring FIRST, always.
-    startFnWatcher();
-    const tapOk = tryStartNativeTap();
-    // Ctrl+Win is the Windows fn-equivalent and ONLY this tap can see it, so a tap that never loads
-    // is the same dead key as a deaf fn watcher. Off macOS there is no TCC to blame, which is
-    // exactly why it would otherwise fail with nothing said at all.
-    if (tapOk === false && combo.special === 'ctrlmeta') notifyPrimaryUnusable('native-tap-unavailable');
-    registerVoiceShortcut();
+    // It has to be a CALLBACK: the dev path compiles the watcher first, so a plain statement order
+    // still let the Accessibility check win on wall-clock and the prompt stayed dead.
+    const armTapTier = () => {
+      const tapOk = tryStartNativeTap();
+      // Ctrl+Win is the Windows fn-equivalent and ONLY this tap can see it, so a tap that never
+      // loads is the same dead key as a deaf fn watcher. Off macOS there is no TCC to blame, which
+      // is exactly why it would otherwise fail with nothing said at all.
+      if (tapOk === false && combo.special === 'ctrlmeta') notifyPrimaryUnusable('native-tap-unavailable');
+      registerVoiceShortcut();
+    };
+    let tapArmed = false;
+    const armTapOnce = () => { if (!tapArmed) { tapArmed = true; armTapTier(); } };
+    startFnWatcher(false, armTapOnce);
+    // A wedged swiftc must never cost the user their chord tier.
+    setTimeout(armTapOnce, 8000);
   };
   try {
     if (fs.existsSync(path.join(app.getPath('userData'), 'dictation-used'))) armNativeTiers();
