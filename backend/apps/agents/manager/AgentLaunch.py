@@ -266,9 +266,11 @@ class AgentLaunch(AgentManagerProtocol):
                     last_assistant = str(content)
                 break
 
+        # One door for every delegation caller: a child's provider refusal never travels home as content.
+        from backend.apps.agents.core.error_classify import neutralize_provider_refusal
         return {
             "forked_session_id": fork.id,
             "source_name": source_name,
-            "response": last_assistant or "No response from invoked agent.",
+            "response": neutralize_provider_refusal(last_assistant or "") or "No response from invoked agent.",
             "cost_usd": fork.cost_usd,
         }

@@ -936,6 +936,9 @@ async def spawn_agent_run(request: Request):
         return JSONResponse({"error": "prompt is required"}, status_code=400)
     if not parent_session_id:
         return JSONResponse({"error": "parent_session_id is required"}, status_code=400)
+    # SpawnAgent is a SEPARATE route from InvokeAgent, so the same seal has to stand at both doors or the shape just walks through this one (ENG-387).
+    from backend.apps.agents.core.error_classify import defuse_extraction_ask
+    prompt = defuse_extraction_ask(prompt)
 
     try:
         from backend.apps.agents.agent_manager import agent_manager
@@ -1047,6 +1050,9 @@ async def invoke_agent_run(request: Request):
         return JSONResponse({"error": "session_id is required"}, status_code=400)
     if not message:
         return JSONResponse({"error": "message is required"}, status_code=400)
+    # The handoff prompt is model-authored and lands in the forked child as its user turn; an extraction-shaped one is what the subscription lane refuses (ENG-387). Defused at the dispatch boundary so the shape cannot leave here.
+    from backend.apps.agents.core.error_classify import defuse_extraction_ask
+    message = defuse_extraction_ask(message)
 
     try:
         from backend.apps.agents.agent_manager import agent_manager

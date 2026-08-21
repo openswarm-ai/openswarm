@@ -74,6 +74,42 @@ def is_content_policy_block(text: str) -> bool:
     return bool(P_CONTENT_POLICY_BLOCK.search(text))
 
 
+# Asking one agent to reproduce another's work verbatim is the shape the subscription lane refuses ("duplicating model outputs"). Our own handoff prompts are model-authored and land in a forked child as its user turn, which is where a third of one user's blocks came from; one agent even diagnosed itself: "my phrasing about 'dumping verbatim' tripped it".
+P_EXTRACTION_ASK = re.compile(
+    r"\bverbatim\b|\bword[- ]for[- ]word\b|complete\s+dump|\bdump\s+(?:of|everything|all|your)|"
+    r"(?:exact|full|entire|complete)\s+(?:\w+\s+){0,2}(?:text|body|output|response|reply|contents?|transcript|work)|"
+    r"repeat\s+(?:back\s+)?(?:what|your|the)|reproduce\s+(?:the|your|it)",
+    re.IGNORECASE,
+)
+
+
+@typechecked
+def defuse_extraction_ask(text: str) -> str:
+    """Rewrite a handoff prompt that asks another agent to reproduce output. The delegation prompt is
+    written by the model at call time, so the only place this can be made unrepresentable is the
+    dispatch boundary: what leaves here can never carry the shape."""
+    if not text or not P_EXTRACTION_ASK.search(text):
+        return text
+    return (text + "\n\nAnswer in your own words as a short task-relevant summary. Do not reproduce "
+            "any earlier message, output, or file contents verbatim.")
+
+
+@typechecked
+def neutralize_provider_refusal(text: str) -> str:
+    """A delegated agent's provider refusal must never travel back as CONTENT. Measured 2026-08-21:
+    a blocked child's refusal came home as its result and was then stored as the PARENT's own
+    assistant text (264 times across 161 chats), so the parent chat carried policy-violation
+    language as the model's own words into every later request. Returns a short neutral status
+    instead, and leaves any real answer untouched."""
+    if not text:
+        return text
+    if is_content_policy_block(text) or "unable to respond to this request" in text.lower():
+        return ("That agent could not answer this request and returned no usable result. "
+                "Do not repeat or quote its response; continue with what you already have, "
+                "or do the work directly.")
+    return text
+
+
 # Real account STATES a retry cannot fix: the subscription is gone, not the token. These must keep dying to the banner, or a canceled account silently burns a request per turn forever.
 P_SUBSCRIPTION_STATE_PATTERNS = re.compile(
     r"(?:no\s+active\s+subscription"
@@ -424,20 +460,26 @@ def is_out_of_tokens(exc: BaseException, extra_text: str = "") -> bool:
     ))
 
 
+# The CLI says this in its own words when it gives up after 3 refill cycles. It arrives two ways: a bare exit-1 ProcessError, and (on the persistent client) inside a ResultMessage that TurnRunner raises as a TurnResultError, which the exception-type gate below silently missed: measured on Alex's install 2026-08-21, 13 thrash deaths in under two hours all landed in the catch-all while the valve fired 4 times in ten days.
+P_AUTOCOMPACT_THRASH = re.compile(r"autocompact\s+is\s+thrashing|context\s+refilled\s+to\s+the\s+limit", re.IGNORECASE)
+
+
 @typechecked
 def is_context_pressure_death(exc: BaseException, compact_boundaries: int, extra_text: str = "") -> bool:
     """The CLI autocompact-thrash class: the process compacted during this turn and then
-    died with a bare exit-1 ProcessError (its thrash detector gives up after 3 refill
+    died, either with a bare exit-1 ProcessError (its thrash detector gives up after 3 refill
     cycles, which can straddle turns on a persistent client, so one boundary in the dying
-    turn is the reliable tell). Only claims deaths no other classifier owns, so auth/
-    capacity/credit errors keep their specific handling; a misfire costs one bounded
-    silent retry, a miss just means today's error card.
+    turn is the reliable tell) or with its own thrash verdict in the result text. Only claims
+    deaths no other classifier owns, so auth/capacity/credit errors keep their specific
+    handling; a misfire costs one bounded silent retry, a miss just means today's error card.
     """
-    if compact_boundaries < 1:
-        return False
-    # Type-name check, not isinstance: the SDK is lazy-imported (mock mode must work without it), mirroring the client-pool dead-client idiom.
-    if "ProcessError" not in type(exc).__name__:
-        return False
+    # The CLI naming its own thrash is self-identifying, so it needs no exception type and no boundary count.
+    if not P_AUTOCOMPACT_THRASH.search(f"{exc!s}\n{extra_text}"):
+        if compact_boundaries < 1:
+            return False
+        # Type-name check, not isinstance: the SDK is lazy-imported (mock mode must work without it), mirroring the client-pool dead-client idiom.
+        if "ProcessError" not in type(exc).__name__:
+            return False
     for p_claimed_by in (
         is_long_context_error, is_transient_capacity_error, is_free_trial_exhausted,
         is_out_of_tokens, is_auth_error, is_unknown_model_error,
