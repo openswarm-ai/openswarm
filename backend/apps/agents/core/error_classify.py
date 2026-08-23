@@ -66,6 +66,13 @@ NON_TRANSIENT_PATTERNS = re.compile(
 
 
 # The provider's abuse classifier declined the REQUEST itself (Anthropic: "blocked as it seems to violate ... reverse engineering or duplicating model outputs"); retrying the same bytes is guaranteed futile.
+# The shape a provider's own refusal arrives in ("API Error: 400 {...}"), as opposed to prose that
+# merely discusses policy. Used to make sure a refusal guard can never eat a genuine answer.
+P_PROVIDER_ENVELOPE = re.compile(
+    r"API\s+Error\b|\"type\"\s*:\s*\"error\"|\"error\"\s*:\s*\{|status\s*(?:code)?\s*[:=]\s*4\d\d",
+    re.IGNORECASE,
+)
+
 P_CONTENT_POLICY_BLOCK = re.compile(r"blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy", re.IGNORECASE)
 
 
@@ -102,6 +109,13 @@ def neutralize_provider_refusal(text: str) -> str:
     language as the model's own words into every later request. Returns a short neutral status
     instead, and leaves any real answer untouched."""
     if not text:
+        return text
+    # Refusal WORDING alone is not enough to destroy a delegated answer. Ask an agent to summarise a
+    # site's Acceptable Use Policy and its real, correct answer contains the very phrases this
+    # matches; replacing it would delete the user's work and tell nobody, which is a worse bug than
+    # the one this guard exists for. A relayed refusal is always wrapped in a provider ENVELOPE, and
+    # prose about policy never is, so require both before anything is thrown away.
+    if not P_PROVIDER_ENVELOPE.search(text):
         return text
     if is_content_policy_block(text) or "unable to respond to this request" in text.lower():
         return ("That agent could not answer this request and returned no usable result. "

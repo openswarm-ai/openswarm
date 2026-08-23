@@ -69,3 +69,29 @@ def test_both_delegation_doors_defuse_not_just_one():
         p_body = p_src[p_at:p_at + 2000]
         assert "defuse_extraction_ask" in p_body, f"{p_route} dispatches an un-defused handoff prompt"
         assert re.search(r"=\s*defuse_extraction_ask\(", p_body), f"{p_route} calls the defuse but drops its result"
+
+
+# ---- The guard must not become the bug (severity ladder, row 1: silent work loss) ----
+# Neutralising on refusal WORDING alone deletes a genuine delegated answer and tells nobody. The
+# realistic case is mundane: ask an agent to summarise a site's Acceptable Use Policy and its
+# correct answer contains the exact phrases the classifier looks for.
+
+def test_a_real_answer_about_policy_is_never_destroyed():
+    real = ("Summary of their terms: content blocked as it seems to violate the Acceptable Use "
+            "Policy is removed within 24h, and repeat offenders lose API access.")
+    assert neutralize_provider_refusal(real) == real, \
+        "refusal wording in a genuine answer must never be replaced; that is silent work loss"
+
+
+def test_a_relayed_refusal_still_gets_neutralised():
+    relay = ('API Error: 400 {"type":"error","error":{"message":"Output blocked as it seems to '
+             'violate our Acceptable Use Policy (legal/aup): duplicating model outputs"}}')
+    out = neutralize_provider_refusal(relay)
+    assert out != relay and "could not answer" in out
+
+
+def test_the_envelope_is_what_separates_them():
+    """Same policy wording, with and without the provider envelope: only the envelope is discarded."""
+    wording = "Output blocked as it seems to violate our Acceptable Use Policy (legal/aup)"
+    assert neutralize_provider_refusal(wording) == wording          # prose: kept
+    assert neutralize_provider_refusal(f"API Error: 400 {wording}") != wording   # envelope: neutralised
