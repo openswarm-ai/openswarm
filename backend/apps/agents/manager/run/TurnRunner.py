@@ -45,6 +45,23 @@ class TurnRunner(AgentManagerProtocol):
                                     global_settings: AppSettings, force_respawn: bool = False) -> None:
         from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
         from claude_agent_sdk.types import StreamEvent, SystemMessage
+        from backend.apps.agents.core.fault_injection import armed as p_fault_armed
+
+        # Deliberate faults, so the guards below get drilled instead of waited for. Inert unless
+        # OSW_FAULT names them; a shipped build never sets it. Raised HERE because this is the same
+        # door a real provider failure comes through, so the drill exercises the real recovery.
+        if p_fault_armed("policy_block"):
+            # The provider's real wording, so the drill hits the same classifier a field block does.
+            raise RuntimeError(
+                "API Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":"
+                "\"Output blocked as it seems to violate our Acceptable Use Policy (legal/aup): "
+                "reverse engineering or duplicating model outputs\"}}"
+            )
+        if p_fault_armed("auth_401"):
+            raise RuntimeError("API Error: 401 {\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}")
+        if p_fault_armed("transport_death"):
+            import anyio
+            raise anyio.BrokenResourceError()
 
         async def prompt_stream():
             yield {
