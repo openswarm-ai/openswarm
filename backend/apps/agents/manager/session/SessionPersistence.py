@@ -4,6 +4,7 @@ on boot). Split from SessionLifecycle (which handles ONE session at a time) so e
 one concern. self.sessions resolves across the MRO as before."""
 
 import logging
+import os
 import sys
 
 from typeguard import typechecked
@@ -22,7 +23,15 @@ logger = logging.getLogger(__name__)
 def running_under_test() -> bool:
     """Auto-resume dispatches REAL turns: live credentials, live Bash, in whatever tree the process
     was started from. A test that boots the app lifespan must never do that to the developer's own
-    chats, so this is the one gate that keeps a suite run from becoming an agent run."""
+    chats, so this is the one gate that keeps a suite run from becoming an agent run.
+
+    The env var is the DECLARED signal and conftest sets it. `pytest in sys.modules` is kept only as
+    a belt-and-braces fallback, and deliberately not as the primary: an incidental signal fails in
+    the worst direction, because the day pytest becomes importable in a packaged build every
+    crash-interrupted turn stops resuming and NOTHING says so. Work vanishing quietly is the worst
+    bug this codebase can ship; a suite that loudly refuses to resume is merely annoying."""
+    if os.environ.get("OSW_DISABLE_AUTO_RESUME") == "1":
+        return True
     return "pytest" in sys.modules
 
 

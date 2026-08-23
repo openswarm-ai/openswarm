@@ -408,7 +408,19 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
     const fallback = pickFallbackModel(byProvider);
     if (!fallback) return;
     // A model absent from the catalog is genuinely gone; one merely absent from today's list is a provider we cannot reach this second, and moving the chat off it is never ours to do silently.
-    if (!catalogComplete || knownValues.length === 0) return;
+    // Going quiet here is itself a failure mode: a genuinely retired model then never heals and the
+    // user just gets an error on every send. So when the catalog cannot be vouched for, say so once
+    // for the sessions it would have touched instead of disabling the heal in silence.
+    if (!catalogComplete || knownValues.length === 0) {
+      const p_stranded = Object.values(store.getState().agents.sessions)
+        .filter((s2) => s2.model && !valid.has(s2.model));
+      if (p_stranded.length && !warnedSessionsRef.current.has('catalog-unverified')) {
+        warnedSessionsRef.current.add('catalog-unverified');
+        console.warn(`[models] catalog unverified (complete=${catalogComplete}, known=${knownValues.length}); ` +
+          `${p_stranded.length} session(s) hold a model that is not currently available and will NOT be auto-switched`);
+      }
+      return;
+    }
     const known = new Set(knownValues);
     const target = valid.has(settings.default_model) ? settings.default_model : fallback.value;
     let switched = false;

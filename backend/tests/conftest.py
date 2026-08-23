@@ -33,6 +33,10 @@ def _isolate_browser_state(monkeypatch):
     monkeypatch.setenv("OPENSWARM_BROWSER_METRICS_DIR", metrics_dir)
     monkeypatch.setenv("OPENSWARM_BROWSER_PLAYBOOK_DIR", playbook_dir)
     # The speed levers are default-ON in prod; pin them off for the suite so mocked loop tests keep exact aux-call/turn expectations (same pattern as OPENSWARM_PERSISTENT_CLIENT). The levers are exercised by their own live gates + targeted tests that set the flag explicitly.
+    # DECLARED, not inferred: auto-resume sends real turns with live credentials and live Bash into
+    # whatever tree the suite runs from (ENG-388). The pytest-in-sys.modules fallback still exists,
+    # but a gate that depends on an accident fails silently the day the accident changes.
+    monkeypatch.setenv("OSW_DISABLE_AUTO_RESUME", "1")
     monkeypatch.setenv("OSW_PRESTAGE", "0")
     monkeypatch.setenv("OSW_FASTREAD_HOP", "0")
     monkeypatch.setenv("OSW_PRELUDE_TRIM", "0")

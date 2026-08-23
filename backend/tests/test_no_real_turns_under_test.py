@@ -47,3 +47,11 @@ def test_the_gate_is_what_stops_it(monkeypatch):
 
 def test_the_gate_sees_pytest():
     assert p_sp.running_under_test() is True
+
+
+def test_the_declared_signal_works_without_the_accidental_one(monkeypatch):
+    """The env var must stand on its own: the day `pytest in sys.modules` stops being true in some
+    runner, the gate has to keep holding, or crash-resume silently reactivates against real chats."""
+    monkeypatch.setenv("OSW_DISABLE_AUTO_RESUME", "1")
+    monkeypatch.setitem(__import__("sys").modules, "pytest", None)
+    assert p_sp.running_under_test() is True
