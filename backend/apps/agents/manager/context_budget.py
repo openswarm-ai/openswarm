@@ -7,6 +7,7 @@ Compaction here only MARKS (sets compacted_through_msg_id); it never mutates
 session.messages, the originals stay for the UI drawer and only the history sent to the SDK
 is trimmed downstream (see backend/CLAUDE.md: "compaction must actually trim, not just mark")."""
 
+import os
 from typing import Dict, Optional
 
 from typeguard import typechecked
@@ -18,12 +19,33 @@ from backend.apps.agents.manager.streaming.state import TurnState
 
 
 @typechecked
+def compact_ceiling_tokens(session: AgentSession) -> int:
+    """The absolute ceiling, with a drill override.
+
+    The mid-turn breaker is otherwise only reachable by paying for a genuine 180K-token turn,
+    which in practice meant it was never drilled at all: three attempts to fire it cost real
+    money and still failed. `OSW_COMPACT_CEILING_TOKENS` lowers the bar so the same code path
+    can be exercised in seconds. Unset everywhere except a drill, and a junk value is ignored
+    rather than silently trusted."""
+    raw = os.environ.get("OSW_COMPACT_CEILING_TOKENS", "").strip()
+    if raw:
+        try:
+            override = int(raw)
+        except ValueError:
+            return session.compact_abs_ceiling_tokens
+        if override > 0:
+            return override
+    return session.compact_abs_ceiling_tokens
+
+
+@typechecked
 def compact_trigger_tokens(session: AgentSession) -> int:
     """The token count where compaction fires: the TIGHTER of the pct threshold and the
     absolute ceiling (on a 200K window the pct wins at 130K; on a 1M window the ceiling
     wins at 180K, not 650K)."""
     window = max(1, session.context_window)
-    abs_pct = min(1.0, session.compact_abs_ceiling_tokens / window)
+    ceiling = compact_ceiling_tokens(session)
+    abs_pct = min(1.0, ceiling / window)
     return int(window * min(session.compact_threshold_pct, abs_pct))
 
 
