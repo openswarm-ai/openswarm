@@ -7,12 +7,12 @@ without naming the file that still holds it. These pin both halves, plus the sha
 enforces in silence.
 """
 
-import json
-
 import pytest
 
+from backend.tests.log_capture import LogCapture
+
 from backend.apps.agents.manager.streaming.tool_output_shaper import (
-    SHAPE_OVER_BYTES, shape_text, shape_tool_response, shaping_report, p_bump,
+    SHAPE_OVER_BYTES, bump_shaping_stat, shape_text, shape_tool_response, shaping_report,
 )
 
 HOOK = "backend/apps/agents/manager/streaming/post_tool_hook.py"
@@ -84,11 +84,11 @@ def test_it_says_so_when_it_cut_nothing_at_depth():
         pass
     s = S()
     for _ in range(45):
-        p_bump(s, "seen", 1)
+        bump_shaping_stat(s, "seen", 1)
     assert "0 of 45" in (shaping_report(s) or "")
-    p_bump(s, "shaped", 1)
-    p_bump(s, "bytes_before", 9_000)
-    p_bump(s, "bytes_after", 2_000)
+    bump_shaping_stat(s, "shaped", 1)
+    bump_shaping_stat(s, "bytes_before", 9_000)
+    bump_shaping_stat(s, "bytes_after", 2_000)
     assert "7,000 bytes" in (shaping_report(s) or "")
 
 
@@ -96,7 +96,7 @@ def test_a_shallow_session_says_nothing():
     class S:
         pass
     s = S()
-    p_bump(s, "seen", 3)
+    bump_shaping_stat(s, "seen", 3)
     assert shaping_report(s) is None
 
 
@@ -120,11 +120,10 @@ def test_the_hook_shapes_the_pristine_response_not_the_flattened_one():
 
 def test_the_off_switch_is_declared_and_announces_itself(monkeypatch):
     from backend.apps.agents.manager.streaming import tool_output_shaper as mod
-    from backend.tests.test_fault_injection import p_capture
 
     class S:
         id = "s1"
     monkeypatch.setenv("OSW_TOOL_SHAPING", "off")
-    with p_capture("backend.apps.agents.manager.streaming.tool_output_shaper") as cap:
+    with LogCapture("backend.apps.agents.manager.streaming.tool_output_shaper") as cap:
         assert mod.shape_for_model(S(), "s1", {"stdout": p_big()}, "m1", "Bash") is None
     assert "OFF" in cap.text, "a guard that stops guarding must say which sessions it stopped protecting"

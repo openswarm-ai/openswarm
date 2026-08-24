@@ -114,41 +114,42 @@ def shape_for_model(session: object, session_id: str, response: object, msg_id: 
     # a user who hits a bad shape has a lever that is not "downgrade". It announces itself: a guard
     # that stops guarding in silence is the bug class this module was written under.
     if os.environ.get("OSW_TOOL_SHAPING") == "off":
-        p_bump(session, "disabled", 1)
-        if getattr(session, "_shaping_off_said", False) is False:
+        bump_shaping_stat(session, "disabled", 1)
+        if getattr(session, "p_shaping_off_said", False) is False:
             logger.warning("tool-output shaping is OFF (OSW_TOOL_SHAPING=off); every tool result "
                            "will be sent to the model in full")
             try:
-                session._shaping_off_said = True  # type: ignore[attr-defined]
+                session.p_shaping_off_said = True  # type: ignore[attr-defined]
             except Exception:
                 pass
         return None
     probe, _, _ = shape_tool_response(response, "")
     if probe is None:
-        p_bump(session, "seen", 1)
+        bump_shaping_stat(session, "seen", 1)
         return None
 
-    p_body = _payload_text(response)
+    p_body = p_payload_text(response)
     blob = write_blob(p_body, session_id, msg_id, suffix="-model") if p_body else None
     if blob is None:
         # No recovery path means the cut would be unrecoverable, which is the one thing this must
         # never do. Spend the tokens instead.
         logger.warning(f"tool-output shaping skipped for {session_id}: full body could not be parked")
-        p_bump(session, "skipped_no_recovery", 1)
+        bump_shaping_stat(session, "skipped_no_recovery", 1)
         return None
 
     shaped, before, after = shape_tool_response(response, blob)
     if shaped is None:
         return None
-    p_bump(session, "seen", 1)
-    p_bump(session, "shaped", 1)
-    p_bump(session, "bytes_before", before)
-    p_bump(session, "bytes_after", after)
+    bump_shaping_stat(session, "seen", 1)
+    bump_shaping_stat(session, "shaped", 1)
+    bump_shaping_stat(session, "bytes_before", before)
+    bump_shaping_stat(session, "bytes_after", after)
     logger.info(f"shaped {tool_name} result for the model: {before} -> {after} bytes (full copy at {blob})")
     return shaped
 
 
-def _payload_text(response: object) -> str:
+@typechecked
+def p_payload_text(response: object) -> str:
     """The field shape_tool_response would rewrite, so the parked copy is the thing being cut."""
     if isinstance(response, str):
         return response
@@ -166,7 +167,8 @@ def _payload_text(response: object) -> str:
     return ""
 
 
-def p_bump(session: object, key: str, n: int) -> None:
+@typechecked
+def bump_shaping_stat(session: object, key: str, n: int) -> None:
     stats = getattr(session, "tool_shaping", None)
     if not isinstance(stats, dict):
         stats = {}

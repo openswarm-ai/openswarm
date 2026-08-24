@@ -37,7 +37,7 @@ def armed(name: str) -> bool:
     return name in (wanted & KNOWN_FAULTS)
 
 
-_FIRED: Set[str] = set()
+P_FIRED: Set[str] = set()
 
 
 def armed_once(name: str) -> bool:
@@ -46,15 +46,15 @@ def armed_once(name: str) -> bool:
     A fault that fires on every turn cannot drill a recovery: the retry hits the same wall and the
     drill only ever proves the failure, never the heal. Recoverable classes (a dead pipe, a rotated
     token) want one hit and then a clear road."""
-    if not armed(name) or name in _FIRED:
+    if not armed(name) or name in P_FIRED:
         return False
-    _FIRED.add(name)
+    P_FIRED.add(name)
     return True
 
 
 def reset_fired() -> None:
     """Test-only: forget what has fired so a case can arm the same one-shot again."""
-    _FIRED.clear()
+    P_FIRED.clear()
 
 
 def unknown_faults() -> Set[str]:

@@ -11,6 +11,8 @@ import pytest
 
 import builtins
 
+from backend.tests.log_capture import LogCapture
+
 from backend.apps.agents.core.fault_injection import (
     KNOWN_FAULTS, announce, armed, armed_once, reset_fired, unknown_faults,
 )
@@ -145,11 +147,11 @@ def test_arming_is_announced_and_a_typo_is_named(monkeypatch):
     # The harness built to kill row-6 silence had it: unknown_faults() existed and NOTHING called it,
     # so a mistyped name armed nothing while the drill exercised the untouched happy path.
     monkeypatch.setenv("OSW_FAULT", "policy_block,plicy_blok")
-    with p_capture("backend.apps.agents.core.fault_injection") as cap:
+    with LogCapture("backend.apps.agents.core.fault_injection") as cap:
         announce()
     assert "policy_block" in cap.text and "plicy_blok" in cap.text
     monkeypatch.delenv("OSW_FAULT")
-    with p_capture("backend.apps.agents.core.fault_injection") as cap2:
+    with LogCapture("backend.apps.agents.core.fault_injection") as cap2:
         announce()
     assert cap2.text == "", "a shipped build must say nothing at all"
 
