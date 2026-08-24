@@ -66,6 +66,20 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
             if p_tail:
                 logger.info(f"continuation for {session_id} superseded by a user message during the {delay_s}s wait")
                 return
+        # The ceiling on harness-started turns. Sits HERE because both dispatch sites route through
+        # this one function, so a future third caller inherits it instead of being a new hole.
+        from backend.apps.agents.manager.machine_turn_gate import wait_for_machine_turn_slot
+        p_gate_before = len(getattr(self.sessions.get(session_id), "messages", []) or [])
+        await wait_for_machine_turn_slot(session_id, "continuation")
+        # A hold can run to a minute, so it gets the SAME no-stomp guard as the delay above: a user
+        # message during the wait already resumes the work, and firing anyway would talk over them.
+        p_now = self.sessions.get(session_id)
+        if p_now is None:
+            return
+        if [m for m in p_now.messages[p_gate_before:] if getattr(m, "role", "") == "user"]:
+            logger.info(f"continuation for {session_id} superseded by a user message while held at the machine-turn ceiling")
+            await self.p_settle_unstarted_continuation(session_id)
+            return
         try:
             await self.send_message(session_id, prompt, hidden=True)
         except Exception:
