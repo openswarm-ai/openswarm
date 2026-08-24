@@ -9,10 +9,33 @@ classified the same way a REAL failure is, and that the harness is inert unless 
 import re
 import pytest
 
-from backend.apps.agents.core.fault_injection import KNOWN_FAULTS, armed, unknown_faults
-from backend.apps.agents.core.error_classify import has_auth_status, is_content_policy_block
+import builtins
+
+from backend.apps.agents.core.fault_injection import (
+    KNOWN_FAULTS, armed, armed_once, reset_fired, unknown_faults,
+)
+from backend.apps.agents.core.error_classify import (
+    has_auth_status, is_connection_lost, is_content_policy_block,
+)
 
 TURN_RUNNER = "backend/apps/agents/manager/run/TurnRunner.py"
+# Where each fault is raised. A fault this build knows but wires nowhere is the exact shape of a
+# guard that never fires, so the map is the test, not a convenience.
+WIRED_IN = {
+    "policy_block": TURN_RUNNER,
+    "auth_401": TURN_RUNNER,
+    "transport_death": TURN_RUNNER,
+    "empty_finish": "backend/apps/agents/manager/streaming/handle_assistant_message.py",
+}
+
+
+def p_block(kind: str) -> str:
+    """The source of the branch that fires one fault, whichever helper name arms it."""
+    src = open(WIRED_IN[kind]).read()
+    for call in (f'p_fault_armed("{kind}")', f'p_fault_once("{kind}")'):
+        if call in src:
+            return src.split(call)[1].split("if p_fault_")[0]
+    raise AssertionError(f"{kind} is armed nowhere in {WIRED_IN[kind]}")
 
 
 @pytest.fixture(autouse=True)
@@ -22,9 +45,17 @@ def p_clean(monkeypatch):
 
 def p_injected(kind: str) -> str:
     """The literal the harness raises, read out of the source so the test cannot drift from it."""
-    src = open(TURN_RUNNER).read()
-    block = src.split(f'p_fault_armed("{kind}")')[1].split("if p_fault_armed")[0]
-    return "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block)).replace('\\"', '"')
+    return "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', p_block(kind))).replace('\\"', '"')
+
+
+def p_raised_type(kind: str) -> type:
+    """The exception CLASS the harness raises, resolved for real so a rename cannot pass."""
+    name = re.search(r"raise\s+([A-Za-z_][\w.]*)\(", p_block(kind)).group(1)
+    if "." in name:
+        import importlib
+        mod, _, attr = name.rpartition(".")
+        return getattr(importlib.import_module(mod), attr)
+    return getattr(builtins, name)
 
 
 def test_inert_unless_armed():
@@ -53,7 +84,26 @@ def test_the_auth_fault_is_what_the_real_classifier_catches():
     assert not has_auth_status("File runner.py, line 401, in execute")
 
 
-def test_every_known_fault_is_wired_or_declared():
-    src = open(TURN_RUNNER).read()
-    wired = {m for m in KNOWN_FAULTS if f'p_fault_armed("{m}")' in src}
-    assert {"policy_block", "auth_401", "transport_death"} <= wired
+def test_the_transport_fault_is_what_the_real_classifier_catches():
+    # Cost a wrong verdict once: anyio.BrokenResourceError is NOT in the transient set, so the drill
+    # measured the unclassified poisoned-session fall-through and read as "the transport heal is broken".
+    assert is_connection_lost(p_raised_type("transport_death")("injected")), \
+        "the injected type must be one the real classifier calls a lost connection"
+    import anyio
+    assert not is_connection_lost(anyio.BrokenResourceError()), \
+        "control: the type that actually fooled this drill must still read as NOT a lost connection"
+
+
+def test_a_recoverable_fault_fires_once_so_the_retry_finds_a_clear_road(monkeypatch):
+    monkeypatch.setenv("OSW_FAULT", "transport_death")
+    reset_fired()
+    assert armed_once("transport_death") is True
+    assert armed_once("transport_death") is False, \
+        "a fault that fires on every attempt proves the failure and never the heal"
+
+
+def test_every_known_fault_is_wired_somewhere():
+    assert set(WIRED_IN) == KNOWN_FAULTS - {"sidecar_wedge"}, \
+        "a fault this build knows but wires nowhere is a guard that can never be drilled"
+    for kind in WIRED_IN:
+        assert p_block(kind).strip(), f"{kind} has an empty branch"

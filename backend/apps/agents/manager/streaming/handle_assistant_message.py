@@ -261,6 +261,15 @@ async def handle_assistant_message(
                 "message": p_card.model_dump(mode="json"),
             })
         else:
+            # Drill seam: swallow the model's answer so the turn genuinely ends mute after tool work,
+            # which is the real shape of a silent quit. Forcing the DECISION further downstream was a
+            # proxy: it ran the guard while an answer still sat in the transcript, so it could never
+            # show whether the user actually gets their result back.
+            from backend.apps.agents.core.fault_injection import armed as p_fault_armed
+            if p_fault_armed("empty_finish"):
+                turn.stream_text_accum = ""
+                live_partial.pop(session_id, None)
+                return
             asst_msg = Message(
                 id=turn.stream_text_msg_id or uuid4().hex,
                 role="assistant",

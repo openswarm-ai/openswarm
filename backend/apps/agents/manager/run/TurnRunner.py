@@ -45,7 +45,7 @@ class TurnRunner(AgentManagerProtocol):
                                     global_settings: AppSettings, force_respawn: bool = False) -> None:
         from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
         from claude_agent_sdk.types import StreamEvent, SystemMessage
-        from backend.apps.agents.core.fault_injection import armed as p_fault_armed
+        from backend.apps.agents.core.fault_injection import armed as p_fault_armed, armed_once as p_fault_once
 
         # Deliberate faults, so the guards below get drilled instead of waited for. Inert unless
         # OSW_FAULT names them; a shipped build never sets it. Raised HERE because this is the same
@@ -59,9 +59,12 @@ class TurnRunner(AgentManagerProtocol):
             )
         if p_fault_armed("auth_401"):
             raise RuntimeError("API Error: 401 {\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}")
-        if p_fault_armed("transport_death"):
-            import anyio
-            raise anyio.BrokenResourceError()
+        # One-shot: a dead pipe is recoverable, so the drill needs the retry to find a clear road.
+        # The type must be one the REAL classifier calls a lost connection, or the drill quietly
+        # measures the unclassified fall-through instead of the transport heal (caught doing exactly
+        # that: anyio.BrokenResourceError is not in the transient set and read as a poisoned session).
+        if p_fault_once("transport_death"):
+            raise ConnectionError("injected transport death (OSW_FAULT)")
 
         async def prompt_stream():
             yield {
