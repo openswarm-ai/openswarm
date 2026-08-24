@@ -12,7 +12,7 @@ import pytest
 import builtins
 
 from backend.apps.agents.core.fault_injection import (
-    KNOWN_FAULTS, armed, armed_once, reset_fired, unknown_faults,
+    KNOWN_FAULTS, announce, armed, armed_once, reset_fired, unknown_faults,
 )
 from backend.apps.agents.core.error_classify import (
     has_auth_status, is_connection_lost, is_content_policy_block,
@@ -107,3 +107,23 @@ def test_every_known_fault_is_wired_somewhere():
         "a fault this build knows but wires nowhere is a guard that can never be drilled"
     for kind in WIRED_IN:
         assert p_block(kind).strip(), f"{kind} has an empty branch"
+
+
+def test_arming_is_announced_and_a_typo_is_named(monkeypatch, caplog):
+    # The harness built to kill row-6 silence had it: unknown_faults() existed and NOTHING called it,
+    # so a mistyped name armed nothing while the drill exercised the untouched happy path.
+    monkeypatch.setenv("OSW_FAULT", "policy_block,plicy_blok")
+    with caplog.at_level("WARNING"):
+        announce()
+    assert "policy_block" in caplog.text and "plicy_blok" in caplog.text
+    caplog.clear()
+    monkeypatch.delenv("OSW_FAULT")
+    with caplog.at_level("WARNING"):
+        announce()
+    assert caplog.text == "", "a shipped build must say nothing at all"
+
+
+def test_the_boot_path_actually_announces():
+    src = open("backend/apps/agents/agents.py").read()
+    assert "p_announce_armed_faults()" in src, \
+        "an announcement nothing calls is the silence it was written to prevent"

@@ -12,8 +12,11 @@ the drill reports a pass.
     OSW_FAULT=policy_block,auth_401 bash run.sh
 """
 
+import logging
 import os
 from typing import Set
+
+logger = logging.getLogger(__name__)
 
 # Every fault the harness knows. A name outside this set is a typo, not a feature.
 KNOWN_FAULTS: Set[str] = {
@@ -60,3 +63,19 @@ def unknown_faults() -> Set[str]:
     if not raw:
         return set()
     return {p.strip() for p in raw.split(",") if p.strip()} - KNOWN_FAULTS
+
+
+def announce() -> None:
+    """Say out loud, once at boot, that this process will inject failures, and name any word that
+    armed nothing. Silence here is the exact row-6 shape this module exists to kill: a typo arms
+    NOTHING, the drill then exercises the untouched happy path, and the pass is meaningless."""
+    raw = os.environ.get("OSW_FAULT", "")
+    if not raw.strip():
+        return
+    live = sorted({p.strip() for p in raw.split(",") if p.strip()} & KNOWN_FAULTS)
+    bogus = sorted(unknown_faults())
+    logger.warning(
+        "OSW_FAULT is set: this process will DELIBERATELY INJECT failures. "
+        f"armed={live or 'NOTHING'}"
+        + (f"; not a known fault, armed nothing: {bogus}" if bogus else "")
+    )

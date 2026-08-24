@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 from typeguard import typechecked
 
 from backend.apps.agents.agent_manager import agent_manager
+from backend.apps.agents.core.fault_injection import announce as p_announce_armed_faults
 from backend.apps.agents.core.models import AgentConfig, AgentSession, ApprovalResponse
 from backend.apps.agents.core.seq_log import seq_log
 from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
@@ -24,6 +25,7 @@ p_group_meta_inflight: dict[tuple[str, str], asyncio.Future] = {}
 @asynccontextmanager
 async def agents_lifespan():
     logger.info("Agents sub-app starting")
+    p_announce_armed_faults()
     await agent_manager.reconcile_on_startup()
     await agent_manager.restore_all_sessions()
     # Off the critical path: crash-cut turns resume themselves once everything is hydrated.
