@@ -22,6 +22,11 @@ MIN_EXCHANGES = 2
 # Enough tail to know where the conversation is, small enough to stay a sub-cent aux call.
 P_TAIL_MESSAGES = 12
 P_PER_MESSAGE_CAP = 700
+# The model's own words go in gisted and unlabelled. This tail is sent to an aux model on the
+# user's own lane (a Claude subscription for most people), and up to 12 turns of verbatim
+# `User:/Assistant:` was the exact shape ENG-358 removed from the recap, spent here on suggestion
+# chips. Whether the filter keys on it is unknown; the trade is not, so it costs a gist (ENG-396).
+P_MODEL_TEXT_CAP = 200
 
 
 @typechecked
@@ -39,9 +44,13 @@ def conversation_tail(session: AgentSession) -> str:
         if getattr(m, "hidden", False) or m.role not in ("user", "assistant"):
             continue
         text = m.content if isinstance(m.content, str) else str(m.content)
-        if len(text) > P_PER_MESSAGE_CAP:
-            text = text[:P_PER_MESSAGE_CAP] + "..."
-        lines.append(f"{'User' if m.role == 'user' else 'Assistant'}: {text}")
+        if m.role == "user":
+            # The user's own words are not model output; they are what we are predicting from.
+            lines.append(f"They asked: {text[:P_PER_MESSAGE_CAP]}"
+                         + ("..." if len(text) > P_PER_MESSAGE_CAP else ""))
+        else:
+            gist = text[:P_MODEL_TEXT_CAP] + ("..." if len(text) > P_MODEL_TEXT_CAP else "")
+            lines.append(f"They were answered, in gist: {gist}")
     return "\n".join(lines)
 
 

@@ -39,9 +39,12 @@ def test_tool_noise_does_not_count_as_exchanges():
 
 
 def test_tail_contains_only_visible_user_assistant_text():
+    # Asserts WHICH turns survive, not how they are labelled: the labels changed deliberately when
+    # role-tagged replay was removed from every renderer bound for a model (ENG-396).
     s = p_session("user", "tool_call", "assistant")
     tail = conversation_tail(s)
-    assert "User: m0" in tail and "Assistant: m2" in tail and "m1" not in tail
+    assert "m0" in tail and "m2" in tail, "both visible turns must survive"
+    assert "m1" not in tail, "tool noise is not part of the tail"
 
 
 def test_tail_caps_giant_messages():

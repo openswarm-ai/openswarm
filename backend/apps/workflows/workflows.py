@@ -583,45 +583,16 @@ def _enriched(wf: Workflow) -> dict:
 
 
 def p_render_test_transcript(messages: list, max_chars: int = 14000) -> str:
-    """Flatten a Test Agent's messages into a readable role-tagged transcript.
+    """What the Test Agent's run DID, for the Edit Agent to diagnose from.
 
-    Tail-biased cap so the end (where a run succeeds or blows up) always
-    survives, protecting the Edit Agent's context window.
+    This used to emit `USER: ... ASSISTANT: ...` verbatim, which is byte-for-byte the shape
+    Anthropic's filter blocks on the subscription lane and the exact thing ENG-358 removed from the
+    session recap; it survived because it is an MCP tool result rather than a recap (ENG-396). Now
+    it shares the recap's one definition of what is safe to send: the asks and the tool trail, with
+    the run's own status and error carried separately by the caller.
     """
-    import json as json_mod
-    lines: list[str] = []
-    for m in messages:
-        if getattr(m, "hidden", False):
-            continue
-        role = (getattr(m, "role", "") or "?").upper()
-        content = getattr(m, "content", "")
-        if isinstance(content, str):
-            text = content
-        elif isinstance(content, list):
-            parts: list[str] = []
-            for b in content:
-                if not isinstance(b, dict):
-                    parts.append(str(b))
-                    continue
-                kind = b.get("type")
-                if kind == "text":
-                    parts.append(str(b.get("text") or ""))
-                elif kind == "tool_use":
-                    parts.append(f"[tool {b.get('name')}] {json_mod.dumps(b.get('input') or {})[:300]}")
-                elif kind == "tool_result":
-                    inner = b.get("content")
-                    parts.append(f"[result] {inner if isinstance(inner, str) else json_mod.dumps(inner)[:300]}")
-                else:
-                    parts.append(str(b)[:200])
-            text = "\n".join(p for p in parts if p)
-        else:
-            text = ""
-        if text.strip():
-            lines.append(f"{role}: {text.strip()}")
-    out = "\n\n".join(lines)
-    if len(out) > max_chars:
-        out = "...(earlier turns trimmed)...\n\n" + out[-max_chars:]
-    return out
+    from backend.apps.agents.manager.session.history_compaction import render_agent_trail
+    return render_agent_trail(messages, max_chars=max_chars)
 
 
 @workflows.router.get("/active")

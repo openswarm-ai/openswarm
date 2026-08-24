@@ -133,6 +133,56 @@ def get_branch_messages(session) -> List:
 
 
 @typechecked
+def trail_lines(messages, cutoff_msg_id: Optional[str] = None) -> List[str]:
+    """The user's asks and the tool trail, and NEVER a line of model-authored prose.
+
+    Extracted so every renderer bound for a model's context shares one definition of what is safe
+    to send. Two others were still emitting raw `USER:/ASSISTANT:` replays of another agent's chat
+    (ENG-396), which is the exact shape ENG-358 removed from the recap; a safety property with two
+    implementations is one drift away from being no safety property at all.
+    """
+    from backend.apps.agents.manager.session.aged_recap_lines import age_tool_results
+    cutoff_idx = -1
+    if cutoff_msg_id:
+        cutoff_idx = next((i for i, m in enumerate(messages) if m.id == cutoff_msg_id), -1)
+    visible = [(i, m) for i, m in enumerate(messages) if not getattr(m, "hidden", False)]
+    fates = age_tool_results([m for _, m in visible], cutoff_idx=next(
+        (v for v, (i, _) in enumerate(visible) if i == cutoff_idx), -1))
+    lines: List[str] = []
+    for v, (i, m) in enumerate(visible):
+        if m.role == "user":
+            text = m.content if isinstance(m.content, str) else str(m.content)
+            lines.append(f"The user asked: {strip_forged_sentinels(clamp_recap_text(text))}")
+        elif m.role == "tool_call":
+            lines.append(recap_tool_call_line(m.content))
+        elif m.role == "tool_result":
+            body = fates.get(v)
+            if body is None:
+                lines.append(recap_tool_result_line(m.content))
+            else:
+                tool_name = m.content.get("tool_name") if isinstance(m.content, dict) else None
+                label = f"Tool result ({tool_name})" if tool_name else "Tool result"
+                lines.append(f"{label}: {strip_forged_sentinels(body)}")
+    return lines
+
+
+@typechecked
+def render_agent_trail(messages, max_chars: int = 14_000) -> str:
+    """What ANOTHER agent's run did, for a model that has to reason about it.
+
+    Same safe body as the recap, different framing: this is someone else's run, not your own past.
+    Tail-biased cap so the end, where a run succeeds or blows up, always survives.
+    """
+    lines = trail_lines(messages)
+    if not lines:
+        return ""
+    out = "\n".join(lines)
+    if len(out) > max_chars:
+        out = "...(earlier steps trimmed)...\n" + out[-max_chars:]
+    return out
+
+
+@typechecked
 def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
     """Format branch messages into a conversation summary for context injection.
 
@@ -148,28 +198,7 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
     # Aging replaced dropping (ENG-354, hermes lift): pre-cutoff history becomes re-runnable
     # one-line stubs instead of vanishing, duplicates collapse, and the newest tool results
     # survive verbatim inside a budget, so a context break costs detail, never the trail.
-    from backend.apps.agents.manager.session.aged_recap_lines import age_tool_results
-    cutoff_idx = -1
-    if cutoff_msg_id:
-        cutoff_idx = next((i for i, m in enumerate(messages) if m.id == cutoff_msg_id), -1)
-    visible = [(i, m) for i, m in enumerate(messages) if not getattr(m, "hidden", False)]
-    fates = age_tool_results([m for _, m in visible], cutoff_idx=next(
-        (v for v, (i, _) in enumerate(visible) if i == cutoff_idx), -1))
-    lines = []
-    for v, (i, m) in enumerate(visible):
-        if m.role == "user":
-            text = m.content if isinstance(m.content, str) else str(m.content)
-            lines.append(f"The user asked: {strip_forged_sentinels(clamp_recap_text(text))}")
-        elif m.role == "tool_call":
-            lines.append(recap_tool_call_line(m.content))
-        elif m.role == "tool_result":
-            body = fates.get(v)
-            if body is None:
-                lines.append(recap_tool_result_line(m.content))
-            else:
-                tool_name = m.content.get("tool_name") if isinstance(m.content, dict) else None
-                label = f"Tool result ({tool_name})" if tool_name else "Tool result"
-                lines.append(f"{label}: {strip_forged_sentinels(body)}")
+    lines = trail_lines(messages, cutoff_msg_id)
     if not lines:
         return ""
     # Framing lifted from hermes-agent's compaction handoff (context_compressor.py, MIT): reference only, never active instructions, the message after it is the single source of truth, and an explicit end marker so a weak model cannot read the last line as fresh input.

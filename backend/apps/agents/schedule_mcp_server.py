@@ -670,7 +670,10 @@ def handle_invoke_workflow(args: dict) -> dict:
     status = res.get("status") or "unknown"
     err_line = f"\nError: {res.get('error')}" if res.get("error") else ""
     transcript = res.get("transcript") or "(no transcript)"
-    return _ok(f"Workflow '{match.get('title')}' run {status}.{err_line}\n\n=== RUN TRANSCRIPT ===\n{transcript}\n=== END TRANSCRIPT ===")
+    # Labelled as a trail, not a TRANSCRIPT: the body no longer replays anyone's turns (ENG-396),
+    # and a header promising a transcript invites the model to treat it as one.
+    return _ok(f"Workflow '{match.get('title')}' run {status}.{err_line}\n\n"
+               f"=== WHAT THE RUN DID ===\n{transcript}\n=== END ===")
 
 
 HANDLERS = {
