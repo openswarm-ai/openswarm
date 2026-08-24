@@ -22,6 +22,28 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.9",
+        headline="Agents keep going when the connection does not, and the fn key finally works.",
+        highlights=[
+            "Press fn to dictate on any Mac. It asks for permission the first time you use it rather than at install, and it recovers without a relaunch if you grant it later.",
+            "Drop files straight onto a chat. Anything the app cannot take now says so instead of silently doing nothing.",
+            "The transcript follows a running agent until you scroll away, and re-pins itself the moment you scroll back.",
+            "Agents can move, tile, collapse and close their own cards, so a busy canvas tidies itself.",
+        ],
+        fixes=[
+            "A dropped connection no longer costs you the conversation. The agent reconnects and carries on from where it was.",
+            "Pressing Stop stops it. A background watchdog can no longer restart a chat you just ended.",
+            "Chats stopped disconnecting mid task. A slow web page was being mistaken for a jammed tool and shot, roughly ten times a week per install.",
+            "An agent that runs out of things to say gets asked once for its answer instead of leaving you looking at a Done label with nothing under it.",
+            "Signing in on a fresh install works. The hand off back from your browser was landing on the wrong port.",
+            "An expired provider login renews itself mid run instead of stopping the turn and asking you to reconnect.",
+            "A browser agent can no longer report a task complete when the page never changed.",
+            "Turning a schedule on or off tells you the truth. A failed save used to leave the switch showing the wrong state.",
+            "Card resizing ends when you let go, even over an embedded browser.",
+            "Dictation goes to the chat you were typing in, not a brand new one.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.8",
         headline="A stuck chat unsticks itself, and agents can finally upload files.",
         highlights=[

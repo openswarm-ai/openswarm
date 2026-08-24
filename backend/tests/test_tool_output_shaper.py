@@ -118,12 +118,13 @@ def test_the_hook_shapes_the_pristine_response_not_the_flattened_one():
     assert i_capture < i_use
 
 
-def test_the_off_switch_is_declared_and_announces_itself(monkeypatch, caplog):
+def test_the_off_switch_is_declared_and_announces_itself(monkeypatch):
     from backend.apps.agents.manager.streaming import tool_output_shaper as mod
+    from backend.tests.test_fault_injection import p_capture
 
     class S:
         id = "s1"
     monkeypatch.setenv("OSW_TOOL_SHAPING", "off")
-    with caplog.at_level("WARNING"):
+    with p_capture("backend.apps.agents.manager.streaming.tool_output_shaper") as cap:
         assert mod.shape_for_model(S(), "s1", {"stdout": p_big()}, "m1", "Bash") is None
-    assert "OFF" in caplog.text, "a guard that stops guarding must say which sessions it stopped protecting"
+    assert "OFF" in cap.text, "a guard that stops guarding must say which sessions it stopped protecting"

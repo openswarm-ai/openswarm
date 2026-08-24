@@ -19,6 +19,38 @@ from backend.apps.agents.core.error_classify import (
 )
 
 TURN_RUNNER = "backend/apps/agents/manager/run/TurnRunner.py"
+
+class p_capture:
+    """Capture a specific logger directly.
+
+    `caplog` reads the ROOT logger, so it goes blind the moment any other test in the run sets
+    propagate=False on ours: these two assertions passed alone and failed in the full suite while
+    the line was plainly there in captured stderr. A logging assertion must not depend on what
+    3,000 other tests did to the logging tree.
+    """
+
+    def __init__(self, name):
+        import logging
+        self.logger = logging.getLogger(name)
+        self.records = []
+        self.handler = logging.Handler()
+        self.handler.emit = lambda r: self.records.append(r)
+
+    def __enter__(self):
+        import logging
+        self.prev = self.logger.level
+        self.logger.setLevel(logging.WARNING)
+        self.logger.addHandler(self.handler)
+        return self
+
+    def __exit__(self, *a):
+        self.logger.removeHandler(self.handler)
+        self.logger.setLevel(self.prev)
+
+    @property
+    def text(self):
+        return "\n".join(r.getMessage() for r in self.records)
+
 # Where each fault is raised. A fault this build knows but wires nowhere is the exact shape of a
 # guard that never fires, so the map is the test, not a convenience.
 WIRED_IN = {
@@ -109,18 +141,17 @@ def test_every_known_fault_is_wired_somewhere():
         assert p_block(kind).strip(), f"{kind} has an empty branch"
 
 
-def test_arming_is_announced_and_a_typo_is_named(monkeypatch, caplog):
+def test_arming_is_announced_and_a_typo_is_named(monkeypatch):
     # The harness built to kill row-6 silence had it: unknown_faults() existed and NOTHING called it,
     # so a mistyped name armed nothing while the drill exercised the untouched happy path.
     monkeypatch.setenv("OSW_FAULT", "policy_block,plicy_blok")
-    with caplog.at_level("WARNING"):
+    with p_capture("backend.apps.agents.core.fault_injection") as cap:
         announce()
-    assert "policy_block" in caplog.text and "plicy_blok" in caplog.text
-    caplog.clear()
+    assert "policy_block" in cap.text and "plicy_blok" in cap.text
     monkeypatch.delenv("OSW_FAULT")
-    with caplog.at_level("WARNING"):
+    with p_capture("backend.apps.agents.core.fault_injection") as cap2:
         announce()
-    assert caplog.text == "", "a shipped build must say nothing at all"
+    assert cap2.text == "", "a shipped build must say nothing at all"
 
 
 def test_the_boot_path_actually_announces():
