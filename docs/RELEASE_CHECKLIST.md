@@ -19,6 +19,41 @@ platform. See `RELEASE_RUNBOOK.md` for the how; this is the gate.
 - [ ] Provenance matches: launch each artifact, Settings → About → **Build** sha
       equals `git rev-parse HEAD` of the release commit (and they equal each other).
 
+## Bundle size (cheap, and it has already caught a 175MB regression)
+- [ ] `du -sh electron/dist/*/OpenSwarm.app/Contents/Resources/app.asar` is **~2.5MB**.
+      Anything above ~10MB means a build artifact got swept in. See "The asar trap" below.
+- [ ] Each DMG is within ~10% of the previous release's size (1.7.9: ~300MB).
+- [ ] `git status electron/package.json` is clean. electron-builder **rewrites it in place**
+      during packaging, leaving a 10-line stub with no `build` section; restore it with
+      `git checkout HEAD -- electron/package.json` before any second build.
+
+### The asar trap
+
+**`.gitignore` and `build.files` are two separate exclusion lists, and nothing checks them
+against each other.** A file can be invisible to git and still be packed into the app.
+
+Caught 2026-08-24: `electron/whisper/ggml-small.en-q5_1.bin` is a **181MB dictation model
+downloaded at runtime into userData** (`electron/voice/whisperModels.js` resolves it from
+`userDataDir`; nothing reads it from the bundle). It is gitignored, but `build.files` did not
+exclude it, so electron-builder swept it into `app.asar`:
+
+| | app.asar | DMG |
+| --- | --- | --- |
+| v1.7.9 (published) | 2.5MB | 300MB |
+| exp.1 first build | **184MB** | **475MB** |
+| exp.1 after the fix | 2.5MB | 309MB |
+
+That is **175MB on every auto-update**, for a file the app never reads.
+
+**Why it stayed hidden:** v1.7.9 was cut in a **detached worktree**, which by definition
+contains no gitignored files. So the bug is invisible on a clean cut and fires on any
+developer machine that has ever used dictation. A green build on one machine proves nothing
+about the next.
+
+Fixed by adding `!whisper` / `!whisper/**` to `build.files`, pinned by
+`electron/packaging.test.js`. When adding anything to `.gitignore` that lives under
+`electron/`, ask whether `build.files` needs the same entry.
+
 ## Artifacts + feeds (promotion gate)
 - [ ] GitHub draft release for `v<version>` has: `OpenSwarm-Setup-x64.exe`,
       `OpenSwarm-arm64.dmg`, `OpenSwarm-x64.dmg`, `latest.yml`, `latest-mac.yml`.

@@ -125,3 +125,15 @@ temporarily exempt it, or use a non-`v*` name for the test).
 
 GitHub releases are also independently markable immutable; tag protection is the
 load-bearing control because the auto-updater resolves the tag, not the release.
+
+## Size check (do this before you notarize anything twice)
+
+After the first `electron-builder` pack, before waiting out notarization:
+
+```
+du -sh electron/dist/*/OpenSwarm.app/Contents/Resources/app.asar   # expect ~2.5MB
+```
+
+If it is tens or hundreds of MB, a build artifact got swept in and the whole build is wasted
+time: stop, fix `build.files`, restart. `.gitignore` does NOT exclude anything from
+electron-builder. Full write-up under "The asar trap" in RELEASE_CHECKLIST.md.
