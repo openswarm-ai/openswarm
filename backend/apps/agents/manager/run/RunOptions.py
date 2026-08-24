@@ -43,18 +43,18 @@ from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtoco
 # Narrowing order, widest first. A one-turn override may only move RIGHT along this list: the policy
 # ratchet exists because a recap-bearing turn was already refused, and an override that widened it
 # back would hand the filter the exact request it just declined.
-P_PREFIX_NARROWNESS = ("minimal", "summary", "none")
+PREFIX_NARROWNESS = ("minimal", "summary", "none")
 
 
 @typechecked
-def p_effective_prefix_mode(session: AgentSession) -> str:
+def effective_prefix_mode(session: AgentSession) -> str:
     """The persisted mode, narrowed by any one-turn override, consumed on read."""
     p_mode = session.history_prefix_mode
     p_once = session.history_prefix_once
     session.history_prefix_once = None
     if p_once is None:
         return p_mode
-    return max(p_mode, p_once, key=P_PREFIX_NARROWNESS.index)
+    return max(p_mode, p_once, key=PREFIX_NARROWNESS.index)
 
 
 
@@ -293,7 +293,7 @@ class RunOptions(AgentManagerProtocol):
                 session.needs_fork = False
         elif len(session.messages) > 1:
             # The recap never carries the model's own replies; the mode drops to "none" when a provider policy filter blocks even that (Alex's bricked-chat class).
-            p_mode = p_effective_prefix_mode(session)
+            p_mode = effective_prefix_mode(session)
             # "summary" carries the model's OWN distilled gist and nothing we authored from its
             # turns, so a last-rung request is small however big the history got (ENG-399).
             history = "" if p_mode in ("none", "summary") else build_history_prefix(

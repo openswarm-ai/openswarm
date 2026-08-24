@@ -47,7 +47,7 @@ FINAL_RUNG_BOUND_TOKENS = 60_000
 
 
 @typechecked
-def p_final_rung_bound() -> int:
+def final_rung_bound() -> int:
     """The depth above which the last rung gets bounded, with a drill override.
 
     Otherwise this path costs a genuine 60K-token conversation to reach even once, which is exactly
@@ -121,7 +121,7 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     # history the last rung walked into the same wall with tools taken away. It is the user's last
     # chance, so it is bounded BY CONSTRUCTION instead: a fresh request carrying the model's own
     # distilled summary and no trail at all, which cannot be too big however the history grew.
-    if p_final and p_input >= p_final_rung_bound():
+    if p_final and p_input >= final_rung_bound():
         maybe_compact(session, force=True)
         session.history_prefix_once = "summary"
         session.needs_fresh_session = True

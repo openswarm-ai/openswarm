@@ -174,6 +174,16 @@ def render_agent_trail(messages, max_chars: int = 14_000) -> str:
     Tail-biased cap so the end, where a run succeeds or blows up, always survives.
     """
     lines = trail_lines(messages)
+    # The RESULT is not a replay. A caller who invoked this run wants its outcome, and one final
+    # answer is what every delegation already returns; what must never travel is the multi-turn
+    # role-tagged transcript around it. Dropping this too made InvokeWorkflow return a trail with
+    # no answer in it, which the suite caught (test_invoke_waits_and_returns_transcript).
+    p_last = next((m for m in reversed(messages)
+                   if getattr(m, "role", "") == "assistant" and not getattr(m, "hidden", False)), None)
+    if p_last is not None:
+        p_text = p_last.content if isinstance(p_last.content, str) else str(p_last.content)
+        if p_text.strip():
+            lines.append(f"It reported back: {strip_forged_sentinels(clamp_recap_text(p_text))}")
     if not lines:
         return ""
     out = "\n".join(lines)

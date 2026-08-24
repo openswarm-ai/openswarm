@@ -13,7 +13,7 @@ import pytest
 
 from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.manager.run import empty_finish as ef
-from backend.apps.agents.manager.run.RunOptions import p_effective_prefix_mode, P_PREFIX_NARROWNESS
+from backend.apps.agents.manager.run.RunOptions import effective_prefix_mode, PREFIX_NARROWNESS
 
 
 def p_deep_session(input_tokens: int, nudges: int) -> AgentSession:
@@ -64,15 +64,15 @@ def test_the_bound_can_never_widen_a_policy_ratchet():
     s = AgentSession(name="blocked", model="sonnet", dashboard_id="d")
     s.history_prefix_mode = "none"
     s.history_prefix_once = "summary"
-    assert p_effective_prefix_mode(s) == "none"
+    assert effective_prefix_mode(s) == "none"
 
 
 def test_the_override_is_consumed_so_it_cannot_leak_into_later_turns():
     s = AgentSession(name="once", model="sonnet", dashboard_id="d")
     s.history_prefix_once = "summary"
-    assert p_effective_prefix_mode(s) == "summary"
+    assert effective_prefix_mode(s) == "summary"
     assert s.history_prefix_once is None
-    assert p_effective_prefix_mode(s) == "minimal", "the turn after must be normal again"
+    assert effective_prefix_mode(s) == "minimal", "the turn after must be normal again"
 
 
 def test_summary_mode_sends_no_authored_trail_at_all():
@@ -85,15 +85,15 @@ def test_summary_mode_sends_no_authored_trail_at_all():
 
 
 def test_the_narrowing_order_is_declared_not_alphabetical():
-    assert P_PREFIX_NARROWNESS == ("minimal", "summary", "none")
+    assert PREFIX_NARROWNESS == ("minimal", "summary", "none")
 
 
 def test_the_drill_seam_is_declared_and_ignores_junk(monkeypatch):
-    from backend.apps.agents.manager.run.empty_finish import p_final_rung_bound, FINAL_RUNG_BOUND_TOKENS
-    assert p_final_rung_bound() == FINAL_RUNG_BOUND_TOKENS
+    from backend.apps.agents.manager.run.empty_finish import final_rung_bound, FINAL_RUNG_BOUND_TOKENS
+    assert final_rung_bound() == FINAL_RUNG_BOUND_TOKENS
     monkeypatch.setenv("OSW_FINAL_RUNG_BOUND_TOKENS", "1200")
-    assert p_final_rung_bound() == 1200
+    assert final_rung_bound() == 1200
     monkeypatch.setenv("OSW_FINAL_RUNG_BOUND_TOKENS", "not-a-number")
-    assert p_final_rung_bound() == FINAL_RUNG_BOUND_TOKENS, "junk must never silently disarm the bound"
+    assert final_rung_bound() == FINAL_RUNG_BOUND_TOKENS, "junk must never silently disarm the bound"
     monkeypatch.setenv("OSW_FINAL_RUNG_BOUND_TOKENS", "-5")
-    assert p_final_rung_bound() == FINAL_RUNG_BOUND_TOKENS
+    assert final_rung_bound() == FINAL_RUNG_BOUND_TOKENS

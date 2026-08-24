@@ -11,7 +11,6 @@ These pin the property at the shared chokepoint, and that the useful half surviv
 import re
 
 from backend.apps.agents.manager.session.history_compaction import render_agent_trail, trail_lines
-from backend.apps.workflows.workflows import p_render_test_transcript
 
 
 class P_Msg:
@@ -33,19 +32,33 @@ ROLE_REPLAY = re.compile(r"^\s*(USER|ASSISTANT|MODEL|AI)\s*:", re.MULTILINE | re
 
 
 def test_the_renderer_never_emits_a_role_tagged_replay():
-    out = p_render_test_transcript(p_run())
+    out = render_agent_trail(p_run())
     assert not ROLE_REPLAY.search(out), f"role-tagged replay leaked back in:\n{out}"
 
 
-def test_no_model_authored_prose_survives():
-    out = p_render_test_transcript(p_run())
-    assert "root cause is the parser" not in out
-    assert "I suspect the parser" not in out
+def test_intermediate_narration_never_survives():
+    # The replay shape is many role-tagged turns. One final result is not that: it is what every
+    # delegation already returns, and dropping it made InvokeWorkflow answer with no answer.
+    out = render_agent_trail(p_run())
+    assert "I suspect the parser" not in out, "mid-run narration is replay, and goes"
+
+
+def test_the_final_result_survives_because_it_is_the_answer():
+    out = render_agent_trail(p_run())
+    assert "root cause is the parser" in out, "the caller invoked this run to get its outcome"
+    assert not ROLE_REPLAY.search(out), "and it still must not arrive role-tagged"
+
+
+def test_only_one_model_turn_ever_survives():
+    msgs = p_run() + [P_Msg("assistant", "and one more thought")]
+    out = render_agent_trail(msgs)
+    assert "and one more thought" in out
+    assert "root cause is the parser" not in out, "only the LAST result, never a chain of them"
 
 
 def test_the_useful_half_still_survives():
     # A control: the fix would be worthless if it also deleted what the Edit Agent diagnoses from.
-    out = p_render_test_transcript(p_run())
+    out = render_agent_trail(p_run())
     assert "pytest -q" in out, "the command has to survive so the agent can re-run it"
     assert "3 failed" in out and "FATAL" in out, "the verdict is the whole point"
     assert "find out why the build fails" in out, "the user's own words are not model output"
