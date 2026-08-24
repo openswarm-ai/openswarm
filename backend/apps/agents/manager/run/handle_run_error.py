@@ -201,7 +201,8 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             from backend.apps.agents.manager.run.reconnect_resume import clear_reconnect_wait
             clear_reconnect_wait(session)
         if p_delay is not None:
-            logger.info(f"Agent {session_id}: connection lost past the in-turn budget; retrying in {p_delay}s")
+            p_why = "connection lost" if is_connection_lost(e) else "provider unavailable"
+            logger.info(f"Agent {session_id}: {p_why} past the in-turn budget; retrying in {p_delay}s")
             await ws_manager.send_to_session(session_id, "agent:reconnect_wait", {
                 "session_id": session_id,
                 "retry_in_s": p_delay,

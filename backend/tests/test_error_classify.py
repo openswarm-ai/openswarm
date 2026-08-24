@@ -144,3 +144,28 @@ def test_cert_failure_is_never_transient():
         assert is_transient_capacity_error(httpx.ConnectError(msg)) is False
     # A cert-free transport hiccup keeps its transient classification.
     assert is_transient_capacity_error(httpx.ConnectError("Connection refused")) is True
+
+
+def test_a_malformed_request_is_never_transient_however_it_is_dressed():
+    # 9router appends "(reset after Ns)" to EVERYTHING, and that substring is load-bearing in two
+    # separate branches, so a deterministic 400 parked on a 900s ladder forever (ENG-395/ENG-394).
+    from backend.apps.agents.core.error_classify import is_transient_capacity_error
+    b400 = ('API Error: 400 {"error":{"message":"[claude/claude-opus-5] [400]: Tool X cannot have '
+            'both defer_loading=true and cache_control set. (reset after 21s)"}}')
+    assert is_transient_capacity_error(RuntimeError(b400)) is False
+
+
+def test_the_reset_hint_still_rescues_what_it_was_written_for():
+    # The controls that keep the fix from being a blanket kill: a rotating token really does heal,
+    # and a "400" that is a line number or a token count is not a status at all (ENG-365).
+    from backend.apps.agents.core.error_classify import is_transient_capacity_error as t
+    assert t(RuntimeError("API Error: 401 unauthorized (reset after 1m 57s)")) is True
+    assert t(RuntimeError('API Error: 429 {"message":"rate_limit_error (reset after 21s)"}')) is True
+    assert t(RuntimeError("File runner.py, line 400, in execute (reset after 3s)")) is True
+    assert t(RuntimeError("context has 4000 tokens (reset after 3s)")) is True
+
+
+def test_the_retry_log_does_not_claim_a_transport_fault_it_did_not_classify():
+    src = open("backend/apps/agents/manager/run/handle_run_error.py").read()
+    assert 'p_why = "connection lost" if is_connection_lost(e) else "provider unavailable"' in src, \
+        "the log sent a reader hunting a transport fault that was never classified"

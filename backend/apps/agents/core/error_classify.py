@@ -412,6 +412,16 @@ def is_connection_lost(exc: BaseException) -> bool:
     return isinstance(exc, p_get_transient_exc_types())
 
 
+# A MALFORMED request: the provider will answer identically forever, so no wait helps. Deliberately
+# narrow. 401 stays out (a rotating token really does heal, which is why the reset-hint rule exists),
+# and so do 408/429. Matched only in status POSITION, so a "400" in a line number or a byte count
+# cannot promote itself into a verdict (ENG-365 learned that the hard way with "line 401,").
+P_PERMANENT_STATUS = re.compile(
+    r"(?:API\s+Error:\s*|HTTP\s+|status(?:\s*code)?\s*[:=]\s*|\[)\s*(?:400|422)\b",
+    re.IGNORECASE,
+)
+
+
 @typechecked
 def is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> bool:
     # The Claude CLI's underlying ProcessError stringifies to a generic "Command failed with exit code 1 / Check stderr output for details"; the real cause (rate_limit_error / No pool capacity available / 429 / overloaded) only surfaces in the subprocess's stderr stream, which we capture via the SDK's `stderr` callback and pass in as extra_text. Classify against both so we catch capacity errors regardless of which channel carried the message.
@@ -421,6 +431,12 @@ def is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> boo
         return False
     # 335s of retries cannot fix a certificate; the user has to (ENG-218, reproduced against badssl).
     if is_cert_failure(exc, extra_text):
+        return False
+    # Nor can any wait fix a malformed request. Ahead of every hint-driven branch below on purpose:
+    # 9router appends "(reset after Ns)" to EVERYTHING, and that substring appears in both the
+    # reset-hint rule and TRANSIENT_CAPACITY_PATTERNS, so a deterministic 400 was parking on a 900s
+    # ladder forever for a request that could never succeed (ENG-395, found via ENG-394).
+    if combined and P_PERMANENT_STATUS.search(combined):
         return False
     # A failure that names its own recovery window ("reset after 1m 57s") heals itself, even when
     # it's dressed as a 401; the reset hint outranks the auth-shaped non-transient veto (caught live).
