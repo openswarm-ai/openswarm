@@ -39,6 +39,32 @@ logger = logging.getLogger(__name__)
 
 NUDGE_HARD_CAP = 3
 
+# Below this a quit is not about depth, so bounding the last rung would cost a rebuild and buy
+# nothing. Measured on the field install whose quits were read one by one: every one landed between
+# 68K and 166K input, and the nudge-1/2/3 medians climb 105K -> 125K -> 135K, i.e. the ladder gets
+# DEEPER at each rung and fails harder for the same reason (ENG-399).
+FINAL_RUNG_BOUND_TOKENS = 60_000
+
+
+@typechecked
+def p_final_rung_bound() -> int:
+    """The depth above which the last rung gets bounded, with a drill override.
+
+    Otherwise this path costs a genuine 60K-token conversation to reach even once, which is exactly
+    how the 50KB cap and the mid-turn breaker both shipped never having fired. Unset everywhere
+    except a drill; junk is ignored rather than silently trusted (same contract as
+    OSW_COMPACT_CEILING_TOKENS)."""
+    import os as p_os
+    raw = p_os.environ.get("OSW_FINAL_RUNG_BOUND_TOKENS", "").strip()
+    if raw:
+        try:
+            override = int(raw)
+            if override > 0:
+                return override
+        except ValueError:
+            logger.warning(f"ignoring junk OSW_FINAL_RUNG_BOUND_TOKENS={raw!r}")
+    return FINAL_RUNG_BOUND_TOKENS
+
 
 @typechecked
 def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
@@ -90,6 +116,19 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     session.empty_finish_nudges += 1
     session.pending_continuation = True
     p_final = session.empty_finish_nudges >= NUDGE_HARD_CAP
+    # A ladder whose rungs all fail for the same reason is not a ladder. Rungs 1 and 2 just died in
+    # THIS context, and the compaction above is gated on reclaiming 20K, so on a big irreducible
+    # history the last rung walked into the same wall with tools taken away. It is the user's last
+    # chance, so it is bounded BY CONSTRUCTION instead: a fresh request carrying the model's own
+    # distilled summary and no trail at all, which cannot be too big however the history grew.
+    if p_final and p_input >= p_final_rung_bound():
+        maybe_compact(session, force=True)
+        session.history_prefix_once = "summary"
+        session.needs_fresh_session = True
+        logger.warning(
+            f"Agent {session_id}: final nudge at {p_input} input tokens; bounding it to a "
+            f"summary-only request so the last rung cannot die of the same depth as the first two"
+        )
     session.pending_continuation_prompt = FINAL_NUDGE_PROMPT if p_final else NUDGE_PROMPT
     # Wording alone did not hold: the same escalation shipped in 1.7.6 and the prods came back on
     # 1.7.7, so the last turn now runs with no tools at all rather than being asked nicely.

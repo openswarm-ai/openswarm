@@ -79,3 +79,13 @@ def announce() -> None:
         f"armed={live or 'NOTHING'}"
         + (f"; not a known fault, armed nothing: {bogus}" if bogus else "")
     )
+
+
+# A KNOWN blind spot, written down rather than discovered again: `empty_finish` cannot drive the
+# nudge ladder past rung 1. Swallowing the answer also means the model does no NEW tool work, and
+# the ladder's own re-nudge guard (`p_tool_calls <= empty_finish_progress_mark`) correctly refuses
+# to nudge again with nothing to show for the last one. Measured live 2026-08-24: two sessions,
+# tool_calls 8 == progress_mark 8, ladder stopped at nudge 1 and surfaced honestly. Drilling rung 3
+# needs a fault that swallows the answer while the model KEEPS working, which this harness cannot
+# yet produce (ENG-399).
+UNREACHABLE_WITH = {"empty_finish": "nudge ladder rungs 2 and 3"}

@@ -150,9 +150,14 @@ class AgentSession(BaseModel):
     # One honest "stopped without a report" line per exhausted nudge budget; resets with the budget.
     empty_finish_surfaced: bool = False
     # What a fresh CLI session may carry as history: "minimal" (the user's asks, the tool trail, a model-written summary of the dropped span; never the model's own replies verbatim) or "none". Ratchets to "none" when a provider policy filter blocks a recap-bearing turn and never back up: on the subscription lane Anthropic's anti-distillation classifier blocked 192 of our recap turns in 14 days (0 on API keys), reading replayed model text as "duplicating model outputs".
-    history_prefix_mode: Literal["minimal", "none"] = "minimal"
+    history_prefix_mode: Literal["minimal", "summary", "none"] = "minimal"
+    # A ONE-TURN narrowing, consumed at spawn. The nudge ladder's last rung uses "summary" so
+    # its request is bounded BY CONSTRUCTION (a model-written gist, no trail, no replay) rather
+    # than walking into the same context that already ate rungs 1 and 2. It can only ever
+    # narrow: a policy ratchet at "none" is never widened back by an override (ENG-399).
+    history_prefix_once: Optional[Literal["summary", "none"]] = None
     # What the LAST spawned turn actually carried, so a block can tell a recap-caused refusal from a plain one.
-    history_prefix_sent: Literal["minimal", "none"] = "none"
+    history_prefix_sent: Literal["minimal", "summary", "none"] = "none"
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
     # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.

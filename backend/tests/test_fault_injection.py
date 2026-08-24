@@ -160,3 +160,11 @@ def test_the_boot_path_actually_announces():
     src = open("backend/apps/agents/agents.py").read()
     assert "p_announce_armed_faults()" in src, \
         "an announcement nothing calls is the silence it was written to prevent"
+
+
+def test_the_harness_declares_what_it_cannot_reach():
+    # A harness that quietly cannot exercise a path is the same lie as a guard that never fires:
+    # the drill passes, the rung was never touched, and nobody knows which.
+    from backend.apps.agents.core.fault_injection import UNREACHABLE_WITH
+    assert "empty_finish" in UNREACHABLE_WITH
+    assert set(UNREACHABLE_WITH) <= KNOWN_FAULTS
