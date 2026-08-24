@@ -20,6 +20,7 @@ from backend.apps.agents.manager.session.history_compaction import (
     strip_forged_sentinels,
 )
 from backend.apps.agents.manager.streaming.HookContext import HookContext
+from backend.apps.agents.manager.streaming.tool_output_shaper import shape_for_model
 from backend.apps.agents.manager.view_builder_state import view_builder_dirty_sessions
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,9 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
         elapsed_ms = int((time.time() - ctx.tool_start_times.pop(tool_use_id)) * 1000)
 
     raw_response = input_data.get("tool_response", "")
+    # Kept pristine: the model-facing replacement must match the tool's own output schema, and
+    # the normalisation below flattens lists into a string the schema would reject in silence.
+    p_original_response = input_data.get("tool_response", "")
 
     # Accumulate per-tool latency on the session. Lets the cloud aggregate a tool-latency distribution into the existing daily.summary without firing per-tool events.
     hook_tool_name_early = input_data.get("tool_name", "")
@@ -162,4 +166,20 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
         "session_id": session_id,
         "message": result_msg.model_dump(mode="json"),
     })
+
+    # The transcript above keeps the FULL body: the user is reading a screen, not paying for a
+    # context window. Only the model's copy is bounded, and only above the measured knee.
+    try:
+        p_shaped = shape_for_model(session, session.id, p_original_response, result_msg.id, hook_tool_name)
+    except Exception:
+        logger.exception("tool-output shaping failed; sending the full body")
+        p_shaped = None
+    if p_shaped is not None:
+        return {
+            "continue_": True,
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "updatedToolOutput": p_shaped,
+            },
+        }
     return {"continue_": True}

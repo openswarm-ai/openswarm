@@ -1,0 +1,129 @@
+"""The shaper's job is to cut tokens without ever costing an answer.
+
+The measurement that produced it: on 6,389 real tool results a plain head+tail shaper destroys
+~100% of answer-shaped lines, which is the same sin as the router shapers we rejected. What makes
+this one safe is not the line-matching (a heuristic) but the RECOVERY PATH: nothing is removed
+without naming the file that still holds it. These pin both halves, plus the shape rule the CLI
+enforces in silence.
+"""
+
+import json
+
+import pytest
+
+from backend.apps.agents.manager.streaming.tool_output_shaper import (
+    SHAPE_OVER_BYTES, shape_text, shape_tool_response, shaping_report, p_bump,
+)
+
+HOOK = "backend/apps/agents/manager/streaming/post_tool_hook.py"
+
+
+def p_big(marker: str = "") -> str:
+    return ("a" * 3_000) + f"\n{marker}\n" + ("b" * 5_000)
+
+
+def test_nothing_is_removed_without_saying_where_it_went():
+    out = shape_text(p_big(), "/data/blobs/x.txt")
+    assert "/data/blobs/x.txt" in out, \
+        "an elision the model cannot undo is work loss, which outranks every token saved"
+    assert "elided" in out
+
+
+def test_the_answer_line_survives_the_middle():
+    out = shape_text(p_big("FATAL: the disk is on fire"), "/b.txt")
+    assert "FATAL: the disk is on fire" in out
+    assert len(out) < 8_000
+
+
+def test_head_and_tail_both_survive():
+    body = "HEAD-MARKER" + ("x" * 9_000) + "TAIL-MARKER"
+    out = shape_text(body, "/b.txt")
+    # A verdict lives at the END of a build or test run; head-only threw it away every time.
+    assert "HEAD-MARKER" in out and "TAIL-MARKER" in out
+
+
+def test_a_dict_keeps_its_shape_or_the_cli_drops_it_in_silence():
+    # Measured live: a bare string returned for Bash failed the tool's output schema and vanished
+    # with no error, so the drill "passed" while the model saw the original bytes.
+    src = {"stdout": p_big(), "stderr": "", "interrupted": False, "isImage": False}
+    out, before, after = shape_tool_response(src, "/b.txt")
+    assert set(out.keys()) == set(src.keys())
+    assert out["stderr"] == "" and out["interrupted"] is False
+    assert after < before
+
+
+def test_a_text_block_list_keeps_its_shape():
+    src = [{"type": "text", "text": p_big()}]
+    out, _, _ = shape_tool_response(src, "/b.txt")
+    assert isinstance(out, list) and out[0]["type"] == "text"
+    assert len(out[0]["text"]) < 8_000
+
+
+@pytest.mark.parametrize("small", [
+    "tiny",
+    {"stdout": "tiny", "stderr": ""},
+    [{"type": "text", "text": "tiny"}],
+])
+def test_below_the_knee_nothing_is_touched(small):
+    assert shape_tool_response(small, "/b.txt")[0] is None
+
+
+@pytest.mark.parametrize("weird", [12345, None, True, {"unknown_field": "x" * 9_000}])
+def test_an_unrecognised_shape_is_never_guessed_at(weird):
+    # Guessing produces a replacement the CLI discards without a word, which reads as "we shaped it".
+    assert shape_tool_response(weird, "/b.txt")[0] is None
+
+
+def test_the_threshold_is_the_measured_knee_not_a_round_number():
+    assert SHAPE_OVER_BYTES == 4_000, \
+        "4,000B fires on 5.9% of real results and reclaims 52.8% of tool tokens; moving it needs a new measurement"
+
+
+def test_it_says_so_when_it_cut_nothing_at_depth():
+    class S:
+        pass
+    s = S()
+    for _ in range(45):
+        p_bump(s, "seen", 1)
+    assert "0 of 45" in (shaping_report(s) or "")
+    p_bump(s, "shaped", 1)
+    p_bump(s, "bytes_before", 9_000)
+    p_bump(s, "bytes_after", 2_000)
+    assert "7,000 bytes" in (shaping_report(s) or "")
+
+
+def test_a_shallow_session_says_nothing():
+    class S:
+        pass
+    s = S()
+    p_bump(s, "seen", 3)
+    assert shaping_report(s) is None
+
+
+def test_the_hook_actually_returns_the_field_the_cli_reads():
+    # Wire check: the shaper can be perfect and still reach nobody. The CLI keys on this exact
+    # field name inside hookSpecificOutput for PostToolUse; `updatedMCPToolOutput` is MCP-only.
+    src = open(HOOK).read()
+    assert '"updatedToolOutput"' in src
+    assert '"hookEventName": "PostToolUse"' in src
+    assert "shape_for_model" in src
+
+
+def test_the_hook_shapes_the_pristine_response_not_the_flattened_one():
+    src = open(HOOK).read()
+    assert "p_original_response" in src, \
+        "the normalisation flattens lists to a string, which the tool's output schema rejects"
+    i_capture = src.index("p_original_response = input_data")
+    i_use = src.index("shape_for_model(")
+    assert i_capture < i_use
+
+
+def test_the_off_switch_is_declared_and_announces_itself(monkeypatch, caplog):
+    from backend.apps.agents.manager.streaming import tool_output_shaper as mod
+
+    class S:
+        id = "s1"
+    monkeypatch.setenv("OSW_TOOL_SHAPING", "off")
+    with caplog.at_level("WARNING"):
+        assert mod.shape_for_model(S(), "s1", {"stdout": p_big()}, "m1", "Bash") is None
+    assert "OFF" in caplog.text, "a guard that stops guarding must say which sessions it stopped protecting"

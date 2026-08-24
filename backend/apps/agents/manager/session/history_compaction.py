@@ -234,18 +234,28 @@ def truncate_large_tool_result(content: object, session_id: str, msg_id: str, ma
         serialized = content
     if len(serialized.encode("utf-8")) <= max_bytes:
         return content, None
-    blobs_dir = os.path.join(SESSIONS_DIR, session_id, "blobs")
-    os.makedirs(blobs_dir, exist_ok=True)
-    # Sanitize msg_id (it's UUID hex, but be defensive).
-    safe_msg_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(msg_id))[:64] or "blob"
-    blob_path = os.path.join(blobs_dir, f"{safe_msg_id}.txt")
-    try:
-        with open(blob_path, "w", encoding="utf-8") as f:
-            f.write(serialized)
-    except Exception as e:
-        logger.warning(f"Failed to spill tool result to {blob_path}: {e}")
+    blob_path = write_blob(serialized, session_id, msg_id)
+    if blob_path is None:
         return content, None
     return build_elided_replacement(serialized, blob_path), blob_path
+
+
+@typechecked
+def write_blob(serialized: str, session_id: str, msg_id: str, suffix: str = "") -> Optional[str]:
+    """Park a full tool body under the session's own blobs dir; returns the path, or None if it
+    could not be written. Caller-supplied paths are never honoured (path traversal)."""
+    blobs_dir = os.path.join(SESSIONS_DIR, session_id, "blobs")
+    try:
+        os.makedirs(blobs_dir, exist_ok=True)
+        # Sanitize msg_id (it's UUID hex, but be defensive).
+        safe_msg_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(msg_id))[:64] or "blob"
+        blob_path = os.path.join(blobs_dir, f"{safe_msg_id}{suffix}.txt")
+        with open(blob_path, "w", encoding="utf-8") as f:
+            f.write(serialized)
+        return blob_path
+    except Exception as e:
+        logger.warning(f"Failed to spill tool result for {session_id}: {e}")
+        return None
 
 
 @typechecked
