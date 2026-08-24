@@ -15,7 +15,11 @@ REDACTED = "[redacted]"
 # Literal-secret shapes someone might paste into a file, skill body, or setting.
 SECRET_SHAPE_PATTERNS = (
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{16,}"),
-    re.compile(r"sk-[A-Za-z0-9_\-]{16,}"),
+    # A real sk- key carries a long DASHLESS run; dashes were counted as key material, so the SPDX
+    # licence id "Asterisk-linking-protocols-exception" read as an OpenAI key and hard-blocked a
+    # skill export with advice ("remove the secret") that no user could act on. Requiring the run
+    # keeps every real shape (sk-proj-<48>, sk-ant-api03-<95>) and drops dictionary-words-with-dashes.
+    re.compile(r"sk-[A-Za-z0-9_\-]*[A-Za-z0-9_]{20,}"),
     re.compile(r"AIza[A-Za-z0-9_\-]{20,}"),          # Google API key shape
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),       # GitHub tokens
     re.compile(r"Bearer\s+[A-Za-z0-9._\-]{16,}"),

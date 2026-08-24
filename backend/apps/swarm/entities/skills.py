@@ -7,6 +7,8 @@ but the body still rides the central scrub in case someone pasted a token in."""
 from __future__ import annotations
 
 import os
+
+from backend.apps.outputs.workspace_io import WALK_SKIP_DIRS
 import shutil
 
 from backend.apps.skills import skills as store
@@ -95,9 +97,18 @@ class SkillExportable:
 
 
 def p_read_supporting_files(skill_dir: str) -> dict[str, bytes]:
-    """Every file in a skill folder except SKILL.md, as {relpath: bytes}."""
+    """Every file in a skill folder except SKILL.md, as {relpath: bytes}.
+
+    Prunes the same build/venv dirs the app exporter has always pruned. This walker bound `dirs`
+    and never used it, so exporting a skill with a Python venv swept every file under `.venv/` into
+    the bundle: a python3.13 tree with absolute paths baked in, dead on any other machine, and big
+    enough that one vendored SPDX licence list tripped the secret scanner and hard-blocked the
+    export with advice ("remove the secret") that no user could follow. Credit: Haik Decie, who
+    diagnosed both halves.
+    """
     out: dict[str, bytes] = {}
     for root, p_dirs, names in os.walk(skill_dir):
+        p_dirs[:] = [d for d in p_dirs if d not in WALK_SKIP_DIRS]
         for n in names:
             full = os.path.join(root, n)
             rel = os.path.relpath(full, skill_dir)
