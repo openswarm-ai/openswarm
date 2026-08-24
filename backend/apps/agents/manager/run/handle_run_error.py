@@ -30,6 +30,7 @@ from backend.apps.agents.core.is_router_unavailable_error import is_router_unava
 from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
 from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
 from backend.apps.agents.core import flight_recorder
+from backend.apps.agents.manager.run.empty_finish import p_count_tool_calls
 from backend.apps.agents.session_credential import api_key_twin_model
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,21 @@ def absorb_repeat_card(session: AgentSession, error_msg: Message) -> None:
     session.messages.append(error_msg)
 
 
+# Blocked chats were measured ~4.8x more likely to use InvokeAgent/SpawnAgent, and a delegated
+# child's answer lands in the parent's context as another model's output, which is the literal
+# wording of the clause being enforced. Recorded so that correlation can finally be tested.
+P_DELEGATION_TOOLS = ("InvokeAgent", "SpawnAgent", "CreateBrowserAgent")
+
+
+@typechecked
+def p_used_delegation(session: AgentSession) -> bool:
+    for msg in session.messages:
+        content = msg.content
+        if isinstance(content, dict) and any(t in str(content.get("tool", "")) for t in P_DELEGATION_TOOLS):
+            return True
+    return False
+
+
 @typechecked
 def p_report_model_error(subkind: str, session_id: str, session: AgentSession, turn: TurnState,
                          e: BaseException, stderr_tail: str) -> None:
@@ -79,6 +95,17 @@ def p_report_model_error(subkind: str, session_id: str, session: AgentSession, t
             "connection_mode": getattr(load_settings(), "connection_mode", "own_key"),
             "error_preview": redact_for_telemetry(str(e), limit=400),
             "stderr_tail": redact_for_telemetry(stderr_tail),
+            # The SHAPE of what was refused. Without these, a content theory about the policy block
+            # is untestable: model_error was the ONE envelope kind carrying no session_id at all
+            # (1,028 of 1,028 null, while empty_finish_nudge was 0 of 4,001), so no block could ever
+            # be tied back to the conversation that produced it, and the class stayed unexplained
+            # while the theories were argued from inference (ENG-396).
+            "session_id": session_id,
+            "input_tokens": int((session.tokens or {}).get("input", 0) or 0),
+            "tool_calls": p_count_tool_calls(session),
+            "compacted": bool(session.needs_fresh_session),
+            "history_prefix_sent": session.history_prefix_sent,
+            "delegated": p_used_delegation(session),
         })
     except Exception:
         logger.debug(f"submit_diagnostic {subkind} failed", exc_info=True)
