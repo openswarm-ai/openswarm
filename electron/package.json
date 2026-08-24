@@ -58,6 +58,8 @@
       "!python-env/**",
       "!build-staging",
       "!build-staging/**",
+      "!whisper",
+      "!whisper/**",
       "!**/*.test.js"
     ],
     "icon": "build/icon.png",
