@@ -22,11 +22,16 @@ def p_big(marker: str = "") -> str:
     return ("a" * 3_000) + f"\n{marker}\n" + ("b" * 5_000)
 
 
-def test_nothing_is_removed_without_saying_where_it_went():
+def test_an_elision_is_marked_and_never_names_the_harness():
+    """Recoverability is still the guarantee, but it is carried by the TOOL CALL surviving in the
+    transcript (the agent can re-run it), not by pointing at a blob path.
+
+    Naming the harness in the body cost 8/8 policy blocks against 3/8 for no shaping (p=0.026,
+    2026-08-25). CLAUDE.md: never announce automation on a lane whose terms restrict it."""
     out = shape_text(p_big(), "/data/blobs/x.txt")
-    assert "/data/blobs/x.txt" in out, \
-        "an elision the model cannot undo is work loss, which outranks every token saved"
-    assert "elided" in out
+    assert "characters omitted" in out, "a cut must be visible as a cut"
+    assert "OpenSwarm" not in out, "the harness may not name itself inside tool output"
+    assert "/data/blobs/" not in out, "nor leak an internal path into the conversation"
 
 
 def test_the_answer_line_survives_the_middle():
@@ -127,3 +132,49 @@ def test_the_off_switch_is_declared_and_announces_itself(monkeypatch):
     with LogCapture("backend.apps.agents.manager.streaming.tool_output_shaper") as cap:
         assert mod.shape_for_model(S(), "s1", {"stdout": p_big()}, "m1", "Bash") is None
     assert "OFF" in cap.text, "a guard that stops guarding must say which sessions it stopped protecting"
+
+
+def test_the_shape_Read_actually_emits_is_handled():
+    """Caught by a LIVE drill, not by these tests, which is the lesson.
+
+    Every unit test above was written against the payload shapes I imagined. `Read` nests its body
+    under `file.content`, matched none of the flat fields, and a 34,482-byte file went to the model
+    completely untouched while the whole suite stayed green. A guard present, reachable, and doing
+    nothing is the exact class this module was written to kill.
+    """
+    src = {"type": "text",
+           "file": {"filePath": "/x/payments.log", "content": p_big("ERROR retry_exhausted"), "numLines": 500}}
+    out, before, after = shape_tool_response(src, "/b.txt")
+    assert out is not None, "the most common large-output tool must not be invisible to the shaper"
+    assert set(out.keys()) == set(src.keys()) and set(out["file"]) == set(src["file"])
+    assert out["file"]["numLines"] == 500, "siblings of the body are left alone"
+    assert "ERROR retry_exhausted" in out["file"]["content"]
+    assert after < before
+
+
+def test_an_unrecognised_big_payload_says_so_instead_of_returning_a_silent_none(monkeypatch):
+    """The generalisation of the bug above: we cannot enumerate every tool's shape, so the one thing
+    that must never happen again is failing SILENTLY on a big body."""
+    from backend.apps.agents.manager.streaming import tool_output_shaper as mod
+    from backend.tests.log_capture import LogCapture
+
+    class S:
+        id = "s1"
+
+    weird = {"totally": {"unexpected": {"nesting": "z" * 9_000}}}
+    with LogCapture("backend.apps.agents.manager.streaming.tool_output_shaper") as cap:
+        assert mod.shape_for_model(S(), "s1", weird, "m1", "SomeTool") is None
+    assert "unrecognised payload shape" in cap.text
+    assert "dict(totally)" in cap.text, "the shape has to be named, or nobody can add the field"
+
+
+def test_a_small_unrecognised_payload_stays_quiet():
+    # The control: most results are tiny and unrecognised, and warning on those would be noise.
+    from backend.apps.agents.manager.streaming import tool_output_shaper as mod
+    from backend.tests.log_capture import LogCapture
+
+    class S:
+        id = "s1"
+    with LogCapture("backend.apps.agents.manager.streaming.tool_output_shaper") as cap:
+        assert mod.shape_for_model(S(), "s1", {"odd": "tiny"}, "m1", "SomeTool") is None
+    assert cap.text == ""

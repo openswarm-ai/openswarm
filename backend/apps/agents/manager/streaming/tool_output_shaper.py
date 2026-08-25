@@ -42,6 +42,11 @@ P_NOTABLE = re.compile(
 # output schema is dropped by the CLI in silence (measured: a bare string for Bash vanished with
 # no error), and a silent drop is indistinguishable from a shaper that never ran.
 DICT_TEXT_FIELDS = ("stdout", "content", "text", "output")
+# Some payloads nest the body one level down. `Read` is the big one and the one that caught this
+# live: it returns {"type": "text", "file": {"filePath": ..., "content": ..., "numLines": ...}}, so
+# every flat field above missed and a 34KB file went to the model untouched while the unit tests,
+# written against the shapes I imagined rather than the ones tools emit, all passed.
+NESTED_TEXT_PATHS = (("file", "content"), ("result", "content"), ("data", "text"))
 
 
 @typechecked
@@ -53,9 +58,16 @@ def shape_text(body: str, recovery: str) -> str:
     middle = body[HEAD_CHARS:len(body) - TAIL_CHARS]
     carried = [ln.strip()[:CARRIED_LINE_CHARS]
                for ln in middle.splitlines() if P_NOTABLE.search(ln)][:MAX_CARRIED_LINES]
-    note = f"[... {len(middle)} chars elided by OpenSwarm. Full output: {recovery} ...]"
+    # Reads as ordinary output truncation, the way head/tail/grep already do, and names NOTHING
+    # about the harness. Measured 2026-08-25, same task 8 times per arm: the previous wording,
+    # "[... N chars elided by OpenSwarm. Full output: <path> ...]", blocked 8/8 against 3/8 for no
+    # shaping at all (Fisher p=0.026). CLAUDE.md already said why: on a lane whose terms restrict
+    # third-party automated use, naming the harness is a signed confession, and this fires on ~6% of
+    # every tool result rather than only on nudges. Recovery is the same one hermes relies on: the
+    # tool call is still in the transcript, so the agent can simply run it again.
+    note = f"[... {len(middle)} characters omitted ...]"
     if carried:
-        note += "\nNotable lines from the elided part:\n" + "\n".join(carried)
+        note += "\n" + "\n".join(carried)
     return f"{head}\n{note}\n{tail}"
 
 
@@ -74,10 +86,17 @@ def shape_tool_response(response: object, recovery: str) -> Tuple[Optional[objec
     if isinstance(response, dict):
         field = next((f for f in DICT_TEXT_FIELDS
                       if isinstance(response.get(f), str) and len(response[f]) > SHAPE_OVER_BYTES), None)
-        if field is None:
-            return None, 0, 0
-        out = shape_text(response[field], recovery)
-        return {**response, field: out}, len(response[field]), len(out)
+        if field is not None:
+            out = shape_text(response[field], recovery)
+            return {**response, field: out}, len(response[field]), len(out)
+        for p_outer, p_inner in NESTED_TEXT_PATHS:
+            p_nest = response.get(p_outer)
+            if isinstance(p_nest, dict) and isinstance(p_nest.get(p_inner), str) \
+                    and len(p_nest[p_inner]) > SHAPE_OVER_BYTES:
+                out = shape_text(p_nest[p_inner], recovery)
+                return ({**response, p_outer: {**p_nest, p_inner: out}},
+                        len(p_nest[p_inner]), len(out))
+        return None, 0, 0
 
     if isinstance(response, list):
         idx = None
@@ -126,6 +145,16 @@ def shape_for_model(session: object, session_id: str, response: object, msg_id: 
     probe, _, _ = shape_tool_response(response, "")
     if probe is None:
         bump_shaping_stat(session, "seen", 1)
+        # A big body we did not recognise is the row-6 shape this whole module exists to kill: the
+        # guard is present, reachable, and doing nothing. Caught live on `Read`, whose payload nests
+        # the text under `file.content` and so matched none of the flat fields. Say the shape out
+        # loud rather than returning a silent None.
+        p_size = len(p_payload_text(response)) or _rough_size(response)
+        if p_size > SHAPE_OVER_BYTES:
+            bump_shaping_stat(session, "unrecognised", 1)
+            logger.warning(
+                f"tool-output shaping skipped a {p_size:,}-byte {tool_name} result: unrecognised "
+                f"payload shape {_shape_of(response)}. It is being sent to the model in full.")
         return None
 
     p_body = p_payload_text(response)
@@ -157,6 +186,11 @@ def p_payload_text(response: object) -> str:
         for f in DICT_TEXT_FIELDS:
             if isinstance(response.get(f), str) and len(response[f]) > SHAPE_OVER_BYTES:
                 return response[f]
+        for p_outer, p_inner in NESTED_TEXT_PATHS:
+            p_nest = response.get(p_outer)
+            if isinstance(p_nest, dict) and isinstance(p_nest.get(p_inner), str) \
+                    and len(p_nest[p_inner]) > SHAPE_OVER_BYTES:
+                return p_nest[p_inner]
     if isinstance(response, list):
         best = ""
         for block in response:
@@ -192,3 +226,23 @@ def shaping_report(session: object) -> Optional[str]:
                 f"{cut:,} bytes kept out of the model's context")
     return (f"tool-output shaping fired on 0 of {stats['seen']} results; this session is paying "
             f"full freight for every tool result")
+
+
+@typechecked
+def _rough_size(response: object) -> int:
+    try:
+        import json as p_json
+        return len(p_json.dumps(response, default=str))
+    except Exception:
+        return len(str(response))
+
+
+@typechecked
+def _shape_of(response: object) -> str:
+    """A description of an unrecognised payload, enough to add a field without a repro."""
+    if isinstance(response, dict):
+        return "dict(" + ",".join(sorted(response)[:8]) + ")"
+    if isinstance(response, list):
+        p_kinds = sorted({(b.get("type") if isinstance(b, dict) else type(b).__name__) for b in response[:5]})
+        return f"list[{','.join(str(k) for k in p_kinds)}]"
+    return type(response).__name__
