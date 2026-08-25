@@ -44,7 +44,7 @@ class SkillExportable:
         }
         files: dict[str, bytes] = {}
         if kind == "folder":
-            files = p_read_supporting_files(os.path.join(store.SKILLS_DIR, local_id))
+            files = read_supporting_files(os.path.join(store.SKILLS_DIR, local_id))
         return cls(local_id, name, payload, files)
 
     def serialize(self, ctx: ExportContext) -> dict:
@@ -96,7 +96,7 @@ class SkillExportable:
             store.save_index(index)
 
 
-def p_read_supporting_files(skill_dir: str) -> dict[str, bytes]:
+def read_supporting_files(skill_dir: str) -> dict[str, bytes]:
     """Every file in a skill folder except SKILL.md, as {relpath: bytes}.
 
     Prunes the same build/venv dirs the app exporter has always pruned. This walker bound `dirs`

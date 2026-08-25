@@ -93,7 +93,7 @@ def test_an_empty_run_renders_empty_not_a_frame():
 
 def test_the_aux_conversation_tail_gists_model_text_and_keeps_the_user_verbatim():
     # Shared by predict_followups AND memory distillation, both aux calls on the user's own lane.
-    from backend.apps.agents.manager.predict_followups import conversation_tail, P_MODEL_TEXT_CAP
+    from backend.apps.agents.manager.predict_followups import conversation_tail, MODEL_TEXT_CAP
 
     class P_Sess:
         pass
@@ -110,4 +110,4 @@ def test_the_aux_conversation_tail_gists_model_text_and_keeps_the_user_verbatim(
         mod.get_branch_messages = orig
     assert not ROLE_REPLAY.search(tail), f"role-tagged replay in the aux tail:\n{tail}"
     assert "how do I deploy this" in tail, "the user's own words are what we predict from"
-    assert "z" * (P_MODEL_TEXT_CAP + 50) not in tail, "model prose must arrive gisted, not whole"
+    assert "z" * (MODEL_TEXT_CAP + 50) not in tail, "model prose must arrive gisted, not whole"

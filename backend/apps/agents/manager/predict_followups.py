@@ -26,7 +26,7 @@ P_PER_MESSAGE_CAP = 700
 # user's own lane (a Claude subscription for most people), and up to 12 turns of verbatim
 # `User:/Assistant:` was the exact shape ENG-358 removed from the recap, spent here on suggestion
 # chips. Whether the filter keys on it is unknown; the trade is not, so it costs a gist (ENG-396).
-P_MODEL_TEXT_CAP = 200
+MODEL_TEXT_CAP = 200
 
 
 @typechecked
@@ -49,7 +49,7 @@ def conversation_tail(session: AgentSession) -> str:
             lines.append(f"They asked: {text[:P_PER_MESSAGE_CAP]}"
                          + ("..." if len(text) > P_PER_MESSAGE_CAP else ""))
         else:
-            gist = text[:P_MODEL_TEXT_CAP] + ("..." if len(text) > P_MODEL_TEXT_CAP else "")
+            gist = text[:MODEL_TEXT_CAP] + ("..." if len(text) > MODEL_TEXT_CAP else "")
             lines.append(f"They were answered, in gist: {gist}")
     return "\n".join(lines)
 

@@ -9,8 +9,6 @@ These pin that the last rung is bounded BY CONSTRUCTION, and that the bound can 
 policy ratchet back open.
 """
 
-import pytest
-
 from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.manager.run import empty_finish as ef
 from backend.apps.agents.manager.run.RunOptions import effective_prefix_mode, PREFIX_NARROWNESS

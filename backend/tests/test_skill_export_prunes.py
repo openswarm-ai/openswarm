@@ -6,9 +6,7 @@ bound `dirs` and never pruned it, so it swept a python3.13 tree with absolute pa
 on any other machine, into the bundle. The app exporter has always pruned the same set.
 """
 
-import os
-
-from backend.apps.swarm.entities.skills import p_read_supporting_files
+from backend.apps.swarm.entities.skills import read_supporting_files
 from backend.apps.outputs.workspace_io import WALK_SKIP_DIRS
 
 
@@ -21,7 +19,7 @@ def test_a_venv_never_reaches_the_bundle(tmp_path):
     (skill / "helper.py").write_text("real content")
     (skill / "SKILL.md").write_text("# skill")
 
-    out = p_read_supporting_files(str(skill))
+    out = read_supporting_files(str(skill))
     assert "helper.py" in out, "real supporting files must still ship"
     assert not any(".venv" in k for k in out), f"venv leaked: {list(out)}"
     assert not any("node_modules" in k for k in out)
