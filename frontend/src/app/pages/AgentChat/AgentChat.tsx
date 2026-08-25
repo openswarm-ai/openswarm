@@ -242,6 +242,11 @@ interface AgentChatProps {
   onSendRunQuestion?: (prompt: string, runId: string) => Promise<void>;
 }
 
+// The suggestion card's dismiss X is absolutely positioned; the card's right padding is derived
+// from these so content can never render underneath it (Haik Decie: Activate overlapped the X).
+const P_DISMISS_SIZE = 20;
+const P_DISMISS_RIGHT = 8;
+
 const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose, embedded, autoFocus, isGlowing, onDismissGlow, initialContextPaths, onBranch, workflowEditId, readOnly, fullscreenChat, prefillPrompt, runContext, onClearRunContext, onSendRunQuestion }) => {
   const c = useClaudeTokens();
   // Fullscreen is a flat theme ground, same as Claude's: the old accent wash from the top read as
@@ -2430,7 +2435,12 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       mx: 2,
                       mb: 1,
                       py: 0.75,
-                      px: 1.25,
+                      pl: 1.25,
+                      // The dismiss X is absolutely positioned in this box's top-right, so the row
+                      // below has to stop short of it or the right-aligned Activate button renders
+                      // underneath it (reported by Haik Decie). Derived from the X's own footprint
+                      // rather than eyeballed, so the two cannot drift apart again.
+                      pr: `${P_DISMISS_RIGHT + P_DISMISS_SIZE + 4}px`,
                       borderRadius: 1.5,
                       border: `1px solid ${c.border.medium}`,
                       bgcolor: c.bg.secondary,
@@ -2447,9 +2457,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                         sx={{
                           position: 'absolute',
                           top: 6,
-                          right: 8,
-                          width: 20,
-                          height: 20,
+                          right: `${P_DISMISS_RIGHT}px`,
+                          width: P_DISMISS_SIZE,
+                          height: P_DISMISS_SIZE,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
