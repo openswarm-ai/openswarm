@@ -15,6 +15,8 @@ typeguard==4.4.2
 python-dotenv==1.1.1
 Pillow==12.2.0
 httpx==0.28.1
+# truststore: verify https against the OS trust store (Windows/macOS) instead of certifi alone, so a root an endpoint tool or corporate proxy installed stops refusing sign-in and every other backend call; the browser already trusts those roots. ctypes only, 68KB, MIT.
+truststore==0.10.4
 trafilatura==2.0.0
 # curl_cffi: Chrome TLS-fingerprint impersonation for the keyless search rungs. Measured 8/8 against DuckDuckGo where plain httpx scored 4/8 on the same queries; abi3 wheels for macos arm64/x64 and win_amd64. Guarded import, so a missing wheel degrades to httpx instead of breaking the backend.
 curl_cffi==0.15.0
