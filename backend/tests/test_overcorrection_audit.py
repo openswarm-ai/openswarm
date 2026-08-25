@@ -154,3 +154,51 @@ def test_a_continuation_armed_for_a_stopped_chat_releases_its_running_promise(mo
 
     assert sent == [], "no machine send into a chat a human ended"
     assert status != "running", "and the running promise must be released, or the card spins forever"
+
+
+# --------------------------------------------------------------- the model catalog gate (ENG-386)
+
+def test_a_genuinely_retired_model_is_still_healed():
+    """The gate refuses to retire a model when the catalog could not be enumerated, which is right:
+    a router bounce must not move a chat to another vendor. The capability it must NOT cost is the
+    real one -- a model that truly no longer exists (the stranded-haiku migration) still gets moved.
+    """
+    src = open("frontend/src/app/Main.tsx").read()
+    i_gate = src.index("catalogComplete")
+    window = src[i_gate - 400:i_gate + 1200]
+    assert "knownValues" in window, "the heal decides on the durable catalog, not today's payload"
+    # And the refusal is not silent: a guard that stops guarding has to say so.
+    assert "will NOT be auto-switched" in src
+
+
+def test_the_catalog_is_independent_of_credentials():
+    """The whole point: availability and existence are different questions. If known_values were
+    filtered by creds it would collapse back into the payload it replaced."""
+    src = open("backend/apps/agents/agents.py").read()
+    i = src.index("known_values")
+    assert "catalog_complete" in src[i - 2000:i + 2000]
+
+
+# ------------------------------------------------------------ the suite auto-resume gate (ENG-388)
+
+def test_auto_resume_still_works_outside_a_test_run():
+    """The gate stops the suite spending real money. It must not stop a real user's crashed turn
+    from resuming, which is the entire feature."""
+    src = open("backend/apps/agents/manager/session/SessionPersistence.py").read()
+    i = src.index("def running_under_test")
+    body = src[i:i + 1400]
+    assert "OSW_DISABLE_AUTO_RESUME" in body, "the declared signal comes first"
+    assert 'os.environ.get("OSW_DISABLE_AUTO_RESUME") == "1"' in body, \
+        "only an explicit 1 disarms it, so a stray empty value cannot silently kill crash-resume"
+
+
+# ------------------------------------------------------ the status promise and its release (ENG-390)
+
+def test_settling_never_stomps_a_live_turn():
+    """Releasing the running promise must not fire while a turn is genuinely in flight, or it
+    reports 'completed' over work that is still going -- the exact lie ENG-390 was written to end."""
+    src = open("backend/apps/agents/agent_manager.py").read()
+    i = src.index("async def p_settle_unstarted_continuation")
+    body = src[i:i + 800]
+    assert "not p_task.done()" in body, "a live task must veto the settle"
+    assert 'status != "running"' in body, "and an already-terminal session is left alone"
