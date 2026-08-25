@@ -46,7 +46,9 @@ def test_the_cli_missing_class_specifically_is_covered():
 def test_silent_quit_diagnostic_carries_a_full_envelope():
     """A silent quit is the hardest class to diagnose later, so it must not ship envelope-less.
     Found live: empty_finish_nudge was the ONE family writing only kind/model/session_id."""
-    import backend.apps.agents.manager.run.empty_finish as ef
-    src = inspect.getsource(ef.maybe_nudge_empty_finish) if hasattr(ef, "maybe_nudge_empty_finish") else inspect.getsource(ef)
+    # The telemetry moved next door when empty_finish.py crossed the 300-line ceiling; the assertion
+    # is about the ENVELOPE, so it follows the code rather than pinning a file name.
+    import backend.apps.agents.manager.run.empty_finish_telemetry as ef
+    src = inspect.getsource(ef.report_nudge)
     assert "build_envelope" in src, "empty_finish_nudge must attach a flight envelope"
     assert '"flight"' in src, "the envelope must ride under the standard 'flight' key"

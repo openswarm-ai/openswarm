@@ -16,6 +16,7 @@ from backend.apps.agents.agents import close_session as user_close_route
 from backend.apps.agents.agents import stop_agent as user_stop_route
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.streaming import unwedge_sidecar
+from backend.apps.agents.manager.streaming import delegation_watchdog
 
 
 def p_live(name="t") -> AgentSession:
@@ -58,7 +59,7 @@ def test_a_user_stopped_parent_is_never_a_lost_result():
     child.status = "stopped"
     agent_manager.sessions[child.id] = child
     asyncio.run(user_stop_route(parent.id))
-    assert unwedge_sidecar.delegation_children_settled(parent.id, 0.0) is False
+    assert delegation_watchdog.delegation_children_settled(parent.id, 0.0) is False
 
 
 def test_a_genuinely_lost_result_still_settles():
@@ -70,7 +71,7 @@ def test_a_genuinely_lost_result_still_settles():
     child.parent_session_id = parent.id
     child.status = "completed"
     agent_manager.sessions[child.id] = child
-    assert unwedge_sidecar.delegation_children_settled(parent.id, 0.0) is True
+    assert delegation_watchdog.delegation_children_settled(parent.id, 0.0) is True
 
 
 # --- DOOR 2: a machine send into a stopped or closed session -------------------------------------
@@ -81,7 +82,7 @@ def test_the_watchdog_resend_cannot_restart_a_user_stopped_session():
     asyncio.run(user_stop_route(s.id))
     started, real = p_spy_loop()
     try:
-        asyncio.run(unwedge_sidecar.force_recover(s.id, s))
+        asyncio.run(delegation_watchdog.force_recover(s.id, s))
     finally:
         agent_manager.run_agent_loop = real
     assert started == []
@@ -93,7 +94,7 @@ def test_the_watchdog_resend_still_fires_on_a_session_nobody_stopped():
     s = p_live()
     started, real = p_spy_loop()
     try:
-        asyncio.run(unwedge_sidecar.force_recover(s.id, s))
+        asyncio.run(delegation_watchdog.force_recover(s.id, s))
     finally:
         agent_manager.run_agent_loop = real
     assert started == [s.id]
