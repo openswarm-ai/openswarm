@@ -32,7 +32,7 @@ def p_arm(session: AgentSession, times: int, monkeypatch: Any) -> None:
         calls["n"] += 1
         return calls["n"] * 10          # always more work than the last mark
 
-    monkeypatch.setattr(empty_finish, "p_count_tool_calls", p_tool_calls)
+    monkeypatch.setattr(empty_finish, "count_tool_calls", p_tool_calls)
     for _ in range(times):
         session.pending_continuation = False
         empty_finish.maybe_nudge_empty_finish(session, "sid")

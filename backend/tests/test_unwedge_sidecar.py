@@ -7,6 +7,7 @@ import asyncio
 import inspect
 
 from backend.apps.agents.manager.streaming import unwedge_sidecar
+from backend.apps.agents.manager.streaming import delegation_watchdog
 from backend.apps.agents.manager.streaming.unwedge_sidecar import (
     WEDGE_SECONDS,
     arm_wedge_watchdog,
@@ -160,10 +161,10 @@ def test_stale_terminal_children_do_not_settle_a_new_delegation(monkeypatch):
     kids = {"a": p_fake_kid("parent1", "completed", now - 600),
             "b": p_fake_kid("parent1", "stopped", now - 300)}
     monkeypatch.setattr(am_mod.agent_manager, "sessions", kids)
-    assert unwedge_sidecar.delegation_children_settled("parent1", since=now - 10) is False
+    assert delegation_watchdog.delegation_children_settled("parent1", since=now - 10) is False
     # Negative control: with the scope disabled (since=0 sees every child), the old verdict comes
     # back, proving the filter is the thing doing the work.
-    assert unwedge_sidecar.delegation_children_settled("parent1", since=0.0) is True
+    assert delegation_watchdog.delegation_children_settled("parent1", since=0.0) is True
 
 
 def test_fresh_terminal_child_settles_and_fresh_running_child_does_not(monkeypatch):
@@ -173,17 +174,17 @@ def test_fresh_terminal_child_settles_and_fresh_running_child_does_not(monkeypat
     call_started = now - 120
     monkeypatch.setattr(am_mod.agent_manager, "sessions",
                         {"a": p_fake_kid("parent1", "completed", now - 60)})
-    assert unwedge_sidecar.delegation_children_settled("parent1", since=call_started) is True
+    assert delegation_watchdog.delegation_children_settled("parent1", since=call_started) is True
     monkeypatch.setattr(am_mod.agent_manager, "sessions",
                         {"a": p_fake_kid("parent1", "running", now - 60)})
-    assert unwedge_sidecar.delegation_children_settled("parent1", since=call_started) is False
+    assert delegation_watchdog.delegation_children_settled("parent1", since=call_started) is False
 
 
 def test_no_children_is_not_settled(monkeypatch):
     # A run queued behind the admission cap has no child yet; waiting is legitimate.
     from backend.apps.agents import agent_manager as am_mod
     monkeypatch.setattr(am_mod.agent_manager, "sessions", {})
-    assert unwedge_sidecar.delegation_children_settled("parent1", since=0.0) is False
+    assert delegation_watchdog.delegation_children_settled("parent1", since=0.0) is False
 
 
 def test_mixed_stale_terminal_and_fresh_running_is_not_settled(monkeypatch):
@@ -193,4 +194,4 @@ def test_mixed_stale_terminal_and_fresh_running_is_not_settled(monkeypatch):
     monkeypatch.setattr(am_mod.agent_manager, "sessions",
                         {"old": p_fake_kid("parent1", "completed", now - 900),
                          "new": p_fake_kid("parent1", "running", now - 30)})
-    assert unwedge_sidecar.delegation_children_settled("parent1", since=now - 60) is False
+    assert delegation_watchdog.delegation_children_settled("parent1", since=now - 60) is False

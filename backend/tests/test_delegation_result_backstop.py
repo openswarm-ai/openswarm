@@ -13,7 +13,7 @@ from typing import Dict
 import pytest
 
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.streaming import unwedge_sidecar as u
+from backend.apps.agents.manager.streaming import delegation_watchdog as u
 
 
 def test_delegation_classifier_is_exact():

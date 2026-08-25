@@ -23,7 +23,8 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
 from backend.apps.agents.manager.permissions import path_gate
 from backend.apps.agents.manager.permissions.decision import effective_policy
-from backend.apps.agents.manager.streaming.unwedge_sidecar import arm_delegation_watchdog, arm_wedge_watchdog
+from backend.apps.agents.manager.streaming.delegation_watchdog import arm_delegation_watchdog
+from backend.apps.agents.manager.streaming.unwedge_sidecar import arm_wedge_watchdog
 from backend.apps.agents.manager.prompt.tool_catalog import gated_mcp_server_names
 from backend.apps.agents.manager.prompt.prompt_context import (
     TOOLSEARCH_LOOP_THRESHOLD,

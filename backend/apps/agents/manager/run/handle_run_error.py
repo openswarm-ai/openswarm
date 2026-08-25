@@ -30,7 +30,7 @@ from backend.apps.agents.core.is_router_unavailable_error import is_router_unava
 from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
 from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
 from backend.apps.agents.core import flight_recorder
-from backend.apps.agents.manager.run.empty_finish import p_count_tool_calls
+from backend.apps.agents.manager.run.empty_finish import count_tool_calls
 from backend.apps.agents.session_credential import api_key_twin_model
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ def p_report_model_error(subkind: str, session_id: str, session: AgentSession, t
             # while the theories were argued from inference (ENG-396).
             "session_id": session_id,
             "input_tokens": int((session.tokens or {}).get("input", 0) or 0),
-            "tool_calls": p_count_tool_calls(session),
+            "tool_calls": count_tool_calls(session),
             "compacted": bool(session.needs_fresh_session),
             "history_prefix_sent": session.history_prefix_sent,
             "delegated": p_used_delegation(session),

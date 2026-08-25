@@ -11,6 +11,7 @@ from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.session.history_compaction import get_branch_messages
+from backend.apps.agents.manager.run.empty_finish_telemetry import report_exhausted, report_nudge
 
 NUDGE_PROMPT = "Finish the task, then answer in plain text."
 
@@ -85,7 +86,7 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     if session.empty_finish_nudges >= NUDGE_HARD_CAP:
         surface_exhausted(session, session_id)
         return False
-    p_tool_calls = p_count_tool_calls(session)
+    p_tool_calls = count_tool_calls(session)
     if session.empty_finish_nudges >= 1 and p_tool_calls <= session.empty_finish_progress_mark:
         # The nudge bought no new work, so re-nudging would ping-pong a model with nothing left.
         # Refusing is right; ending the ask in SILENCE is not, and that is what the user actually
@@ -134,25 +135,8 @@ def maybe_nudge_empty_finish(session: AgentSession, session_id: str) -> bool:
     # 1.7.7, so the last turn now runs with no tools at all rather than being asked nicely.
     session.pending_continuation_toolless = p_final
     logger.warning(f"Agent {session_id}: turn finished with no answer after tool work; one hidden continue nudge")
-    try:
-        from backend.apps.service.client import submit_diagnostic
-        from backend.apps.agents.core import flight_recorder as p_fr
-        # A silent quit is the hardest class to diagnose after the fact, so it gets the same envelope
-        # as a hard error: without breadcrumbs you cannot see what the turn was doing when it gave up.
-        submit_diagnostic({
-            "kind": "empty_finish_nudge",
-            "session_id": session_id,
-            "model": session.model,
-            "input_tokens": p_input,
-            "compacted": bool(session.needs_fresh_session),
-            "tool_calls": p_tool_calls,
-            "nudge": session.empty_finish_nudges,
-            "flight": p_fr.build_envelope(
-                session_id, "empty_finish_nudge", "silent_quit", session.model, "stream", session.empty_finish_nudges,
-            ),
-        })
-    except Exception:
-        pass
+    report_nudge(session, session_id, p_input, p_tool_calls)
+
     return True
 
 @typechecked
@@ -197,32 +181,7 @@ def surface_exhausted(session: AgentSession, session_id: str) -> None:
     if getattr(session, "awaiting_reconnect", False) or p_recovery_retry_pending(session):
         return
     session.empty_finish_surfaced = True
-    # The ONE number that says whether any of the ladder reaches the user, and it was never recorded.
-    # We counted 1,695 nudges on one install and zero outcomes, so "1,695 silent quits" read as alarm
-    # when most of it is the ladder working: a nudge envelope means we POKED the agent, not that the
-    # user lost anything. This is the only event the user actually sees (ENG-399).
-    try:
-        from backend.apps.service.client import submit_diagnostic
-        from backend.apps.agents.core import flight_recorder as p_fr
-        p_showed_work = turn_showed_work(session)
-        submit_diagnostic({
-            "kind": "empty_finish_exhausted",
-            "subkind": "showed_work" if p_showed_work else "no_progress",
-            "session_id": session_id,
-            "model": session.model,
-            "input_tokens": int((session.tokens or {}).get("input", 0) or 0),
-            "tool_calls": p_count_tool_calls(session),
-            "nudges_spent": int(getattr(session, "empty_finish_nudges", 0) or 0),
-            "quits_this_session": int(getattr(session, "empty_finish_total", 0) or 0),
-            "history_prefix_sent": getattr(session, "history_prefix_sent", None),
-            "flight": p_fr.build_envelope(
-                session_id, "empty_finish_exhausted",
-                "showed_work" if p_showed_work else "no_progress",
-                session.model, "stream", int(getattr(session, "empty_finish_nudges", 0) or 0),
-            ),
-        })
-    except Exception:
-        logger.debug("submit_diagnostic empty_finish_exhausted failed", exc_info=True)
+    report_exhausted(session, session_id)
     try:
         import asyncio
         from backend.apps.agents.core.models import Message
@@ -258,7 +217,7 @@ def p_turn_produced_nothing(session: AgentSession) -> bool:
 
 
 @typechecked
-def p_count_tool_calls(session: AgentSession) -> int:
+def count_tool_calls(session: AgentSession) -> int:
     return sum(1 for m in get_branch_messages(session) if getattr(m, "role", "") == "tool_call")
 
 
