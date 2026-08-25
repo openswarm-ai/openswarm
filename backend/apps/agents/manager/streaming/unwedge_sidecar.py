@@ -237,6 +237,39 @@ def delegation_children_settled(session_id: str, since: float) -> bool:
 
 
 @typechecked
+def p_no_child_ever_born(session_id: str, since: float) -> bool:
+    """True when this delegation produced no child at all, which is the ONLY case liveness may judge.
+
+    Scoping matters: once a child exists, `delegation_children_settled` already governs and a live
+    child must keep the call alive however quiet the sidecar looks. Applying liveness more widely
+    killed a run with a healthy child in the existing backstop test, which is the same over-broad
+    mistake ENG-327 paid 39 dead sidecars for.
+    """
+    from backend.apps.agents.agent_manager import agent_manager
+    for p_s in agent_manager.sessions.values():
+        if getattr(p_s, "parent_session_id", None) != session_id or getattr(p_s, "mode", "") != "browser-agent":
+            continue
+        p_born = getattr(p_s, "created_at", None)
+        try:
+            if p_born is not None and p_born.timestamp() >= since:
+                return False
+        except Exception:
+            continue
+    return True
+
+
+@typechecked
+def p_sidecar_is_dead(session_id: str) -> bool:
+    """A stale heartbeat means the PROCESS stopped, which no amount of patience fixes.
+
+    Deliberately separate from `delegation_children_settled`: that answers "is the work done", this
+    answers "is anything still running". Conflating them is what left a frozen sidecar unbounded.
+    An absent heartbeat file (older sidecar builds) reads as dead, matching `wedge_verdict`.
+    """
+    return heartbeat_age(session_id) > HEARTBEAT_FRESH_S
+
+
+@typechecked
 def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
     """Recurring, slow-cadence sibling of arm_wedge_watchdog for delegation tools. Fires the same
     unwedge+retry only after TWO consecutive checks (>=75s apart) see every child terminal while
@@ -262,6 +295,17 @@ def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> No
             settled = delegation_children_settled(session_id, started)
         except Exception:
             settled = False
+        # A sidecar that froze BEFORE spawning anything produces no children ever, so the settled
+        # test above can never become true and the call hangs with no bound at all: exempt from the
+        # 25s deadline was silently also exempt from the 300s ceiling. Reported by Haik Decie, whose
+        # call only returned when the harness restarted the server by hand. The discriminator is
+        # LIVENESS, not time: a run queued behind the admission cap has a beating sidecar and is
+        # never touched, while a dead process is an observation rather than a guess (ENG-402).
+        if not settled and p_no_child_ever_born(session_id, started) and p_sidecar_is_dead(session_id):
+            settled = True
+            logger.warning(
+                "delegation sidecar on %s has not heartbeat in %.0fs with no child ever spawned; "
+                "treating as dead rather than slow", session_id[:8], heartbeat_age(session_id))
         settled_streak["n"] = settled_streak["n"] + 1 if settled else 0
         if settled_streak["n"] == 2:
             logger.warning(

@@ -82,11 +82,26 @@ async def test_a_finished_call_disarms_and_a_live_child_resets_the_streak(monkey
     u.arm_delegation_watchdog(P_Ctx(sess, {}), "tu-gone", "mcp__openswarm-core__CreateBrowserAgent")
 
     # Oscillating child (settles once, then a new child appears): the streak must reset, never fire.
+    # The child has to actually EXIST in the manager, not just in the stub: the frozen-sidecar door
+    # (ENG-402) is scoped to "no child was ever born", so a test whose premise is "a live child"
+    # must hold one, or it is asserting about a case it never created.
+    from datetime import datetime, timezone
+    from backend.apps.agents import agent_manager as am
     seq = iter([True, False, True, False, True, False])
     monkeypatch.setattr(u, "delegation_children_settled", lambda sid, since: next(seq, False))
     u.arm_delegation_watchdog(P_Ctx(sess, {"tu-2": 0.0}), "tu-2", "mcp__openswarm-core__CreateBrowserAgent")
-    await asyncio.sleep(0.4)
-    assert "unwedge" not in fired, "a merely-slow delegation must never be recovered out from under itself"
+    # Born AFTER the call started, which is the only kind `since` counts (a parent's SECOND
+    # delegation must not read its first run's children as this run's, ENG-327).
+    kid = AgentSession(id="kid-3", name="k", model="sonnet")
+    kid.parent_session_id = "par-3"
+    kid.mode = "browser-agent"
+    kid.created_at = datetime.now(timezone.utc)
+    am.agent_manager.sessions["kid-3"] = kid
+    try:
+        await asyncio.sleep(0.4)
+        assert "unwedge" not in fired, "a merely-slow delegation must never be recovered out from under itself"
+    finally:
+        am.agent_manager.sessions.pop("kid-3", None)
 
 
 def test_quick_tools_never_arm_the_delegation_watchdog():
