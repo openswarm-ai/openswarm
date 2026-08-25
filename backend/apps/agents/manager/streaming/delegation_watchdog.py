@@ -88,6 +88,14 @@ def no_child_ever_born(session_id: str, since: float) -> bool:
 
 
 @typechecked
+def p_ended_by_user(session_id: str) -> bool:
+    """True when a person ended this session. Nothing automatic may act on it after that."""
+    from backend.apps.agents.agent_manager import agent_manager
+    p_s = agent_manager.sessions.get(session_id)
+    return p_s is not None and bool(getattr(p_s, "ended_by_user", False))
+
+
+@typechecked
 def sidecar_is_dead(session_id: str) -> bool:
     """A stale heartbeat means the PROCESS stopped, which no amount of patience fixes.
 
@@ -119,6 +127,14 @@ def arm_delegation_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> No
             return
         session_id = getattr(ctx, "session_id", "")
         if not session_id:
+            return
+        # A HUMAN'S STOP OUTRANKS EVERY RECOVERY PATH, and it is checked HERE rather than inside one
+        # of the predicates below. It used to live only inside delegation_children_settled, where a
+        # False meant "do not recover"; the liveness door then overrode that False to True and
+        # resurrected the very session the user had just stopped, because a stopped browser agent
+        # looks exactly like a dead sidecar (no child, no heartbeat). That is ENG-369 coming back
+        # through a side door. At the top, no future predicate can reintroduce it (ENG-402).
+        if p_ended_by_user(session_id):
             return
         try:
             settled = delegation_children_settled(session_id, started)

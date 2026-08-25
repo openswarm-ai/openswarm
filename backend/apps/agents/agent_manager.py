@@ -80,6 +80,14 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
             logger.info(f"continuation for {session_id} superseded by a user message while held at the machine-turn ceiling")
             await self.p_settle_unstarted_continuation(session_id)
             return
+        # Messaging refuses a machine send to a session a human ended, but it refuses SILENTLY, and
+        # arming already promised "running" (ENG-390). Without this the promise is never released
+        # and the card spins forever on a chat the user stopped. Checked here so the reliance on the
+        # chokepoint is explicit rather than a coincidence two files apart.
+        if getattr(p_now, "ended_by_user", False):
+            logger.info(f"continuation for {session_id} stood down: a human ended this chat")
+            await self.p_settle_unstarted_continuation(session_id)
+            return
         try:
             await self.send_message(session_id, prompt, hidden=True)
         except Exception:
