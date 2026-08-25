@@ -278,7 +278,7 @@ click==8.4.1 \
     # via
     #   rich-toolkit
     #   uvicorn
-colorama==0.4.6 ; sys_platform == 'win32' or platform_system == 'Windows' \
+colorama==0.4.6 ; sys_platform == 'win32' \
     --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
     --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
     # via
@@ -1514,6 +1514,10 @@ trafilatura==2.0.0 \
     --hash=sha256:77eb5d1e993747f6f20938e1de2d840020719735690c840b9a1024803a4cd51d \
     --hash=sha256:ceb7094a6ecc97e72fea73c7dba36714c5c5b577b6470e4520dca893706d6247
     # via -r backend/requirements.txt
+truststore==0.10.4 \
+    --hash=sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301 \
+    --hash=sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981
+    # via -r backend/requirements.txt
 typeguard==4.4.2 \
     --hash=sha256:77a78f11f09777aeae7fa08585f33b5f4ef0e7335af40005b0c422ed398ff48c \
     --hash=sha256:a6f1065813e32ef365bc3b3f503af8a96f9dd4e0033a02c28c4a4983de8c6c49
@@ -1543,7 +1547,7 @@ typing-inspection==0.4.2 \
     #   mcp
     #   pydantic
     #   pydantic-settings
-tzdata==2026.2 ; platform_system == 'Windows' \
+tzdata==2026.2 ; sys_platform == 'win32' \
     --hash=sha256:9173fde7d80d9018e02a662e168e5a2d04f87c41ea174b139fbef642eda62d10 \
     --hash=sha256:bbe9af844f658da81a5f95019480da3a89415801f6cc966806612cc7169bffe7
     # via tzlocal

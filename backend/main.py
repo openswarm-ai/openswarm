@@ -15,6 +15,11 @@ if not p_backend_logger.handlers:
 
 logger = logging.getLogger(__name__)
 
+from backend.config.os_trust import install_os_trust
+
+# Before any app module can build an httpx client, or the stock certifi-only context would be baked in.
+install_os_trust()
+
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi import Request
 

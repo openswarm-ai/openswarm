@@ -1,0 +1,60 @@
+name: os-trust-drill
+
+# ENG-407: on Windows ThinkPads sign-in 502'd with CERTIFICATE_VERIFY_FAILED because the Python backend trusted
+# certifi's file while the browser trusted the machine's own root store. The fix routes the backend through the
+# OS store. That is only provable on a real OS with a real root installed, so this job mints a throwaway root,
+# installs it the way an endpoint tool would, and proves both directions plus the real sign-in endpoint.
+
+on:
+  push:
+    paths:
+      - 'backend/config/os_trust.py'
+      - 'backend/main.py'
+      - 'backend/apps/auth/router.py'
+      - 'backend/requirements.lock'
+      - 'scripts/os_trust_drill.py'
+      - '.github/workflows/os-trust-drill.yml'
+  workflow_dispatch:
+
+jobs:
+  drill:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install the backend's locked dependencies (the same set the packaged python-env ships)
+        run: pip install -r backend/requirements.lock
+
+      - name: Mint a throwaway root and a leaf signed under it
+        run: python scripts/os_trust_drill.py mint drill-ca
+
+      - name: Install the root into the OS store the way an endpoint tool would (Windows)
+        if: runner.os == 'Windows'
+        run: certutil -addstore -f Root drill-ca/root.pem
+
+      - name: Install the root into the OS store the way an endpoint tool would (macOS)
+        if: runner.os == 'macOS'
+        run: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain drill-ca/root.pem
+
+      - name: Stock certifi refuses the OS root, the armed backend accepts it, the cloud verifies
+        shell: bash
+        run: python scripts/os_trust_drill.py verify drill-ca
+
+      - name: The real sign-in endpoint, all three directions
+        shell: bash
+        run: |
+          set -e
+          python scripts/os_trust_drill.py signin armed
+          python scripts/os_trust_drill.py signin armed-foreign-ca
+          python scripts/os_trust_drill.py signin stock-foreign-ca
