@@ -197,6 +197,32 @@ def surface_exhausted(session: AgentSession, session_id: str) -> None:
     if getattr(session, "awaiting_reconnect", False) or p_recovery_retry_pending(session):
         return
     session.empty_finish_surfaced = True
+    # The ONE number that says whether any of the ladder reaches the user, and it was never recorded.
+    # We counted 1,695 nudges on one install and zero outcomes, so "1,695 silent quits" read as alarm
+    # when most of it is the ladder working: a nudge envelope means we POKED the agent, not that the
+    # user lost anything. This is the only event the user actually sees (ENG-399).
+    try:
+        from backend.apps.service.client import submit_diagnostic
+        from backend.apps.agents.core import flight_recorder as p_fr
+        p_showed_work = turn_showed_work(session)
+        submit_diagnostic({
+            "kind": "empty_finish_exhausted",
+            "subkind": "showed_work" if p_showed_work else "no_progress",
+            "session_id": session_id,
+            "model": session.model,
+            "input_tokens": int((session.tokens or {}).get("input", 0) or 0),
+            "tool_calls": p_count_tool_calls(session),
+            "nudges_spent": int(getattr(session, "empty_finish_nudges", 0) or 0),
+            "quits_this_session": int(getattr(session, "empty_finish_total", 0) or 0),
+            "history_prefix_sent": getattr(session, "history_prefix_sent", None),
+            "flight": p_fr.build_envelope(
+                session_id, "empty_finish_exhausted",
+                "showed_work" if p_showed_work else "no_progress",
+                session.model, "stream", int(getattr(session, "empty_finish_nudges", 0) or 0),
+            ),
+        })
+    except Exception:
+        logger.debug("submit_diagnostic empty_finish_exhausted failed", exc_info=True)
     try:
         import asyncio
         from backend.apps.agents.core.models import Message

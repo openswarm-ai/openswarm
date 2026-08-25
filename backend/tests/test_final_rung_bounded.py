@@ -97,3 +97,43 @@ def test_the_drill_seam_is_declared_and_ignores_junk(monkeypatch):
     assert final_rung_bound() == FINAL_RUNG_BOUND_TOKENS, "junk must never silently disarm the bound"
     monkeypatch.setenv("OSW_FINAL_RUNG_BOUND_TOKENS", "-5")
     assert final_rung_bound() == FINAL_RUNG_BOUND_TOKENS
+
+
+def test_the_outcome_the_user_sees_is_recorded(monkeypatch):
+    """We counted 1,695 nudges on one install and ZERO outcomes.
+
+    A nudge envelope means we poked the agent, not that the user lost anything: about a third of
+    quits recover at each rung, which is why the biggest reporter of bugs never reported this class
+    at all. `surface_exhausted` is the only event the user actually sees, and it emitted nothing, so
+    "how often does the recovery fail" was unanswerable.
+    """
+    sent = []
+    import backend.apps.service.client as client
+    monkeypatch.setattr(client, "submit_diagnostic", lambda d: sent.append(d), raising=True)
+
+    s = p_deep_session(90_000, ef.NUDGE_HARD_CAP)
+    s.empty_finish_nudges = ef.NUDGE_HARD_CAP
+    ef.maybe_nudge_empty_finish(s, s.id)
+
+    kinds = [d.get("kind") for d in sent]
+    assert "empty_finish_exhausted" in kinds, f"the ladder ran out and said nothing: {kinds}"
+    env = next(d for d in sent if d["kind"] == "empty_finish_exhausted")
+    assert env["session_id"] == s.id
+    assert env["nudges_spent"] == ef.NUDGE_HARD_CAP
+    assert env["subkind"] in ("showed_work", "no_progress"), \
+        "the two cases need different copy, so they need different subkinds"
+
+
+def test_a_recovered_quit_never_reports_an_exhaustion(monkeypatch):
+    # The control: a nudge that fires is the system WORKING, and must not be counted as a failure.
+    sent = []
+    import backend.apps.service.client as client
+    import backend.apps.agents.manager.context_budget as cb
+    monkeypatch.setattr(client, "submit_diagnostic", lambda d: sent.append(d), raising=True)
+    monkeypatch.setattr(cb, "maybe_compact", lambda s, force=False: True, raising=True)
+
+    s = p_deep_session(90_000, 0)
+    ef.maybe_nudge_empty_finish(s, s.id)
+    kinds = [d.get("kind") for d in sent]
+    assert "empty_finish_nudge" in kinds
+    assert "empty_finish_exhausted" not in kinds, "a first nudge is recovery, not failure"
