@@ -59,3 +59,25 @@ file "$OUT/whisper-server"
 if otool -L "$OUT/whisper-server" | grep -qE "/opt/homebrew|/usr/local"; then
     echo "[whisper] ERROR: binary links non-system libraries"; otool -L "$OUT/whisper-server"; exit 1
 fi
+
+# Bundle the default dictation model so fn works the instant the app opens, with no network at all.
+# resolveModelFile (voice/whisperModels.js) already looks for DEFAULT_MODEL_ID here in resourceDir
+# before anything in userData, so staging the file is the whole change. Costs ~181MB in the DMG;
+# the alternative is a user pressing fn into silence while 190MB downloads behind them.
+MODEL_FILE="ggml-small.en-q5_1.bin"
+MODEL_SHA="bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
+MODEL_SRC="$(cd "$(dirname "$0")/.." && pwd)/whisper/$MODEL_FILE"
+if [[ -f "$MODEL_SRC" ]]; then
+    # Verify BEFORE copying: a truncated model ships silently and dies at the first press.
+    GOT="$(shasum -a 256 "$MODEL_SRC" | cut -d' ' -f1)"
+    if [[ "$GOT" != "$MODEL_SHA" ]]; then
+        echo "[whisper] ERROR: $MODEL_FILE checksum mismatch (got $GOT); refusing to bundle a corrupt model"
+        exit 1
+    fi
+    cp "$MODEL_SRC" "$OUT/$MODEL_FILE"
+    echo "[whisper] bundled model -> $OUT/$MODEL_FILE ($(du -h "$OUT/$MODEL_FILE" | cut -f1))"
+else
+    # Not fatal: the app still prefetches at boot. But say it, because a build without the model
+    # silently reintroduces the first-press wait this was added to remove.
+    echo "[whisper] WARNING: $MODEL_SRC missing; shipping WITHOUT a bundled model (first fn press will wait on a 190MB download)"
+fi
