@@ -73,12 +73,39 @@ P_PROVIDER_ENVELOPE = re.compile(
     re.IGNORECASE,
 )
 
-P_CONTENT_POLICY_BLOCK = re.compile(r"blocked\s+as\s+it\s+seems\s+to\s+violate|legal/aup|acceptable\s+use\s+policy", re.IGNORECASE)
+# "Usage Policy" is the wording the CLI itself prints; "Acceptable Use Policy" is the API's. Both are
+# the same refusal, and matching only one under-counted the class for days.
+P_CONTENT_POLICY_BLOCK = re.compile(
+    r"blocked\s+as\s+it\s+seems\s+to\s+violate"
+    r"|violat\w*\s+(?:our\s+)?(?:acceptable\s+use|usage)\s+policy"
+    r"|legal/aup"
+    r"|acceptable\s+use\s+policy"
+    r"|duplicating\s+model\s+outputs",
+    re.IGNORECASE,
+)
+
+# The CLI hands the filter's verdict back as if the model had written it: no "API Error:", no status
+# code, just prose. It is still the provider talking, and letting it stand as assistant content is
+# exactly how policy language ends up in every later request in that chat.
+P_REFUSAL_OPENER = re.compile(r"unable\s+to\s+respond\s+to\s+this\s+request", re.IGNORECASE)
+P_REFUSAL_OPENS_WITHIN = 60
 
 
 @typechecked
 def is_content_policy_block(text: str) -> bool:
     return bool(P_CONTENT_POLICY_BLOCK.search(text))
+
+
+@typechecked
+def opens_with_provider_refusal(text: str) -> bool:
+    """A refusal that OPENS the message, the same "must open it" rule the router-stamp check uses.
+
+    An answer that merely mentions a policy keeps its work; only a reply that is nothing but the
+    refusal is treated as the provider speaking.
+    """
+    stripped = text.strip()
+    p_at = P_REFUSAL_OPENER.search(stripped)
+    return bool(p_at and p_at.start() <= P_REFUSAL_OPENS_WITHIN and is_content_policy_block(stripped))
 
 
 # Asking one agent to reproduce another's work verbatim is the shape the subscription lane refuses ("duplicating model outputs"). Our own handoff prompts are model-authored and land in a forked child as its user turn, which is where a third of one user's blocks came from; one agent even diagnosed itself: "my phrasing about 'dumping verbatim' tripped it".
@@ -115,7 +142,7 @@ def neutralize_provider_refusal(text: str) -> str:
     # matches; replacing it would delete the user's work and tell nobody, which is a worse bug than
     # the one this guard exists for. A relayed refusal is always wrapped in a provider ENVELOPE, and
     # prose about policy never is, so require both before anything is thrown away.
-    if not P_PROVIDER_ENVELOPE.search(text):
+    if not P_PROVIDER_ENVELOPE.search(text) and not opens_with_provider_refusal(text):
         return text
     if is_content_policy_block(text) or "unable to respond to this request" in text.lower():
         return ("That agent could not answer this request and returned no usable result. "

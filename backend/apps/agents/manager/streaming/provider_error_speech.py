@@ -32,7 +32,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from typeguard import typechecked
 
-from backend.apps.agents.core.error_classify import is_content_policy_block
+from backend.apps.agents.core.error_classify import is_content_policy_block, opens_with_provider_refusal
 
 # Written by the CLI in front of anything upstream failed with.
 P_ENVELOPE_PREFIX = "api error:"
@@ -102,6 +102,10 @@ def looks_like_provider_envelope(text: str) -> bool:
     if not stripped:
         return False
     if stripped[: len(P_ENVELOPE_PREFIX)].lower() == P_ENVELOPE_PREFIX:
+        return True
+    # The CLI prints the policy filter's verdict as plain prose with no stamp at all, so the shape
+    # check has to know it or a refusal stands as the model's own answer (ENG-411).
+    if opens_with_provider_refusal(stripped):
         return True
     # A router stamp is only an envelope when it opens the message; quoted mid-prose it is speech.
     m = P_ROUTER_STAMP.search(stripped)

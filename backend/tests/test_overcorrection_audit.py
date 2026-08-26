@@ -204,3 +204,19 @@ def test_settling_never_stomps_a_live_turn():
     body = src[i:i + 800]
     assert "not p_task.done()" in body, "a live task must veto the settle"
     assert 'status != "running"' in body, "and an already-terminal session is left alone"
+
+
+# -------------------------------------------- the CLI-prose policy refusal (ENG-411, 2026-08-26)
+
+def test_a_terms_summary_is_not_mistaken_for_the_filter_refusing():
+    """The guard reads bare prose with no envelope, so the innocent case is an agent that was ASKED
+    about a usage policy. Eating that reply is silent work loss, a worse row than the bug."""
+    from backend.apps.agents.core.error_classify import neutralize_provider_refusal
+    from backend.apps.agents.manager.streaming.provider_error_speech import classify_provider_error
+    for innocent in (
+        "Their Usage Policy bans reverse engineering and duplicating model outputs, per section 3.",
+        "I'm unable to respond to this request because the file you named does not exist.",
+        "Summary: the Acceptable Use Policy has four prohibited-use categories, listed below.",
+    ):
+        assert neutralize_provider_refusal(innocent) == innocent
+        assert classify_provider_error(innocent) is None
