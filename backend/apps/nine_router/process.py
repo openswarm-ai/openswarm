@@ -16,18 +16,48 @@ import logging
 import os
 import secrets
 import shutil
+import signal
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import time
-from typing import Any
+from typing import Any, List, Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 NINE_ROUTER_PORT = 20128
+
+
+def stale_router_pids() -> List[int]:
+    """PIDs LISTENING on our port, and only those.
+
+    This was `pkill -f next-server`, which matches by process NAME and therefore killed every
+    next-server on the machine: the user's own packaged OpenSwarm, another worktree's dev stack,
+    an unrelated Next.js project. Measured 2026-08-24: a `pytest backend/tests` run killed the
+    running app's router (ENG-393). A destructive action must be scoped to the thing it owns.
+    """
+    import subprocess as p_sp
+    try:
+        p_out = p_sp.run(
+            ["lsof", "-nP", f"-iTCP:{NINE_ROUTER_PORT}", "-sTCP:LISTEN", "-t"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+    except Exception:
+        return []
+    return [int(x) for x in p_out.split() if x.strip().isdigit()]
+
+
+def router_kill_held_because() -> Optional[str]:
+    """Why this process must not kill a router it did not start, or None to proceed."""
+    if os.environ.get("OSW_NEVER_KILL_ROUTER") == "1":
+        return "this process was told never to"
+    if "pytest" in sys.modules:
+        return "a test run has no business killing a live router"
+    return None
 NINE_ROUTER_URL = f"http://localhost:{NINE_ROUTER_PORT}"
 NINE_ROUTER_API = f"{NINE_ROUTER_URL}/api"
 NINE_ROUTER_V1 = f"{NINE_ROUTER_URL}/v1"
@@ -521,13 +551,21 @@ async def p_ensure_running_impl():
                 return
             import subprocess as p_sp
             try:
-                result = p_sp.run(
-                    ["pgrep", "-f", "next-server"],
-                    capture_output=True, text=True, timeout=3,
-                )
-                if result.stdout.strip():
+                p_stale = stale_router_pids()
+                if p_stale and router_kill_held_because():
+                    logger.warning(
+                        "9Router on port %d is not ours and %s, so it is being left alone; "
+                        "this run will use whatever is already listening",
+                        NINE_ROUTER_PORT, router_kill_held_because(),
+                    )
+                    return
+                if p_stale:
                     logger.info("Dev mode: killing stale standalone 9Router to use next dev instead")
-                    p_sp.run(["pkill", "-f", "next-server"], timeout=5)
+                    for p_pid in p_stale:
+                        try:
+                            os.kill(p_pid, signal.SIGTERM)
+                        except OSError:
+                            pass
                     # The port is about to go dead; drop the positive-cache so the start-loop below actually re-probes instead of trusting the killed server's stale "ready".
                     p_is_running_last_ok = 0.0
                     await asyncio.sleep(2)

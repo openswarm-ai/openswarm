@@ -37,6 +37,8 @@ def _isolate_browser_state(monkeypatch):
     # whatever tree the suite runs from (ENG-388). The pytest-in-sys.modules fallback still exists,
     # but a gate that depends on an accident fails silently the day the accident changes.
     monkeypatch.setenv("OSW_DISABLE_AUTO_RESUME", "1")
+    # A suite run must never kill a router it did not start; that is the user's app (ENG-393).
+    monkeypatch.setenv("OSW_NEVER_KILL_ROUTER", "1")
     monkeypatch.setenv("OSW_PRESTAGE", "0")
     monkeypatch.setenv("OSW_FASTREAD_HOP", "0")
     monkeypatch.setenv("OSW_PRELUDE_TRIM", "0")
