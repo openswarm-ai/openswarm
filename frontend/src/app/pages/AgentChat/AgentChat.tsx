@@ -275,6 +275,17 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       if (b.docked_to !== (sessionIdProp || routeId)) continue;
       if (!best || zOf(b) > bestZ) { best = b; bestZ = zOf(b); }
     }
+    // Apps dock into the SAME slot but live in viewCards, so this saw none of them: a docked app
+    // left width/height at 0, the slot fell back to its generic box with no aspectRatio, and the
+    // app contain-fitted inside a frame never shaped for it -- the grey margins either side in
+    // Eric's screenshot (ENG-410). One slot per chat, so the same z-order pick decides both.
+    const p_views = (st.dashboardLayout as { viewCards?: Record<string, { id?: string; docked_to?: string | null; parent_session_id?: string | null; freed?: boolean; width: number; height: number; zOrder: number }> }).viewCards ?? {};
+    for (const [p_key, v] of Object.entries(p_views)) {
+      const p_dock = v.docked_to ?? ((v.parent_session_id && !v.freed) ? v.parent_session_id : null);
+      if (p_dock !== (sessionIdProp || routeId)) continue;
+      const p_z = st.dashboardLayout.zOrders[p_key] ?? v.zOrder ?? 0;
+      if (!best || p_z > bestZ) { best = { browser_id: p_key, width: v.width, height: v.height, zOrder: v.zOrder }; bestZ = p_z; }
+    }
     return best;
   };
   const dockedSurfaceW = useAppSelector((st) => pickTopDocked(st)?.width ?? 0);

@@ -51,7 +51,7 @@ import WindowControls from './WindowControls';
 import { useTiledCard } from './useTiledCard';
 import { useCardTiling } from './useCardTiling';
 import { getMinimizedShot, saveMinimizedShot } from '../desktop/minimizedShots';
-import { setBrowserFollowing } from '../desktop/followingBrowsers';
+import { setSurfaceFollowing } from '../desktop/followingBrowsers';
 import { removeBrowserCardCleanly } from '@/shared/browserTeardown';
 import { createSelector } from '@reduxjs/toolkit';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -1133,8 +1133,8 @@ const BrowserCard: React.FC<Props> = ({
   // Tell the pill a live miniature is underneath it, so it suppresses its own artifacts instead of
   // stacking a widget/frozen shot on top of the browser (Eric's overlap screenshots).
   useEffect(() => {
-    if (tuckTo) setBrowserFollowing(tuckTo, browserId, followsParent);
-    return () => { if (tuckTo) setBrowserFollowing(tuckTo, browserId, false); };
+    if (tuckTo) setSurfaceFollowing(tuckTo, browserId, followsParent);
+    return () => { if (tuckTo) setSurfaceFollowing(tuckTo, browserId, false); };
   }, [followsParent, tuckTo, browserId]);
   // Under the pill, not beside it: beside-at-pill-height read as a detached window fighting the
   // pill's ring and shadow (Eric, 2026-08-17); tucked below the collapsed pill it reads as the

@@ -83,6 +83,52 @@ const BrowserEmbed: React.FC<{ c: ClaudeTokens; browserId: string; title: string
   );
 };
 
+
+// An app built in this chat gets the same treatment as a browser: a titled frame with a real view
+// of the thing, not a text row. It was a one-line link while browsers showed a live picture, which
+// is the asymmetry Eric reported ("it should show that it's inside the agent like browser agents").
+// Uses the stored `thumbnail` rather than a live capture: app cards never register a webview in
+// browserRegistry, so captureBrowserShot cannot see them, and inventing that path blind is how a
+// preview becomes a renderer crash.
+const AppEmbed: React.FC<{ c: ClaudeTokens; name: string; thumbnail: string | null; live: boolean; onOpen: () => void }> = ({ c, name, thumbnail, live, onOpen }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 8 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.25 }}
+    style={{ width: '100%' }}
+  >
+    <Box
+      onClick={onOpen}
+      sx={{
+        border: `1px solid ${c.border.subtle}`, borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
+        bgcolor: c.bg.elevated, transition: 'border-color 150ms, box-shadow 150ms',
+        '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.md },
+        '&:hover .osw-embed-open': { opacity: 1 },
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.75, borderBottom: `1px solid ${c.border.subtle}` }}>
+        <GridViewRoundedIcon sx={{ fontSize: 14, color: c.accent.primary, flexShrink: 0 }} />
+        <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.secondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {name}
+        </Typography>
+        <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, flex: 1 }}>Built in this chat</Typography>
+        {live && <Box sx={{ width: 6, height: 6, borderRadius: '50%', background: c.status.success, flexShrink: 0 }} />}
+        <Box className="osw-embed-open" sx={{ display: 'flex', alignItems: 'center', gap: 0.4, opacity: 0, transition: 'opacity 120ms', color: c.text.muted, flexShrink: 0 }}>
+          <OpenInFullRoundedIcon sx={{ fontSize: 12 }} />
+          <Typography sx={{ fontSize: '0.625rem', fontWeight: 600 }}>Open on canvas</Typography>
+        </Box>
+      </Box>
+      {thumbnail ? (
+        <Box component="img" src={thumbnail} alt="" sx={{ display: 'block', width: '100%', maxHeight: 260, objectFit: 'cover', objectPosition: 'top' }} />
+      ) : (
+        <Box sx={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: c.text.ghost, fontSize: '0.75rem' }}>
+          {live ? 'Building...' : 'Preview not captured yet'}
+        </Box>
+      )}
+    </Box>
+  </motion.div>
+);
+
 const InlineSurfaceEmbeds: React.FC<{ c: ClaudeTokens; sessionId: string; fullscreen?: boolean }> = ({ c, sessionId, fullscreen }) => {
   const dispatch = useAppDispatch();
   const browserCards = useAppSelector((s) => s.dashboardLayout.browserCards);
@@ -141,28 +187,14 @@ const InlineSurfaceEmbeds: React.FC<{ c: ClaudeTokens; sessionId: string; fullsc
         );
       })}
       {linkedApps.map((o) => (
-        <Box
+        <AppEmbed
           key={o.id}
-          onClick={() => popOut(() => dispatch(focusViewCard(o.id)))}
-          sx={{
-            display: 'flex', alignItems: 'center', gap: 1.25, px: 1.25, py: 1,
-            border: `1px solid ${c.border.subtle}`, borderRadius: 2, cursor: 'pointer',
-            bgcolor: c.bg.elevated, transition: 'border-color 150ms',
-            '&:hover': { borderColor: c.border.strong },
-          }}
-        >
-          <GridViewRoundedIcon sx={{ fontSize: 16, color: c.accent.primary, flexShrink: 0 }} />
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.primary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {o.name || 'App'}
-            </Typography>
-            <Typography sx={{ fontSize: '0.6875rem', color: c.text.muted }}>Built in this chat</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, color: c.text.muted }}>
-            <OpenInFullRoundedIcon sx={{ fontSize: 12 }} />
-            <Typography sx={{ fontSize: '0.625rem', fontWeight: 600 }}>Open</Typography>
-          </Box>
-        </Box>
+          c={c}
+          name={o.name || 'App'}
+          thumbnail={o.thumbnail ?? null}
+          live={live}
+          onOpen={() => popOut(() => dispatch(focusViewCard(o.id)))}
+        />
       ))}
     </Box>
   );

@@ -12,6 +12,7 @@ import { Output, SERVE_BASE, updateOutput } from '@/shared/state/outputsSlice';
 import { setViewCardPosition, setViewDocked, setViewCardSize, setActiveViewCardId, recordClosedCard, addViewCard, toggleMinimizeCard, activateViewCardPreview } from '@/shared/state/dashboardLayoutSlice';
 import { removeViewCardCleanly } from '@/shared/viewTeardown';
 import { saveMinimizedShot } from '../desktop/minimizedShots';
+import { setSurfaceFollowing } from '../desktop/followingBrowsers';
 import { requestAppSlot, releaseAppSlot, subscribeAppBudget } from '@/shared/appWebviewBudget';
 import { expandSession } from '@/shared/state/agentsSlice';
 import WindowControls from './WindowControls';
@@ -599,6 +600,12 @@ const DashboardViewCard: React.FC<Props> = ({
   // Collapsed parent = the app tucks under the pill as a 320px miniature, EVERY stage, no shadow;
   // the same contract BrowserCard carries (Eric's screenshots: a full-size app half over the pill).
   const followsParent = !!tuckTo && !!dockParentCard && !dockParentExpanded && !isTiled && !isMinimized;
+  // Announce the tucked app so the pill suppresses its own artifacts. BrowserCard has always done
+  // this; the app card never did, which is the whole of the overlap bug (ENG-410).
+  useEffect(() => {
+    if (tuckTo) setSurfaceFollowing(tuckTo, output.id, followsParent);
+    return () => { if (tuckTo) setSurfaceFollowing(tuckTo, output.id, false); };
+  }, [followsParent, tuckTo, output.id]);
   const followScale = Math.min(1, 320 / displayW);
   const followX = followsParent && dockParentCard ? dockParentCard.x : null;
   const followY = followsParent && dockParentCard ? dockParentCard.y + 52 : null;
