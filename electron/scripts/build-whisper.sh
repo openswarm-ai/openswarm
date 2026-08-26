@@ -13,12 +13,27 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"   # electron/
 OUT="$HERE/build-staging/whisper/$ARCH"
 SRC="$HERE/build-staging/whisper-src"
 
-# Idempotent across publish reruns: a staged binary from the same pinned version is reused.
-if [[ -f "$OUT/whisper-server" && -f "$OUT/.version" && "$(cat "$OUT/.version")" == "$WHISPER_VERSION" ]]; then
+MODEL_FILE="ggml-small.en-q5_1.bin"
+MODEL_SHA="bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
+MODEL_SRC="$(cd "$(dirname "$0")/.." && pwd)/whisper/$MODEL_FILE"
+MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
+
+
+# Idempotent across publish reruns: a staged binary from the same pinned version is reused. The MODEL
+# has to be part of that condition, or a rerun whose binary is cached exits here and stages no model.
+if [[ -f "$OUT/whisper-server" && -f "$OUT/.version" && "$(cat "$OUT/.version")" == "$WHISPER_VERSION" \
+      && ( -f "$OUT/$MODEL_FILE" || "${OPENSWARM_SKIP_WHISPER_MODEL:-}" == "1" ) ]]; then
     echo "[whisper] $ARCH already staged at $WHISPER_VERSION, skipping"
     exit 0
 fi
 
+# The binary may be cached while the model is not, so building it again is wasted work; jump ahead.
+if [[ -f "$OUT/whisper-server" && -f "$OUT/.version" && "$(cat "$OUT/.version")" == "$WHISPER_VERSION" ]]; then
+    echo "[whisper] $ARCH binary already staged; model missing, staging that only"
+    SKIP_BUILD=1
+fi
+
+if [[ "${SKIP_BUILD:-}" != "1" ]]; then
 if [[ ! -d "$SRC/.git" ]]; then
     git clone --depth 1 --branch "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp "$SRC"
 else
@@ -59,25 +74,36 @@ file "$OUT/whisper-server"
 if otool -L "$OUT/whisper-server" | grep -qE "/opt/homebrew|/usr/local"; then
     echo "[whisper] ERROR: binary links non-system libraries"; otool -L "$OUT/whisper-server"; exit 1
 fi
+fi
 
 # Bundle the default dictation model so fn works the instant the app opens, with no network at all.
 # resolveModelFile (voice/whisperModels.js) already looks for DEFAULT_MODEL_ID here in resourceDir
 # before anything in userData, so staging the file is the whole change. Costs ~181MB in the DMG;
 # the alternative is a user pressing fn into silence while 190MB downloads behind them.
-MODEL_FILE="ggml-small.en-q5_1.bin"
-MODEL_SHA="bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
-MODEL_SRC="$(cd "$(dirname "$0")/.." && pwd)/whisper/$MODEL_FILE"
-if [[ -f "$MODEL_SRC" ]]; then
-    # Verify BEFORE copying: a truncated model ships silently and dies at the first press.
-    GOT="$(shasum -a 256 "$MODEL_SRC" | cut -d' ' -f1)"
-    if [[ "$GOT" != "$MODEL_SHA" ]]; then
-        echo "[whisper] ERROR: $MODEL_FILE checksum mismatch (got $GOT); refusing to bundle a corrupt model"
+# Fetch it if it is not here. electron/whisper/ is GITIGNORED and releases are cut in a detached
+# worktree, which by definition has none of those files, so "use the local copy or warn" meant every
+# real release shipped without the model and only a log line said so.
+if [[ ! -f "$MODEL_SRC" ]]; then
+    if [[ "${OPENSWARM_SKIP_WHISPER_MODEL:-}" == "1" ]]; then
+        echo "[whisper] OPENSWARM_SKIP_WHISPER_MODEL=1; building WITHOUT a bundled model on purpose"
+        exit 0
+    fi
+    echo "[whisper] no local model; downloading $MODEL_FILE (~190MB)"
+    mkdir -p "$(dirname "$MODEL_SRC")"
+    if ! curl -fsSL --retry 3 --retry-delay 2 -o "$MODEL_SRC.part" "$MODEL_URL"; then
+        rm -f "$MODEL_SRC.part"
+        echo "[whisper] ERROR: could not download $MODEL_URL"
+        echo "[whisper] Set OPENSWARM_SKIP_WHISPER_MODEL=1 to build without it on purpose."
         exit 1
     fi
-    cp "$MODEL_SRC" "$OUT/$MODEL_FILE"
-    echo "[whisper] bundled model -> $OUT/$MODEL_FILE ($(du -h "$OUT/$MODEL_FILE" | cut -f1))"
-else
-    # Not fatal: the app still prefetches at boot. But say it, because a build without the model
-    # silently reintroduces the first-press wait this was added to remove.
-    echo "[whisper] WARNING: $MODEL_SRC missing; shipping WITHOUT a bundled model (first fn press will wait on a 190MB download)"
+    mv "$MODEL_SRC.part" "$MODEL_SRC"
 fi
+
+# Verify BEFORE copying: a truncated model ships silently and dies at the first press.
+GOT="$(shasum -a 256 "$MODEL_SRC" | cut -d' ' -f1)"
+if [[ "$GOT" != "$MODEL_SHA" ]]; then
+    echo "[whisper] ERROR: $MODEL_FILE checksum mismatch (got $GOT); refusing to bundle a corrupt model"
+    exit 1
+fi
+cp "$MODEL_SRC" "$OUT/$MODEL_FILE"
+echo "[whisper] bundled model -> $OUT/$MODEL_FILE ($(du -h "$OUT/$MODEL_FILE" | cut -f1))"
