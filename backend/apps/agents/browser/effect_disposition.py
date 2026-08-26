@@ -49,3 +49,26 @@ def disposition_line(disposition: Disposition) -> str:
     return ("A change was attempted and could not be confirmed, so this may or may not have gone "
             "through. Read the page and check before retrying; repeating it blind risks doing it "
             "twice.")
+
+
+@typechecked
+def unverified_reads_line(action_log: List[Dict]) -> str:
+    """One line when the run tried to read the page and got nothing back, else "".
+
+    The honesty gate already refuses a run that only looked around, but that check is skipped the
+    moment any state-changing action succeeded. Haik's playlist run took that path: the clicks
+    reported ok, every read failed, and the agent handed the user "6 confirmed tracks" with titles
+    and artists. In his own words, "the path of least resistance was to paper over the ambiguity
+    with a confident-sounding answer" (ENG-404).
+
+    It labels rather than rejects on purpose. A click that lands while the verification read fails
+    is a real, honest partial result, and flipping that to an error would delete work to punish a
+    word. What the reader was missing is the distinction between verified and assumed, so say it.
+    """
+    p_reads = [a for a in action_log or [] if str(a.get("tool") or "") in READ_ONLY_TOOLS]
+    if not p_reads:
+        return ""
+    if any(a.get("ok") and str(a.get("result_summary") or "").strip() for a in p_reads):
+        return ""
+    return ("No page content was read back successfully during this run, so any specific values "
+            "above are unverified and must not be treated as confirmed.")

@@ -34,7 +34,9 @@ from backend.apps.agents.browser.browser_history import (
     refusal_shaped_summary,
     PAGE_STATE_MARKER,
 )
-from backend.apps.agents.browser.effect_disposition import disposition_line, effect_disposition
+from backend.apps.agents.browser.effect_disposition import (
+    disposition_line, effect_disposition, unverified_reads_line,
+)
 from backend.apps.agents.browser.browser_loop import (
     LOOP_DETECTION_EXCLUDED_TOOLS,
     LOOP_HARD_CAP,
@@ -3274,6 +3276,18 @@ async def run_browser_agent(
             )
             # A ghost run's transcript is exactly the memory the next agent must not inherit.
             clear_browser_history(browser_id)
+
+        else:
+            # The gate's "only looked around" check is skipped the moment any action succeeded, so a
+            # run whose clicks landed and whose every read failed came home as a clean answer with
+            # invented specifics in it. Label the data rather than reject the run (ENG-404).
+            p_unverified = unverified_reads_line(action_log)
+            if p_unverified:
+                summary = f"{summary}\n\n{p_unverified}"
+                logger.warning(
+                    f"[browser-agent {session_id}] run reported success with zero successful reads; "
+                    f"its specifics are unverified"
+                )
 
         session.status = final_status
         logger.info(

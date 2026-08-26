@@ -56,3 +56,56 @@ def test_the_failed_run_carries_the_disposition_home():
     body = src[i - 400:i + 300]
     assert "effect_disposition(action_log" in body
     assert "disposition_line(p_effect)" in body, "the sentence must reach the caller's summary"
+
+
+# ---------------------------------------------- the READ side of the same problem (ENG-404)
+
+def test_a_run_whose_every_read_failed_says_its_specifics_are_unverified():
+    from backend.apps.agents.browser.effect_disposition import unverified_reads_line
+    # Haik's playlist run: the clicks reported ok, every read failed, and the agent handed the user
+    # "6 confirmed tracks" with titles and artists. The gate's "only looked around" check never
+    # fires once an action succeeds, so nothing caught it.
+    log = [{"tool": "BrowserClick", "ok": True},
+           {"tool": "BrowserGetText", "ok": False},
+           {"tool": "BrowserGetElements", "ok": False}]
+    line = unverified_reads_line(log)
+    assert "unverified" in line and "must not be treated as confirmed" in line
+
+
+def test_a_read_that_returned_nothing_counts_as_failed():
+    from backend.apps.agents.browser.effect_disposition import unverified_reads_line
+    assert unverified_reads_line([{"tool": "BrowserGetText", "ok": True, "result_summary": "   "}])
+
+
+def test_a_run_that_really_read_the_page_is_left_alone():
+    from backend.apps.agents.browser.effect_disposition import unverified_reads_line
+    assert unverified_reads_line(
+        [{"tool": "BrowserGetText", "ok": True, "result_summary": "Track 1 - Artist"}]) == ""
+
+
+def test_a_pure_write_run_is_not_labelled():
+    # It never tried to read, so there is nothing unverified to warn about; a note on every write
+    # would be noise, and noise is how a real warning stops being read.
+    from backend.apps.agents.browser.effect_disposition import unverified_reads_line
+    assert unverified_reads_line([{"tool": "BrowserType", "ok": True}]) == ""
+    assert unverified_reads_line([]) == ""
+
+
+def test_the_label_rides_the_SUCCESSFUL_path_where_the_fabrication_travelled():
+    src = open("backend/apps/agents/browser/browser_agent.py").read()
+    i_ghost = src.index("completion gate caught a ghost")
+    i_label = src.index("unverified_reads_line(action_log)")
+    assert i_label > i_ghost, "it belongs on the else branch: the run the gate let through"
+    assert "summary = f\"{summary}\\n\\n{p_unverified}\"" in src
+
+
+def test_it_labels_rather_than_rejects():
+    # A click that lands while the verification read fails is an honest partial. Flipping that to an
+    # error would delete real work to punish a word.
+    src = open("backend/apps/agents/browser/browser_agent.py").read()
+    i = src.index("unverified_reads_line(action_log)")
+    # Up to (not including) the status assignment that closes the branch: nothing in here may
+    # change the verdict, only the text.
+    body = src[i:src.index("session.status = final_status", i)]
+    assert "final_status =" not in body and "honest = False" not in body
+    assert "summary = " in body, "the only thing it touches is the wording"
