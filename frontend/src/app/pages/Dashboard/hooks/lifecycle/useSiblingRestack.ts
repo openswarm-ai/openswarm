@@ -2,11 +2,11 @@ import { useEffect, type RefObject } from 'react';
 import { useAppDispatch } from '@/shared/hooks';
 import {
   moveCards,
-  EXPANDED_CARD_MIN_H,
   GRID_GAP,
   type CardPosition,
   type BrowserCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
+import { agentCardHeight } from '../../geometry/agentCardHeight';
 
 interface GlowingCard {
   sourceId: string;
@@ -64,10 +64,7 @@ export function useSiblingRestack({
         if (Math.abs(dy) > 1) {
           dispatch(moveCards({ items: [{ id, type: 'agent' as const }], dx: 0, dy }));
         }
-        const isExpanded = expandedSessionIds.includes(id);
-        const h = isExpanded
-          ? Math.max(EXPANDED_CARD_MIN_H, card.height)
-          : (measuredHeightsRef.current![id] ?? card.height);
+        const h = agentCardHeight(id, card.height, expandedSessionIds.includes(id), measuredHeightsRef.current);
         cursor += h + GRID_GAP * 2;
       }
     }

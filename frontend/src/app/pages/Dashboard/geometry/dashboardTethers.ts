@@ -1,9 +1,10 @@
 import { useMemo, type RefObject } from 'react';
 import type { CardPosition, BrowserCardPosition, ViewCardPosition, WorkflowCardPosition, WorkflowsHubPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Workflow, OpenCard } from '@/shared/state/workflowsSlice';
-import { EXPANDED_CARD_MIN_H, GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
+import { GRID_GAP } from '@/shared/state/dashboardLayoutSlice';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type { Output } from '@/shared/state/outputsSlice';
+import { agentCardHeight } from './agentCardHeight';
 
 const ELBOW_RADIUS = 16;
 
@@ -122,44 +123,8 @@ export function useTethers({
       sid !== monitorRunSessionId && sessionById.has(sid) && !expandedSet.has(sid);
     const wfHeight = (wc: WorkflowCardPosition): number =>
       measuredHeightsRef.current![wc.workflow_id] ?? wc.height;
-    const agentTethers = Object.entries(glowingAgentCards).map(([copyId, { sourceId, fading, label }]) => {
-      const src = cards[sourceId];
-      const dst = cards[copyId];
-      if (!src || !dst) return null;
-
-      let srcX = src.x, srcY = src.y;
-      let dstX = dst.x, dstY = dst.y;
-      if (liveDragInfo) {
-        if (liveDragInfo.cardId === sourceId) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
-        if (liveDragInfo.cardId === copyId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
-      }
-
-      const srcMeasured = measuredHeightsRef.current![sourceId];
-      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
-        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
-        : src.height);
-      const dstMeasured = measuredHeightsRef.current![copyId];
-      const dstH = dstMeasured ?? (expandedSessionIds.includes(copyId)
-        ? Math.max(EXPANDED_CARD_MIN_H, dst.height)
-        : dst.height);
-
-      const x1 = srcX + src.width;
-      const y1 = srcY + srcH * 0.54;
-      const x2 = dstX;
-      const y2 = dstY + dstH * (expandedSessionIds.includes(copyId) ? 0.54 : 0.79);
-      const midX = x1 + (x2 - x1) / 2;
-      const labelX = midX + (x2 - midX) * 0.15;
-      const labelY = y2;
-
-      return {
-        key: copyId,
-        path: elbowPath(x1, y1, x2, y2),
-        labelX,
-        labelY,
-        label: label || '',
-        fading,
-      };
-    }).filter(Boolean) as Tether[];
+    const p_agentPairs = Object.entries(glowingAgentCards)
+      .filter(([copyId, { sourceId }]) => cards[sourceId] && cards[copyId]);
 
     // One tether builder for both browser and view cards: the anchor-pairing and elbow/vertical path are identical; only the destination card map and the key prefix differ, so the resolved dst card is passed in.
     function cardTether(
@@ -185,11 +150,10 @@ export function useTethers({
         if (liveDragInfo.cardId === dstId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
       }
 
-      const srcMeasured = measuredHeightsRef.current![sourceId];
-      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
-        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
-        : src.height);
-      const dstH = dst.height;
+      const srcH = agentCardHeight(sourceId, src.height, expandedSessionIds.includes(sourceId), measuredHeightsRef.current);
+      // Browser and view cards have no measured entry, so this reads exactly as dst.height for them
+      // and only changes the agent-to-agent case.
+      const dstH = agentCardHeight(dstId, dst.height, expandedSessionIds.includes(dstId), measuredHeightsRef.current);
 
       const srcCx = srcX + src.width / 2;
       const dstCx = dstX + dst.width / 2;
@@ -260,6 +224,14 @@ export function useTethers({
       };
     }
 
+    // Sub-agent arrows go through the same anchor search as everything else. They used to leave the
+    // parent's RIGHT edge and enter the child's LEFT edge unconditionally, which is only right while
+    // the child sits in its spawn column; drag it anywhere else and the line looped back across both
+    // cards, reading as an orange thread attached to nothing (ENG-412).
+    const agentTethers = p_agentPairs.map(([copyId, { sourceId, fading, label }]) => cardTether(
+      cards[copyId], copyId, sourceId, copyId, label || '', fading,
+    )).filter(Boolean) as Tether[];
+
     const glowTethers = new Map<string, ReturnType<typeof cardTether>>();
     // An "app:<output_id>" glow key targets a VIEW card (AppAgent driving an app); everything else is a browser card.
     const glowTarget = (id: string) => (id.startsWith('app:') ? viewCards[id.slice(4)] : browserCards[id]);
@@ -323,10 +295,7 @@ export function useTethers({
         if (liveDragInfo.cardId === wc.workflow_id) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
       }
 
-      const srcMeasured = measuredHeightsRef.current![sourceId];
-      const srcH = srcMeasured ?? (expandedSessionIds.includes(sourceId)
-        ? Math.max(EXPANDED_CARD_MIN_H, src.height)
-        : src.height);
+      const srcH = agentCardHeight(sourceId, src.height, expandedSessionIds.includes(sourceId), measuredHeightsRef.current);
 
       const wcH = wfHeight(wc);
       const srcCx = srcX + src.width / 2;
@@ -403,10 +372,7 @@ export function useTethers({
         if (liveDragInfo.cardId === wc.workflow_id) { srcX += liveDragInfo.dx; srcY += liveDragInfo.dy; }
         if (liveDragInfo.cardId === sidecarId) { dstX += liveDragInfo.dx; dstY += liveDragInfo.dy; }
       }
-      const dstMeasured = measuredHeightsRef.current![sidecarId];
-      const dstH = dstMeasured ?? (expandedSessionIds.includes(sidecarId)
-        ? Math.max(EXPANDED_CARD_MIN_H, sidecar.height)
-        : sidecar.height);
+      const dstH = agentCardHeight(sidecarId, sidecar.height, expandedSessionIds.includes(sidecarId), measuredHeightsRef.current);
       const wcH = wfHeight(wc);
       const workflowRect = { x: srcX, y: srcY, width: wc.width, height: wcH };
       const sidecarRect = { x: dstX, y: dstY, width: sidecar.width, height: dstH };
