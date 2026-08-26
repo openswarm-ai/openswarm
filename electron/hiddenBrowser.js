@@ -36,14 +36,34 @@ function makeWindow(partition) {
   }
 }
 
+// Tearing a window down while a page call is in flight is how a destroyed object stays in an
+// observer list; the next walk over that list calls a virtual method on the corpse, which is the
+// exact shape of the ENG-400 main-process segfault. So: one disposer, idempotent, graceful first.
+function disposeWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  // close() runs the normal teardown so observers unregister; destroy() is the escalation for a
+  // page wedged hard enough to ignore it. A hidden window has no beforeunload to block on.
+  try { win.close(); } catch (_) {}
+  setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch (_) {} }, 1000).unref?.();
+}
+
+// The ONLY door to a hidden window's page. Every caller went through webContents directly and any
+// one of them could fire after the killer had already torn the window down.
+async function evalInPage(win, js, userGesture = false) {
+  if (!win || win.isDestroyed()) return null;
+  const wc = win.webContents;
+  if (!wc || wc.isDestroyed()) return null;
+  return wc.executeJavaScript(js, userGesture).catch(() => null);
+}
+
 async function withWindow(partition, fn, extraGraceMs = 0) {
   const win = makeWindow(partition);
-  const killer = setTimeout(() => { try { win.destroy(); } catch (_) {} }, LOAD_TIMEOUT_MS + SETTLE_MS + 8000 + extraGraceMs);
+  const killer = setTimeout(() => disposeWindow(win), LOAD_TIMEOUT_MS + SETTLE_MS + 8000 + extraGraceMs);
   try {
     return await fn(win);
   } finally {
     clearTimeout(killer);
-    try { if (!win.isDestroyed()) win.destroy(); } catch (_) {}
+    disposeWindow(win);
   }
 }
 
@@ -54,6 +74,7 @@ const HARVEST_GRACE_MS = 20000;
 
 async function loadAndSettle(win, url) {
   // loadURL rejects on a sub-resource abort even when the main frame is fine, so a rejection is a warning, not a failure; we still try to read the DOM.
+  if (win.isDestroyed()) return;
   const load = win.loadURL(url, { userAgent: SCRAPE_UA }).catch(() => {});
   await Promise.race([load, new Promise((r) => setTimeout(r, LOAD_TIMEOUT_MS))]);
   await new Promise((r) => setTimeout(r, SETTLE_MS));
@@ -63,10 +84,8 @@ async function loadAndSettle(win, url) {
 async function hiddenFetch(partition, url) {
   return withWindow(partition, async (win) => {
     await loadAndSettle(win, url);
-    const title = await win.webContents.executeJavaScript('document.title || ""').catch(() => '');
-    const text = await win.webContents.executeJavaScript(
-      '(document.body && document.body.innerText || "")'
-    ).catch(() => '');
+    const title = (await evalInPage(win, 'document.title || ""')) || '';
+    const text = (await evalInPage(win, '(document.body && document.body.innerText || "")')) || '';
     const clean = String(text).replace(/\n{3,}/g, '\n\n').trim().slice(0, MAX_FETCH_CHARS);
     if (!clean) return { error: 'empty page (blocked or no rendered text)' };
     return { title: String(title).slice(0, 300), text: clean, url };
@@ -82,7 +101,7 @@ async function hiddenFetch(partition, url) {
 async function hiddenEval(partition, url, js) {
   return withWindow(partition, async (win) => {
     await loadAndSettle(win, url);
-    return win.webContents.executeJavaScript(js, true).catch(() => null);
+    return evalInPage(win, js, true);
   }, HARVEST_GRACE_MS);
 }
 
@@ -113,7 +132,7 @@ async function hiddenEvalWithCookies(url, cookieRecords, js) {
   try {
     return await withWindow(HARVEST_PARTITION, async (win) => {
       await loadAndSettle(win, url);
-      return win.webContents.executeJavaScript(js, true).catch(() => null);
+      return evalInPage(win, js, true);
     }, HARVEST_GRACE_MS);
   } finally {
     await wipe();
@@ -138,7 +157,7 @@ async function hiddenSearch(partition, query, numResults) {
     try {
       const rows = await withWindow(partition, async (win) => {
         await loadAndSettle(win, eng.url(query));
-        const raw = await win.webContents.executeJavaScript(`JSON.stringify((${eng.scrape}).slice(0, 20))`);
+        const raw = await evalInPage(win, `JSON.stringify((${eng.scrape}).slice(0, 20))`);
         return JSON.parse(raw || '[]');
       });
       const clean = rows.filter((r) => r && r.u && r.t).slice(0, numResults || 5);

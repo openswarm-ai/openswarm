@@ -763,6 +763,12 @@ function detectDirtyExitAndArmSafeMode() {
   }
 }
 
+// Run at module load, not inside whenReady: the backend spawns FIRST in the boot sequence and has to
+// be told, so computing this afterwards meant the one process that can act on it never heard.
+// Guarded on the instance lock explicitly rather than trusting app.exit(0) to have stopped module
+// evaluation, because a losing second instance stamping a dirty exit would frame the real one.
+if (gotLock) detectDirtyExitAndArmSafeMode();
+
 ipcMain.handle('get-safe-mode', () => ({ ...safeModeInfo, reducedGraphics: reducedGraphicsThisBoot }));
 
 // Quit-cause forensics. On a real quit (Cmd+Q, dock Quit, app.quit()) Electron
@@ -1184,6 +1190,11 @@ async function startBackend() {
     OPENSWARM_PORT: String(backendPort),
     OPENSWARM_ELECTRON_PATH: process.execPath,
     OPENSWARM_INSTALL_METHOD: installMethod,
+    // Safe mode enforced where main can actually act, instead of only advertised to the renderer.
+    // Auto-resume fires the turn that was running when the app died; after two dirty exits inside
+    // ten minutes that is the fastest route straight back into the crash (ENG-400). Held for ONE
+    // boot; every affected turn keeps its Resume chip, so the user decides.
+    ...(safeModeInfo.safeMode ? { OSW_DISABLE_AUTO_RESUME: '1' } : {}),
     // Inject the app version so the Python backend can report it in the
     // analytics envelope. Without this, _read_app_version() in
     // service/service.py tries to read electron/package.json via a relative
@@ -2344,7 +2355,6 @@ app.whenReady().then(async () => {
   // Spawn the Mac crash watchdog. Detached process; if it fails to spawn the
   // app continues normally (silent fail by design). Guards inside the
   // watchdog itself prevent false-positive relaunches.
-  detectDirtyExitAndArmSafeMode();
   spawnCrashWatchdog();
 
   // Off-window mouse-release crash dodge (macOS). Safe to call before windows exist.

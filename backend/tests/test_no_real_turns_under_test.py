@@ -40,7 +40,7 @@ def test_the_gate_is_what_stops_it(monkeypatch):
     """Control: with the gate reporting a normal app process, the very same call does dispatch.
     Without this arm the test above passes even if auto-resume quietly stopped working."""
     sent = p_capture_sends(monkeypatch)
-    monkeypatch.setattr(p_sp, "running_under_test", lambda: False)
+    monkeypatch.setattr(p_sp, "auto_resume_held_because", lambda: None)
     asyncio.run(agent_manager.auto_resume_crashed_turns())
     assert sent == ["sid-a", "sid-b"]
 

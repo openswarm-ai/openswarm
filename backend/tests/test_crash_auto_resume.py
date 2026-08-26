@@ -62,7 +62,7 @@ def p_act_like_a_real_app(monkeypatch) -> None:
     """Auto-resume refuses to dispatch under pytest, because it sends REAL turns and the suite shares
     the developer's data root (ENG-388). These tests are about the production path, so they opt out."""
     import backend.apps.agents.manager.session.SessionPersistence as p_sp
-    monkeypatch.setattr(p_sp, "running_under_test", lambda: False)
+    monkeypatch.setattr(p_sp, "auto_resume_held_because", lambda: None)
 
 
 def test_waiting_approval_never_auto_resumes(manager, tmp_path, monkeypatch):

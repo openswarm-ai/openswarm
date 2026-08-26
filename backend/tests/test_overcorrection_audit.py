@@ -187,11 +187,12 @@ def test_auto_resume_still_works_outside_a_test_run():
     """The gate stops the suite spending real money. It must not stop a real user's crashed turn
     from resuming, which is the entire feature."""
     src = open("backend/apps/agents/manager/session/SessionPersistence.py").read()
-    i = src.index("def running_under_test")
+    i = src.index("def auto_resume_held_because")
     body = src[i:i + 1400]
     assert "OSW_DISABLE_AUTO_RESUME" in body, "the declared signal comes first"
     assert 'os.environ.get("OSW_DISABLE_AUTO_RESUME") == "1"' in body, \
         "only an explicit 1 disarms it, so a stray empty value cannot silently kill crash-resume"
+    assert '"pytest" in sys.modules' in body, "the incidental signal stays a fallback, never the primary"
 
 
 # ------------------------------------------------------ the status promise and its release (ENG-390)

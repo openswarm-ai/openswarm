@@ -6,6 +6,7 @@ one concern. self.sessions resolves across the MRO as before."""
 import logging
 import os
 import sys
+from typing import Optional
 
 from typeguard import typechecked
 
@@ -20,19 +21,29 @@ from backend.apps.agents.manager.session.apply_context_window import apply_conte
 logger = logging.getLogger(__name__)
 
 
-def running_under_test() -> bool:
-    """Auto-resume dispatches REAL turns: live credentials, live Bash, in whatever tree the process
-    was started from. A test that boots the app lifespan must never do that to the developer's own
-    chats, so this is the one gate that keeps a suite run from becoming an agent run.
+def auto_resume_held_because() -> Optional[str]:
+    """Why auto-resume must not fire this boot, in words, or None to proceed.
 
-    The env var is the DECLARED signal and conftest sets it. `pytest in sys.modules` is kept only as
-    a belt-and-braces fallback, and deliberately not as the primary: an incidental signal fails in
-    the worst direction, because the day pytest becomes importable in a packaged build every
+    Auto-resume dispatches REAL turns: live credentials, live Bash, in whatever tree the process
+    was started from. Two callers need it held. A test that boots the app lifespan must never do
+    that to the developer's own chats. And the desktop app holds it after repeated dirty exits,
+    because resuming straight back into the turn that was running when the app died is how a single
+    crash became four (ENG-400); the amber Resume chip is still there, so the user decides.
+
+    The env var is the DECLARED signal and both set it. `pytest in sys.modules` is kept only as a
+    belt-and-braces fallback, and deliberately not as the primary: an incidental signal fails in the
+    worst direction, because the day pytest becomes importable in a packaged build every
     crash-interrupted turn stops resuming and NOTHING says so. Work vanishing quietly is the worst
-    bug this codebase can ship; a suite that loudly refuses to resume is merely annoying."""
+    bug this codebase can ship; a boot that loudly refuses to resume is merely annoying."""
     if os.environ.get("OSW_DISABLE_AUTO_RESUME") == "1":
-        return True
-    return "pytest" in sys.modules
+        return "the app asked for it (test run, or safe mode after repeated crashes)"
+    if "pytest" in sys.modules:
+        return "pytest is loaded"
+    return None
+
+
+def running_under_test() -> bool:
+    return auto_resume_held_because() is not None
 
 
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
@@ -97,8 +108,9 @@ class SessionPersistence(AgentManagerProtocol):
         """Fire one hidden continuation into each crash-interrupted session (called after
         restore, off the boot critical path). Failure is per-session and non-fatal: a session
         that cannot resume just keeps its amber chip."""
-        if running_under_test():
-            logger.info("crash-resume: skipped, running under test")
+        p_held = auto_resume_held_because()
+        if p_held:
+            logger.info(f"crash-resume: {len(self.crash_resume_queue or [])} turn(s) NOT auto-resumed because {p_held}; each keeps its Resume chip")
             self.crash_resume_queue = []
             return
         for sid in list(getattr(self, "crash_resume_queue", []) or []):
