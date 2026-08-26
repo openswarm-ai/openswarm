@@ -27,10 +27,14 @@ test('a corrupt model is refused at build time rather than shipped', () => {
     'a truncated model ships silently and dies at the first press, so it must fail the build');
 });
 
-test('a build without the model warns instead of passing quietly', () => {
+test('a build without the model FETCHES it rather than warning', () => {
+  // This used to assert only that a missing model printed a WARNING. A warning on the release path
+  // is indistinguishable from success, and the source is gitignored while releases are cut in a
+  // detached worktree, so every real cut took that branch. See whisperModelBundling.test.js.
   const sh = fs.readFileSync(SH, 'utf-8');
-  assert.ok(sh.includes('WARNING') && sh.includes('WITHOUT a bundled model'),
-    'silently dropping the model reintroduces the first-press wait with nothing saying so');
+  assert.ok(sh.includes('MODEL_URL='), 'the build must be able to get the file itself');
+  assert.ok(!sh.includes('WITHOUT a bundled model (first fn press'),
+    'the old warn-and-continue branch must be gone');
 });
 
 test('the bundled model is NOT swept into app.asar', () => {
