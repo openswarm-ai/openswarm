@@ -11,9 +11,17 @@ writes route through here so there's a single source of truth.
 """
 
 # browser_id -> cached Anthropic message list for resume.
+from typing import Dict, List, Optional
+
 from typeguard import typechecked
 
 BROWSER_HISTORY: dict[str, list[dict]] = {}
+# Which CHAT produced each cached transcript. A card outlives the chat that opened it, and without
+# this the next chat to use it inherits the previous chat's task as its own memory: a Spotify run
+# whose reasoning insisted the job was "read everything under src/ and give observations", verbatim,
+# turn after turn, while every tool call was a Spotify action (ENG-403). Stable across turns is the
+# tell: a race drifts, a cache repeats.
+HISTORY_OWNER: dict[str, str] = {}
 # Cap history to prevent unbounded growth on long-lived browsers.
 MAX_HISTORY_MESSAGES = 30
 
@@ -57,6 +65,33 @@ def refusal_shaped_summary(summary: str) -> bool:
 def clear_browser_history(browser_id: str) -> None:
     """Drop cached conversation history for a browser (e.g. when it's closed)."""
     BROWSER_HISTORY.pop(browser_id, None)
+    HISTORY_OWNER.pop(browser_id, None)
+
+
+@typechecked
+def resume_history(browser_id: str, owner_session_id: Optional[str]) -> List[Dict]:
+    """The cached transcript, and ONLY if this chat is the one that produced it.
+
+    Resuming is what makes a follow-up cheap ("swipe left" should not re-orient from a screenshot),
+    so this keeps the win inside one chat and refuses it across chats. A card that changes hands
+    starts clean, which costs one screenshot and removes a whole class of phantom task.
+    """
+    if not owner_session_id or HISTORY_OWNER.get(browser_id) != owner_session_id:
+        return []
+    return BROWSER_HISTORY.get(browser_id) or []
+
+
+@typechecked
+def remember_history(browser_id: str, owner_session_id: Optional[str], messages: List[Dict]) -> None:
+    """Cache a transcript against the chat that produced it, or not at all.
+
+    An unowned entry is the bug: it is exactly what a later chat would read as its own past.
+    """
+    if not owner_session_id:
+        clear_browser_history(browser_id)
+        return
+    BROWSER_HISTORY[browser_id] = messages
+    HISTORY_OWNER[browser_id] = owner_session_id
 
 
 OMITTED_SCREENSHOT_STUB = "[earlier screenshot omitted to save context]"

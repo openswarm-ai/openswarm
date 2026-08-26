@@ -1165,7 +1165,7 @@ async def run_browser_agent(
     preloaded_perception = ""
     current_url = ""
     preloaded_reads: list[dict] = []  # real front-loaded reads, seeded into action_log
-    p_resumed = bool(browser_history.BROWSER_HISTORY.get(browser_id))
+    p_resumed = bool(browser_history.resume_history(browser_id, parent_session_id))
     # App mode skips this whole block: the app is already loaded and its DOM is uninformative (often a bare <canvas>), so the agent perceives via the bridge (AppDescribe) on turn 1 instead of navigating or front-loading the AX tree.
     if not app_mode:
         if initial_url:
@@ -1331,7 +1331,7 @@ async def run_browser_agent(
                 "(no url/elements, confirming probe empty); evicting + recovering early")
 
     # Resume prior conversation on this browser if we have one cached. This lets the sub-agent skip the "take a screenshot to figure out where I am" cycle every time the parent issues a new task. Defensively validate the cache; if it's somehow corrupted (orphaned tool_use_ids), drop it and start fresh rather than crash on the next API call.
-    prior_messages = browser_history.BROWSER_HISTORY.get(browser_id) or []
+    prior_messages = browser_history.resume_history(browser_id, parent_session_id)
     if prior_messages and not validate_message_pairing(prior_messages):
         logger.warning(
             f"[browser-agent {session_id}] cached history for {browser_id} has "
@@ -3249,8 +3249,8 @@ async def run_browser_agent(
             clear_browser_history(browser_id)
             logger.warning(f"[browser-agent {session_id}] refusal-shaped run; cleared {browser_id} history so the next dispatch starts clean")
         else:
-            browser_history.BROWSER_HISTORY[browser_id] = trim_history_by_turns(
-                messages, MAX_HISTORY_MESSAGES,
+            browser_history.remember_history(
+                browser_id, parent_session_id, trim_history_by_turns(messages, MAX_HISTORY_MESSAGES),
             )
 
         # Honesty gate: the model declaring done is not proof the goal happened. If the run did no real work (zero actions, all actions errored, or only looked around), report the truth instead of a ghost "completed". A gone card gets its own precise reason instead of the generic verdict.

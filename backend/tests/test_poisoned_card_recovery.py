@@ -28,7 +28,10 @@ def test_refusal_run_clears_instead_of_persisting():
     i = src.index("if refusal_shaped_summary(summary):")
     block = src[i:i + 400]
     assert "clear_browser_history(browser_id)" in block, "a cached refusal becomes the next agent's own memory"
-    assert "BROWSER_HISTORY[browser_id] = trim_history_by_turns" in src[i:i + 700], "honest runs must still persist (resume is a real optimization)"
+    # The write moved behind an accessor that stamps the owning chat (ENG-403); persisting at all
+    # is still the point, because resume is a real optimization.
+    assert "remember_history(" in src[i:i + 700], "honest runs must still persist"
+    assert "parent_session_id" in src[i:i + 700], "and must record which chat produced it"
 
 
 def test_ghost_run_clears_too():
