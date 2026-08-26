@@ -45,6 +45,7 @@ def resolve_launch_tools(mode_tools: List[str], allowed: Optional[List[str]]) ->
 
 
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
+from backend.apps.agents.manager.subagent_budget import subagent_turn_budget
 
 
 class AgentLaunch(AgentManagerProtocol):
@@ -219,7 +220,7 @@ class AgentLaunch(AgentManagerProtocol):
             sdk_session_id=source.sdk_session_id,
             system_prompt=source.system_prompt,
             allowed_tools=list(source.allowed_tools),
-            max_turns=source.max_turns or 25,
+            max_turns=subagent_turn_budget(source.max_turns),
             cwd=source.cwd,
             created_at=datetime.now(),
             messages=new_messages,

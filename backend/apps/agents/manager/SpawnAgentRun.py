@@ -17,6 +17,9 @@ from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
 from backend.apps.agents.manager.session.apply_context_window import apply_context_window
 from backend.apps.agents.manager.session.session_store import snapshot_session_now, load_session_data
+from backend.apps.agents.manager.subagent_budget import (
+    SUBAGENT_MAX_TURNS, budget_briefing, subagent_turn_budget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ class SpawnAgentRun(AgentManagerProtocol):
             mode="sub-agent",
             system_prompt=parent.system_prompt,
             allowed_tools=list(parent.allowed_tools),
-            max_turns=parent.max_turns or 25,
+            max_turns=subagent_turn_budget(parent.max_turns),
             cwd=parent.cwd,
             created_at=datetime.now(),
             dashboard_id=dashboard_id or parent.dashboard_id,
@@ -86,13 +89,18 @@ class SpawnAgentRun(AgentManagerProtocol):
             "message": user_msg.model_dump(mode="json"),
         })
 
+        # The child is told its step budget so it can checkpoint instead of being cut off mid-task
+        # (ENG-409). Appended to what is SENT, not to the stored user message: the card should show
+        # the task the parent asked for, not our bookkeeping.
+        p_sent = f"{prompt}\n\n{budget_briefing(child.max_turns or SUBAGENT_MAX_TURNS)}"
+
         if run_in_background:
             # Fire-and-forget; the child's card carries its progress and result. Keep a handle in self.tasks so stop/shutdown machinery sees it.
-            task = asyncio.create_task(self.run_agent_loop(child.id, prompt))
+            task = asyncio.create_task(self.run_agent_loop(child.id, p_sent))
             self.register_turn_task(child.id, task)
             return {"session_id": child.id, "background": True}
 
-        await self.run_agent_loop(child.id, prompt)
+        await self.run_agent_loop(child.id, p_sent)
         return {
             "session_id": child.id,
             "response": last_assistant_text(child) or "No response from sub-agent.",

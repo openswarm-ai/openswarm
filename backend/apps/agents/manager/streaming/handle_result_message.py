@@ -48,6 +48,12 @@ def p_turn_result_error_text(message: ResultMessage, subtype: str, stop_reason: 
         headline = "The model hit its maximum output length before finishing"
     elif stop_reason == "refusal":
         headline = "The model refused to continue this turn"
+    elif str(subtype or "") == "error_max_turns":
+        # A delegated child running out of steps is a BUDGET, not a crash, and the user needs to know
+        # its partial work survived. `error_max_turns. Reached maximum number of turns (25)` is
+        # runtime language that reads as a failure and hides that (ENG-409).
+        from backend.apps.agents.manager.subagent_budget import out_of_turns_message, SUBAGENT_MAX_TURNS
+        return out_of_turns_message(SUBAGENT_MAX_TURNS)
     else:
         headline = "The agent runtime reported this turn failed"
     label = subtype if subtype and subtype != "success" else (stop_reason or "unknown")
