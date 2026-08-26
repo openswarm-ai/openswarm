@@ -22,6 +22,35 @@ from backend.config.os_trust import install_os_trust
 
 P_REPO = Path(__file__).resolve().parents[2]
 
+@pytest.fixture
+def p_trust_logs():
+    """Capture os_trust's own records, not root's.
+
+    `backend/main.py` sets `logging.getLogger("backend").propagate = False`, so once ANY test has
+    imported the app (every TestClient one does) caplog sees nothing here and these two liveness
+    assertions fail purely on test order. Attaching to the logger itself makes them independent of
+    whatever else configured logging; a guard test that goes green when the guard is silent would
+    defeat its own purpose.
+    """
+    p_records: list = []
+
+    class P_Sink(logging.Handler):
+        def emit(self, record) -> None:
+            p_records.append(record)
+
+    p_logger = logging.getLogger("backend.config.os_trust")
+    p_sink = P_Sink()
+    p_prev = p_logger.level
+    p_logger.addHandler(p_sink)
+    p_logger.setLevel(logging.DEBUG)
+    try:
+        yield p_records
+    finally:
+        p_logger.removeHandler(p_sink)
+        p_logger.setLevel(p_prev)
+
+
+
 
 @pytest.fixture
 def stock_ssl_afterwards():
@@ -36,25 +65,23 @@ def test_desktop_platforms_arm_the_os_store_in_the_factory_httpx_calls(monkeypat
     assert type(ssl.create_default_context()) is truststore.SSLContext
 
 
-def test_off_desktop_certifi_stays_and_says_so(monkeypatch, caplog):
+def test_off_desktop_certifi_stays_and_says_so(monkeypatch, p_trust_logs):
     monkeypatch.setattr(platform, "system", lambda: "Linux")
     before = ssl.SSLContext
-    with caplog.at_level(logging.INFO, logger="backend.config.os_trust"):
-        assert install_os_trust() == "certifi"
+    assert install_os_trust() == "certifi"
     assert ssl.SSLContext is before
-    assert any("certifi bundle" in r.getMessage() for r in caplog.records)
+    assert any("certifi bundle" in r.getMessage() for r in p_trust_logs)
 
 
-def test_a_store_that_cannot_arm_is_reported_not_swallowed(monkeypatch, caplog):
+def test_a_store_that_cannot_arm_is_reported_not_swallowed(monkeypatch, p_trust_logs):
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
 
     def p_boom() -> None:
         raise OSError("Security.framework missing")
 
     monkeypatch.setattr(truststore, "inject_into_ssl", p_boom)
-    with caplog.at_level(logging.WARNING, logger="backend.config.os_trust"):
-        assert install_os_trust() == "certifi"
-    warned = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert install_os_trust() == "certifi"
+    warned = [r for r in p_trust_logs if r.levelno == logging.WARNING]
     assert warned and "certifi bundle only" in warned[0].getMessage()
 
 
