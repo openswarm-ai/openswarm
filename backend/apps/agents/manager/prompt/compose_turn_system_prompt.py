@@ -133,6 +133,8 @@ def compose_turn_system_prompt(
                 "answer off-list in free text (result action 'free_text').\n"
                 "Describing structured data in plain text, or naming an image without rendering it, "
                 "is the worse answer.\n"
+                "Whatever you render, the turn still ENDS with a sentence to the user saying what you "
+                "found or did. A tool call is never the last thing you do.\n"
                 "</rich_ui>"
             )
             composed_prompt = f"{composed_prompt}\n\n{rich_ui_note}" if composed_prompt else rich_ui_note
