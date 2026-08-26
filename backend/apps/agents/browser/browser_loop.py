@@ -222,7 +222,7 @@ def stagnation_exhausted(streak: int) -> bool:
 # --- completion honesty gate ---------------------------------------------- A model that ends its turn is NOT proof the goal happened. The worst ghost we measured: multi-minute runs where every tool errored, still reported "completed". This deterministic gate reality-checks the run before we let the status say "done", so a fake success is reported as the failure it actually is.
 
 # State-changing tools: a task that needed to DO something must land one of these.
-P_PRODUCTIVE_TOOLS = {
+STATE_CHANGING_TOOLS = {
     "BrowserClick", "BrowserClickIndex", "BrowserType", "BrowserNavigate",
     "BrowserPressKey", "BrowserScroll", "BrowserBatch", "BrowserActVerified",
     # Enumerated against the live dispatcher 2026-08-13 (ENG-297): these seven change state and were
@@ -232,7 +232,7 @@ P_PRODUCTIVE_TOOLS = {
     "BrowserUploadFile", "BrowserSaveData", "BrowserRepeatFlow",
 }
 # Read/extract tools: a look-only task's evidence is that a read returned content.
-P_READ_TOOLS = {
+READ_ONLY_TOOLS = {
     "BrowserGetText", "BrowserGetElements", "BrowserListInteractives",
     "BrowserListRoutes", "BrowserReplayRoute", "BrowserScreenshot", "BrowserEvaluate",
 }
@@ -426,14 +426,14 @@ def outcome_facts(action_log: list[dict]) -> dict:
     which is the failure mode this exists to remove.
     """
     log = action_log or []
-    mutations = [a for a in log if a.get("tool") in P_PRODUCTIVE_TOOLS]
+    mutations = [a for a in log if a.get("tool") in STATE_CHANGING_TOOLS]
     return {
         "calls": len(log),
         "mutations_attempted": len(mutations),
         "mutations_succeeded": len([a for a in mutations if a.get("ok")]),
         "reads_with_content": len([
             a for a in log
-            if a.get("tool") in P_READ_TOOLS and a.get("ok")
+            if a.get("tool") in READ_ONLY_TOOLS and a.get("ok")
             and str(a.get("result_summary") or "").strip()
         ]),
     }
@@ -484,7 +484,7 @@ def completion_is_honest(
                        "check the page before trusting this")
     if not action_log:
         return False, "declared done without taking a single action"
-    actions = [a for a in action_log if a.get("tool") in P_PRODUCTIVE_TOOLS]
+    actions = [a for a in action_log if a.get("tool") in STATE_CHANGING_TOOLS]
     actions_ok = [a for a in actions if a.get("ok")]
     # Prestage seeds two reads into the log before the model ever runs. They are real page content,
     # so a model that ANSWERS from them did honest work (a read task needs no further tools). But a
@@ -494,7 +494,7 @@ def completion_is_honest(
     p_answered = bool(str(summary or "").strip())
     reads_ok = [
         a for a in action_log
-        if a.get("tool") in P_READ_TOOLS and a.get("ok")
+        if a.get("tool") in READ_ONLY_TOOLS and a.get("ok")
         and (p_answered or not a.get("seeded"))
         and str(a.get("result_summary") or "").strip()
     ]

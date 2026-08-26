@@ -34,6 +34,7 @@ from backend.apps.agents.browser.browser_history import (
     refusal_shaped_summary,
     PAGE_STATE_MARKER,
 )
+from backend.apps.agents.browser.effect_disposition import disposition_line, effect_disposition
 from backend.apps.agents.browser.browser_loop import (
     LOOP_DETECTION_EXCLUDED_TOOLS,
     LOOP_HARD_CAP,
@@ -3261,7 +3262,12 @@ async def run_browser_agent(
                 summary=summary)
         final_status = "completed" if honest else "error"
         if not honest:
-            summary = f"I was not able to complete this task ({dishonest_reason})."
+            # The caller has to be able to DECIDE, and prose does not let it: "may not have gone
+            # out" leaves a parent choosing between stalling and a double-write (ENG-402). Say which
+            # of the three states this is, and what is safe to do next.
+            p_effect = effect_disposition(action_log, send_confirmed=send_confirmed)
+            summary = (f"I was not able to complete this task ({dishonest_reason}). "
+                       f"{disposition_line(p_effect)}")
             logger.warning(
                 f"[browser-agent {session_id}] completion gate caught a ghost: "
                 f"model declared done but {dishonest_reason}; reporting as error"
