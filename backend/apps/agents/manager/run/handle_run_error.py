@@ -289,12 +289,15 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         if p_twin:
             p_from = session.model
             session.model = p_twin
+            session.lane_failover_from = p_from
             session.needs_fresh_session = True
             session.pending_continuation = True
             session.pending_continuation_prompt = "Continue where you left off and finish the task, then answer in plain text."
             p_notice = Message(
                 role="system",
-                content="Claude declined this request on your subscription; continuing on your Anthropic API key.",
+                content=("Claude declined this request on your subscription, so this answer is "
+                         "finishing on your Anthropic API key (billed to that key). Your next "
+                         "message goes back on the subscription."),
                 branch_id=session.active_branch_id,
             )
             absorb_repeat_card(session, p_notice)

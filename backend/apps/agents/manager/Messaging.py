@@ -158,6 +158,11 @@ class Messaging(AgentManagerProtocol):
             session.auth_retry_used = False
             # The repeat-quit floor and the vanishing-quit rule key on this; one false positive used to arm both for the session's life (ENG-364).
             session.empty_finish_total = 0
+            # The borrowed API key was for one ask, and this is a new one; back to the lane they chose.
+            if session.lane_failover_from:
+                logger.info(f"lane failover over for {session_id}: {session.model} -> {session.lane_failover_from}")
+                session.model = session.lane_failover_from
+                session.lane_failover_from = None
             # A human is here and driving, so an earlier outage stops counting against the next one.
             session.reconnect_attempts = 0
             session.awaiting_reconnect = False
