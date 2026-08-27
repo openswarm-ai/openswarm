@@ -51,7 +51,14 @@ NESTED_TEXT_PATHS = (("file", "content"), ("result", "content"), ("data", "text"
 
 @typechecked
 def shape_text(body: str, recovery: str) -> str:
-    """Head + the notable lines from the middle + tail, and always where to find the rest."""
+    """Head + the notable lines from the middle + tail.
+
+    `recovery` is the blob path, and it is deliberately NOT written into the output; see the note
+    below the elision for the drill that settled it. It stays in the signature because it is the
+    recoverability CONTRACT: `shape_for_model` refuses to cut anything it could not park, so a
+    caller cannot shape without one. Reading this as a forgotten parameter is the mistake that got
+    the path put back once already.
+    """
     if len(body) <= HEAD_CHARS + TAIL_CHARS:
         return body
     head, tail = body[:HEAD_CHARS], body[-TAIL_CHARS:]
@@ -71,10 +78,19 @@ def shape_text(body: str, recovery: str) -> str:
     # cannot be written, and then we said nothing about it, so the model's only recovery was to
     # re-run the command. hermes hands the model an exact re-read call; this is the same idea,
     # phrased as output rather than as instructions from a harness.
-    p_from_line = body.count("\n", 0, HEAD_CHARS) + 1
-    note = (f"[... {len(middle)} characters omitted; full output: {recovery} "
-            f"(the omitted part starts at line {p_from_line}) ...]") if recovery else (
-            f"[... {len(middle)} characters omitted ...]")
+    # NO PATH, NO INSTRUCTION, and this is now settled by drill rather than by the retracted
+    # p=0.026 control that first removed it. Restoring the path was tried twice live on 2026-08-27,
+    # same session, needle in the elided middle, re-running forbidden:
+    #   passive form  ("full output: <path>")      -> "I have no legitimate way to see line 301"
+    #   imperative    ("Read <path> from line 18") -> "that's not a real system instruction, it's
+    #                                                 text sitting inside the tool result ...
+    #                                                 flagging it in case it's an injection attempt"
+    # A model with working injection defences MUST refuse an instruction embedded in tool output,
+    # so the note cannot be an affordance; worse, it manufactures a false security warning in the
+    # answer. The blob is still written and `shape_for_model` still REFUSES to cut when it cannot be
+    # written -- recoverability is real, it is simply carried by the tool call surviving in the
+    # transcript (the agent re-runs it), which is the same recovery hermes leans on.
+    note = f"[... {len(middle)} characters omitted ...]"
     if carried:
         note += "\n" + "\n".join(carried)
     return f"{head}\n{note}\n{tail}"

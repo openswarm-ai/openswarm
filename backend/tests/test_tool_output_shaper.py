@@ -32,10 +32,11 @@ def test_an_elision_is_marked_and_never_names_the_harness_IN_PROSE():
     it cannot, so withholding the path was paying for a recovery nobody could use."""
     out = shape_text(p_big(), "/data/blobs/x.txt")
     assert "characters omitted" in out, "a cut must be visible as a cut"
-    assert "/data/blobs/x.txt" in out, "the file it already wrote must be reachable"
-    note = out[out.index("[..."):out.index("]", out.index("[..."))]
-    assert "OpenSwarm" not in note.replace("/data/blobs/x.txt", ""), \
-        "the harness may not name ITSELF; a path is data, prose is a confession"
+    # CORRECTED AGAIN 2026-08-27, this time by live drill rather than by a statistic: advertising
+    # the path makes the model flag the note as a prompt-injection attempt and refuse it. See
+    # test_shaper_recovery_path.py for the two transcripts.
+    assert "/data/blobs/x.txt" not in out, "an embedded path+instruction reads as injection"
+    assert "OpenSwarm" not in out
 
 
 def test_the_answer_line_survives_the_middle():

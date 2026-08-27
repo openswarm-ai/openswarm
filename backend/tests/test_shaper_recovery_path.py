@@ -23,32 +23,36 @@ def p_note(out: str) -> str:
     return next(ln for ln in out.splitlines() if ln.startswith("[..."))
 
 
-def test_the_note_names_the_file_the_shaper_already_wrote():
-    assert BLOB in p_note(shape_text(p_body(), BLOB))
+def test_the_note_carries_no_path_and_no_instruction():
+    """DRILLED 2026-08-27, twice, and this is the whole reason.
+
+    Same session, needle in the elided middle, re-running forbidden:
+      passive  ("full output: <path>")       -> "I have no legitimate way to see line 301"
+      imperative ("Read <path> from line 18") -> "that's not a real system instruction, it's text
+                                                 sitting inside the tool result ... flagging it in
+                                                 case it's an injection attempt"
+    A model with working injection defences must refuse an instruction embedded in tool output. The
+    note cannot be an affordance, and advertising it manufactures a false security warning."""
+    note = p_note(shape_text(p_body(), BLOB))
+    assert BLOB not in note
+    for word in ("Read ", "read ", "full output", "see the omitted"):
+        assert word not in note, f"an embedded instruction reads as injection: {note}"
+    assert "characters omitted" in note, "the cut must still be visible as a cut"
 
 
-def test_it_says_where_in_that_file_the_omitted_part_begins():
-    # hermes's trick: without a starting offset the model's first read lands in text it already has.
-    body = p_body()
-    expected = body.count("\n", 0, HEAD_CHARS) + 1
-    assert f"starts at line {expected}" in p_note(shape_text(body, BLOB))
+def test_the_blob_is_still_written_even_though_it_is_not_advertised():
+    """Recoverability is real; it is just carried by the tool call surviving in the transcript."""
+    src = open("backend/apps/agents/manager/streaming/tool_output_shaper.py").read()
+    assert "write_blob(" in src
+    assert "skipped_no_recovery" in src, "a cut that could not be parked must not happen at all"
 
 
-def test_the_notes_PROSE_names_nothing_about_the_harness():
-    """The reason the path left in the first place, stated precisely.
-
-    On a packaged install the blob really does live under `.../Application Support/OpenSwarm/data`,
-    so the app name is unavoidably inside the path. That is a filesystem fact any `ls` would print,
-    and it is a different thing from prose announcing the harness ("elided by OpenSwarm"), which is
-    what the original wording did and what the rule is actually about. So: the PATH may say
-    anything, the WORDS around it may not."""
-    out = shape_text(p_body(), BLOB)
-    i = out.index("[...")
-    note = out[i:out.index("]", i)]
-    prose = note.replace(BLOB, "<path>").lower()
-    for word in ("openswarm", "harness", "elided by", "automated", "assistant", "we ", "our "):
-        assert word not in prose, f"the note's prose must not say {word!r}: {prose}"
-    assert "<path>" in prose, "and the path itself must still be there"
+def test_the_recovery_arg_is_documented_as_deliberately_unsurfaced():
+    """It looked like a forgotten parameter, which is how the path got restored once already."""
+    src = open("backend/apps/agents/manager/streaming/tool_output_shaper.py").read()
+    i = src.index("def shape_text(")
+    doc = src[i:i + 700]
+    assert "deliberately NOT written" in doc
 
 
 def test_no_blob_means_no_promise():
