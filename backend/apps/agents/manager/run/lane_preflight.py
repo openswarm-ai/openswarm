@@ -99,8 +99,8 @@ def injected_dead_conn(provider: str) -> Dict:
 
 async def dead_connection(provider: str) -> Optional[Dict]:
     """The provider's connection if the router considers it dead, else None. Never raises: a preflight that cannot read health must let the turn proceed, because guessing "dead" would ground a working lane."""
-    from backend.apps.agents.core.fault_injection import armed
-    if armed("dead_lane"):
+    from backend.apps.agents.core.fault_injection import armed as p_fault_armed
+    if p_fault_armed("dead_lane"):
         logger.warning("[fault] dead_lane armed: reporting %s as a dead credential", provider)
         return injected_dead_conn(provider)
     try:

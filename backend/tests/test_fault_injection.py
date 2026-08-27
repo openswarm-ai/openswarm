@@ -60,6 +60,7 @@ WIRED_IN = {
     "auth_401": TURN_RUNNER,
     "transport_death": TURN_RUNNER,
     "empty_finish": "backend/apps/agents/manager/streaming/handle_assistant_message.py",
+    "dead_lane": "backend/apps/agents/manager/run/lane_preflight.py",
 }
 
 
