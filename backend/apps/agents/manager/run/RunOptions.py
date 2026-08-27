@@ -192,6 +192,12 @@ class RunOptions(AgentManagerProtocol):
 
         def p_stderr_cb(line: str) -> None:
             p_stderr_buffer.append(line)
+            # The CLI's own context management (autocompact, KEEP-RECENT microcompact) only speaks
+            # on stderr, and `compacted` has been blank on every block envelope precisely because
+            # nothing surfaced these. A guard we cannot see fire is a guard we cannot trust, so its
+            # lines are promoted to the backend log with the session attached.
+            if "KEEP-RECENT" in line or "utocompact" in line or "icrocompact" in line:
+                logger.info(f"[cli-context] {session_id[:8]}: {line.strip()[:300]}")
             # Cap the buffer so a runaway subprocess can't balloon RAM.
             if len(p_stderr_buffer) > 500:
                 del p_stderr_buffer[:250]

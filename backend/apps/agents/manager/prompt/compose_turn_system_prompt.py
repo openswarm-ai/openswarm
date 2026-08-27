@@ -146,12 +146,21 @@ def compose_turn_system_prompt(
     # An explicit pick wins; only when nothing is picked does the chat fall back to the apps it
     # built itself, so the common path costs nothing and a selection is never overridden (ENG-416).
     p_app_ids = list(selected_app_output_ids or [])
+    p_outputs = None
     if not p_app_ids:
-        p_app_ids = apps_created_by_session(session.parent_session_id or session.id)
+        # ONE directory scan, shared by both unselected paths below. They each used to call
+        # load_all() themselves, so an unselected turn read every output file twice (213 on this dev
+        # machine) to build one prompt block.
+        try:
+            from backend.apps.outputs.workspace_io import load_all
+            p_outputs = load_all()
+        except Exception:
+            p_outputs = []
+        p_app_ids = apps_created_by_session(session.parent_session_id or session.id, p_outputs)
     app_ctx = build_selected_app_context(p_app_ids)
     # Nothing picked: name the apps anyway so the agent can point the user at the selection step instead of acting like their app does not exist.
     if not app_ctx:
-        app_ctx = build_unselected_app_context()
+        app_ctx = build_unselected_app_context(p_outputs)
     if app_ctx:
         composed_prompt = f"{composed_prompt}\n\n{app_ctx}" if composed_prompt else app_ctx
 

@@ -103,3 +103,34 @@ def test_the_common_path_pays_nothing(monkeypatch):
     assert "if not p_app_ids:" in src
     # The guard is structural; assert it directly rather than booting a whole turn.
     assert called["n"] == 0
+
+
+# ------------------------------------------------- the scan cost of the fallback (efficiency)
+
+def test_an_unselected_turn_reads_the_outputs_dir_ONCE():
+    """Both unselected paths (this chat's apps, and the name-only list) called load_all() for
+    themselves, so one prompt block cost two full directory reads of every output file. The composer
+    scans once and hands the rows down."""
+    src = open(COMPOSER).read()
+    i = src.index("p_app_ids = list(selected_app_output_ids or [])")
+    block = src[i:src.index("app_ctx = build_selected_app_context", i) + 400]
+    assert block.count("load_all()") == 1, "exactly one scan per turn"
+    assert "apps_created_by_session(session.parent_session_id or session.id, p_outputs)" in block
+    assert "build_unselected_app_context(p_outputs)" in block
+
+
+def test_a_selected_turn_scans_NOTHING():
+    """The common path: the user picked a card, so neither fallback runs and no directory is read."""
+    src = open(COMPOSER).read()
+    i = src.index("p_outputs = None")
+    guard = src[i:src.index("load_all()", i)]
+    assert "if not p_app_ids:" in guard, "the scan must sit behind the nothing-selected branch"
+
+
+def test_both_helpers_still_work_standalone():
+    """They are public and called elsewhere; the shared-scan parameter must stay optional."""
+    import inspect
+    from backend.apps.agents.manager.prompt.prompt_context import build_unselected_app_context
+    for fn in (p_ctx.apps_created_by_session, build_unselected_app_context):
+        p_last = list(inspect.signature(fn).parameters.values())[-1]
+        assert p_last.default is None, f"{fn.__name__}'s outputs arg must default to None"

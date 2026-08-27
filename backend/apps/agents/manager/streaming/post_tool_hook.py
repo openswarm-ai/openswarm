@@ -151,7 +151,11 @@ async def post_tool_hook(ctx: HookContext, input_data: dict, tool_use_id, contex
 
     # The CLI's built-in Agent/Task sub-agent tool is hard-blocked (disallowed_tools) and replaced by the SpawnAgent MCP route, which materializes real child sessions itself; no per-tool branch needed here anymore.
     result_msg = Message(role="tool_result", content=result_payload, branch_id=session.active_branch_id)
-    # Spill oversized tool results to per-session disk storage. The replacement keeps the first 4KB inline so the model retains some signal; the rest lives on disk for the UI to surface in the compaction drawer. Crucially this happens at *write* time (before the next turn ships history to the SDK) so the bloat never re-enters context.
+    # Spill oversized tool results to per-session disk storage: bounds the STORED copy (which the
+    # recap is rebuilt from and the UI renders), keeping first bytes inline and the rest in the
+    # compaction drawer. It does NOT touch what the model carries -- the CLI owns that transcript
+    # (ENG-385 measured this cap at 0.0% of model context; tool_output_shaper is the model-side
+    # bound). The old comment claimed otherwise for months, which is how the gap hid.
     try:
         truncated_content, blob_path = truncate_large_tool_result(
             result_msg.content, session.id, result_msg.id

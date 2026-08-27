@@ -133,7 +133,7 @@ def build_browser_context(dashboard_id: Optional[str], selected_browser_ids: Opt
 
 
 @typechecked
-def build_unselected_app_context() -> Optional[str]:
+def build_unselected_app_context(outputs: Optional[List] = None) -> Optional[str]:
     """Name the user's existing apps when none is selected.
 
     Selecting a card is what grants edit access, but a user who has not learned that ritual just
@@ -143,7 +143,8 @@ def build_unselected_app_context() -> Optional[str]:
     """
     from backend.apps.outputs.workspace_io import load_all
     try:
-        apps = [o for o in load_all() if o.workspace_id and not getattr(o, "deleted_at", None)]
+        p_rows = outputs if outputs is not None else load_all()
+        apps = [o for o in p_rows if o.workspace_id and not getattr(o, "deleted_at", None)]
     except Exception:
         return None
     if not apps:
@@ -171,7 +172,7 @@ APPS_OWNED_CAP = 3
 
 
 @typechecked
-def apps_created_by_session(owning_session_id: Optional[str]) -> List[str]:
+def apps_created_by_session(owning_session_id: Optional[str], outputs: Optional[List] = None) -> List[str]:
     """Output ids this CHAT created, newest first.
 
     The agent had no link at all from "this session made that app" to "this session may edit it",
@@ -186,7 +187,10 @@ def apps_created_by_session(owning_session_id: Optional[str]) -> List[str]:
         return []
     try:
         from backend.apps.outputs.workspace_io import load_all
-        p_mine = [o for o in load_all()
+        # The composer already lists all apps each turn; two full-directory scans (213 files on this
+        # dev machine) per turn for one prompt is waste, so a caller holding a scan passes it in.
+        p_rows = outputs if outputs is not None else load_all()
+        p_mine = [o for o in p_rows
                   if getattr(o, "session_id", None) == owning_session_id
                   and getattr(o, "workspace_id", None)]
     except Exception:
