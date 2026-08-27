@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Smoothly reveals streamed text at a steady cadence instead of painting bursty
@@ -14,21 +14,33 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  *   - The reveal RATE is EMA-smoothed, so a burst ramps the speed up gently and
  *     a lull ramps it down gently; the rate never steps, so the flow never pulses.
  *
- * Render model (v2): the v1 hook setState'd every frame, which re-rendered the
- * whole bubble and re-parsed the full markdown tree 60x/s for the entire stream.
- * Now the 60fps motion comes from appending the pending characters straight into
- * the LAST DOM TEXT NODE under `revealRef` (one block relayout, no React), and
- * React only re-renders ("commits") when structure can change: every COMMIT_MS,
- * or immediately when the pending slice contains a newline (new block / list item
- * / fence line). Inline markers (** ` _) show raw for at most COMMIT_MS before
- * the parse formats them, which matches how unclosed markers already looked.
+ * Render model (v3): REACT OWNS THE TEXT, and nothing else may write it.
+ *
+ * v2 painted the 60fps motion by appending straight into the last DOM text node under `revealRef`,
+ * with React committing only every COMMIT_MS. Two writers for one string, and it corrupted output in
+ * the field: users pasted back answers containing the same sentence twice at different offsets,
+ * clipped at both ends ("recallsByVehicle" arriving again as "ecallsByVehicle"), plus raw markdown
+ * leaking through where rendered text belonged.
+ *
+ * The reason it cannot be made safe with a guard: React reconciles a text node against ITS OWN
+ * previous value, not against the live DOM. Mutate that node behind React's back and, whenever
+ * React's before/after values happen to match, it skips the update and the injected characters
+ * survive forever. Drilled in a real Chromium DOM 2026-08-27 -- an anchor-freshness check still
+ * corrupted 5 of 6 runs, because the damage is done by the time any check could notice.
+ *
+ * So the reveal advances only on commits: every COMMIT_MS, or immediately when the pending slice
+ * contains a newline (new block / list item / fence line). hermes-agent renders streamed text with
+ * a memoised parse and a blinking caret and no pacing at all, which is the same conclusion one step
+ * further; keeping the velocity model preserves the typed feel this was built for.
  */
 
 const TARGET_LAG_S = 0.35;   // stay this far behind = the buffer that prevents stalls
 const RATE_SMOOTH_S = 0.25;  // how fast the reveal speed eases toward its target
 const MAX_CPS = 1000;        // cap so a huge paste/burst still reveals smoothly, not instantly
 const MAX_DT_S = 0.05;       // clamp elapsed after a frame drop / tab switch so we don't leap
-const COMMIT_MS = 150;       // max staleness of the parsed markdown vs the revealed chars
+// 60ms ~= 17fps, which still reads as typing. It was 150ms when a per-frame DOM write hid the
+// commit cadence; with React the only writer, that cadence IS the reveal, and 150 looked stepped.
+const COMMIT_MS = 60;
 
 export function useSmoothText(
   target: string,
@@ -47,46 +59,8 @@ export function useSmoothText(
   const committedRef = useRef<number>(committedLen);
   const lastCommitAtRef = useRef<number>(0);
 
-  // Imperative-tail bookkeeping: which committedLen the DOM reflects, and the text node + its committed baseline that per-frame appends write into.
-  const domLenRef = useRef<number>(committedLen);
   const rafRef = useRef<number | null>(null);
   const tickRef = useRef<((now: number) => void) | null>(null);
-  const nodeRef = useRef<Text | null>(null);
-  const baseRef = useRef<string>('');
-
-  // The imperative fast path has TWO writers for the same visible text: this hook and React's
-  // markdown re-parse. They were synchronised only by a length counter, so a re-parse that moved
-  // the last text node (a closing backtick, a new list item, a link) left `baseRef` describing a
-  // node that no longer holds it. Comparing the anchor's live data to what we anchored to makes
-  // that state unrepresentable rather than merely unlikely.
-  const p_anchorIsFresh = (): boolean => {
-    const node = nodeRef.current;
-    return node !== null && node.isConnected && node.data === baseRef.current;
-  };
-
-  const findLastTextNode = (): Text | null => {
-    const root = revealRef.current;
-    if (!root) return null;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let last: Text | null = null;
-    let n: Node | null;
-    while ((n = walker.nextNode())) last = n as Text;
-    return last;
-  };
-
-  // After each committed render, re-anchor the tail on the fresh DOM and re-apply any chars the reveal position is already past, so a commit never rewinds visible text.
-  useLayoutEffect(() => {
-    if (!enabled) return;
-    const node = findLastTextNode();
-    nodeRef.current = node;
-    baseRef.current = node ? node.data : '';
-    domLenRef.current = committedLen;
-    const shown = Math.floor(posRef.current);
-    if (node && shown > committedLen) {
-      node.data = baseRef.current + targetRef.current.slice(committedLen, shown);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [committedLen, enabled]);
 
   // ONE persistent loop, keyed only on `enabled`. It must NOT restart per token: an effect that depends on target.length tears the rAF down and rebuilds it on every delta, and that churn is what stalls the reveal.
   useEffect(() => {
@@ -119,20 +93,7 @@ export function useSmoothText(
       if (shown > committed) {
         const pending = targetRef.current.slice(committed, shown);
         const due = now - lastCommitAtRef.current >= COMMIT_MS;
-        if (pending.includes('\n') || due || nodeRef.current === null) {
-          committedRef.current = shown;
-          lastCommitAtRef.current = now;
-          setCommittedLen(shown);
-        } else if (domLenRef.current === committed && p_anchorIsFresh()) {
-          // DOM is in sync with the last commit AND the node we anchored to still holds exactly
-          // what we anchored to; safe to append imperatively.
-          nodeRef.current.data = baseRef.current + pending;
-        } else {
-          // Either a commit is mid-flight, or the markdown re-parse moved the tail out from under
-          // our anchor. Appending against a stale base is what re-emitted text the DOM already had
-          // at the wrong offset, which is the duplicated-and-clipped output users pasted back
-          // ("recallsByVehicle" arriving again as "ecallsByVehicle"). Commit instead: React owns the
-          // whole string, so one render costs a frame and cannot corrupt anything (ENG-415).
+        if (pending.includes('\n') || due) {
           committedRef.current = shown;
           lastCommitAtRef.current = now;
           setCommittedLen(shown);
@@ -173,7 +134,6 @@ export function useSmoothText(
       cpsRef.current = 0;
       lastRef.current = 0;
       committedRef.current = enabled ? 0 : target.length;
-      nodeRef.current = null;
       setCommittedLen(enabled ? 0 : target.length);
     }
   }, [target.length, enabled]);

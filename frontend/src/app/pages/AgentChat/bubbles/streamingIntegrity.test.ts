@@ -19,27 +19,30 @@ const here = path.join(process.cwd(), 'src/app/pages/AgentChat/bubbles');
 const smooth = fs.readFileSync(path.join(here, 'useSmoothText.ts'), 'utf8');
 const bubble = fs.readFileSync(path.join(here, 'MessageBubble.tsx'), 'utf8');
 
-test('the imperative append verifies its anchor before writing', () => {
-  const i = smooth.indexOf('nodeRef.current.data = baseRef.current + pending;');
-  assert.ok(i > 0, 'the fast path must still exist');
-  const guard = smooth.slice(smooth.lastIndexOf('} else if', i), i);
-  assert.ok(guard.includes('p_anchorIsFresh()'),
-    'a length counter alone cannot tell that the markdown re-parse moved the node');
+test('React is the ONLY writer of the revealed text', () => {
+  // v2 tried to keep the 60fps imperative append and guard it with an anchor-freshness check.
+  // DRILLED in a real Chromium DOM 2026-08-27: still corrupted 5 of 6 runs. React reconciles a text
+  // node against ITS OWN previous value, not the live DOM, so once the node is mutated behind its
+  // back React can skip the update and the injected characters survive. No guard can fix that,
+  // because the damage is done before any guard could look.
+  assert.ok(!/\.data\s*=/.test(smooth), 'nothing may write a DOM text node directly');
+  assert.ok(!smooth.includes('createTreeWalker'), 'and nothing needs to go hunting for one');
+  assert.ok(!smooth.includes('useLayoutEffect'), 'the re-apply effect went with it');
 });
 
-test('the freshness check compares live DOM data, not a counter', () => {
-  const fn = smooth.slice(smooth.indexOf('const p_anchorIsFresh'), smooth.indexOf('const findLastTextNode'));
-  assert.ok(fn.includes('node.data === baseRef.current'), 'the base must still describe the node');
-  assert.ok(fn.includes('node.isConnected'), 'a detached node is not an anchor');
+test('the reveal still advances, it just advances on commits', () => {
+  assert.ok(smooth.includes('setCommittedLen(shown);'), 'the velocity model still drives it');
+  assert.ok(/const COMMIT_MS = \d+;/.test(smooth));
+  const ms = Number(smooth.match(/const COMMIT_MS = (\d+);/)![1]);
+  assert.ok(ms <= 100, `commits ARE the reveal now; ${ms}ms would read as stepped`);
 });
 
-test('a stale anchor commits instead of silently skipping the frame', () => {
-  // Skipping would stall the reveal; committing hands the whole string back to React, which cannot
-  // corrupt it. The failure direction has to be "one extra render", never "wrong text".
-  const i = smooth.indexOf('p_anchorIsFresh()');
-  const branch = smooth.slice(i, i + 900);
-  assert.ok(branch.includes('setCommittedLen(shown);'), 'the stale path must commit');
-  assert.ok(!/else\s*\{\s*\}/.test(branch), 'no empty else');
+test('the typed feel is kept rather than dropped', () => {
+  // hermes renders streamed text with a memoised parse, a caret, and no pacing at all. That is the
+  // same conclusion one step further; the velocity model is what makes this read like typing.
+  for (const knob of ['TARGET_LAG_S', 'RATE_SMOOTH_S', 'MAX_CPS']) {
+    assert.ok(smooth.includes(knob), `${knob} is part of the feel this exists for`);
+  }
 });
 
 test('an oversized bubble starts rendered and can only downgrade', () => {
