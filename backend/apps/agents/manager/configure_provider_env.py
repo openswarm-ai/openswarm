@@ -241,6 +241,17 @@ async def configure_provider_env(
                 "with a direct API key."
             )
         raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
+    # ENABLE_TOOL_SEARCH belongs to EVERY lane, so it is set after the branch chain rather than
+    # inside it. The CLI's tengu_defer_all_bn4 defers every tool, which collides with cache_control
+    # and 400s the next tool-laden request ("cannot have both defer_loading=true and cache_control
+    # set", ENG-394). That collision is CLI-side and has nothing to do with which credential pays,
+    # yet the flag was set in 4 of 8 branches; the direct-Anthropic-key lanes were among the misses,
+    # which is exactly where it was hit on opus-5. A default applied inside a branch protects only
+    # that branch, and the next branch added forgets it again.
+    p_env = options_kwargs.get("env")
+    if isinstance(p_env, dict):
+        p_env.setdefault("ENABLE_TOOL_SEARCH", "auto")
+
     # Fault-injection seam: lets a QA harness front the provider with a local proxy (mid-run 401 drills, ENG-302 family). Absent in prod, so every branch's real base URL stands.
     p_base_override = os.environ.get("OPENSWARM_ANTHROPIC_BASE_OVERRIDE")
     if p_base_override and isinstance(options_kwargs.get("env"), dict):
