@@ -78,16 +78,28 @@ def test_a_cleared_stamp_is_never_mistaken_for_a_working_credential(monkeypatch)
     )
 
 
-def test_a_lane_still_dead_on_the_next_ask_gets_one_accurate_sentence(monkeypatch):
-    """Second encounter inside the cooldown: we already spent a bounce and a turn, so stop
-    pretending and say the true thing."""
+def test_a_lane_still_dead_inside_the_cooldown_DISPATCHES(monkeypatch):
+    """CORRECTED 2026-08-27 (ENG-414). This used to assert the opposite, and the assumption it
+    encoded is the bug: "second encounter inside the cooldown" was read as "we already spent a
+    bounce and a turn on THIS session". `LAST_BOUNCE` is module-global, so in production it meant
+    "some other chat bounced recently" and it hard-stopped a live build on a working credential.
+
+    Preflight has not dispatched, so it cannot know. It dispatches and flags the session; the
+    accurate sentence now comes from handle_run_error after a real 401. The cooldown still holds."""
     st = p_providers(monkeypatch, P_DEAD, bounce_result=P_DEAD)
     assert asyncio.run(lp.preflight_lane("cx/gpt-5.6")) is None
-    msg = asyncio.run(lp.preflight_lane("cx/gpt-5.6"))
-    assert msg and "ChatGPT" in msg and "Reconnect" in msg
-    assert "rotated" not in msg.lower(), "never claim a rotation that did not happen"
-    assert "no action needed" not in msg.lower(), "there IS action needed; saying otherwise is the bug"
+    assert asyncio.run(lp.preflight_lane("cx/gpt-5.6")) is None, \
+        "a throttled bounce is not evidence about the credential"
     assert st["bounced"] == 1, "the cooldown holds; one restart, not one per ask"
+
+
+def test_the_downstream_card_still_refuses_the_rotation_story():
+    """What the old assertion above was really protecting: when the card DOES fire, it must not
+    invent a rotation window or claim no action is needed. That copy moved, it did not soften."""
+    for msg in lp.RECONNECT_COPY.values():
+        assert "rotated" not in msg.lower(), "never claim a rotation that did not happen"
+        assert "no action needed" not in msg.lower(), "there IS action needed; saying otherwise is the bug"
+        assert "reconnect" in msg.lower(), msg
 
 
 def test_the_bounce_is_rate_limited(monkeypatch):

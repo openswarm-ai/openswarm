@@ -13,9 +13,17 @@ So this looks first, and it tries to fix it before it complains:
                         `unavailable` stamp and modelLock cooldowns), then DISPATCH ANYWAY and let
                         the turn itself be the verdict. If it goes through, the user never learns
                         anything happened.
-  sticky-dead, again -> one accurate sentence, immediately. No invented rotation window, no wait
-                        the user has already tried by hand, no promise of a self-heal that cannot
-                        happen.
+  sticky-dead, bounce
+  already throttled  -> DISPATCH ANYWAY too, and flag the session so that if the turn really does
+                        401, handle_run_error can say the accurate sentence with no rotation story.
+
+This file NEVER tells the user a credential is dead, because it has not dispatched and therefore
+cannot know. It used to, off the bounce cooldown, and that cooldown is a GLOBAL router-restart
+throttle: the branch that meant "permanently dead" actually meant "another chat restarted the
+router in the last five minutes". It killed a live build on a working credential while telling the
+user "waiting will not clear this one", which was backwards, since waiting out the throttle is
+exactly what cleared it (ENG-414). The death verdict lives in ONE place now, downstream of a real
+failed dispatch.
 
 The bounce is NOT allowed to declare success on its own, and that mistake is worth recording: the
 first version re-read the health flag afterwards and called a cleared stamp a recovery. But a fresh
@@ -108,16 +116,15 @@ async def preflight_lane(resolved_model: str,
         return None
 
     dead = await dead_connection(provider)
-    if dead is None:
-        return None
-
-    # Whatever happens next, an auth failure on THIS turn is a dead credential, not a rotation
-    # window: the router had already given up before we sent anything.
+    # Written on EVERY pass, both directions. It used to be latched True and never cleared, so one
+    # blip made every later auth error in that session claim a permanently dead credential.
     if session is not None:
         try:
-            session.lane_credential_dead = True
+            session.lane_credential_dead = dead is not None
         except Exception:
             pass
+    if dead is None:
+        return None
 
     now = time.time()
     if now - LAST_BOUNCE.get(provider, 0.0) >= BOUNCE_COOLDOWN_S:
@@ -141,8 +148,14 @@ async def preflight_lane(resolved_model: str,
         # Deliberately no post-bounce health re-read: see the module docstring. Dispatch is the test.
         return None
 
-    return RECONNECT_COPY.get(
-        provider,
-        "This model's sign-in expired and could not be renewed. Reconnect it in Settings, then "
-        "Models. Waiting will not clear this one.",
+    # The bounce was throttled, and that says NOTHING about this credential: LAST_BOUNCE is global,
+    # so the timer belongs to whichever OTHER chat restarted the router last. Carding here declared
+    # a working lane dead and killed a live build (ENG-414), and it broke this file's own rule that
+    # only a real dispatch can decide. So dispatch. If the credential really is gone, the turn 401s
+    # and handle_run_error shows the accurate card immediately off `lane_credential_dead`, which is
+    # the same sentence this used to return, minus the guessing.
+    logger.info(
+        f"lane preflight: {provider} looks dead but the router bounce is throttled; dispatching "
+        "anyway and letting the turn decide"
     )
+    return None
