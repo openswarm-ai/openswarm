@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -69,6 +69,22 @@ NINE_ROUTER_NPM_VERSION = os.environ.get("OPENSWARM_ROUTER_VERSION", "0.3.60")
 P_REQUEST_LOG_PATH = os.path.expanduser("~/.9router/request-details.json")
 P_REQUEST_LOG_MAX_BYTES = 5 * 1024 * 1024
 P_NODE_HEAP_MB = 4096
+
+
+def p_node_ca_env() -> Dict[str, str]:
+    """OS roots for the router, because Node ignores the OS trust store (ENG-408).
+
+    Additive: NODE_EXTRA_CA_CERTS adds to Node's bundled roots rather than replacing them, so a
+    machine that works today cannot be broken by it. Empty dict on any failure, which is exactly the
+    behaviour of every build before this.
+    """
+    try:
+        from backend.config.node_trust import node_ca_env
+        from backend.config.paths import DATA_ROOT
+        return node_ca_env(os.path.join(DATA_ROOT, "node-ca-roots.pem"))
+    except Exception as e:
+        logger.debug("node trust: skipped for the router (%s)", e)
+        return {}
 
 
 def p_rotate_request_log() -> None:
@@ -600,7 +616,8 @@ async def p_ensure_running_impl():
         logger.info("Starting 9Router (production) on port %d...", NINE_ROUTER_PORT)
         cmd = [node, f"--max-old-space-size={P_NODE_HEAP_MB}"] + (["--require", p_patch] if p_patch else []) + [standalone_server]
         cwd = os.path.dirname(standalone_server)
-        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
+        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production",
+               **p_node_ca_env()}
         if node == os.environ.get("OPENSWARM_ELECTRON_PATH"):
             env["ELECTRON_RUN_AS_NODE"] = "1"
     else:
@@ -618,7 +635,8 @@ async def p_ensure_running_impl():
         )
         cmd = [node, f"--max-old-space-size={P_NODE_HEAP_MB}"] + (["--require", p_patch] if p_patch else []) + [cached_server]
         cwd = os.path.dirname(cached_server)
-        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production"}
+        env = {**os.environ, "PORT": str(NINE_ROUTER_PORT), "NODE_ENV": "production",
+               **p_node_ca_env()}
 
     # Capture stdout+stderr so a failed start can tell us WHY (the old DEVNULL default made every "router never came up" a silent mystery, which is the whole reason #90 was un-diagnosable). Packaged prod (NODE_ENV=production standalone) is quiet, so one fixed temp file, truncated each start attempt, won't grow; dev keeps its chatty-Next.js DEVNULL unless debug is set.
     p_cap_path = os.path.join(tempfile.gettempdir(), "openswarm-9router-start.log")

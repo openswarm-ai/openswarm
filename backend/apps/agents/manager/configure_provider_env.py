@@ -251,6 +251,17 @@ async def configure_provider_env(
     p_env = options_kwargs.get("env")
     if isinstance(p_env, dict):
         p_env.setdefault("ENABLE_TOOL_SEARCH", "auto")
+        # The CLI is Node and ignores the OS trust store, so on a machine whose endpoint tool or
+        # corporate proxy installed a root, sign-in succeeds (ENG-407 armed truststore for THIS
+        # process) and the first model call still dies on TLS. Additive and fail-open: empty dict
+        # when nothing can be exported, which is every build before this (ENG-408).
+        try:
+            from backend.config.node_trust import node_ca_env
+            from backend.config.paths import DATA_ROOT
+            for k, v in node_ca_env(os.path.join(DATA_ROOT, "node-ca-roots.pem")).items():
+                p_env.setdefault(k, v)
+        except Exception as e:
+            logger.debug("node trust: skipped for the CLI (%s)", e)
 
     # Fault-injection seam: lets a QA harness front the provider with a local proxy (mid-run 401 drills, ENG-302 family). Absent in prod, so every branch's real base URL stands.
     p_base_override = os.environ.get("OPENSWARM_ANTHROPIC_BASE_OVERRIDE")
