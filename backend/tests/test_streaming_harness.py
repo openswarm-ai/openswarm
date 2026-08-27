@@ -224,8 +224,15 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
     p_pp = env.pop("PYTHONPATH", None)
     assert p_pp is not None and "site-packages" not in p_pp
     assert "debugger" in p_pp, "the debugger injection dir is the one entry that survives"
-    # Direct key, no 9router proxy; the CLI's own auto-memory is force-disabled on every spawn (ENG-222).
-    assert env == {"ANTHROPIC_API_KEY": "sk-ant-test123", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+    # Direct key, no 9router proxy; the CLI's own auto-memory is force-disabled on every spawn
+    # (ENG-222); ENABLE_TOOL_SEARCH rides EVERY lane now, because the deferral it disables collides
+    # with cache_control and 400s the next tool-laden request regardless of who is paying (ENG-394).
+    # Exact equality on purpose: this branch shipping one key too few is how ENG-394 reached a user.
+    assert env == {
+        "ANTHROPIC_API_KEY": "sk-ant-test123",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        "ENABLE_TOOL_SEARCH": "auto",
+    }
 
 
 def test_loop_with_session_cwd_runs_workspace_git_init(monkeypatch):
