@@ -165,6 +165,36 @@ def build_unselected_app_context() -> Optional[str]:
 P_UNSELECTED_APP_CAP = 12
 
 
+# A chat that built an app can edit it without the user re-selecting the card. Only consulted when
+# NOTHING is selected: an explicit pick always wins, and the common path pays nothing.
+APPS_OWNED_CAP = 3
+
+
+@typechecked
+def apps_created_by_session(owning_session_id: Optional[str]) -> List[str]:
+    """Output ids this CHAT created, newest first.
+
+    The agent had no link at all from "this session made that app" to "this session may edit it",
+    so it told the user to go select a card it had produced itself, and then to "save or reopen"
+    an app that was sitting on their canvas (ENG-416).
+
+    `output.session_id` is written from `parent_session_id` at creation, so it is already the chat
+    rather than the per-dispatch view-builder child; callers must pass the chat for the same reason
+    ENG-403 had to (a child id would match nothing and the feature would be silently dead).
+    """
+    if not owning_session_id:
+        return []
+    try:
+        from backend.apps.outputs.workspace_io import load_all
+        p_mine = [o for o in load_all()
+                  if getattr(o, "session_id", None) == owning_session_id
+                  and getattr(o, "workspace_id", None)]
+    except Exception:
+        return []
+    p_mine.sort(key=lambda o: getattr(o, "updated_at", "") or "", reverse=True)
+    return [o.id for o in p_mine[:APPS_OWNED_CAP]]
+
+
 @typechecked
 def build_selected_app_context(selected_app_output_ids: Optional[List[str]]) -> Optional[str]:
     """Build a context block for dashboard App cards the user selected to edit.

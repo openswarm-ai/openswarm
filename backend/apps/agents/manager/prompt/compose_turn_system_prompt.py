@@ -13,6 +13,7 @@ from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.manager.prompt.tool_catalog import get_all_tool_names
 from backend.apps.agents.manager.prompt.repo_staleness_note import repo_staleness_note
 from backend.apps.agents.manager.prompt.prompt_context import (
+    apps_created_by_session,
     build_app_runtime_contract,
     build_browser_context,
     build_installed_skills_catalog,
@@ -142,7 +143,12 @@ def compose_turn_system_prompt(
         pass
 
     # App cards the user picked via the dashboard element picker: give the agent each app's on-disk path + meta + SKILL.md pointer so it can edit them in place (the dashboard card's runtime live-reloads). Additive and independent of view-builder mode above.
-    app_ctx = build_selected_app_context(selected_app_output_ids)
+    # An explicit pick wins; only when nothing is picked does the chat fall back to the apps it
+    # built itself, so the common path costs nothing and a selection is never overridden (ENG-416).
+    p_app_ids = list(selected_app_output_ids or [])
+    if not p_app_ids:
+        p_app_ids = apps_created_by_session(session.parent_session_id or session.id)
+    app_ctx = build_selected_app_context(p_app_ids)
     # Nothing picked: name the apps anyway so the agent can point the user at the selection step instead of acting like their app does not exist.
     if not app_ctx:
         app_ctx = build_unselected_app_context()
