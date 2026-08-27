@@ -8,6 +8,7 @@ session.messages, the originals stay for the UI drawer and only the history sent
 is trimmed downstream (see backend/CLAUDE.md: "compaction must actually trim, not just mark")."""
 
 import os
+import logging
 from typing import Dict, Optional
 
 from typeguard import typechecked
@@ -16,6 +17,8 @@ from backend.apps.agents.core.models import AgentSession
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.session.history_compaction import get_branch_messages
 from backend.apps.agents.manager.streaming.state import TurnState
+
+logger = logging.getLogger(__name__)
 
 
 @typechecked
@@ -71,6 +74,19 @@ def maybe_break_midturn(session: AgentSession, turn: TurnState, msg_usage: Dict)
     except Exception:
         return False
     if total <= 0:
+        # No usage on this message. On the codex/GPT lane assistant messages NEVER carry usage
+        # (it arrives only on the ResultMessage, at turn end), so this is not a hiccup: the breaker
+        # is inert for that entire session and one giant turn can run to the context ceiling with
+        # nothing watching. A guard may never disable itself in silence, so it names what it just
+        # stopped protecting. Once per turn: this path runs on every assistant message.
+        if not turn.usage_absence_reported:
+            turn.usage_absence_reported = True
+            logger.warning(
+                "[context-break] session %s on model %s sends no per-message usage, so the "
+                "mid-turn context breaker cannot run for it; this turn is unprotected against a "
+                "single-turn context blowout (ENG-391)",
+                getattr(session, "id", "?"), getattr(session, "model", "?"),
+            )
         return False
     # Keep the session's counter honest mid-turn: a broken turn never gets its ResultMessage accounting, and the next pre-send guard reads this.
     session.tokens["input"] = total
