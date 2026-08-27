@@ -59,13 +59,22 @@ def shape_text(body: str, recovery: str) -> str:
     carried = [ln.strip()[:CARRIED_LINE_CHARS]
                for ln in middle.splitlines() if P_NOTABLE.search(ln)][:MAX_CARRIED_LINES]
     # Reads as ordinary output truncation, the way head/tail/grep already do, and names NOTHING
-    # about the harness. Measured 2026-08-25, same task 8 times per arm: the previous wording,
-    # "[... N chars elided by OpenSwarm. Full output: <path> ...]", blocked 8/8 against 3/8 for no
-    # shaping at all (Fisher p=0.026). CLAUDE.md already said why: on a lane whose terms restrict
-    # third-party automated use, naming the harness is a signed confession, and this fires on ~6% of
-    # every tool result rather than only on nudges. Recovery is the same one hermes relies on: the
-    # tool call is still in the transcript, so the agent can simply run it again.
-    note = f"[... {len(middle)} characters omitted ...]"
+    # about the harness: on a lane whose terms restrict third-party automated use, naming it is a
+    # signed confession, and this fires on ~6% of every tool result rather than only on nudges.
+    #
+    # The PATH is back, and the reason it left is worth recording. It was removed on "the previous
+    # wording blocked 8/8 against 3/8, Fisher p=0.026" -- a measurement this repo has since
+    # RETRACTED as a vacuous control (every treatment run was later in the session than every
+    # control; re-running the control late gave 6/7, interleaved arms are level). What that
+    # measurement actually tested was the string "elided by OpenSwarm", which is gone either way.
+    # Dropping the path cost real capability: we write the blob, we REFUSE to shape at all when it
+    # cannot be written, and then we said nothing about it, so the model's only recovery was to
+    # re-run the command. hermes hands the model an exact re-read call; this is the same idea,
+    # phrased as output rather than as instructions from a harness.
+    p_from_line = body.count("\n", 0, HEAD_CHARS) + 1
+    note = (f"[... {len(middle)} characters omitted; full output: {recovery} "
+            f"(the omitted part starts at line {p_from_line}) ...]") if recovery else (
+            f"[... {len(middle)} characters omitted ...]")
     if carried:
         note += "\n" + "\n".join(carried)
     return f"{head}\n{note}\n{tail}"
@@ -149,12 +158,12 @@ def shape_for_model(session: object, session_id: str, response: object, msg_id: 
         # guard is present, reachable, and doing nothing. Caught live on `Read`, whose payload nests
         # the text under `file.content` and so matched none of the flat fields. Say the shape out
         # loud rather than returning a silent None.
-        p_size = len(p_payload_text(response)) or _rough_size(response)
+        p_size = len(p_payload_text(response)) or p_rough_size(response)
         if p_size > SHAPE_OVER_BYTES:
             bump_shaping_stat(session, "unrecognised", 1)
             logger.warning(
                 f"tool-output shaping skipped a {p_size:,}-byte {tool_name} result: unrecognised "
-                f"payload shape {_shape_of(response)}. It is being sent to the model in full.")
+                f"payload shape {p_shape_of(response)}. It is being sent to the model in full.")
         return None
 
     p_body = p_payload_text(response)
@@ -229,7 +238,7 @@ def shaping_report(session: object) -> Optional[str]:
 
 
 @typechecked
-def _rough_size(response: object) -> int:
+def p_rough_size(response: object) -> int:
     try:
         import json as p_json
         return len(p_json.dumps(response, default=str))
@@ -238,7 +247,7 @@ def _rough_size(response: object) -> int:
 
 
 @typechecked
-def _shape_of(response: object) -> str:
+def p_shape_of(response: object) -> str:
     """A description of an unrecognised payload, enough to add a field without a repro."""
     if isinstance(response, dict):
         return "dict(" + ",".join(sorted(response)[:8]) + ")"

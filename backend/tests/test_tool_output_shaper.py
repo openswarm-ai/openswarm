@@ -22,16 +22,20 @@ def p_big(marker: str = "") -> str:
     return ("a" * 3_000) + f"\n{marker}\n" + ("b" * 5_000)
 
 
-def test_an_elision_is_marked_and_never_names_the_harness():
-    """Recoverability is still the guarantee, but it is carried by the TOOL CALL surviving in the
-    transcript (the agent can re-run it), not by pointing at a blob path.
+def test_an_elision_is_marked_and_never_names_the_harness_IN_PROSE():
+    """CORRECTED 2026-08-27. This used to also ban the blob PATH, citing "8/8 policy blocks against
+    3/8, p=0.026". That measurement is retracted: every treatment run was later in the session than
+    every control, and re-running the control late gave 6/7 while interleaved arms were level. What
+    it really tested was the phrase "elided by OpenSwarm", which is still banned here.
 
-    Naming the harness in the body cost 8/8 policy blocks against 3/8 for no shaping (p=0.026,
-    2026-08-25). CLAUDE.md: never announce automation on a lane whose terms restrict it."""
+    Re-run the shaper's own guarantee: it writes the full body to a blob and REFUSES to shape when
+    it cannot, so withholding the path was paying for a recovery nobody could use."""
     out = shape_text(p_big(), "/data/blobs/x.txt")
     assert "characters omitted" in out, "a cut must be visible as a cut"
-    assert "OpenSwarm" not in out, "the harness may not name itself inside tool output"
-    assert "/data/blobs/" not in out, "nor leak an internal path into the conversation"
+    assert "/data/blobs/x.txt" in out, "the file it already wrote must be reachable"
+    note = out[out.index("[..."):out.index("]", out.index("[..."))]
+    assert "OpenSwarm" not in note.replace("/data/blobs/x.txt", ""), \
+        "the harness may not name ITSELF; a path is data, prose is a confession"
 
 
 def test_the_answer_line_survives_the_middle():

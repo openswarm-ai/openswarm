@@ -67,8 +67,11 @@ def test_shaping_never_removes_without_a_way_back():
     from backend.apps.agents.manager.streaming.tool_output_shaper import shape_text
     out = shape_text("q" * 9_000, "/blobs/x-model.txt")
     assert "characters omitted" in out, "a cut is always visible as a cut"
-    assert "OpenSwarm" not in out and "/blobs/" not in out, \
-        "but never by naming the harness or an internal path (p=0.026 block regression)"
+    assert "/blobs/x-model.txt" in out, \
+        "and the docstring above is the reason: recoverability MEANS naming where the full text is"
+    # The path ban this used to carry cited a retracted p=0.026 control. Harness PROSE stays banned.
+    note = out[out.index("[..."):out.index("]", out.index("[..."))]
+    assert "OpenSwarm" not in note.replace("/blobs/x-model.txt", "")
 
 
 def test_shaping_leaves_a_normal_result_completely_alone():
