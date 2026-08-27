@@ -113,8 +113,10 @@ def test_an_unselected_turn_reads_the_outputs_dir_ONCE():
     scans once and hands the rows down."""
     src = open(COMPOSER).read()
     i = src.index("p_app_ids = list(selected_app_output_ids or [])")
-    block = src[i:src.index("app_ctx = build_selected_app_context", i) + 400]
-    assert block.count("load_all()") == 1, "exactly one scan per turn"
+    block = src[i:src.index("if app_ctx:", i)]
+    # Count CALLS, not prose: the comment explaining the fix names load_all() too.
+    code = "\n".join(ln.split("#")[0] for ln in block.splitlines())
+    assert code.count("load_all()") == 1, f"exactly one scan per turn, found {code.count('load_all()')}"
     assert "apps_created_by_session(session.parent_session_id or session.id, p_outputs)" in block
     assert "build_unselected_app_context(p_outputs)" in block
 

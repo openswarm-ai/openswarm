@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 from typeguard import typechecked
 
 from backend.apps.agents.core.models import AgentSession
@@ -44,17 +44,22 @@ from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtoco
 # ratchet exists because a recap-bearing turn was already refused, and an override that widened it
 # back would hand the filter the exact request it just declined.
 PREFIX_NARROWNESS = ("minimal", "summary", "none")
+# The three modes as a TYPE, not a convention. It returned bare `str`, so assigning the result back
+# to `session.history_prefix_sent` (a Literal field) was a standing type error nobody could act on,
+# and a typo'd fourth mode would have been caught only by the ratchet quietly doing nothing.
+PrefixMode = Literal["minimal", "summary", "none"]
 
 
 @typechecked
-def effective_prefix_mode(session: AgentSession) -> str:
+def effective_prefix_mode(session: AgentSession) -> PrefixMode:
     """The persisted mode, narrowed by any one-turn override, consumed on read."""
     p_mode = session.history_prefix_mode
     p_once = session.history_prefix_once
     session.history_prefix_once = None
     if p_once is None:
         return p_mode
-    return max(p_mode, p_once, key=PREFIX_NARROWNESS.index)
+    p_widest: PrefixMode = max(p_mode, p_once, key=PREFIX_NARROWNESS.index)
+    return p_widest
 
 
 
