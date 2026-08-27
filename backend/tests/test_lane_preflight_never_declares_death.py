@@ -116,3 +116,32 @@ async def test_a_router_that_does_not_come_back_still_stops_the_turn(monkeypatch
 
 async def p_async(value):
     return value
+
+
+# ---------------------------------------------------- the drill seam itself (OSW_FAULT=dead_lane)
+
+def test_the_injected_fault_is_the_shape_the_REAL_classifier_catches():
+    """A drill that fires a fault the guard ignores would report a pass while proving nothing.
+    Same rule the fault_injection module already states for its other faults."""
+    conn = p_pf.injected_dead_conn("claude")
+    assert p_pf.connection_is_dead(conn) is True
+    assert conn["errorCode"] in (401, 403), "connection_is_dead requires auth evidence, not just unavailable"
+
+
+def test_the_fault_is_declared_so_a_typo_cannot_arm_nothing():
+    from backend.apps.agents.core.fault_injection import KNOWN_FAULTS
+    assert "dead_lane" in KNOWN_FAULTS
+
+
+@pytest.mark.asyncio
+async def test_the_fault_is_inert_unless_armed(monkeypatch):
+    monkeypatch.delenv("OSW_FAULT", raising=False)
+    called = {"n": 0}
+
+    async def p_real(provider):
+        called["n"] += 1
+        return None
+
+    monkeypatch.setattr(p_pf, "dead_connection", p_real)
+    await p_pf.preflight_lane("cc/claude-opus-5", p_session())
+    assert called["n"] == 1, "unarmed, the real health read must still happen"

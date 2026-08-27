@@ -25,6 +25,7 @@ KNOWN_FAULTS: Set[str] = {
     "sidecar_wedge",     # a builtin tool never returns (ENG-368 heartbeat ceiling)
     "transport_death",   # the CLI's pipe dies, not the provider (ENG-382 respawn-not-rebuild)
     "empty_finish",      # a turn ends with no answer after tool work (ENG-354, ENG-390)
+    "dead_lane",         # the router has already given up on the credential (ENG-414 preflight)
 }
 
 

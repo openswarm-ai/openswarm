@@ -90,8 +90,19 @@ def connection_is_dead(conn: Dict) -> bool:
     return conn.get("errorCode") in (401, 403)
 
 
+# The shape the router publishes for a credential it has given up on, and the shape a drill injects.
+# It is built to satisfy `connection_is_dead` above, and a test pins that, so a drill can never fire
+# a fault the guard ignores and still report a pass.
+def injected_dead_conn(provider: str) -> Dict:
+    return {"provider": provider, "testStatus": "unavailable", "errorCode": 401}
+
+
 async def dead_connection(provider: str) -> Optional[Dict]:
     """The provider's connection if the router considers it dead, else None. Never raises: a preflight that cannot read health must let the turn proceed, because guessing "dead" would ground a working lane."""
+    from backend.apps.agents.core.fault_injection import armed
+    if armed("dead_lane"):
+        logger.warning("[fault] dead_lane armed: reporting %s as a dead credential", provider)
+        return injected_dead_conn(provider)
     try:
         from backend.apps.nine_router import get_providers
         for conn in await get_providers():
