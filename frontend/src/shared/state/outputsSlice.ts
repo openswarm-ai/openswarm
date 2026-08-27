@@ -88,9 +88,14 @@ interface OutputsState {
   loaded: boolean;
   // Bumped per app whenever a version is captured (auto after a build, or manual). Lets an already-open History panel know to refetch without polling or timing guesses: the editor and the panel are siblings, so this is their only shared signal.
   captureSignal: Record<string, number>;
+  // Bumped when an app's preview webview is wedged and has to be REMOUNTED. A `.reload()` cannot
+  // help there: a hung renderer never processes the reload IPC, which is why a stuck preview
+  // survived three separate attempts in the field (ENG-402). The card and the app both survive;
+  // only the <webview> is torn down and recreated.
+  remountSignal: Record<string, number>;
 }
 
-const initialState: OutputsState = { items: {}, loading: false, loaded: false, captureSignal: {} };
+const initialState: OutputsState = { items: {}, loading: false, loaded: false, captureSignal: {}, remountSignal: {} };
 
 export const fetchOutputs = createAsyncThunk(
   'outputs/fetch',
@@ -216,6 +221,13 @@ const outputsSlice = createSlice({
   name: 'outputs',
   initialState,
   reducers: {
+    /** Force one app's preview webview to remount. Never deletes the card: for a browser the
+     * recovery is evict-and-respawn, but an app card IS the user's app, so the only safe heal is
+     * to recreate its surface underneath it (ENG-402). */
+    remountAppPreview(state, action: { payload: string; type: string }) {
+      const id = action.payload;
+      state.remountSignal[id] = (state.remountSignal[id] ?? 0) + 1;
+    },
     /** Upsert an Output row from a server-pushed WS event (canvas-launched
      * App Builder seeds the row on launch; meta-sync renames it at session
      * end). Merges over existing fields so a row that already has agent-
@@ -256,5 +268,5 @@ const outputsSlice = createSlice({
   },
 });
 
-export const { upsertOutput, setOutputPublishState } = outputsSlice.actions;
+export const { upsertOutput, setOutputPublishState, remountAppPreview } = outputsSlice.actions;
 export default outputsSlice.reducer;

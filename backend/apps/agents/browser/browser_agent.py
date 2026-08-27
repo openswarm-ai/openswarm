@@ -183,8 +183,15 @@ def bridge_ready(value: object) -> bool:
     return value is not None
 
 
-def p_app_output_id(browser_id: str) -> str | None:
-    return browser_id[4:] if browser_id.startswith("app:") else None
+def app_output_id(browser_id: str) -> str | None:
+    """The Output id behind an app card id, or None for a browser card.
+
+    A second instance is addressed as `app:<output_id>#2` (DashboardViewCard's `agentBrowserId`),
+    so the suffix is stripped here rather than by each caller.
+    """
+    if not browser_id.startswith("app:"):
+        return None
+    return browser_id[len("app:"):].split("#", 1)[0] or None
 
 
 def render_app_controls(describe_value: object) -> tuple[str, str] | None:
@@ -1364,7 +1371,7 @@ async def run_browser_agent(
                 p_block.append(f"(controls __rev: {p_rev})")
             app_front_load = "\n\n".join(p_block)
         else:
-            p_oid = p_app_output_id(browser_id) or browser_id
+            p_oid = app_output_id(browser_id) or browser_id
             p_msg = (
                 f"BRIDGE MISSING: window.OPENSWARM_APP not registered - "
                 f"app '{p_oid}' is not agent-operable"
@@ -3202,7 +3209,14 @@ async def run_browser_agent(
                     f"[browser-agent {session_id}] browser card {browser_id} is unusable "
                     f"({card_gone_streak} consecutive gone/hung results); aborting fast"
                 )
-                if os.environ.get("OSW_DEADCARD_EVICT", "1") != "0":
+                # An APP preview is not in browser_cards, so evict_dead_card's lookup misses and it
+                # returns early: nothing was ever torn down, and DEAD_CARDS (a same-host reuse skip)
+                # is meaningless when the card IS the app. That is why a stuck preview survived three
+                # separate attempts in the field. Remount its webview instead; never delete it
+                # (ENG-402).
+                if browser_id.startswith("app:"):
+                    await remount_app_card(dashboard_id, browser_id)
+                elif os.environ.get("OSW_DEADCARD_EVICT", "1") != "0":
                     DEAD_CARDS.add(browser_id)
                     logger.info(f"[browser-agent] {browser_id} marked dead; same-host reuse will skip it")
                     # Tear the wedged webview DOWN now, before recovery spawns a fresh card. Two heavy pages (the dead one + the recovery one) starve the renderer's event loop = the recovery-card wedge; unmounting the dead one frees its renderer so the recovery card is the only heavy neighbor.
@@ -3529,6 +3543,26 @@ def find_reusable_card(dashboard_id: str, url: str, parent_session_id: str | Non
 
 # The renderer needs a beat to unmount the <webview> and let Electron free its renderer process. Recovery spawns its fresh card the instant this returns, so we hold here until the teardown has almost certainly landed, else the new card mounts next to a still-freeing dead one and eats the same 15s starvation cap. Failure-path only, so its cost is invisible next to the cap it prevents.
 P_EVICT_SETTLE_S = 1.5
+
+
+async def remount_app_card(dashboard_id: str | None, browser_id: str) -> None:
+    """Heal a wedged APP preview by remounting its webview. Never deletes anything.
+
+    A browser card can be evicted and respawned; an app card is the user's own app, so the only
+    safe recovery is to rebuild the surface underneath it. A soft `.reload()` is not enough either:
+    a hung renderer never processes the reload IPC, which is why the preview stayed stuck across
+    three attempts (ENG-402). Fail-open, like evict_dead_card: a broadcast that cannot go out must
+    never raise into the abort path.
+    """
+    p_output_id = app_output_id(browser_id)
+    if not p_output_id:
+        return
+    try:
+        await ws_manager.broadcast_global("dashboard:app_card_remount", {
+            "dashboard_id": dashboard_id or "", "output_id": p_output_id})
+        logger.info(f"[browser-agent] app preview {p_output_id} is wedged; asked the card to remount its webview")
+    except Exception:
+        logger.debug("app remount broadcast failed", exc_info=True)
 
 
 async def evict_dead_card(dashboard_id: str | None, browser_id: str) -> None:

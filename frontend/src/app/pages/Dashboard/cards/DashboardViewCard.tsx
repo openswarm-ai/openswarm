@@ -967,6 +967,7 @@ const DashboardOutputPreview: React.FC<{
   onRenderHealth?: (broken: boolean) => void;
 }> = ({ previewRef, output, cardKey, instance = 1, inputData, backendResult, interactive, previewLive, previewDeferred, suspendSnapshot, onAppClicked, onRuntimeLog, onRenderHealth }) => {
   const tokens = useClaudeTokens();
+  const remountSignal = useAppSelector((st) => st.outputs.remountSignal[output.id] ?? 0);
   const dispatch = useAppDispatch();
   const workspaceId = output.workspace_id ?? null;
   const { frontendUrl, isNewMode, isHydrating, bootFailed } = useRuntimePreviewUrl({
@@ -1109,6 +1110,9 @@ const DashboardOutputPreview: React.FC<{
 
   return (
     <ViewPreview
+      // A remount bump tears the <webview> down and builds a fresh one. Needed because a WEDGED
+      // renderer never processes a `.reload()` IPC, so the soft path cannot heal it (ENG-402).
+      key={`${cardKey ?? output.id}:${remountSignal}`}
       ref={previewRef}
       registryId={cardKey ?? output.id}
       serveUrl={url}
