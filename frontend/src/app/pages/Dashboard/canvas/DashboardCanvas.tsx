@@ -17,8 +17,8 @@ import MinimizedStack from '../desktop/MinimizedStack';
 import ApplicationsWindow from '../desktop/ApplicationsWindow';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import { useThemeAccent, useThemeWash } from '@/shared/styles/ThemeContext';
-import { useGrainTileUrl } from '@/shared/styles/useGrainTileUrl';
-import { washBackgroundLayers, washUnderlayColor, effectiveWashStops } from '@/shared/styles/washBackground';
+import { useGrainTile } from '@/shared/styles/useGrainTileUrl';
+import { washBackgroundLayers, canvasUnderlayColor, effectiveWashStops } from '@/shared/styles/washBackground';
 
 // How far the dot grid bleeds past the viewport. The phase translate is `pan % dotSpacing`, so it
 // can never exceed one tile period; deriving the bleed from that bound keeps the layer as small as
@@ -176,8 +176,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
   const dotSize = Math.max(1, 1.5 * canvas.zoom);
   const dotSpacing = 24 * canvas.zoom;
   // Memoized: this component re-renders every card-drag frame, and rebuilding these strings (SVG encode + hex blends) per frame is pure waste.
-  const washUnderlay = React.useMemo(() => washUnderlayColor(washStops, washOpacity, c.bg.page), [washStops, washOpacity, c.bg.page]);
-  const grainTileUrl = useGrainTileUrl(grain);
+  // Canvas variant: folds the dot grid's mean tone in, so an evicted tile paints what the dotted
+  // canvas averaged instead of a lighter dot-less tint (the ENG-340 white blink).
+  const grainTile = useGrainTile(grain);
+  const grainTileUrl = grainTile?.url ?? null;
+  const washUnderlay = React.useMemo(
+    () => canvasUnderlayColor(washStops, washOpacity, c.bg.page, c.border.medium, dotSize, dotSpacing,
+      grainTile ? { meanHex: grainTile.meanHex, meanAlpha: grainTile.meanAlpha } : null),
+    [washStops, washOpacity, c.bg.page, c.border.medium, dotSize, dotSpacing, grainTile]);
   const washLayers = React.useMemo(() => washBackgroundLayers(washStops, washOpacity, c.bg.page, grainTileUrl), [washStops, washOpacity, c.bg.page, grainTileUrl]);
   const gridTileUrl = React.useMemo(() => `url("data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' width='${dotSpacing}' height='${dotSpacing}'><circle cx='${dotSpacing / 2}' cy='${dotSpacing / 2}' r='${dotSize}' fill='${c.border.medium}'/></svg>`,

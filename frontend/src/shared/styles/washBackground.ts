@@ -79,6 +79,60 @@ export function washUnderlayColor(stops: string[], washOpacity: number, pageBg: 
   return mixHex(pageBg, mean, alpha);
 }
 
+// The dot grid's share of the canvas surface. Zoom cancels out of r²/spacing² while the radius is
+// unfloored; the floor at r=1 makes far-zoom-out slightly denser, which is why this takes the live
+// values instead of hardcoding the ratio.
+export function dotGridCoverage(dotRadius: number, dotSpacing: number): number {
+  if (dotSpacing <= 0) return 0;
+  return Math.min(1, (Math.PI * dotRadius * dotRadius) / (dotSpacing * dotSpacing));
+}
+
+/**
+ * What an evicted CANVAS tile should paint as: the wash mean PLUS the dot grid's mean contribution.
+ *
+ * The plain wash underlay was already tint-matched, and the flash still read white on light themes
+ * (ENG-340): the dot layer is the largest promoted texture, its repaint lands last, and its share
+ * of the composite tone was missing from the fallback. Folding the dots' exact coverage in makes an
+ * evicted tile paint the same average tone the rasterized canvas had, so the eviction stops being
+ * visible as a blink. Grain stays unfolded: it is a baked PNG with no statically-knowable mean, and
+ * it rides the same raster as the wash anyway.
+ */
+export function canvasUnderlayColor(
+  stops: string[], washOpacity: number, pageBg: string,
+  dotColor: string, dotRadius: number, dotSpacing: number,
+  grainMean: { meanHex: string; meanAlpha: number } | null = null,
+): string {
+  let under = washUnderlayColor(stops, washOpacity, pageBg);
+  // Grain is the tone the flash was actually missing: the dots are ~1% coverage (pattern, not
+  // tone), while the baked grain darkens the whole surface by its measured mean. Folding the mean
+  // in makes the evicted-tile quad equal what the rasterized canvas averaged.
+  if (grainMean && grainMean.meanAlpha > 0) {
+    const g = parseCssColor(grainMean.meanHex);
+    if (g) under = mixHex(under, g.hex, Math.max(0, Math.min(1, grainMean.meanAlpha)));
+  }
+  // The dot tokens are rgba() strings (light: rgba(0,0,0,0.08)), and mixHex is hex-only: fed an
+  // rgba it NaNs into an invalid colour, the backgroundColor is silently dropped, and the
+  // never-white guarantee itself dies. So parse properly, and an unparseable colour falls back to
+  // the plain underlay rather than to garbage. An alpha dot over the underlay contributes
+  // mix(under, rgb, alpha) across `coverage` of the area, which collapses to one mix at
+  // coverage * alpha.
+  const parsed = parseCssColor(dotColor);
+  if (!parsed) return under;
+  return mixHex(under, parsed.hex, dotGridCoverage(dotRadius, dotSpacing) * parsed.alpha);
+}
+
+// #rrggbb or rgba(r,g,b,a) -> {hex, alpha}, or null for anything else. Null MUST stay null at the
+// caller: guessing a colour here is how an invalid one reaches the compositor.
+export function parseCssColor(color: string): { hex: string; alpha: number } | null {
+  const c = color.trim();
+  if (/^#[0-9a-f]{6}$/i.test(c)) return { hex: c, alpha: 1 };
+  const m = c.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([0-9.]+)\s*)?\)$/i);
+  if (!m) return null;
+  const [r, g, b] = [m[1], m[2], m[3]].map((v) => Math.min(255, parseInt(v, 10)));
+  const alpha = m[4] === undefined ? 1 : Math.max(0, Math.min(1, parseFloat(m[4])));
+  return { hex: `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`, alpha };
+}
+
 // Stock wallpaper when the user hasn't picked an accent yet. ONE stop on purpose: a multi-stop
 // default needs a full-window texture, and Chromium fills any tile it drops with the layer's single
 // background colour, which is why the gradient used to tear into a hard-edged rectangle under GPU
