@@ -190,6 +190,12 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
                          "/opt/openswarm/debugger"]),
     )
 
+    # Pin the OS-root export: it is real on Darwin/Windows and absent on Linux, and an env assertion
+    # that changes by platform is a flake, not a test.
+    import backend.config.node_trust as p_nt
+    p_nt.reset_cache_for_test()
+    monkeypatch.setattr(p_nt, "export_os_roots", lambda dest: "/drill/os-roots.pem", raising=True)
+
     settings = AppSettings(anthropic_api_key="sk-ant-test123", connection_mode="own_key")
     monkeypatch.setattr(am, "load_settings", lambda: settings, raising=True)
     monkeypatch.setattr(run_opts, "load_settings", lambda: settings, raising=True)
@@ -225,13 +231,16 @@ def test_loop_builds_direct_anthropic_key_env(monkeypatch):
     assert p_pp is not None and "site-packages" not in p_pp
     assert "debugger" in p_pp, "the debugger injection dir is the one entry that survives"
     # Direct key, no 9router proxy; the CLI's own auto-memory is force-disabled on every spawn
-    # (ENG-222); ENABLE_TOOL_SEARCH rides EVERY lane now, because the deferral it disables collides
-    # with cache_control and 400s the next tool-laden request regardless of who is paying (ENG-394).
-    # Exact equality on purpose: this branch shipping one key too few is how ENG-394 reached a user.
+    # (ENG-222); ENABLE_TOOL_SEARCH rides EVERY lane, because the deferral it disables collides with
+    # cache_control and 400s the next tool-laden request regardless of who is paying (ENG-394); and
+    # NODE_EXTRA_CA_CERTS rides every lane too, because the CLI is Node and ignores the OS trust
+    # store (ENG-408). The CA export is pinned to a fixture above so this stays exact rather than
+    # platform-dependent: this branch shipping one key too few is how ENG-394 reached a user.
     assert env == {
         "ANTHROPIC_API_KEY": "sk-ant-test123",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "ENABLE_TOOL_SEARCH": "auto",
+        "NODE_EXTRA_CA_CERTS": "/drill/os-roots.pem",
     }
 
 
