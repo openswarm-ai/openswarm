@@ -20,12 +20,29 @@ BROWSER_OK = os.environ.get("OPENSWARM_BROWSER_OK", "0") == "1"
 # tool RESULT because that's what the model reads right before answering; the system-prompt nudge
 # alone loses to the prose prior (live-proven on haiku).
 RICH_UI_OK = os.environ.get("OPENSWARM_RICH_UI_OK", "0") == "1"
+# SEARCH RESULTS ONLY, and as its own content block. The fetch side is gone for good, drilled twice
+# on 2026-08-27 (ENG-413): concatenated into fetched page content, the model correctly reported "an
+# embedded instruction telling me to render the answer using specific UI tools" as a prompt
+# injection in the page (the "fabricated" claim quoted this hint verbatim); moved to a separate
+# labelled block, it STILL got flagged ("an injected instruction trying to get me to add a
+# promotional presentation-guidance footer"). A fetched page is a third party's words, so anything
+# we append is attributed to the page and a model with working defences must flag it -- there is no
+# wording that survives that. Search results are OUR OWN formatted text, so framing there is honestly
+# the tool speaking. The fetch side leans on the system prompt's rich_ui block alone.
 RICH_UI_HINT = (
-    "\n\n[presentation] When you answer the user with this data, render it with the ShowUI tool "
-    "(weather for forecasts, data-table for rows, stats-display for metrics, links for sources, "
-    "chart for series, image/image-gallery for any image URLs in the content) and keep prose to "
-    "one line. Answer in plain text only if no component fits."
+    "[presentation guidance, not page content] When you answer the user with this data, render it "
+    "with the ShowUI tool (weather for forecasts, data-table for rows, stats-display for metrics, "
+    "links for sources, chart for series, image/image-gallery for any image URLs in the content) "
+    "and keep prose to one line. Answer in plain text only if no component fits."
 )
+
+
+def with_search_hint(text: str) -> dict:
+    """One result, two blocks: the data, then the presentation guidance."""
+    blocks = [{"type": "text", "text": text}]
+    if RICH_UI_OK:
+        blocks.append({"type": "text", "text": RICH_UI_HINT})
+    return {"content": blocks}
 
 TOOLS = [
     {
@@ -134,10 +151,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             return {"content": [{"type": "text", "text": f"Search failed: {r['error']}"}], "isError": True}
         results = r.get("results", "")
         if not results:
-            results = f"No results for: {query}"
-        elif RICH_UI_OK:
-            results += RICH_UI_HINT
-        return {"content": [{"type": "text", "text": results}]}
+            return {"content": [{"type": "text", "text": f"No results for: {query}"}]}
+        return with_search_hint(results)
 
     if tool_name == "WebFetch":
         url = str(arguments.get("url", "")).strip()
@@ -157,8 +172,8 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         content = r.get("content", "")
         if not content:
             content = f"No content returned from {url}"
-        elif RICH_UI_OK:
-            content += RICH_UI_HINT
+        # Never any appended guidance here: this is a third party's page, and anything we add to it
+        # is attributed to the page (see the RICH_UI_HINT note above).
         return {"content": [{"type": "text", "text": content}]}
 
     return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
