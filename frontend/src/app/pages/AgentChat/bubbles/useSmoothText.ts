@@ -54,6 +54,16 @@ export function useSmoothText(
   const nodeRef = useRef<Text | null>(null);
   const baseRef = useRef<string>('');
 
+  // The imperative fast path has TWO writers for the same visible text: this hook and React's
+  // markdown re-parse. They were synchronised only by a length counter, so a re-parse that moved
+  // the last text node (a closing backtick, a new list item, a link) left `baseRef` describing a
+  // node that no longer holds it. Comparing the anchor's live data to what we anchored to makes
+  // that state unrepresentable rather than merely unlikely.
+  const p_anchorIsFresh = (): boolean => {
+    const node = nodeRef.current;
+    return node !== null && node.isConnected && node.data === baseRef.current;
+  };
+
   const findLastTextNode = (): Text | null => {
     const root = revealRef.current;
     if (!root) return null;
@@ -113,11 +123,20 @@ export function useSmoothText(
           committedRef.current = shown;
           lastCommitAtRef.current = now;
           setCommittedLen(shown);
-        } else if (domLenRef.current === committed) {
-          // DOM is in sync with the last commit; safe to append imperatively.
+        } else if (domLenRef.current === committed && p_anchorIsFresh()) {
+          // DOM is in sync with the last commit AND the node we anchored to still holds exactly
+          // what we anchored to; safe to append imperatively.
           nodeRef.current.data = baseRef.current + pending;
+        } else {
+          // Either a commit is mid-flight, or the markdown re-parse moved the tail out from under
+          // our anchor. Appending against a stale base is what re-emitted text the DOM already had
+          // at the wrong offset, which is the duplicated-and-clipped output users pasted back
+          // ("recallsByVehicle" arriving again as "ecallsByVehicle"). Commit instead: React owns the
+          // whole string, so one render costs a frame and cannot corrupt anything (ENG-415).
+          committedRef.current = shown;
+          lastCommitAtRef.current = now;
+          setCommittedLen(shown);
         }
-        // else: a commit is mid-flight; skip this frame's append (≤1 frame).
       }
       // Fully revealed AND fully committed: park instead of burning 60fps forever; the growth effect below re-arms.
       if (posRef.current >= full && committedRef.current >= full) {

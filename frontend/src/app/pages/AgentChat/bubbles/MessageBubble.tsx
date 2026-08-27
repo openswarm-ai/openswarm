@@ -940,7 +940,12 @@ const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEd
   // A message longer than ~2 screens of text gets the placeholder + block virtualization treatment (full render in view, reserved-height placeholder off).
   const isOversized = !isStreaming
     && displayText.length > oversizedCharThreshold(viewportHeight, viewportWidth);
-  const [isOversizedInViewport, setIsOversizedInViewport] = useState(false);
+  // Seeded TRUE so the measure can only ever DOWNGRADE to a placeholder. Starting false meant every
+  // fresh mount of a long message rendered `{text: ''}` until a measure pass rescued it, and the
+  // stream handoff mounts a fresh bubble by construction (the streaming copy lives outside the list
+  // and is keyed `streaming-<id>`), so a long answer flashed blank and re-typed at the end of every
+  // turn. Cost of the safe direction: one extra render for a long message that mounts off-screen.
+  const [isOversizedInViewport, setIsOversizedInViewport] = useState(true);
   const shouldRenderMarkdown = !isOversized || isOversizedInViewport;
   const markdownWindow = useMemo(() => {
     if (!shouldRenderMarkdown) {
