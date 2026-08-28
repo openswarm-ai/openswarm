@@ -26,7 +26,29 @@ KNOWN_FAULTS: Set[str] = {
     "transport_death",   # the CLI's pipe dies, not the provider (ENG-382 respawn-not-rebuild)
     "empty_finish",      # a turn ends with no answer after tool work (ENG-354, ENG-390)
     "dead_lane",         # the router has already given up on the credential (ENG-414 preflight)
+    "cli_context_squeeze",  # a tiny context window, so autocompact thrash is drillable (ENG-418)
 }
+
+# The window `cli_context_squeeze` pretends the model has, and the number is load-bearing.
+#
+# A turn does not start at zero: system prompt plus ~50 tool schemas cost 30,257 tokens on a plain
+# agent session (measured live 2026-08-28). Our compaction trigger is 18% of the window, so below a
+# ~168K window the trigger sits UNDER that floor, every turn starts over it, and
+# `maybe_break_midturn` correctly refuses forever (a rebuild that failed to shrink must run rather
+# than break-loop). A drill there reads as "our valve never fires" about a branch that is inert by
+# design: measured, at a 30,000 window the breaker ran 0 times while the CLI thrashed to death.
+#
+# 250,000 puts the trigger at 45,000, clear of the floor and reachable in a few file reads, so the
+# valve is genuinely eligible and its firing means something.
+CLI_SQUEEZE_WINDOW = 250_000
+
+# What a turn costs before it does anything, measured. Not a limit; the eligibility arithmetic below.
+TURN_BASELINE_TOKENS = 30_257
+
+# Smaller windows are still useful, because they reproduce the CLI's own autocompact thrash on
+# demand. They just cannot say anything about OUR breaker, and a drill must never be able to report
+# that silently.
+VALVE_ELIGIBLE_WINDOW = 170_000
 
 
 def armed(name: str) -> bool:
@@ -36,6 +58,34 @@ def armed(name: str) -> bool:
         return False
     wanted = {p.strip() for p in raw.split(",") if p.strip()}
     return name in (wanted & KNOWN_FAULTS)
+
+
+def squeezed_context_window() -> int:
+    """The pretend window when `cli_context_squeeze` is armed, else 0.
+
+    It has to be ONE number feeding BOTH the CLI's autocompact and our own compaction trigger, or
+    the drill measures a configuration that cannot exist: squeeze only the CLI and it dies at 30K
+    while our valve waits for 180K, so "our valve never engaged" would be an artifact of the
+    harness rather than a finding about the code."""
+    if not armed("cli_context_squeeze"):
+        return 0
+    raw = os.environ.get("OSW_FAULT_CLI_WINDOW", "").strip()
+    n = CLI_SQUEEZE_WINDOW
+    if raw:
+        try:
+            p_n = int(raw)
+        except ValueError:
+            p_n = 0
+        if p_n > 0:
+            n = p_n
+    if n < VALVE_ELIGIBLE_WINDOW:
+        logger.warning(
+            "cli_context_squeeze window %d puts the compaction trigger under a turn's ~%d-token "
+            "baseline, so OUR mid-turn breaker is INELIGIBLE and cannot fire at any input. This "
+            "run can reproduce the CLI's autocompact thrash; it can say nothing about our valve.",
+            n, TURN_BASELINE_TOKENS,
+        )
+    return n
 
 
 P_FIRED: Set[str] = set()

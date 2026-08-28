@@ -210,13 +210,53 @@ def test_midturn_break_fires_once_per_turn():
     assert cb.maybe_break_midturn(s, t, p_usage(300_000)) is False
 
 
-def test_turn_already_over_trigger_at_start_never_breaks():
-    # A rebuild that failed to shrink must RUN, not break-loop forever.
+def test_a_turn_that_starts_high_and_does_not_grow_is_left_alone():
+    """A rebuild that failed to shrink must RUN. Growth, not an absolute reading, is what makes a
+    turn this guard's business."""
     s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
     t = TurnState()
     assert cb.maybe_break_midturn(s, t, p_usage(500_000)) is False
-    assert cb.maybe_break_midturn(s, t, p_usage(600_000)) is False
+    assert cb.maybe_break_midturn(s, t, p_usage(505_000)) is False, "5K is not material growth"
     assert t.context_break_fired is False
+
+
+def test_a_turn_that_starts_high_and_GROWS_does_break():
+    """The hole this closed. Measured live: the first usage reading a turn delivers was 94,404
+    against a 45,000 trigger, so the old below-trigger-first rule sat the guard out for the whole
+    turn -- which in production is every long chat and every resumed session near its ceiling."""
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    t = TurnState()
+    assert cb.maybe_break_midturn(s, t, p_usage(500_000)) is False
+    assert cb.maybe_break_midturn(s, t, p_usage(600_000)) is True
+    assert s.pending_continuation and s.needs_fresh_session
+    assert s.last_break_input_tokens == 600_000
+
+
+def test_a_rebuild_that_did_not_shrink_cannot_break_LOOP():
+    """The anti-loop, at the session level where it belongs: break once, and if the rebuild lands
+    back at or above where we broke, the next turn RUNS instead of rebuilding forever."""
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    t = TurnState()
+    cb.maybe_break_midturn(s, t, p_usage(500_000))
+    assert cb.maybe_break_midturn(s, t, p_usage(600_000)) is True
+
+    t2 = TurnState()   # the rebuilt turn, no smaller than the break
+    assert cb.maybe_break_midturn(s, t2, p_usage(600_000)) is False
+    assert cb.maybe_break_midturn(s, t2, p_usage(700_000)) is False
+    assert t2.context_break_fired is False
+
+
+def test_a_rebuild_that_DID_shrink_is_protected_again():
+    """The other direction, which is the half that is easy to lose: the anti-loop must not become a
+    one-break-per-session cap."""
+    s = p_session_with(messages=10, input_tokens=0, context_window=1_000_000)
+    t = TurnState()
+    cb.maybe_break_midturn(s, t, p_usage(500_000))
+    assert cb.maybe_break_midturn(s, t, p_usage(600_000)) is True
+
+    t2 = TurnState()
+    assert cb.maybe_break_midturn(s, t2, p_usage(40_000)) is False
+    assert cb.maybe_break_midturn(s, t2, p_usage(300_000)) is True, "a shrunk rebuild is breakable again"
 
 
 def test_midturn_break_zero_or_garbage_usage_is_inert():

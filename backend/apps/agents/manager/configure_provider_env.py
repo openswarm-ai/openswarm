@@ -262,6 +262,16 @@ async def configure_provider_env(
                 p_env.setdefault(k, v)
         except Exception as e:
             logger.debug("node trust: skipped for the CLI (%s)", e)
+        # Drill only: shrink the CLI's autocompact window so the thrash class is reproducible in
+        # seconds instead of needing a real 180K-token session. The SAME number scales our own
+        # compaction trigger (context_budget.effective_window), so the drill preserves the
+        # production race between the two rather than inventing one (ENG-418).
+        from backend.apps.agents.core.fault_injection import armed as p_fault_armed
+        from backend.apps.agents.core.fault_injection import squeezed_context_window
+        if p_fault_armed("cli_context_squeeze"):
+            p_squeeze = squeezed_context_window()
+            p_env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(p_squeeze)
+            logger.warning("[cli-context] DRILL: CLI autocompact window forced to %d", p_squeeze)
 
     # Fault-injection seam: lets a QA harness front the provider with a local proxy (mid-run 401 drills, ENG-302 family). Absent in prod, so every branch's real base URL stands.
     p_base_override = os.environ.get("OPENSWARM_ANTHROPIC_BASE_OVERRIDE")

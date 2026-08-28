@@ -73,6 +73,14 @@ async def handle_result_message(
     api_type: Optional[str],
     global_settings: object,
 ) -> None:
+    # The turn is over, so "the breaker never had a number" is now a fact rather than a guess.
+    # Reporting it per-message cried wolf on every healthy Anthropic turn (ENG-391 / ENG-418).
+    try:
+        from backend.apps.agents.manager.context_budget import report_usage_liveness
+        report_usage_liveness(session, turn)
+    except Exception:
+        logging.getLogger(__name__).debug("usage liveness report skipped", exc_info=True)
+
     # ResultMessage carries the AUTHORITATIVE per-turn output_tokens count. Some providers (notably OpenAI/Gemini through 9Router) only populate `usage.output_tokens` here, not on individual AssistantMessages. Fold this into the running turn aggregate BEFORE emitting the final consolidated thinking message, so the bubble's tokens segment reflects ground truth on those providers too.
     try:
         result_usage = getattr(message, "usage", None) or {}

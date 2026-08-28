@@ -146,6 +146,7 @@ class TurnRunner(AgentManagerProtocol):
                         note_core_mcp_health(session, session_id, raw)
                     if p_subtype == "compact_boundary":
                         turn.compact_boundaries += 1
+                        session.cli_compactions += 1
                     elif p_subtype == "api_retry":
                         note_provider_retry(session_id, raw, turn)
 

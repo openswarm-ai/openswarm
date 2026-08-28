@@ -196,6 +196,14 @@ class AgentSession(BaseModel):
     # Absolute token ceiling so big-window models don't sit at 650K before marking; the marker fires at the TIGHTER of the pct or this cap, so it's never "just 65%".
     compact_abs_ceiling_tokens: int = 180_000
     compacted_through_msg_id: Optional[str] = None
+    # Where the last mid-turn break happened. The anti-loop: if a rebuild lands back at or above it,
+    # the rebuild did not shrink anything and breaking again would loop forever.
+    last_break_input_tokens: int = 0
+    # Session-lifetime compaction counts, for the fleet question this class has never been able to
+    # answer: how often does a real user's chat hit a compact boundary, and how often do we catch it
+    # first? Per-turn counters die with the turn, so a block envelope carried nothing.
+    cli_compactions: int = 0
+    midturn_breaks: int = 0
     # Aux-LLM distilled summary of the turns dropped by compaction, cached against the cutoff id it was built for; keeps the gist of old history on a rebuild instead of a hard drop.
     compacted_summary: Optional[str] = None
     compacted_summary_through: Optional[str] = None

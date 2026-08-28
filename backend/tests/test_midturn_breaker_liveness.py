@@ -71,25 +71,53 @@ def test_a_turn_that_STARTS_over_the_trigger_is_left_alone():
 
 
 def test_no_usage_at_all_is_ANNOUNCED_not_swallowed(p_logs):
-    """The GPT lane. It cannot run; it must say whose session it just stopped protecting."""
+    """The GPT lane. It cannot run; it must say whose session it just stopped protecting.
+
+    Announced at TURN END, because that is the only point where "never" is a fact. Reporting it
+    from the first usage-less message claimed the whole turn was unprotected on healthy Anthropic
+    turns too, and a liveness signal that cries wolf hides the case it exists for (ENG-418)."""
     s, t = p_session(), TurnState()
-    assert p_cb.maybe_break_midturn(s, t, {}) is False
+    for _ in range(12):
+        assert p_cb.maybe_break_midturn(s, t, {}) is False
+    assert not [r for r in p_logs if "never ran" in r.getMessage()], "not before the turn ends"
+    assert p_cb.report_usage_liveness(s, t) is True
     said = " ".join(r.getMessage() for r in p_logs)
-    assert "cannot run" in said
+    assert "never ran" in said
     assert "s-gpt" in said and "cx/gpt-5.6" in said, "name the session and the lane, not just the class"
     assert "ENG-391" in said
 
 
 def test_the_announcement_is_once_per_turn_not_per_message(p_logs):
-    """It runs on EVERY assistant message; a per-message warning would be its own bug."""
+    """A turn end can be reached more than once on a retry; one warning per turn, not per pass."""
     s, t = p_session(), TurnState()
     for _ in range(12):
         p_cb.maybe_break_midturn(s, t, {})
-    assert len([r for r in p_logs if "cannot run" in r.getMessage()]) == 1
+    for _ in range(3):
+        p_cb.report_usage_liveness(s, t)
+    assert len([r for r in p_logs if "never ran" in r.getMessage()]) == 1
+
+
+def test_one_usage_less_message_among_good_ones_says_NOTHING(p_logs):
+    """The false alarm this replaced. Observed live on sonnet-5: the same turn logged "cannot run"
+    AND recorded input=103,436, which is only written when usage IS present. Mid-stream assistant
+    messages carrying output-only usage are ordinary on the Anthropic lane."""
+    s, t = p_session(), TurnState()
+    p_cb.maybe_break_midturn(s, t, {})
+    p_cb.maybe_break_midturn(s, t, {"input_tokens": 500})
+    p_cb.maybe_break_midturn(s, t, {})
+    assert p_cb.report_usage_liveness(s, t) is False
+    assert not [r for r in p_logs if "never ran" in r.getMessage()]
+
+
+def test_the_turn_end_report_is_actually_wired_to_the_turn_end():
+    """A liveness report nobody calls is the very shape this file exists to prevent."""
+    src = open("backend/apps/agents/manager/streaming/handle_result_message.py", encoding="utf-8").read()
+    assert "report_usage_liveness(session, turn)" in src
 
 
 def test_a_lane_WITH_usage_never_triggers_the_warning(p_logs):
     """The innocent case: Anthropic sends usage, so nothing is inert and nothing should be said."""
     s, t = p_session(), TurnState()
     p_cb.maybe_break_midturn(s, t, {"input_tokens": 500})
-    assert not [r for r in p_logs if "cannot run" in r.getMessage()]
+    p_cb.report_usage_liveness(s, t)
+    assert not [r for r in p_logs if "never ran" in r.getMessage()]
