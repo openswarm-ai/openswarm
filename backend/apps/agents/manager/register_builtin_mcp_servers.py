@@ -30,7 +30,11 @@ def register_builtin_mcp_servers(
     # With no renderer for a webview and no human for a prompt, we shadow the map once here and let the existing deny short-circuits skip those modules; nothing below may read the un-shadowed one.
     builtin_perms = apply_unreachable_denies(builtin_perms)
     browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"]
-    invoke_agent_tools = ["InvokeAgent"]
+    # ReadAgentWork rides InvokeAgent's policy unless set on its own: a user who denied delegation
+    # denied reading other sessions too, and inheriting is how that stays true without them having
+    # to find a second toggle (never widen a tool surface silently).
+    invoke_agent_tools = ["InvokeAgent", "ReadAgentWork"]
+    builtin_perms.setdefault("ReadAgentWork", builtin_perms.get("InvokeAgent", "always_allow"))
 
     # The always-on trio: MCP discovery (the activation gate's one doorway), agent-editable
     # Settings, and CreateApp.

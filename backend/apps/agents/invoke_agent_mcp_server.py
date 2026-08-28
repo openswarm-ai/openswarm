@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Stdio MCP server exposing the InvokeAgent tool; proxies to /api/invoke-agent/run."""
+"""Stdio MCP server exposing InvokeAgent and ReadAgentWork.
+
+ReadAgentWork exists because the only way a parent had to learn what a child did was to ASK THE
+CHILD MODEL TO SAY IT AGAIN, which is structurally a reproduction request on a lane whose filter is
+looking for exactly that: delegation-bearing chats block at 13.0% against a 2.7% baseline (ENG-389).
+We already store every child's messages, so the parent reads the record instead of interviewing the
+model, and the extraction-shaped prompt is never written at all."""
 
 import json
 import sys
@@ -10,6 +16,7 @@ import urllib.error
 BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
 BACKEND_AUTH = os.environ.get("OPENSWARM_AUTH_TOKEN", "")
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/invoke-agent/run"
+WORK_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/agents/sessions/{{}}/work"
 PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
 DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
 
@@ -17,11 +24,10 @@ TOOLS = [
     {
         "name": "InvokeAgent",
         "description": (
-            "Invoke a copy of an existing agent session with a new message. "
-            "The invoked agent will have full context of its prior conversation "
-            "and will process the new message independently. Use this when you "
-            "need to query another agent about its prior work or ask it to "
-            "perform a follow-up task."
+            "Give an existing agent session NEW work: it runs the message with full context of "
+            "its prior conversation and reports back. Use this to ask another agent to DO "
+            "something. To find out what it already did, use ReadAgentWork: it reads this app's "
+            "stored record directly and costs no model turn."
         ),
         "inputSchema": {
             "type": "object",
@@ -42,6 +48,26 @@ TOOLS = [
                 },
             },
             "required": ["session_id", "message"],
+        },
+    },
+    {
+        "name": "ReadAgentWork",
+        "description": (
+            "Read what another agent session actually did: the requests it was given, the tools it "
+            "ran with their results, and the answer it finished on. Read straight from this app's "
+            "own stored record, so it costs no model turn and works even if that agent is busy, "
+            "stopped, or errored out. Use this for any 'what did it do / what did it find / where "
+            "did it get to' question about another session."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID to read, from a selected Agent Card in the context.",
+                },
+            },
+            "required": ["session_id"],
         },
     },
 ]
@@ -83,7 +109,36 @@ def call_backend(session_id: str, message: str) -> dict:
         return {"error": str(e)}
 
 
+def read_work(session_id: str) -> dict:
+    headers = {"Authorization": f"Bearer {BACKEND_AUTH}"} if BACKEND_AUTH else {}
+    req = urllib.request.Request(WORK_URL.format(session_id), headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else str(e)
+        return {"error": f"HTTP {e.code}: {body}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def handle_read_agent_work(arguments: dict) -> dict:
+    session_id = arguments.get("session_id", "")
+    if not session_id:
+        return {"content": [{"type": "text", "text": "Error: session_id is required"}], "isError": True}
+    result = read_work(session_id)
+    if "error" in result:
+        return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+    head = f"**{result.get('name') or 'Agent'}** (session {session_id}, status: {result.get('status', 'unknown')})"
+    trail = result.get("work") or ""
+    if not trail.strip():
+        return {"content": [{"type": "text", "text": f"{head}\n\nThat session has not done any work yet."}]}
+    return {"content": [{"type": "text", "text": f"{head}\n\n{trail}"}]}
+
+
 def handle_tool_call(tool_name: str, arguments: dict) -> dict:
+    if tool_name == "ReadAgentWork":
+        return handle_read_agent_work(arguments)
     if tool_name != "InvokeAgent":
         return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
 

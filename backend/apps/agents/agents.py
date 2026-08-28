@@ -329,6 +329,29 @@ async def get_branches(session_id: str):
         "active_branch_id": session.active_branch_id,
     }
 
+@agents.router.get("/sessions/{session_id}/work")
+async def get_session_work(session_id: str):
+    """What a session DID, read off our own record: its asks, its tool trail, its final answer.
+
+    The read that makes ReadAgentWork possible, and the whole point is the prompt it replaces. A
+    parent asking a child model to restate its own work is a reproduction request on a lane whose
+    filter hunts those, and it costs a model turn to fetch something already on disk (ENG-389).
+    Shares `render_agent_trail` with the recap and the workflow transcript, so what is safe to send
+    another model has exactly one definition."""
+    from backend.apps.agents.manager.session.history_compaction import (
+        get_branch_messages,
+        render_agent_trail,
+    )
+    session = agent_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "session_id": session_id,
+        "name": session.name,
+        "status": session.status,
+        "work": render_agent_trail(get_branch_messages(session)),
+    }
+
 @agents.router.post("/sessions/{session_id}/duplicate")
 async def duplicate_session(session_id: str, body: dict = {}):
     try:
