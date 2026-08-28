@@ -126,6 +126,8 @@ def maybe_break_midturn(session: AgentSession, turn: TurnState, msg_usage: Dict)
     # so `saw_input_below_trigger` was never set and the breaker sat out the entire turn. In
     # production that is every long chat and every resumed session near its ceiling -- exactly the
     # 925K/1M blowout with no compact boundary that this guard was written for (ENG-418).
+    # This costs a REBUILD, and rebuild frequency is the subscription lane's real risk, so the
+    # once-per-turn latch below is what keeps the trade honest: at most one break per turn.
     p_grew = total - turn.first_input_reading >= MIN_TURN_GROWTH_TOKENS
     if not (turn.saw_input_below_trigger or p_grew):
         return False

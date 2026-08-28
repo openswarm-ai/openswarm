@@ -158,3 +158,17 @@ def test_the_cli_side_counter_is_wired_to_the_boundary_event():
     src = open("backend/apps/agents/manager/run/TurnRunner.py", encoding="utf-8").read()
     i = src.index('if p_subtype == "compact_boundary":')
     assert "session.cli_compactions += 1" in src[i:i + 200]
+
+
+def test_a_grown_turn_still_breaks_at_most_ONCE(monkeypatch):
+    """Every break is a transcript rebuild, and rebuild FREQUENCY is the subscription lane's risk
+    (PROJECT.md). Growth made more turns breakable, so the once-per-turn latch is what keeps that
+    from becoming more rebuilds per turn."""
+    monkeypatch.setenv("OSW_FAULT", "cli_context_squeeze")
+    s = p_session()
+    t = TurnState()
+    maybe_break_midturn(s, t, {"input_tokens": 90_000})
+    assert maybe_break_midturn(s, t, {"input_tokens": 120_000}) is True
+    for n in (150_000, 200_000, 400_000):
+        assert maybe_break_midturn(s, t, {"input_tokens": n}) is False
+    assert s.midturn_breaks == 1
