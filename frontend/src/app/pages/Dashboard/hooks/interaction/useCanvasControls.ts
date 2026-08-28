@@ -4,6 +4,7 @@ import { selectFullscreenCardId } from '@/shared/state/dashboardLayoutSlice';
 import { setCanvasInteractionActive } from '@/shared/canvasInteractionState';
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { getScrollFocusedCard } from '@/shared/cardScrollFocus';
+import { APP_WINDOW_SELECTOR, CANVAS_OWNER, heldBy, WheelGesture } from './wheelGestureOwner';
 import { getWebview } from '@/shared/browserRegistry';
 import { applyBrowserZoom } from '@/shared/browserZoom';
 import { syncTiledGeometry } from '../../canvas/tiledGeometry';
@@ -13,7 +14,6 @@ import { classifyWheelDevice } from './classifyWheelDevice';
 // Surfaces that are WINDOWS, not canvas cards: they behave like an OS window, so a wheel inside one
 // belongs to it whether or not you clicked in first. Canvas cards (agent, browser, view) keep the
 // Google Maps model instead, where a plain scroll over an unfocused card drives the canvas.
-const APP_WINDOW_SELECT_TYPES = new Set(['settings-card', 'marketplace-card', 'workflows-hub-card']);
 
 const MIN_ZOOM = 0.15;
 // The floor for AUTOMATIC reveals only. revealCards takes min(current, fit), which can only ever go
@@ -343,13 +343,7 @@ export function useCanvasControls(
 
     // Cache "is this element a scrollable child" decision per node. The Cache getComputedStyle ancestor walks; uncached was the dominant cost of trackpad two-finger nav. ResizeObserver below invalidates on scroll-capacity change.
     const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
-    // Scroll containment: once a wheel GESTURE is being served by a scrollable surface, the rest of
-    // that gesture stays there even after it hits the surface's end. Without this, reaching the
-    // bottom of Settings (or any list) chains into a canvas pan, which reads as the whole world
-    // sliding out from under you. A new gesture (a pause, or a different surface) starts fresh.
-    const GESTURE_GAP_MS = 220;
-    let containedEl: HTMLElement | null = null;
-    let containedAt = 0;
+    const gesture: WheelGesture = { owner: null, at: 0 };
 
     const onWheel = (e: WheelEvent) => {
       // Full size view owns the whole surface: any wheel that escapes the chat's scroll container
@@ -363,28 +357,26 @@ export function useCanvasControls(
         if (e.ctrlKey || e.metaKey) e.preventDefault();
         return;
       }
+      // The owner of the gesture in flight keeps it. Zoom is exempt on every surface, so a pinch is
+      // always reachable. This runs ABOVE the ownership rules below on purpose: a rule that decides
+      // an owner must never get to overrule one that is already decided.
+      const held = heldBy(gesture, Date.now(), e.ctrlKey || e.metaKey, e.target);
       // Same gesture, still over the surface that owns it: let it scroll (or hit its end) natively.
-      if (containedEl && Date.now() - containedAt < GESTURE_GAP_MS && containedEl.isConnected
-          && (e.target instanceof Node) && containedEl.contains(e.target as Node) && !(e.ctrlKey || e.metaKey)) {
-        containedAt = Date.now();
+      if (held !== null && held !== CANVAS_OWNER) {
+        gesture.at = Date.now();
         return;
       }
-      // App windows (Settings, Marketplace, app previews) own every wheel inside them. Their inner
-      // panels are often scroll containers whose exact hit target isn't itself scrollable, and the
-      // old walk-up handed those to the canvas: reaching the end of Settings zoomed the world out.
-      const windowEl = (e.target as HTMLElement | null)?.closest?.('[data-select-type]') as HTMLElement | null;
-      if (windowEl && !(e.ctrlKey || e.metaKey)) {
-        // An app WINDOW always owns its wheel; a canvas CARD only owns it once you have clicked in.
-        // That split is the whole rule. Requiring click-focus for windows too meant hovering over
-        // Settings and scrolling leaked straight to the canvas, because nothing had focused it yet,
-        // and windows do carry a select-id so a "no id means a window" test silently never fired.
-        const windowId = windowEl.getAttribute('data-select-id');
-        const isAppWindow = APP_WINDOW_SELECT_TYPES.has(windowEl.getAttribute('data-select-type') || '');
-        if (isAppWindow || !windowId || windowId === getScrollFocusedCard()) {
-          containedEl = windowEl;
-          containedAt = Date.now();
-          return;
-        }
+      const canvasOwnsGesture = held === CANVAS_OWNER;
+      // App windows (Settings, Marketplace, the Workflows hub) own every wheel inside them, without
+      // needing a click first: their inner panels are scroll containers whose exact hit target often
+      // is not itself scrollable, and the walk-up below hands those to the canvas. A canvas CARD is
+      // the other half of the rule and stays down there, because a card only owns its wheel once you
+      // have clicked into it.
+      const windowEl = (e.target as HTMLElement | null)?.closest?.(APP_WINDOW_SELECTOR) as HTMLElement | null;
+      if (windowEl && !canvasOwnsGesture && !(e.ctrlKey || e.metaKey)) {
+        gesture.owner = windowEl;
+        gesture.at = Date.now();
+        return;
       }
       // ctrl/cmd wheel is the zoom gesture on every surface: a physically held key or a trackpad pinch (which also sets ctrlKey). It bypasses scrollable children so zoom is always reachable, even over a chat you're typing in.
       const isModifierWheel = e.ctrlKey || e.metaKey;
@@ -420,7 +412,7 @@ export function useCanvasControls(
           scrollableCache.set(target, cls);
         }
 
-        if (cls === 'scrollable' && !isModifierWheel) {
+        if (cls === 'scrollable' && !isModifierWheel && !canvasOwnsGesture) {
           // Google Maps model: plain scroll acts on the CANVAS over a CARD (chat, scheduled task) UNLESS you've clicked INTO it. Only a card that isn't scroll-focused diverts to the canvas gesture; non-card scrollable UI (dropdowns, menus, nested panels) always scrolls natively, and a focused card scrolls its content.
           const cardEl = target.closest('[data-select-id]');
           const cardId = cardEl?.getAttribute('data-select-id') ?? null;
@@ -432,13 +424,16 @@ export function useCanvasControls(
           // of a chat, or swiping sideways in a list that only scrolls down, used to fall through to
           // the canvas and drag the world out from under you; a scroll that starts inside a card now
           // ends inside it. Zoom still gets through, because isModifierWheel never reaches here.
-          containedEl = target;
-          containedAt = Date.now();
+          gesture.owner = target;
+          gesture.at = Date.now();
           return;
         }
         target = target.parentElement;
       }
-      containedEl = null;
+      if (!isModifierWheel) {
+        gesture.owner = CANVAS_OWNER;
+        gesture.at = Date.now();
+      }
 
       e.preventDefault();
       if (inertiaFrameRef.current) {
