@@ -100,8 +100,10 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
           }}
         />
       )}
+      {/* elevated, not secondary: this is the box you TYPE IN, and on dark, secondary (#1f1e1b) sits
+          below the surface around it, so the one interactive thing in the widget read as a well. */}
       {pendingOther.length > 0 && (
-        <Box sx={{ bgcolor: c.bg.secondary, borderRadius: 2.5, p: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+        <Box sx={{ bgcolor: c.bg.elevated, borderRadius: 2.5, p: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           {pendingOther.map((stepId) => {
             const idx = Number(stepId.slice(2));
             return (

@@ -113,8 +113,10 @@ const QuestionForm: React.FC<QuestionFormProps> = ({ request, onApprove, onDeny,
   return (
     <Box
       sx={{
-        // Tint carries the container; the accent icon + title are the identity cue.
-        bgcolor: c.bg.secondary,
+        // Tint carries the container; the accent icon + title are the identity cue. Elevated, not
+        // secondary: this is an input surface, and on the dark palette secondary sits BELOW the
+        // surface it lands on, which reads as a well rather than something you type into.
+        bgcolor: c.bg.elevated,
         borderRadius: compact ? 2 : 2.5,
         p: compact ? 1.5 : 2,
         mx: compact ? 0 : 2,
