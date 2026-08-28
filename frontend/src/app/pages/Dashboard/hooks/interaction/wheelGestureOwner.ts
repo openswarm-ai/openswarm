@@ -4,7 +4,7 @@
 // Holding it matters in BOTH directions, and only one direction used to exist. A scroll being served
 // by a scrollable surface stays there past that surface's end, so hitting the bottom of Settings
 // never chains into a canvas pan. And a pan the canvas already owns keeps flowing when it drifts
-// over an app window, instead of being swallowed mid-gesture (ENG-421).
+// over an app window, instead of being swallowed mid-gesture (ENG-420).
 
 export const GESTURE_GAP_MS = 220;
 

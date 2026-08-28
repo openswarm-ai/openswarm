@@ -43,7 +43,7 @@ test('notifications are still a separate question from cards', () => {
   assert.equal(isUserLaunchedSession(run('running')), false);
 });
 
-// ENG-420: stopping a workflow-backed agent closed its whole card. Haik, production 1.7.9:
+// ENG-421: stopping a workflow-backed agent closed its whole card. Haik, production 1.7.9:
 // "Stop should mean stop, not close" -- you lose the transcript the moment you stop the run, which
 // is the thing you stopped it to read. The despawn rule could not tell "the nightly run finished"
 // from "a person pressed Stop", and it was written for the first one.

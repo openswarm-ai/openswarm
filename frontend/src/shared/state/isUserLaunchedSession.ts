@@ -36,7 +36,7 @@ export function isUserLaunchedSession(session: SessionOrigin): boolean {
  *
  * EXCEPT when a human stopped it. "Ends on its own" and "a person hit Stop" are different events and
  * this could not tell them apart, so pressing Stop on a workflow-backed agent made its card vanish
- * along with the transcript the user stopped it to read (ENG-420). Someone stops a run to LOOK at
+ * along with the transcript the user stopped it to read (ENG-421). Someone stops a run to LOOK at
  * it; the nightly-litter case it was written for is the one that ends by itself, which still
  * despawns. Close is what dismisses a card, and Close is the only route that stamps `closed_at`.
  */
