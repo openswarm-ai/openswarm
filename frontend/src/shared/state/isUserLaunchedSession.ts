@@ -6,6 +6,10 @@ export interface SessionOrigin {
   mode: string;
   workflow_run_id?: string | null;
   workflow_edit_id?: string | null;
+  // A human pressed Stop or Close. Set by those two routes only; a watchdog's stop never sets it.
+  ended_by_user?: boolean;
+  // Set by Close, never by Stop. It is what tells the two apart here.
+  closed_at?: string | null;
 }
 
 /** A run that is still working, so its card is worth having on screen. */
@@ -29,8 +33,18 @@ export function isUserLaunchedSession(session: SessionOrigin): boolean {
  * the dock path is gated on the parent card existing, so no card meant no owner. Give the run a card
  * and the existing inline-dock plus despawn logic applies to it unchanged. The card goes when the run
  * stops, or a nightly workflow would leave one behind every single night.
+ *
+ * EXCEPT when a human stopped it. "Ends on its own" and "a person hit Stop" are different events and
+ * this could not tell them apart, so pressing Stop on a workflow-backed agent made its card vanish
+ * along with the transcript the user stopped it to read (ENG-420). Someone stops a run to LOOK at
+ * it; the nightly-litter case it was written for is the one that ends by itself, which still
+ * despawns. Close is what dismisses a card, and Close is the only route that stamps `closed_at`.
  */
-export function deservesCanvasCard(session: SessionOrigin & { status?: string }): boolean {
+export function deservesCanvasCard(
+  session: SessionOrigin & { status?: string },
+): boolean {
   if (isUserLaunchedSession(session)) return true;
-  return !!session.workflow_run_id && LIVE_STATUSES.has(session.status ?? '');
+  if (!session.workflow_run_id) return false;
+  if (LIVE_STATUSES.has(session.status ?? '')) return true;
+  return !!session.ended_by_user && !session.closed_at;
 }

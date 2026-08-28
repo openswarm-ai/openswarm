@@ -42,3 +42,41 @@ test('notifications are still a separate question from cards', () => {
   assert.equal(deservesCanvasCard(run('running')), true);
   assert.equal(isUserLaunchedSession(run('running')), false);
 });
+
+// ENG-420: stopping a workflow-backed agent closed its whole card. Haik, production 1.7.9:
+// "Stop should mean stop, not close" -- you lose the transcript the moment you stop the run, which
+// is the thing you stopped it to read. The despawn rule could not tell "the nightly run finished"
+// from "a person pressed Stop", and it was written for the first one.
+test('a run a HUMAN stopped keeps its card', () => {
+  assert.equal(deservesCanvasCard({
+    mode: 'agent', workflow_run_id: 'r1', status: 'stopped', ended_by_user: true,
+  }), true);
+});
+
+test('a run that ended on its own still despawns', () => {
+  // The litter case the rule exists for: a nightly workflow must not leave a card behind every night.
+  for (const status of ['completed', 'stopped', 'error']) {
+    assert.equal(deservesCanvasCard({ mode: 'agent', workflow_run_id: 'r1', status }), false, status);
+  }
+});
+
+test('Close still dismisses it, even though Close also sets ended_by_user', () => {
+  // Both routes stamp ended_by_user; only Close stamps closed_at, which is what separates them.
+  assert.equal(deservesCanvasCard({
+    mode: 'agent', workflow_run_id: 'r1', status: 'stopped',
+    ended_by_user: true, closed_at: '2026-08-28T00:00:00Z',
+  }), false);
+});
+
+test('a live run is unaffected either way', () => {
+  for (const status of ['running', 'waiting_approval']) {
+    assert.equal(deservesCanvasCard({ mode: 'agent', workflow_run_id: 'r1', status }), true, status);
+    assert.equal(deservesCanvasCard({
+      mode: 'agent', workflow_run_id: 'r1', status, ended_by_user: true,
+    }), true, `${status} + stopped flag`);
+  }
+});
+
+test('a user-launched chat never depends on any of this', () => {
+  assert.equal(deservesCanvasCard({ mode: 'agent', status: 'stopped' }), true);
+});
