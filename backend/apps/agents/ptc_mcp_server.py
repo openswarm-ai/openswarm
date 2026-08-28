@@ -114,8 +114,16 @@ def p_dispatch_batch(calls: list, deadline: float) -> list:
     p_out: list = [None] * len(calls)
 
     def p_one(i: int, call: dict) -> None:
-        with P_FANOUT_SLOTS:
+        # Bounded acquire, never `with`. A slot held by a call that never returns (a wedged sidecar)
+        # would be lost to the PROCESS, and after eight of those every later batch in every script
+        # would block forever with nothing saying so. An honest per-item error beats a silent stall.
+        if not P_FANOUT_SLOTS.acquire(timeout=max(0.0, deadline - time.monotonic())):
+            p_out[i] = {"text": "no fan-out slot free inside the script budget", "is_error": True}
+            return
+        try:
             p_out[i] = p_dispatch(str(call.get("name", "")), dict(call.get("args") or {}))
+        finally:
+            P_FANOUT_SLOTS.release()
 
     p_threads = [threading.Thread(target=p_one, args=(i, c), daemon=True) for i, c in enumerate(calls)]
     for t in p_threads:

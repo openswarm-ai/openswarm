@@ -160,6 +160,32 @@ def test_the_fan_out_does_not_extend_the_script_deadline():
     ceiling; a batch may not become an unbounded wait."""
     src = open("backend/apps/agents/ptc_mcp_server.py").read()
     i = src.index("def p_dispatch_batch")
-    body = src[i:i + 1200]
+    body = src[i:src.index("def p_elide", i)]
     assert "t.join(timeout=" in body and "deadline - time.monotonic()" in body
     assert "SCRIPT_TIMEOUT_S" not in body, "the batch must ride the caller's deadline, not a fresh one"
+
+
+def test_a_call_that_never_returns_cannot_cost_the_process_a_slot_forever():
+    """The row-6 shape this avoids: a wedged tool holding a slot would lose it to the PROCESS, and
+    after SCRIPT_FANOUT_WIDTH of those every later batch in every script blocks forever with nothing
+    saying so. Acquire is bounded, so the worst case is an honest per-item error."""
+    src = open("backend/apps/agents/ptc_mcp_server.py", encoding="utf-8").read()
+    i = src.index("def p_dispatch_batch")
+    body = src[i:src.index("def p_elide", i)]
+    assert "P_FANOUT_SLOTS.acquire(timeout=" in body, "an unbounded acquire can wait forever"
+    assert "with P_FANOUT_SLOTS" not in body, "`with` cannot express a bounded acquire"
+    assert "finally:" in body and "P_FANOUT_SLOTS.release()" in body, "a slot must come back on every path"
+
+
+def test_the_slots_are_all_returned_after_a_batch():
+    """The liveness half: prove the semaphore is actually back at full width, not merely that the
+    code looks right. A leak of one slot per batch would take eight batches to show up."""
+    ptc.set_core_for_tests(P_SlowCore(latency=0.01))
+    for _ in range(3):
+        p_run(P_FANOUT)
+    p_taken = 0
+    while ptc.P_FANOUT_SLOTS.acquire(blocking=False):
+        p_taken += 1
+    for _ in range(p_taken):
+        ptc.P_FANOUT_SLOTS.release()
+    assert p_taken == ptc.SCRIPT_FANOUT_WIDTH, f"only {p_taken} of {ptc.SCRIPT_FANOUT_WIDTH} slots came back"
