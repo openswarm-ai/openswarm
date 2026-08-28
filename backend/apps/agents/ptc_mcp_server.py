@@ -19,6 +19,13 @@ SCRIPT_TIMEOUT_S = 300.0
 MAX_TOOL_CALLS = 50
 MAX_STDOUT_BYTES = 50_000
 
+# How many of a batch's calls may be in flight at once. The sidecar already runs a thread per MCP
+# call, so this is not new concurrency; the cap is here so a 25-call fan-out cannot crowd out the
+# chat's other builtin tools while it runs. Module-global, so two scripts in one sidecar share it
+# rather than each helping themselves to a full width.
+SCRIPT_FANOUT_WIDTH = 8
+P_FANOUT_SLOTS = threading.Semaphore(SCRIPT_FANOUT_WIDTH)
+
 # Read/write-safe, ungated tools only. Everything else is invisible to scripts on purpose.
 SCRIPT_ALLOWED_TOOLS = ("WebSearch", "WebFetch", "MemoryRead", "MemoryWrite", "SettingsRead", "Skill")
 
@@ -30,9 +37,16 @@ TOOLS = [
             "the script print()s comes back to you, so bulky intermediate results never enter "
             "your context. Use this whenever a task needs 3+ tool calls whose raw outputs you "
             "would only aggregate anyway (fetch N pages and extract one fact each, search then "
-            "fetch the top hits, sweep memory). The script gets one function: "
-            "call_tool(name, args_dict) -> str, valid names: "
-            + ", ".join(SCRIPT_ALLOWED_TOOLS) + ". A failed tool raises PtcToolError (catchable). "
+            "fetch the top hits, sweep memory). Valid tool names: "
+            + ", ".join(SCRIPT_ALLOWED_TOOLS) + ". Two functions:\n"
+            "call_tools(calls) -> list of results IN THE SAME ORDER, run concurrently. Use this "
+            "whenever the calls do not depend on each other, which is most sweeps. Each call is "
+            "{'name': ..., 'args': {...}}; each result has .ok, .text and .error, and one failure "
+            "never kills the batch. Example: "
+            "for r in call_tools([{'name': 'WebFetch', 'args': {'url': u}} for u in urls]): "
+            "print(r.text if r.ok else 'skipped ' + r.error)\n"
+            "call_tool(name, args_dict) -> str, one call, for a CHAIN where each call needs the "
+            "previous result. A failed tool raises PtcToolError (catchable).\n"
             "Print ONLY your distilled findings. Budget: "
             f"{MAX_TOOL_CALLS} tool calls, {SCRIPT_TIMEOUT_S:.0f}s, printed output capped at 50KB."
         ),
@@ -41,7 +55,7 @@ TOOLS = [
             "properties": {
                 "script": {
                     "type": "string",
-                    "description": "Python source. Example: results = call_tool('WebSearch', {'query': 'x'}) then loop call_tool('WebFetch', {'url': u}) and print the aggregate.",
+                    "description": "Python source. Example: hits = call_tool('WebSearch', {'query': 'x'}) (a chain step), then call_tools([{'name': 'WebFetch', 'args': {'url': u}} for u in urls]) to fetch them all at once, and print the aggregate.",
                 },
             },
             "required": ["script"],
@@ -92,6 +106,28 @@ def p_dispatch(name: str, args: dict) -> dict:
     except Exception as e:
         return {"text": f"tool '{name}' raised: {e}", "is_error": True}
     return {"text": p_result_text(result), "is_error": bool(result.get("isError"))}
+
+
+def p_dispatch_batch(calls: list, deadline: float) -> list:
+    """Fan a batch out and gather in CALL ORDER. One call's failure is that call's result, never the
+    batch's, which is the whole reason a script would use this instead of a loop."""
+    p_out: list = [None] * len(calls)
+
+    def p_one(i: int, call: dict) -> None:
+        with P_FANOUT_SLOTS:
+            p_out[i] = p_dispatch(str(call.get("name", "")), dict(call.get("args") or {}))
+
+    p_threads = [threading.Thread(target=p_one, args=(i, c), daemon=True) for i, c in enumerate(calls)]
+    for t in p_threads:
+        t.start()
+    for t in p_threads:
+        # The script budget is the only ceiling; joining past it would let a batch outlive the
+        # deadline the reaper is already enforcing on the child.
+        t.join(timeout=max(0.0, deadline - time.monotonic()))
+    return [
+        r if r is not None else {"text": "call did not finish inside the script budget", "is_error": True}
+        for r in p_out
+    ]
 
 
 def p_elide(text: str, cap: int = MAX_STDOUT_BYTES) -> str:
@@ -175,6 +211,18 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
                 if not out.strip():
                     return p_mcp_text(f"script printed nothing; print your findings next time.{footer}", is_error=True)
                 return p_mcp_text(out + footer)
+            batch = msg.get("calls")
+            if isinstance(batch, list):
+                p_budget = f"tool call budget ({MAX_TOOL_CALLS}) exhausted; print what you have"
+                # Per item, not per batch: the calls that fit still run, and the rest say why not.
+                p_room = max(0, MAX_TOOL_CALLS - calls_used)
+                p_run, p_over = batch[:p_room], batch[p_room:]
+                calls_used += len(batch)
+                p_results = p_dispatch_batch(p_run, deadline) if p_run else []
+                p_results += [{"text": p_budget, "is_error": True} for _ in p_over]
+                proc.stdin.write(json.dumps({"seq": msg.get("seq"), "results": p_results}) + "\n")
+                proc.stdin.flush()
+                continue
             call = msg.get("call")
             if not isinstance(call, dict):
                 continue
