@@ -118,3 +118,15 @@ def test_it_is_reachable_by_default():
     register_builtin_mcp_servers(servers, p_session(), perms, None, None)
     assert "invoke" in servers["openswarm-core"]["env"]["OSW_MCP_MODULES"].split(",")
     assert perms["ReadAgentWork"] == "always_allow"
+
+
+def test_the_route_reads_a_session_that_is_only_on_DISK():
+    """The bug the packaged drill found: the route used the in-memory map alone, so it 404'd on
+    every session the dashboard had not restored -- which is most of them, and exactly the ones
+    worth reading. GET /sessions/{id} already had this fallback; the read tool did not."""
+    src = open("backend/apps/agents/agents.py", encoding="utf-8").read()
+    i = src.index('async def get_session_work')
+    body = src[i:src.index("@agents.router", i + 10)]
+    assert "resume_session" in body, "a read tool that 404s on a stored session defeats its purpose"
+    assert body.index("agent_manager.get_session") < body.index("resume_session"), \
+        "memory first, disk second: resuming every read would be a pointless load"

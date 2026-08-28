@@ -344,7 +344,15 @@ async def get_session_work(session_id: str):
     )
     session = agent_manager.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        # Same disk fallback as GET /sessions/{id}. Without it this 404s on any session the
+        # dashboard has not restored yet, which is most of them and precisely the ones worth
+        # reading: the whole point is answering "what did it do" for an agent that is finished,
+        # stopped or errored. Found on the packaged bits, where the plain GET returned 200 and
+        # this returned 404 for the same id.
+        try:
+            session = await agent_manager.resume_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session not found")
     return {
         "session_id": session_id,
         "name": session.name,
