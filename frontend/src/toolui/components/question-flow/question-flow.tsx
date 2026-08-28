@@ -640,6 +640,7 @@ function QuestionFlowUpfront({
   steps,
   onStepChange,
   onComplete,
+  onSelectionChange,
   className,
 }: QuestionFlowUpfrontProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -682,10 +683,11 @@ function QuestionFlowUpfront({
             : [...current, optionId];
         }
 
+        onSelectionChange?.(currentStep.id, next);
         return { ...prev, [currentStep.id]: next };
       });
     },
-    [currentStep.id, currentStep.selectionMode],
+    [currentStep.id, currentStep.selectionMode, onSelectionChange],
   );
 
   const handleBack = useCallback(() => {

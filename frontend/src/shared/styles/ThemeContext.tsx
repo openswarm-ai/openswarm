@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { ThemeProvider as MuiThemeProvider } from '@mui/material';
 import { ClaudeTokens, lightTokens, darkTokens, withAccent } from './claudeTokens';
+import { buildMuiTheme } from './muiTheme';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -135,7 +137,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 export const useClaudeTokens = (): ClaudeTokens => useContext(ThemeContext).tokens;
 
-/** Forces dark tokens for a subtree: desktop-shell glass panels stay dark even in light mode. */
+/** Forces dark tokens for a subtree: desktop-shell glass panels stay dark even in light mode.
+ *
+ * Swaps the MUI palette too, and that is not decoration. It used to swap only THIS context, so on a
+ * light-mode app an agent card painted itself dark while every MUI input inside still inherited
+ * light-mode `text.primary`: measured rgb(26,26,24) text on a rgb(31,30,27) card, contrast 4 of 255,
+ * which is the invisible "Other..." answer box users reported (ENG-419). One provider cannot be
+ * trusted to follow the other by convention, so they move together here.
+ */
 export const DarkTokensScope: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const ctx = useContext(ThemeContext);
   const value = useMemo(() => ({
@@ -143,7 +152,12 @@ export const DarkTokensScope: React.FC<{ children: React.ReactNode }> = ({ child
     mode: 'dark' as ThemeMode,
     tokens: withAccent(darkTokens, ctx.accent, 'dark'),
   }), [ctx]);
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  const muiTheme = useMemo(() => buildMuiTheme(value.tokens, 'dark'), [value.tokens]);
+  return (
+    <ThemeContext.Provider value={value}>
+      <MuiThemeProvider theme={muiTheme}>{children}</MuiThemeProvider>
+    </ThemeContext.Provider>
+  );
 };
 export const useThemeMode = () => {
   const { mode, toggleMode, setMode } = useContext(ThemeContext);

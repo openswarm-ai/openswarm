@@ -115,6 +115,10 @@ export interface QuestionFlowUpfrontProps
   extends BaseRuntimeProps, SerializableUpfrontMode {
   onStepChange?: (stepId: string) => void;
   onComplete?: (answers: Record<string, string[]>) => void | Promise<void>;
+  /** Fires on every option toggle, before the step is committed. Additive: nothing existing reads
+   *  it. The host needs it because picking "Other..." must reveal its free-text box immediately,
+   *  and onComplete only fires once the whole flow is committed (ENG-419). */
+  onSelectionChange?: (stepId: string, optionIds: string[]) => void;
   step?: never;
   choice?: never;
 }

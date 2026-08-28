@@ -45,6 +45,8 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
   const flowFits = questions.length > 0 && questions.every((q) => Array.isArray(q.options) && q.options.length > 0);
   const [flowAnswers, setFlowAnswers] = useState<Record<string, string[]> | null>(null);
   const [otherText, setOtherText] = useState<Record<string, string>>({});
+  // Live per-step selection, updated on every toggle so "Other..." can reveal its box immediately.
+  const [liveAnswers, setLiveAnswers] = useState<Record<string, string[]>>({});
 
   const steps = useMemo(() => questions.map((q, i) => ({
     id: `q-${i}`,
@@ -73,9 +75,13 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
     onApprove(request.id, { ...request.tool_input, questions, answers: answersDict });
   };
 
-  const pendingOther = flowAnswers
-    ? Object.entries(flowAnswers).filter(([, ids]) => ids.includes(OTHER_ID)).map(([stepId]) => stepId)
-    : [];
+  // Steps where "Other..." is picked RIGHT NOW, whether or not the flow has been committed. It used
+  // to read `flowAnswers` alone, which only exists after onComplete, so the box the user was asked
+  // to type into did not appear until they pressed Enter on the whole flow (ENG-419).
+  const otherSteps = flowAnswers ?? liveAnswers;
+  const pendingOther = Object.entries(otherSteps)
+    .filter(([, ids]) => ids.includes(OTHER_ID))
+    .map(([stepId]) => stepId);
 
   return (
     <Box sx={{ mx: compact ? 0 : 2, mb: compact ? 0 : 1 }}>
@@ -84,6 +90,8 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
           name="question-flow"
           props={{ id: request.id, steps }}
           extraProps={{
+            onSelectionChange: (stepId: string, ids: string[]) =>
+              setLiveAnswers((prev) => ({ ...prev, [stepId]: ids })),
             onComplete: (answers: Record<string, string[]>) => {
               const needsOther = Object.values(answers).some((ids) => ids.includes(OTHER_ID));
               if (needsOther) setFlowAnswers(answers);
@@ -92,7 +100,7 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
           }}
         />
       )}
-      {flowAnswers && (
+      {pendingOther.length > 0 && (
         <Box sx={{ bgcolor: c.bg.secondary, borderRadius: 2.5, p: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           {pendingOther.map((stepId) => {
             const idx = Number(stepId.slice(2));
@@ -107,13 +115,14 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
                   onChange={(e) => setOtherText((prev) => ({ ...prev, [stepId]: e.target.value }))}
                   fullWidth
                   size="small"
-                  autoFocus
+                  autoFocus={flowAnswers !== null}
                   multiline
                   maxRows={4}
                 />
               </Box>
             );
           })}
+          {flowAnswers !== null && (
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button variant="contained" disableElevation size="small" onClick={() => submit(flowAnswers)}
               disabled={pendingOther.some((s) => !(otherText[s] || '').trim())}
@@ -125,6 +134,7 @@ const AskQuestionCard: React.FC<QuestionFormProps> = (props) => {
               Back
             </Button>
           </Box>
+          )}
         </Box>
       )}
       {!flowAnswers && (
