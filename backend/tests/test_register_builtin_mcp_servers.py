@@ -25,7 +25,10 @@ def test_registers_always_on_and_delegation_servers():
     mods = mcp_servers["openswarm-core"]["env"]["OSW_MCP_MODULES"].split(",")
     assert "browser" in mods and "invoke" in mods
     assert browser_tools == ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"]
-    assert invoke_tools == ["InvokeAgent"]
+    # Exact equality on purpose: this is where a silently widened tool surface gets caught.
+    # ReadAgentWork joined so a parent can read a child's work off our record instead of
+    # asking the child model to say it again (ENG-389); it inherits InvokeAgent's policy.
+    assert invoke_tools == ["InvokeAgent", "ReadAgentWork"]
     # Every registered server's script path must resolve to a file that ACTUALLY EXISTS. This is the assertion that catches a moved-caller resolving the wrong agents dir.
     script = mcp_servers["openswarm-core"]["args"][0]
     assert os.path.isfile(script), f"combined server script does not exist on disk: {script}"
