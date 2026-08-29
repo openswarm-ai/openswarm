@@ -108,6 +108,7 @@ def p_report_model_error(subkind: str, session_id: str, session: AgentSession, t
             # many times the CLI compacted this chat, and how many times we broke the turn first.
             "cli_compactions": int(getattr(session, "cli_compactions", 0) or 0),
             "midturn_breaks": int(getattr(session, "midturn_breaks", 0) or 0),
+            "proactive_prunes": int(getattr(session, "proactive_prunes", 0) or 0),
             "history_prefix_sent": session.history_prefix_sent,
             "delegated": p_used_delegation(session),
         })

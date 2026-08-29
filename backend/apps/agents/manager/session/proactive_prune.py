@@ -128,6 +128,7 @@ def arm_proactive_prune(session: AgentSession) -> None:
     """Commit the prune: mark history aged and force the rebuild that actually applies it."""
     from backend.apps.agents.manager.context_budget import maybe_compact
     maybe_compact(session, force=True)
+    session.proactive_prunes += 1
     session.needs_fresh_session = True
     session.proactive_prune_rearm_tokens = (
         estimate_aged_rebuild_tokens(session) + REARM_GROWTH_TOKENS

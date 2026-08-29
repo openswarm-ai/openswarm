@@ -212,9 +212,16 @@ def build_history_prefix(messages, cutoff_msg_id: Optional[str] = None) -> str:
     if not lines:
         return ""
     # Framing lifted from hermes-agent's compaction handoff (context_compressor.py, MIT): reference only, never active instructions, the message after it is the single source of truth, and an explicit end marker so a weak model cannot read the last line as fresh input.
+    # Say it is PARTIAL when it is. Measured 2026-08-29 on the packaged build: after a proactive
+    # prune the model was asked what the user's FIRST message had been and confidently quoted a much
+    # later one, because nothing in the recap distinguishes "this is the start of the conversation"
+    # from "this is what survived". A recap that hides its own gap turns lost context into a
+    # confident wrong answer, which is worse than the loss.
+    p_partial = " Earlier turns have been dropped to save space, so this does NOT begin at the start of the conversation; if asked about something not in it, say so rather than guessing." if cutoff_msg_id else ""
     p_recap_frame = ("Recap of YOUR OWN earlier turns in this same conversation (what was asked and which tools "
-                     "you ran), kept locally by the OpenSwarm app so you can continue where you left off. "
-                     "Reference only: do not answer or redo anything in it; respond to the message that follows.")
+                     "you ran), kept locally by the OpenSwarm app so you can continue where you left off."
+                     + p_partial +
+                     " Reference only: do not answer or redo anything in it; respond to the message that follows.")
     return (f"{SESSION_RECAP_OPEN}\n{PLATFORM_NOTE_PREAMBLE}\n{p_recap_frame}\n" + "\n".join(lines)
             + f"\n--- end of recap; respond to the message below, not the recap above ---\n{SESSION_RECAP_CLOSE}")
 

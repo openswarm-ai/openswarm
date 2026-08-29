@@ -224,3 +224,80 @@ def test_a_terms_summary_is_not_mistaken_for_the_filter_refusing():
     ):
         assert neutralize_provider_refusal(innocent) == innocent
         assert classify_provider_error(innocent) is None
+
+
+# ------------------------------------------------- the mid-turn valve's growth rule (ENG-418)
+
+def test_a_turn_that_starts_high_and_sits_still_is_still_left_alone(monkeypatch):
+    """Growth made more turns breakable, and every break costs a transcript REBUILD -- the frequency
+    ENG-382 exists to reduce. The innocent case is a rebuild that failed to shrink: it starts high
+    and does not grow, and it must RUN rather than rebuild forever."""
+    from backend.apps.agents.manager.context_budget import maybe_break_midturn
+    from backend.apps.agents.manager.streaming.state import TurnState
+    s = AgentSession(name="t", model="opus-5"); s.context_window = 1_000_000
+    t = TurnState()
+    assert maybe_break_midturn(s, t, {"input_tokens": 500_000}) is False
+    assert maybe_break_midturn(s, t, {"input_tokens": 505_000}) is False, "5K is not material growth"
+    assert s.midturn_breaks == 0
+
+
+def test_a_grown_turn_breaks_at_most_once_so_rebuilds_cannot_multiply(monkeypatch):
+    from backend.apps.agents.manager.context_budget import maybe_break_midturn
+    from backend.apps.agents.manager.streaming.state import TurnState
+    s = AgentSession(name="t", model="opus-5"); s.context_window = 1_000_000
+    t = TurnState()
+    maybe_break_midturn(s, t, {"input_tokens": 100_000})
+    assert maybe_break_midturn(s, t, {"input_tokens": 400_000}) is True
+    for n in (500_000, 600_000, 900_000):
+        assert maybe_break_midturn(s, t, {"input_tokens": n}) is False
+    assert s.midturn_breaks == 1
+
+
+# --------------------------------------------------- Close vs Stop on a workflow card (ENG-421)
+
+def test_a_workflow_run_that_ended_on_its_own_still_despawns():
+    """The card is kept for a HUMAN stop. The innocent case is the nightly workflow that ends by
+    itself: keeping its card would leave litter on the canvas every single night, which is the leak
+    the original rule was written to prevent."""
+    a = "frontend/src/shared/state/isUserLaunchedSession.ts"
+    src = open(a, encoding="utf-8").read()
+    assert "if (LIVE_STATUSES.has" in src and "ended_by_user" in src
+    assert "!session.dismissed_by_user" in src, "Close must still be able to dismiss"
+    assert "!session.closed_at" not in src, \
+        "closed_at is stamped by the executor on every run; using it made the fix dead code"
+
+
+def test_the_dismissal_flag_is_at_the_close_door_not_in_the_shared_helper():
+    """agent_manager.close_session is called by the workflow executor for bookkeeping. A flag there
+    would mark every finished run as user-dismissed and delete the stopped-run cards again."""
+    helper = open("backend/apps/agents/manager/SessionControl.py", encoding="utf-8").read()
+    assert "dismissed_by_user" not in helper
+
+
+# ------------------------------------------------------ the PTC fan-out width cap (ENG-417)
+
+def test_one_scripts_fan_out_cannot_starve_the_rest_of_the_chat():
+    """The cap is module-global on purpose: two scripts in one sidecar SHARE the width rather than
+    each taking a full one. The innocent case is the chat's other builtin tools, which ride the same
+    process and must still get scheduled while a 25-call batch runs."""
+    from backend.apps.agents import ptc_mcp_server as ptc
+    src = open("backend/apps/agents/ptc_mcp_server.py", encoding="utf-8").read()
+    assert "P_FANOUT_SLOTS = threading.Semaphore(SCRIPT_FANOUT_WIDTH)" in src
+    i = src.index("def p_dispatch_batch")
+    body = src[i:src.index("def p_elide", i)]
+    assert "P_FANOUT_SLOTS.acquire(timeout=" in body, "an unbounded acquire can lose a slot forever"
+    assert "finally:" in body and "P_FANOUT_SLOTS.release()" in body
+    assert ptc.SCRIPT_FANOUT_WIDTH <= 8
+
+
+# ------------------------------------------------- the canvas wheel owner (ENG-420)
+
+def test_a_gesture_that_starts_on_a_panel_still_belongs_to_the_panel():
+    """Canvas ownership was added so a pan is not swallowed mid-drift. The innocent case is the
+    original rule it must not break: a scroll that starts inside Settings has to stay there past the
+    panel's end, or reaching the bottom of a list drags the whole world."""
+    src = open("frontend/src/app/pages/Dashboard/hooks/interaction/wheelGestureOwner.ts",
+               encoding="utf-8").read()
+    assert "owner === CANVAS_OWNER" in src
+    assert "owner.contains(target" in src, "an element owner must still hold its own gesture"
+    assert "isZoom" in src, "zoom must stay reachable on every surface"

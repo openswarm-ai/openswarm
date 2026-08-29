@@ -209,6 +209,9 @@ class AgentSession(BaseModel):
     # first? Per-turn counters die with the turn, so a block envelope carried nothing.
     cli_compactions: int = 0
     midturn_breaks: int = 0
+    # The third context event, and the one that actually fires: a proactive prune reclaimed 40K on a
+    # real session while BOTH counters above read 0, so the fleet still could not see it (ENG-418).
+    proactive_prunes: int = 0
     # Aux-LLM distilled summary of the turns dropped by compaction, cached against the cutoff id it was built for; keeps the gist of old history on a rebuild instead of a hard drop.
     compacted_summary: Optional[str] = None
     compacted_summary_through: Optional[str] = None
