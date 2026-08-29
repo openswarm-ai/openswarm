@@ -130,3 +130,21 @@ def test_the_route_reads_a_session_that_is_only_on_DISK():
     assert "resume_session" in body, "a read tool that 404s on a stored session defeats its purpose"
     assert body.index("agent_manager.get_session") < body.index("resume_session"), \
         "memory first, disk second: resuming every read would be a pointless load"
+
+
+def test_only_the_close_route_marks_a_session_dismissed():
+    """ENG-421, found on the packaged build: `closed_at` cannot mean "the user put this away",
+    because the workflow executor stamps it at the end of every step including a stopped one. Stop
+    and Close were therefore indistinguishable and a card the user stopped to READ vanished ~2s
+    later. The flag belongs at the close DOOR, not in agent_manager.close_session, which the
+    executor also calls."""
+    src = open("backend/apps/agents/agents.py", encoding="utf-8").read()
+    i_close = src.index("async def close_session(")
+    i_stop = src.index("async def stop_agent(")
+    close_body = src[i_close:i_close + 700]
+    stop_body = src[i_stop:i_stop + 700]
+    assert "dismissed_by_user = True" in close_body, "Close must say the user put it away"
+    assert "dismissed_by_user" not in stop_body, "Stop must NOT read as a dismissal"
+    helper = open("backend/apps/agents/manager/SessionControl.py", encoding="utf-8").read()
+    assert "dismissed_by_user" not in helper, \
+        "the executor calls this helper for bookkeeping; a flag here would dismiss stopped runs again"

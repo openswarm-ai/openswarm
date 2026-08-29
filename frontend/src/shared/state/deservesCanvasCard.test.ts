@@ -61,10 +61,12 @@ test('a run that ended on its own still despawns', () => {
 });
 
 test('Close still dismisses it, even though Close also sets ended_by_user', () => {
-  // Both routes stamp ended_by_user; only Close stamps closed_at, which is what separates them.
+  // Both routes stamp ended_by_user, and `closed_at` cannot separate them: the workflow executor
+  // stamps it at the end of EVERY step, including a stopped one. `dismissed_by_user` is the fact
+  // that only the close route writes, so it is what tells "put it away" from "this run is over".
   assert.equal(deservesCanvasCard({
     mode: 'agent', workflow_run_id: 'r1', status: 'stopped',
-    ended_by_user: true, closed_at: '2026-08-28T00:00:00Z',
+    ended_by_user: true, closed_at: '2026-08-28T00:00:00Z', dismissed_by_user: true,
   }), false);
 });
 
@@ -79,4 +81,30 @@ test('a live run is unaffected either way', () => {
 
 test('a user-launched chat never depends on any of this', () => {
   assert.equal(deservesCanvasCard({ mode: 'agent', status: 'stopped' }), true);
+});
+
+test('a user-stopped workflow run keeps its card even though the executor stamped closed_at', () => {
+  // The bug the packaged drill found, and the reason this asserts the FIELD COMBINATION rather than
+  // trusting the rule's prose: the executor closes the session at the end of every step, including a
+  // stopped one, so `closed_at` is always set here. Gating on it made the fix dead code and the card
+  // vanished ~2s after Stop on the shipped build.
+  assert.equal(
+    deservesCanvasCard({
+      workflow_run_id: 'run-1',
+      status: 'stopped',
+      ended_by_user: true,
+      closed_at: '2026-08-28T19:33:47.873352',
+    }),
+    true,
+  );
+});
+
+test('a workflow run that ended ON ITS OWN still despawns, closed_at or not', () => {
+  // The nightly-litter case the original rule exists for. Losing this is how the fix becomes a leak.
+  for (const closed_at of [null, '2026-08-28T19:33:47.873352']) {
+    assert.equal(
+      deservesCanvasCard({ workflow_run_id: 'run-2', status: 'completed', ended_by_user: false, closed_at }),
+      false,
+    );
+  }
 });

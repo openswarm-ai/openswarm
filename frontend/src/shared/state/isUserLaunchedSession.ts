@@ -10,6 +10,7 @@ export interface SessionOrigin {
   ended_by_user?: boolean;
   // Set by Close, never by Stop. It is what tells the two apart here.
   closed_at?: string | null;
+  dismissed_by_user?: boolean;
 }
 
 /** A run that is still working, so its card is worth having on screen. */
@@ -38,7 +39,17 @@ export function isUserLaunchedSession(session: SessionOrigin): boolean {
  * this could not tell them apart, so pressing Stop on a workflow-backed agent made its card vanish
  * along with the transcript the user stopped it to read (ENG-421). Someone stops a run to LOOK at
  * it; the nightly-litter case it was written for is the one that ends by itself, which still
- * despawns. Close is what dismisses a card, and Close is the only route that stamps `closed_at`.
+ * despawns.
+ *
+ * `closed_at` is NOT the release, and assuming it was made this whole rule dead code on the only
+ * path it exists for. The workflow executor closes the agent session at the end of EVERY step,
+ * including one the user stopped, purely so the run sorts into chat history (`get_history` orders by
+ * `closed_at`, and nulls fall off the first page). So `closed_at` means "this run is over", not
+ * "the user dismissed this card", and gating on it deleted the card ~2s after Stop. Caught on the
+ * packaged build; dev never showed it because the drill there stopped a plain agent, not a
+ * workflow-backed one. Dismissal is the layout's job: closing the card removes it from the
+ * dashboard, which is where a user's "I'm done with this" already lives. The backend now says which
+ * of the two happened: `dismissed_by_user` is stamped by the close route alone.
  */
 export function deservesCanvasCard(
   session: SessionOrigin & { status?: string },
@@ -46,5 +57,5 @@ export function deservesCanvasCard(
   if (isUserLaunchedSession(session)) return true;
   if (!session.workflow_run_id) return false;
   if (LIVE_STATUSES.has(session.status ?? '')) return true;
-  return !!session.ended_by_user && !session.closed_at;
+  return !!session.ended_by_user && !session.dismissed_by_user;
 }

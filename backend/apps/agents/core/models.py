@@ -100,6 +100,11 @@ class AgentSession(BaseModel):
     branch: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     closed_at: Optional[datetime] = None
+    # Set ONLY by the close route, i.e. a person dismissing the card. `closed_at` cannot carry this:
+    # the workflow executor closes the agent session at the end of every step (so the run sorts into
+    # chat history) including one the user stopped, so it means "this run is over", not "put it away".
+    # One field per meaning, or a card the user stopped to READ disappears on them (ENG-421).
+    dismissed_by_user: bool = False
     # Wall-clock of the first stream event so resumed sessions can show "first response at HH:MM" without rescan.
     first_response_at: Optional[datetime] = None
     # HITL approval log: {tool, behavior, decision_ms} per entry.

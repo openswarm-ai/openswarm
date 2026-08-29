@@ -377,6 +377,9 @@ async def close_session(session_id: str):
     p_s = agent_manager.sessions.get(session_id)
     if p_s is not None:
         p_s.ended_by_user = True
+        # Only THIS route means "the user put it away". agent_manager.close_session is also called by
+        # the workflow executor for bookkeeping, so the flag belongs at the door, not in the helper.
+        p_s.dismissed_by_user = True
     try:
         await agent_manager.close_session(session_id)
     except ValueError as e:
