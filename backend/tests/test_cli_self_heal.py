@@ -146,3 +146,42 @@ def test_the_repair_never_heals_in_silence():
     assert returns, "the health endpoint stopped reporting cli_missing"
     for ln in returns:
         assert "cli_repair" in ln, f"a return path hides the repair: {ln.strip()[:80]}"
+
+
+@pytest.mark.asyncio
+async def test_a_MIDSESSION_quarantine_repairs_instead_of_carding(monkeypatch, tmp_path):
+    """Boot-time repair only covers a quarantine that happened while the app was closed. The one
+    that happens while someone is working still ended the turn with an antivirus card, which is the
+    exact moment Kittie was in."""
+    import backend.apps.agents.manager.run.handle_run_error as hre
+    import backend.apps.agents.core.bundled_cli_missing as det
+    import backend.apps.agents.core.cli_self_heal as sh
+    from backend.apps.agents.core.models import AgentSession
+
+    monkeypatch.setattr(det, "bundled_cli_missing", lambda: "/gone/claude.exe")
+    monkeypatch.setattr(sh, "repair_bundled_cli",
+                        lambda dest, *a, **k: sh.RepairResult(repaired=True, detail="restored"))
+    sent = []
+    async def p_send(sid, ev, payload): sent.append(payload)
+    monkeypatch.setattr(hre.ws_manager, "send_to_session", p_send)
+
+    s = AgentSession(name="t", model="opus-5")
+    assert await hre.p_try_runtime_repair(s, "sess") is True
+    assert sent and "restored" in str(sent[-1]).lower()
+    assert "send that message again" in str(sent[-1]).lower(), "tell them what to do next"
+
+
+@pytest.mark.asyncio
+async def test_a_repair_that_does_not_stick_lets_the_card_stand(monkeypatch):
+    """The ambiguous outcomes must NOT suppress the card: a half-repair that reads as success is
+    worse than the card, because the user retries into the same wall with no explanation."""
+    import backend.apps.agents.manager.run.handle_run_error as hre
+    import backend.apps.agents.core.bundled_cli_missing as det
+    import backend.apps.agents.core.cli_self_heal as sh
+    from backend.apps.agents.core.models import AgentSession
+
+    monkeypatch.setattr(det, "bundled_cli_missing", lambda: "/gone/claude.exe")
+    for result in (sh.RepairResult(repaired=True, retaken=True, detail="taken again"),
+                   sh.RepairResult(repaired=False, detail="no package")):
+        monkeypatch.setattr(sh, "repair_bundled_cli", lambda dest, *a, r=result, **k: r)
+        assert await hre.p_try_runtime_repair(AgentSession(name="t", model="opus-5"), "sess") is False

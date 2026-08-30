@@ -3,6 +3,7 @@ the exception (long-context / capacity / free-trial / auth / unknown-model / unc
 emits the matching system message + WS event. Pulled out of agent_manager so the loop stays under
 the file ceiling; pure relocation, no self (operates on the passed run state)."""
 
+import asyncio
 import logging
 from typing import List
 from typeguard import typechecked
@@ -115,6 +116,39 @@ def p_report_model_error(subkind: str, session_id: str, session: AgentSession, t
     except Exception:
         logger.debug(f"submit_diagnostic {subkind} failed", exc_info=True)
 
+async def p_try_runtime_repair(session, session_id: str) -> bool:
+    """Put the runtime back mid-turn. True only when it is back AND stayed back.
+
+    Returns False for every ambiguous outcome (no package, restore failed, antivirus took it again),
+    because the caller's fallback is an honest card and a half-repair must not suppress it."""
+    try:
+        from backend.apps.agents.core.bundled_cli_missing import bundled_cli_missing
+        from backend.apps.agents.core.cli_self_heal import repair_bundled_cli
+        p_gone = bundled_cli_missing()
+        if p_gone is None:
+            return False
+        p_result = await asyncio.to_thread(repair_bundled_cli, p_gone)
+        if not (p_result.repaired and not p_result.retaken):
+            logger.warning("runtime self-heal did not stick: %s", p_result.detail)
+            return False
+        logger.info("runtime self-heal succeeded mid-turn: %s", p_result.detail)
+        p_msg = Message(
+            role="system",
+            content="A core OpenSwarm component had been removed, most likely by antivirus. "
+                    "It has been restored from your installer, so you can send that message again.",
+            branch_id=session.active_branch_id,
+        )
+        absorb_repeat_card(session, p_msg)
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": p_msg.model_dump(mode="json"),
+        })
+        return True
+    except Exception:
+        logger.exception("runtime self-heal raised; falling back to the card")
+        return False
+
+
 async def handle_run_error(e: Exception, session: AgentSession, session_id: str, turn: TurnState, p_stderr_buffer: List[str]) -> None:
     logger.exception(f"Agent {session_id} error: {e}")
     session.status = "error"
@@ -192,6 +226,11 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "message": error_msg.model_dump(mode="json"),
         })
         p_report_model_error("cert_failure", session_id, session, turn, e, p_stderr_tail)
+    elif is_cli_binary_missing(e, extra_text=p_stderr_tail) and await p_try_runtime_repair(session, session_id):
+        # Repaired mid-turn: the file is back and stayed back, so the user gets a retry chip rather
+        # than a card about antivirus. Boot-time repair only covers a quarantine that happened while
+        # the app was closed; this is the one that happens while they are working.
+        pass
     elif is_cli_binary_missing(e, extra_text=p_stderr_tail):
         # The bundled CLI vanished from an installed app (Windows AV quarantine class; 22 of 25 field installs never recovered). The raw "not found at: C:\..." card is unactionable; name the likely cause and the two real fixes.
         # "Restore it from your antivirus quarantine" is technically right and empirically useless:

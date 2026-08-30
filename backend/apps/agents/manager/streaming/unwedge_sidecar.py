@@ -35,13 +35,9 @@ CORE_PREFIX = "mcp__openswarm-core__"
 
 # Every core tool that may block on a human, a model, or a whole delegated run. A timeout on these
 # would be a capability regression, which is worse than the bug.
-P_BLOCKING_TOOLS: Set[str] = {
-    "AskUI", "AskUserQuestion", "ShowUI",
-    "CreateBrowserAgent", "BrowserAgent", "AppAgent",
-    "SpawnAgent", "InvokeAgent", "RequestHumanIntervention",
-    "MCPSearch", "MCPActivate",
-    "RunToolScript",
-}
+# Imported, never restated: this set and the registered delegation tools drifted apart once already
+# and cost a user weeks of browser runs.
+from backend.apps.agents.manager.delegation_tool_names import BLOCKING_TOOLS as P_BLOCKING_TOOLS
 
 
 @typechecked

@@ -29,7 +29,8 @@ def register_builtin_mcp_servers(
     agents_dir = os.path.dirname(p_agents_pkg.__file__)
     # With no renderer for a webview and no human for a prompt, we shadow the map once here and let the existing deny short-circuits skip those modules; nothing below may read the un-shadowed one.
     builtin_perms = apply_unreachable_denies(builtin_perms)
-    browser_delegation_tools = ["CreateBrowserAgent", "BrowserAgent", "BrowserAgents", "AppAgent"]
+    from backend.apps.agents.manager.delegation_tool_names import BROWSER_DELEGATION_TOOLS
+    browser_delegation_tools = list(BROWSER_DELEGATION_TOOLS)
     # ReadAgentWork rides InvokeAgent's policy unless set on its own: a user who denied delegation
     # denied reading other sessions too, and inheriting is how that stays true without them having
     # to find a second toggle (never widen a tool surface silently).
