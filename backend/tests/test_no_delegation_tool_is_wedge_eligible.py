@@ -2,9 +2,11 @@
 quick-tool wedge deadline. This is the test that was missing.
 
 `BrowserAgents` (the PARALLEL browser tool) was registered as a real tool and left out of the
-exemption set, so the 25s quick-tool watchdog shot the sidecar 25 seconds into every parallel browser
-run. The singular `BrowserAgent` was exempt, so anyone testing one browser at a time saw nothing,
-while the one person running several reported "browser use disconnects constantly" at an almost 100%
+exemption set, so the quick-tool watchdog armed on it. The kill is not at 25s -- a fresh heartbeat
+extends to 120s then 300s -- but `wedge_verdict` kills unconditionally at the 300s ceiling and
+immediately on a stale heartbeat, so every parallel browser run past five minutes was terminated.
+The singular `BrowserAgent` was exempt, so anyone testing one browser at a time saw nothing, while
+the one person running several reported "browser use disconnects constantly" at an almost 100%
 failure rate for weeks.
 
 The defect is the repo's signature shape: two lists of names that must agree, with nothing checking
@@ -27,7 +29,7 @@ def test_every_registered_browser_tool_is_wedge_exempt():
     assert browser_tools, "the registry stopped returning browser tools"
     for t in browser_tools:
         assert not is_quick_core_tool(CORE_PREFIX + t), \
-            f"{t} is registered but not exempt: a run using it dies at the 25s quick-tool deadline"
+            f"{t} is registered but not exempt: a run using it dies at the 300s wedge ceiling"
 
 
 def test_the_parallel_form_specifically(_=None):
@@ -51,3 +53,18 @@ def test_an_ordinary_quick_tool_is_still_watched():
     for t in ("MemoryRead", "SettingsRead", "ListScheduledWorkflows"):
         assert is_quick_core_tool(CORE_PREFIX + t), f"{t} should still be watched"
     assert set(BROWSER_DELEGATION_TOOLS) <= BLOCKING_TOOLS
+
+
+def test_the_ceiling_is_what_kills_a_watched_browser_run_not_the_25s_check():
+    """Pin the actual mechanism, because the first write-up of this bug said '25s' and was wrong.
+
+    A fresh heartbeat extends 25 -> 120 -> 300. The kill comes from the hard ceiling, or from a stale
+    heartbeat at any check. Getting this right matters: 'dies at 25s' would have sent someone hunting
+    a fast-timeout bug that does not exist."""
+    from backend.apps.agents.manager.streaming.unwedge_sidecar import (
+        HARD_WEDGE_SECONDS, HEARTBEAT_FRESH_S, wedge_verdict,
+    )
+    assert wedge_verdict(30.0, 1.0) == "extend", "a slow but alive call is not wedged at 25s"
+    assert wedge_verdict(200.0, 1.0) == "extend"
+    assert wedge_verdict(HARD_WEDGE_SECONDS, 1.0) == "kill", "the ceiling kills regardless"
+    assert wedge_verdict(30.0, HEARTBEAT_FRESH_S + 1) == "kill", "a stale heartbeat kills early"

@@ -1,9 +1,13 @@
 """The delegation tool names, in ONE place, because two lists of names that must agree will not.
 
-`BrowserAgents` was registered as a real tool and left out of the wedge-exemption set, so every
-PARALLEL browser run was shot 25 seconds in by the quick-tool watchdog. The singular `BrowserAgent`
-was exempt, so the bug was invisible to anyone testing one browser at a time, and looked like "browser
-use disconnects constantly" to the one person running several (Haik, ~100% failure over weeks).
+`BrowserAgents` was registered as a real tool and left out of the wedge-exemption set, so the
+quick-tool watchdog armed on every PARALLEL browser run. It does not fire at 25s -- the ENG-353
+heartbeat check extends a slow-but-alive call to 120s and then 300s -- but `wedge_verdict` kills
+unconditionally at the 300s hard ceiling, and immediately whenever the sidecar heartbeat goes stale.
+So any parallel browser run past five minutes was terminated, and a busy sidecar could lose one
+sooner. The singular `BrowserAgent` was exempt, so the bug was invisible to anyone testing one
+browser at a time and looked like "browser use disconnects constantly" to the one person running
+several (Haik, ~100% failure over weeks).
 
 Nothing checked the two lists against each other. Now there is only one list.
 """
