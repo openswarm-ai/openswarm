@@ -635,16 +635,29 @@ async def subscriptions_health():
     from backend.apps.nine_router.subscription_health import probe_subscription_health
     from backend.apps.agents.core.bundled_cli_missing import bundled_cli_missing
     # Independent of the router: the bundled-CLI integrity check rides the same boot fetch so an AV-quarantined runtime surfaces as a pill instead of dead turns.
-    p_cli_missing = bundled_cli_missing() is not None
+    p_gone = bundled_cli_missing()
+    p_heal = None
+    if p_gone is not None:
+        # Try to put it back before telling anyone it is broken. Detection alone left 22 of 25
+        # installs dead, because the fix we named is one almost no user can perform (ENG-422).
+        from backend.apps.agents.core.cli_self_heal import repair_bundled_cli
+        try:
+            p_result = repair_bundled_cli(p_gone)
+            p_heal = p_result.detail
+            if p_result.repaired and not p_result.retaken:
+                p_gone = bundled_cli_missing()
+        except Exception:
+            logger.exception("bundled-CLI self-heal failed; leaving the card standing")
+    p_cli_missing = p_gone is not None
     if not is_running():
-        return {"dead": [], "skipped": True, "cli_missing": p_cli_missing}
+        return {"dead": [], "skipped": True, "cli_missing": p_cli_missing, "cli_repair": p_heal}
     try:
         connections = await get_providers()
         dead = await probe_subscription_health(connections)
-        return {"dead": dead, "skipped": False, "cli_missing": p_cli_missing}
+        return {"dead": dead, "skipped": False, "cli_missing": p_cli_missing, "cli_repair": p_heal}
     except Exception as e:
         logger.debug(f"subscription health probe failed: {e}")
-        return {"dead": [], "skipped": True, "cli_missing": p_cli_missing}
+        return {"dead": [], "skipped": True, "cli_missing": p_cli_missing, "cli_repair": p_heal}
 
 
 @agents.router.get("/subscriptions/models")
