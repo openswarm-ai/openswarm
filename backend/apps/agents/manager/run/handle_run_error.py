@@ -194,12 +194,23 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         p_report_model_error("cert_failure", session_id, session, turn, e, p_stderr_tail)
     elif is_cli_binary_missing(e, extra_text=p_stderr_tail):
         # The bundled CLI vanished from an installed app (Windows AV quarantine class; 22 of 25 field installs never recovered). The raw "not found at: C:\..." card is unactionable; name the likely cause and the two real fixes.
+        # "Restore it from your antivirus quarantine" is technically right and empirically useless:
+        # 22 of 25 affected field installs never recovered, and a real user replied "don't know how
+        # to take a file out of quarantine" (2026-08-29). A card that names a fix the reader cannot
+        # perform is a dead end, so spell the clicks out and put the fix that always works first.
         friendly_msg = (
-            "A core OpenSwarm component (the bundled agent runtime) is missing from "
-            "this install, which usually means antivirus software quarantined it. "
-            "Restore it from your antivirus quarantine and add an exclusion for "
-            "OpenSwarm, or reinstall from openswarm.com. Your chats and settings "
-            "are kept either way."
+            "A core OpenSwarm component (the bundled agent runtime) is missing from this "
+            "install. Antivirus software almost always caused this by quarantining it. "
+            "Your chats and settings are safe either way.\n\n"
+            "Easiest fix: reinstall from openswarm.com over the top of this install. "
+            "Nothing is lost.\n\n"
+            "Or restore it in Windows Security:\n"
+            "1. Open Windows Security, then Virus & threat protection.\n"
+            "2. Under Current threats choose Protection history.\n"
+            "3. Find the quarantined OpenSwarm or claude item and choose Actions, then Restore.\n"
+            "4. Back in Virus & threat protection, open Manage settings, scroll to Exclusions, "
+            "choose Add or remove exclusions, then Add an exclusion, then Folder, and pick your "
+            "OpenSwarm folder. Without this step it will be quarantined again."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         absorb_repeat_card(session, error_msg)
