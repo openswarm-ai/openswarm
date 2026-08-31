@@ -689,7 +689,10 @@ async def p_ensure_running_impl():
 
 def stop():
     """Stop the 9Router subprocess."""
-    global p_process, watchdog_task, p_death_watcher_task
+    global p_process, watchdog_task, p_death_watcher_task, p_is_running_last_ok
+    # Killing it is exactly what makes a cached "it's up" a lie, so drop the cache here rather than
+    # in each caller; a stale True made ensure_running() skip the restart and the bounce report success.
+    p_is_running_last_ok = 0.0
     # Cancel the healers FIRST or they would revive the router we're about to kill (shutdown = the one sanctioned "down").
     if watchdog_task is not None:
         watchdog_task.cancel()
