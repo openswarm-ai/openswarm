@@ -156,4 +156,11 @@ async def test_the_second_identical_400_does_card(monkeypatch):
     s.stale_tool_schema_retry_used = True  # the one-shot is already spent
     await mod.handle_run_error(RuntimeError(REAL), s, s.id, TurnState(), [])
 
-    assert [m for m in s.messages if m.role == "system"], "a spent budget must produce an honest card"
+    cards = [m for m in s.messages if m.role == "system"]
+    assert cards, "a spent budget must produce an honest card"
+    # The card must blame the actual culprit (our router restarting), never the model, and must
+    # promise the thing that is proven to work (a plain resend on the same chat).
+    text = cards[-1].content
+    assert "router" in text.lower(), text
+    assert "send your message again" in text.lower(), text
+    assert "switch" not in text.lower(), "the generic switch-models advice blames the wrong thing"

@@ -172,6 +172,33 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             )
             return
         logger.warning(f"Agent {session_id}: deferred-tool 400 again after a respawn; carding it")
+        # The generic card below says "switch to another model", which for THIS failure blames the
+        # wrong thing: the model was fine, our router was restarting. Say what happened and what
+        # actually works (a plain resend once it settles; proven live on the same transcript).
+        friendly_msg = (
+            "The app's model router was restarting when this chat connected, and the automatic "
+            "retry hit the same window. It settles within a minute; send your message again and "
+            "the chat picks up where it left off."
+        )
+        error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+        absorb_repeat_card(session, error_msg)
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": error_msg.model_dump(mode="json"),
+        })
+        try:
+            from backend.apps.service.client import submit_diagnostic
+            submit_diagnostic({
+                "kind": "model_error",
+                "subkind": "stale_tool_schema_respawn_exhausted",
+                "flight": flight_recorder.build_envelope(session_id, "model_error", "stale_tool_schema", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
+                "session_id": session_id,
+                "model": session.model,
+                "error_preview": redact_for_telemetry(str(e), limit=400),
+            })
+        except Exception:
+            logger.debug("submit_diagnostic stale_tool_schema failed", exc_info=True)
+        return
 
     if is_context_overflow_error(e, extra_text=p_stderr_tail):
         p_tier_gate = is_long_context_error(e, extra_text=p_stderr_tail)
