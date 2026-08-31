@@ -139,6 +139,7 @@ class AgentSession(BaseModel):
     needs_fresh_session: bool = False
     # A new CLI process that RESUMES the same transcript (dead transport, stale token, core sidecar never connected); unlike needs_fresh_session nothing is rebuilt, so no history is ever re-authored as text (ENG-382).
     needs_respawn: bool = False
+    stale_tool_schema_retry_used: bool = False
     # Auto-continue: agent loop dispatches a hidden turn at end-of-loop using pending_continuation_prompt. Race-free vs background tasks.
     pending_continuation: bool = False
     pending_continuation_prompt: Optional[str] = None

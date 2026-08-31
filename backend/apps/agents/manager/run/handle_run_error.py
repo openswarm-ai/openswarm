@@ -15,6 +15,7 @@ from backend.apps.agents.manager.streaming.state import TurnState
 from backend.apps.agents.core.error_classify import (
     is_context_overflow_error,
     is_long_context_error,
+    is_stale_tool_schema_error,
     is_transient_capacity_error,
     is_free_trial_exhausted,
     is_out_of_tokens,
@@ -159,6 +160,19 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
     except Exception:
         p_stderr_tail = ""
     # No completed-mask here anymore: current_turn_emitted stays True until a ResultMessage lands, so the old "already answered" early-return fired on every MID-TASK death (models narrate between tool calls) and converted a dead run into a fake "completed". Reaching this handler with an overflow means the valve's compact-and-retry already failed once; the user must see the card.
+    # Ahead of every card-emitting branch on purpose: this 400 is the CLI holding a stale tool
+    # registration, not the provider refusing. Below the generic error branch it would card out on
+    # top of a turn's real work (61 tool calls, live, 2026-08-31); a respawn just continues it.
+    if is_stale_tool_schema_error(e, extra_text=p_stderr_tail):
+        from backend.apps.agents.manager.streaming.auth_retry import try_stale_tool_schema_self_heal
+        if try_stale_tool_schema_self_heal(session):
+            logger.warning(
+                f"Agent {session_id}: CLI sent a deferred tool with cache_control (ENG-394); "
+                f"respawning it and redoing that step"
+            )
+            return
+        logger.warning(f"Agent {session_id}: deferred-tool 400 again after a respawn; carding it")
+
     if is_context_overflow_error(e, extra_text=p_stderr_tail):
         p_tier_gate = is_long_context_error(e, extra_text=p_stderr_tail)
         friendly_msg = (

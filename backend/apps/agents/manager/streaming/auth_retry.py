@@ -69,3 +69,29 @@ def try_transient_self_heal(session: AgentSession, delay_s: int = 0) -> bool:
     session.pending_continuation_prompt = TRANSIENT_RETRY_PROMPT
     session.pending_continuation_delay_s = max(0, delay_s)
     return True
+
+
+STALE_TOOL_SCHEMA_RETRY_PROMPT = (
+    "Your tool definitions were stale on that last step and the connection has been rebuilt with "
+    "fresh ones. Redo that one step, then carry on where you left off."
+)
+
+
+@typechecked
+def try_stale_tool_schema_self_heal(session: AgentSession) -> bool:
+    """One respawn for the deferred-tool 400 (ENG-394): the CLI re-registers its tools on a new
+    process, so the same turn goes through instead of dying on top of the work it already did.
+
+    Its own budget, like the auth one-shot and for the same reason: this and an expiring token
+    arrive by different doors moments apart, and a shared counter would let one eat the other's
+    retry. One is the whole budget; a second identical 400 means respawning is not the cure and the
+    user is owed the honest card rather than a loop.
+    """
+    if session.stale_tool_schema_retry_used or session.pending_continuation:
+        return False
+    session.stale_tool_schema_retry_used = True
+    session.needs_respawn = True
+    session.pending_continuation = True
+    session.pending_continuation_prompt = STALE_TOOL_SCHEMA_RETRY_PROMPT
+    session.pending_continuation_delay_s = 0
+    return True

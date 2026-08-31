@@ -439,6 +439,25 @@ def is_connection_lost(exc: BaseException) -> bool:
     return isinstance(exc, p_get_transient_exc_types())
 
 
+# A poisoned TOOL SCHEMA, not a poisoned request. The CLI defers our MCP tools when it connects
+# while 9router is down, and the first ToolSearch that loads one sends it carrying both
+# defer_loading and cache_control, which the API rejects. It arrives as a 400 so P_PERMANENT_STATUS
+# correctly refuses to WAIT on it, but a fresh CLI re-registers the tools and the same turn goes
+# through: same shape as a dead socket (the process holds a corpse), not as a 429 (a healthy
+# connection carrying a no). Anchored on both halves so an unrelated 400 mentioning caching can't
+# claim a respawn.
+P_STALE_TOOL_SCHEMA = re.compile(
+    r"defer_loading[^\n]{0,80}cache_control|cache_control[^\n]{0,80}defer_loading",
+    re.IGNORECASE,
+)
+
+
+@typechecked
+def is_stale_tool_schema_error(exc: BaseException, extra_text: str = "") -> bool:
+    """True for the CLI-side deferred-tool 400 that a respawn cures and waiting never will."""
+    return bool(P_STALE_TOOL_SCHEMA.search(f"{exc!s}\n{extra_text}"))
+
+
 # A MALFORMED request: the provider will answer identically forever, so no wait helps. Deliberately
 # narrow. 401 stays out (a rotating token really does heal, which is why the reset-hint rule exists),
 # and so do 408/429. Matched only in status POSITION, so a "400" in a line number or a byte count

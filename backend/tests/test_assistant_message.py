@@ -91,14 +91,24 @@ def test_heal_never_stacks_on_a_pending_continuation():
     assert session.auth_retry_used is False, "a refused heal must not burn the budget"
 
 
-def test_a_real_user_message_reopens_the_heal_budget():
-    # Wire-check both directions: the flag is set by the heal AND cleared with the other per-ask
-    # budgets on a real (non-hidden) user message.
+@pytest.mark.parametrize("flag", ["auth_retry_used", "stale_tool_schema_retry_used"])
+def test_a_real_user_message_reopens_the_heal_budget(flag):
+    """Wire-check both directions: each one-shot is set by its heal AND cleared with the other
+    per-ask budgets when a real (non-hidden) user message arrives.
+
+    Anchored on the reset block's own comment rather than on the FIRST `if not hidden:` plus a
+    400-character window: that version silently started reading a different block the moment an
+    unrelated `if not hidden:` was added earlier in the file, and failed for a reason that had
+    nothing to do with the behaviour it guards.
+    """
     import inspect
     from backend.apps.agents.manager import Messaging
     src = inspect.getsource(Messaging)
-    block = src[src.index("if not hidden:"):src.index("if not hidden:") + 400]
-    assert "auth_retry_used = False" in block
+    start = src.index("A human actively driving the session forgives its crash history")
+    block = src[start:src.index("if not hidden:", start)] if "if not hidden:" in src[start:] else src[start:]
+    assert f"{flag} = False" in block, (
+        f"{flag} is never reopened, so one spent retry disarms that heal for the session's life"
+    )
 
 
 @pytest.mark.asyncio
