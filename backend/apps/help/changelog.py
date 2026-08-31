@@ -22,6 +22,14 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.5",
+        headline="When recovery runs out of road, the error card tells the truth.",
+        highlights=[
+            "If a chat still cannot recover after the automatic retry, the message now says the app's router was restarting and that sending again picks up where it left off, instead of blaming the model.",
+        ],
+        fixes=[],
+    ),
+    ReleaseNote(
         version="1.7.10-exp.4",
         headline="The startup self-heal now waits for the router to actually be ready.",
         highlights=[
