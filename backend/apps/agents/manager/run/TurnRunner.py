@@ -65,6 +65,16 @@ class TurnRunner(AgentManagerProtocol):
         # that: anyio.BrokenResourceError is not in the transient set and read as a poisoned session).
         if p_fault_once("transport_death"):
             raise ConnectionError("injected transport death (OSW_FAULT)")
+        # One-shot for the same reason, and byte-real INCLUDING the router's mid-word truncation,
+        # because the full-word form is exactly what the first classifier matched and the field
+        # didn't send (ENG-394). The retry must find a clear road so the respawn can prove itself.
+        if p_fault_once("stale_tool_schema"):
+            raise RuntimeError(
+                "The agent runtime reported this turn failed (stop_sequence). API Error: 400 "
+                "{\"error\":{\"message\":\"[claude/claude-sonnet-4-6] [400]: Tool "
+                "'mcp__openswarm-core__ShowUI' cannot have both defer_loading=true and cache_ "
+                "(reset after 15s)\"}}"
+            )
 
         async def prompt_stream():
             yield {

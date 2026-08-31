@@ -27,6 +27,7 @@ KNOWN_FAULTS: Set[str] = {
     "empty_finish",      # a turn ends with no answer after tool work (ENG-354, ENG-390)
     "dead_lane",         # the router has already given up on the credential (ENG-414 preflight)
     "cli_context_squeeze",  # a tiny context window, so autocompact thrash is drillable (ENG-418)
+    "stale_tool_schema",  # the CLI's deferred-tool 400, byte-real incl. truncation (ENG-394 wall 2)
 }
 
 # The window `cli_context_squeeze` pretends the model has, and the number is load-bearing.

@@ -62,6 +62,7 @@ WIRED_IN = {
     "empty_finish": "backend/apps/agents/manager/streaming/handle_assistant_message.py",
     "dead_lane": "backend/apps/agents/manager/run/lane_preflight.py",
     "cli_context_squeeze": "backend/apps/agents/manager/configure_provider_env.py",
+    "stale_tool_schema": TURN_RUNNER,
 }
 
 
@@ -128,6 +129,16 @@ def test_the_transport_fault_is_what_the_real_classifier_catches():
     import anyio
     assert not is_connection_lost(anyio.BrokenResourceError()), \
         "control: the type that actually fooled this drill must still read as NOT a lost connection"
+
+
+def test_the_stale_schema_fault_is_what_the_real_classifier_catches():
+    from backend.apps.agents.core.error_classify import is_stale_tool_schema_error
+    assert is_stale_tool_schema_error(RuntimeError(p_injected("stale_tool_schema"))), \
+        "if this drifts, the drill fires a fault the respawn ignores and still reports a pass"
+    # The injected text deliberately carries the router's mid-word truncation ("cache_ "), because
+    # the full-word form is exactly what the first classifier matched and the field never sent.
+    assert "cache_ " in p_injected("stale_tool_schema")
+    assert "cache_control" not in p_injected("stale_tool_schema")
 
 
 def test_a_recoverable_fault_fires_once_so_the_retry_finds_a_clear_road(monkeypatch):
