@@ -126,6 +126,11 @@ class AppSettings(BaseModel):
     auto_reveal_sub_agents: bool = True
     dev_mode: bool = False
     allow_experimental_updates: bool = False
+    # Windows only, off by default, explicit and reversible. Excluding OpenSwarm's folders from
+    # Defender reduces AV coverage of them, so this is never auto-enabled and never prompted for;
+    # it exists because antivirus quarantining the bundled runtime left 22 of 25 affected installs
+    # permanently broken (ENG-422), and an exclusion is the only thing that makes a repair stick.
+    windows_defender_exclusion: bool = False
     # Notification toggles read by the renderer before firing native notifications. Each one maps to
     # a branch the notifier already takes, so none of these is a switch that only looks connected.
     notify_agent_completion: bool = True

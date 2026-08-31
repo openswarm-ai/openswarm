@@ -290,7 +290,12 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "3. Find the quarantined OpenSwarm or claude item and choose Actions, then Restore.\n"
             "4. Back in Virus & threat protection, open Manage settings, scroll to Exclusions, "
             "choose Add or remove exclusions, then Add an exclusion, then Folder, and pick your "
-            "OpenSwarm folder. Without this step it will be quarantined again."
+            "OpenSwarm folder. Without this step it will be quarantined again.\n\n"
+            # Step 4 by hand is the step people give up on, and it is the one that makes the fix
+            # stick. OpenSwarm can do exactly that step itself now (ENG-422), so offer it here.
+            "OpenSwarm can do step 4 for you. Turn on Settings, then Advanced, then "
+            "Antivirus exclusion, and Windows will ask you to approve it. "
+            "Turning it back off undoes it."
         )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         absorb_repeat_card(session, error_msg)

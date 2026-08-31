@@ -27,6 +27,33 @@ const GeneralAdvanced: React.FC<{
 
   // Provenance: the exact commit this build was cut from. Surfaced so a support screenshot of Settings is enough to identify the shipped code. Empty in dev / web (no Electron bridge or unknown sha), in which case we hide the row.
   const [buildLabel, setBuildLabel] = React.useState<string | null>(null);
+  // ENG-422: Windows only. The row does not exist elsewhere, so a Mac user is never shown a switch
+  // that cannot do anything, and main enforces the same rule rather than trusting this.
+  const isWindows = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform);
+  const [defenderBusy, setDefenderBusy] = React.useState(false);
+  const [defenderNote, setDefenderNote] = React.useState<string | null>(null);
+
+  const toggleDefenderExclusion = async (next: boolean) => {
+    const api = (window as { openswarm?: { setDefenderExclusion?: (v: boolean) => Promise<{ ok: boolean; detail?: string }> } }).openswarm;
+    if (!api?.setDefenderExclusion) return;
+    setDefenderBusy(true);
+    setDefenderNote(null);
+    // Optimistic, then reverted on refusal: the switch must never claim an exclusion that Windows
+    // did not actually make (a toggle that lies about a security boundary is worse than no toggle).
+    setForm({ ...form, windows_defender_exclusion: next });
+    try {
+      const res = await api.setDefenderExclusion(next);
+      if (!res?.ok) {
+        setForm({ ...form, windows_defender_exclusion: !next });
+        setDefenderNote(res?.detail || 'nothing was changed');
+      }
+    } catch {
+      setForm({ ...form, windows_defender_exclusion: !next });
+      setDefenderNote('nothing was changed');
+    } finally {
+      setDefenderBusy(false);
+    }
+  };
   React.useEffect(() => {
     const api = (window as { openswarm?: { getBuildInfo?: () => Promise<{ shortSha: string; channel: string }> } }).openswarm;
     api?.getBuildInfo?.()
@@ -49,6 +76,28 @@ const GeneralAdvanced: React.FC<{
           sx={switchSx}
         />
       </Box>
+
+      {isWindows && (
+        <Box sx={inlineRowSx} {...settingSelectAttrs('windows_defender_exclusion', 'Antivirus exclusion', 'Advanced', 'Stop Windows Defender from scanning OpenSwarm\'s own folders.')}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Antivirus exclusion</Typography>
+            <Typography sx={descSx}>
+              Stops Windows Defender scanning OpenSwarm&apos;s own folders. Turn this on if antivirus keeps
+              removing part of the app: without it a repaired file can be taken again. Windows will ask you to
+              approve the change, and turning this off undoes it.
+            </Typography>
+            {defenderNote && (
+              <Typography sx={{ ...descSx, mt: 0.5 }}>{defenderNote}</Typography>
+            )}
+          </Box>
+          <Switch
+            checked={form.windows_defender_exclusion}
+            disabled={defenderBusy}
+            onChange={(e) => { void toggleDefenderExclusion(e.target.checked); }}
+            sx={switchSx}
+          />
+        </Box>
+      )}
 
       <Box sx={inlineRowLastSx} {...settingSelectAttrs('allow_experimental_updates', 'Experimental updates', 'Advanced', 'Receive pre-release builds with new features earlier.')}>
         <Box sx={{ mr: 3 }}>

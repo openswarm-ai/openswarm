@@ -59,6 +59,7 @@ export interface AppSettings {
   notify_sound?: boolean;
   notify_when_focused?: boolean;
   allow_experimental_updates: boolean;
+  windows_defender_exclusion: boolean;
   /** Managed subscription state; surfaces only when user has subscribed via cloud. */
   connection_mode?: 'own_key' | 'openswarm-pro' | 'free-trial';
   openswarm_bearer_token?: string | null;
@@ -191,6 +192,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   auto_reveal_sub_agents: true,
   dev_mode: false,
   allow_experimental_updates: false,
+  windows_defender_exclusion: false,
 };
 
 const initialState: SettingsState = {

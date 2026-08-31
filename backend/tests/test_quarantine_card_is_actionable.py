@@ -48,3 +48,28 @@ def test_it_does_not_dump_the_dead_path():
     """The raw CLINotFoundError path was the original unactionable card; it must not come back."""
     assert "not found at" not in CARD.lower()
     assert not re.search(r"[A-Za-z]:\\\\", CARD), "no raw Windows path in the user-facing text"
+
+
+def test_the_card_offers_the_step_people_give_up_on():
+    """Step 4 (the exclusion) is what makes the fix STICK, and doing it by hand is where a real user
+    stopped ("don't know how to take a file out of quarantine"). The app can do that step itself
+    now (ENG-422), so the card has to say so or the automation is invisible to the person who
+    needs it."""
+    low = CARD.lower()
+    assert "antivirus exclusion" in low, "the card must name the toggle that does step 4"
+    assert "settings" in low and "advanced" in low, "and where to find it"
+    # It stays an OFFER, not a claim that anything already happened.
+    assert "approve" in low, "the user still consents through Windows' own dialog"
+
+
+def test_the_retaken_repair_names_the_same_toggle():
+    from backend.apps.agents.core.cli_self_heal import RepairResult
+    import inspect
+    from backend.apps.agents.core import cli_self_heal
+    src = inspect.getsource(cli_self_heal.repair_bundled_cli)
+    i = src.index("retaken=True")
+    tail = src[i:i + 400].lower()
+    assert "antivirus exclusion" in tail, (
+        "the retaken branch is the one signal that PROVES an exclusion is needed; it must name it"
+    )
+    assert RepairResult(repaired=True, retaken=True).retaken is True

@@ -113,8 +113,9 @@ def repair_bundled_cli(dest: str, member_suffix: str = "_bundled/claude.exe",
     if not os.path.isfile(dest):
         logger.warning("self-heal: %s was removed again right after restore; antivirus is holding it", dest)
         return RepairResult(repaired=True, retaken=True, source=pkg,
-                            detail="it was restored and removed again straight away, so an "
-                                   "antivirus exclusion is needed before it will stay")
+                            detail="it was restored and removed again straight away; turn on "
+                                   "Settings, then Advanced, then Antivirus exclusion, or it will "
+                                   "keep being removed")
     logger.info("self-heal: restored the bundled agent runtime from %s", pkg)
     return RepairResult(repaired=True, source=pkg,
                         detail="the bundled agent runtime was restored from your installer package")

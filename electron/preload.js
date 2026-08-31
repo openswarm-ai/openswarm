@@ -49,6 +49,11 @@ contextBridge.exposeInMainWorld('openswarm', {
   getBuildInfo: () => ipcRenderer.invoke('get-build-info'),
   getSafeMode: () => ipcRenderer.invoke('get-safe-mode'),
 
+  // ENG-422: add/remove the Windows Defender exclusion for OpenSwarm's folders. Raises Windows' own
+  // UAC dialog; resolves { ok, detail } and never throws, so a declined elevation just reverts the
+  // Settings toggle instead of breaking the page.
+  setDefenderExclusion: (enable) => ipcRenderer.invoke('defender:set-exclusion', enable),
+
   // Phase 0 boot instrumentation: renderer calls this exactly once, when the
   // first streamed token of the first agent response paints. Fire-and-forget
   // (send, not invoke) so it never blocks the render path. Main dedupes.

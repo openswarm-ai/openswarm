@@ -771,6 +771,20 @@ if (gotLock) detectDirtyExitAndArmSafeMode();
 
 ipcMain.handle('get-safe-mode', () => ({ ...safeModeInfo, reducedGraphics: reducedGraphicsThisBoot }));
 
+// ENG-422: the Windows Defender exclusion. Renderer-triggered and user-initiated ONLY (an
+// off-by-default Settings toggle); there is no auto-run path and no prompt, because excluding a
+// folder from antivirus is the user's call to make. Windows-only, enforced here rather than trusted
+// from the renderer.
+ipcMain.handle('defender:set-exclusion', async (_e, enable) => {
+  const { applyDefenderExclusion } = require('./defenderExclusion');
+  return applyDefenderExclusion({
+    enable: !!enable,
+    platform: process.platform,
+    resourcesPath: process.resourcesPath,
+    devRoot: path.join(__dirname, '..'),
+  });
+});
+
 // Quit-cause forensics. On a real quit (Cmd+Q, dock Quit, app.quit()) Electron
 // fires before-quit BEFORE any window 'close' events; a window closing on its
 // own (Cmd+W, red X, programmatic close) fires 'close' with quitInitiated
