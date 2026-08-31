@@ -22,6 +22,16 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.3",
+        headline="A model hiccup at startup can no longer sink a long run an hour later.",
+        highlights=[
+            "If the local model router is briefly down when a chat starts, the chat now heals itself the moment the problem would have bitten, instead of failing with an error card after doing an hour of work.",
+        ],
+        fixes=[
+            "Reconnecting a subscription really does restart the router again. A stale health check could previously report the restart as done while the router stayed down for twenty seconds, and every chat started in that window was set up to fail.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.10-exp.2",
         headline="Browser research follows links instead of guessing, and long runs finish what they start.",
         highlights=[
