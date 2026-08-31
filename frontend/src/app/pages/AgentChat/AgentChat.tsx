@@ -84,6 +84,7 @@ import { shallowEqual } from 'react-redux';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { parseMcpToolName, getMcpInputSummary } from '@/shared/mcpToolMeta';
 import { isNarration } from './parsing/isNarration';
+import { shouldForwardGutterWheel } from './gutterWheel';
 import { openMarketplace } from '@/app/pages/Directory/openMarketplace';
 
 const CONTEXT_WINDOWS: Record<string, number> = {
@@ -829,6 +830,23 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       el.removeEventListener('keydown', onKeyDown);
       el.removeEventListener('pointerdown', onPointerDown);
     };
+  }, []);
+
+  // Fullscreen centers the column inside wide empty gutters, and the gutter is where the cursor naturally rests; a vertical wheel there can only mean "scroll the thread". Only the BARE gutter forwards (target === currentTarget), so nothing inside the column can be double-scrolled, honoring the one-owner rule.
+  const onGutterWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (!shouldForwardGutterWheel({
+      ctrlKey: e.ctrlKey, metaKey: e.metaKey, deltaX: e.deltaX, deltaY: e.deltaY,
+      targetIsGutter: e.target === e.currentTarget,
+    })) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (e.deltaY < 0) {
+      // Mirror the container's own wheel: reading up from the gutter is real follow-away intent.
+      userScrollIntentUntilRef.current = performance.now() + USER_SCROLL_INTENT_MS;
+      pinAbortRef.current = true;
+    }
+    el.scrollTop += e.deltaY;
+    e.stopPropagation();
   }, []);
 
   const scrollToBottomRafRef = useRef<number | null>(null);
@@ -1638,7 +1656,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const statusStyle = STATUS_STYLES[session.status] || { color: c.text.tertiary, bg: c.bg.secondary };
 
   return (
-    <Box sx={{ display: 'flex', height: '100%', ...(fullscreenWash && { background: fullscreenWash }) }}>
+    <Box
+      onWheel={fullscreenChat ? onGutterWheel : undefined}
+      sx={{ display: 'flex', height: '100%', ...(fullscreenWash && { background: fullscreenWash }) }}
+    >
       <ContextDrawer />
       {/* Marks transcript AND composer as one chat, so Cmd+A from the composer can still find the conversation (ENG-231). */}
       <Box data-chat-root sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden', ...(fullscreenChat && { maxWidth: FULLSCREEN_READING_MAX_W, width: '100%', mx: 'auto' }) }}>
