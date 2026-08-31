@@ -50,6 +50,9 @@ import { notifyAgentCompletion, notifyWorkflowRun } from '../notifications';
 let firstAgentResponseMarked = false;
 installInteractionListeners();
 
+// Ceiling on how long a live gesture may hold streamed text before the stream gets a frame anyway.
+const BG_MAX_HOLD_MS = 1000;
+
 // Thin wrapper around getAuthToken so the connect() call site stays synchronous. If the token isn't cached yet, returns '' and the WS handshake will 4401, onclose catches that and refreshes the token before the next reconnect.
 const _getAuthTokenSafe = (): string => {
   try { return getAuthToken() || ''; } catch { return ''; }
@@ -94,6 +97,8 @@ class WebSocketManager {
   private skipStreamEvents: boolean;
   private backgrounded = false;
   private bgBuffer = new BackgroundDeltaBuffer();
+  // When the current buffered run started, so a gesture cannot hold a stream forever (see armBgFlush).
+  private bgHoldSince: number | null = null;
   private bgFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionId: string | null;
 
@@ -206,11 +211,17 @@ class WebSocketManager {
 
   private armBgFlush() {
     if (this.bgFlushTimer !== null) return;
+    if (this.bgHoldSince === null) this.bgHoldSince = Date.now();
     // Gesture-buffered deltas flush fast (250ms) once the hand stops; true background stays 1Hz.
     const delay = this.backgrounded ? 1000 : 250;
     this.bgFlushTimer = setTimeout(() => {
       this.bgFlushTimer = null;
-      if (!this.backgrounded && interactionActive()) { this.armBgFlush(); return; }
+      // A gesture that keeps going keeps re-arming, so without a ceiling a long pan can hold an
+      // answer for as long as the hand moves and then dump it in one burst. Past the ceiling the
+      // stream wins and gets its frame; 1Hz mid-gesture is the rate the backgrounded case already
+      // treats as acceptable, so this cannot be worse than what a hidden chat already pays.
+      const heldTooLong = this.bgHoldSince !== null && Date.now() - this.bgHoldSince >= BG_MAX_HOLD_MS;
+      if (!this.backgrounded && interactionActive() && !heldTooLong) { this.armBgFlush(); return; }
       this.flushBgDelta();
     }, delay);
   }
@@ -220,6 +231,7 @@ class WebSocketManager {
       clearTimeout(this.bgFlushTimer);
       this.bgFlushTimer = null;
     }
+    this.bgHoldSince = null;
     const p = this.bgBuffer.take();
     if (p && this.sessionId) {
       store.dispatch(streamDelta({ sessionId: this.sessionId, messageId: p.messageId, delta: p.text }));

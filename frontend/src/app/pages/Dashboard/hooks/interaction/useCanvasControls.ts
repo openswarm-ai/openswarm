@@ -5,6 +5,7 @@ import { setCanvasInteractionActive } from '@/shared/canvasInteractionState';
 import { getLastInteractedBrowser } from '@/shared/browserFocus';
 import { getScrollFocusedCard } from '@/shared/cardScrollFocus';
 import { APP_WINDOW_SELECTOR, CANVAS_OWNER, heldBy, WheelGesture } from './wheelGestureOwner';
+import { markInteraction } from '@/shared/interactionPriority';
 import { getWebview } from '@/shared/browserRegistry';
 import { applyBrowserZoom } from '@/shared/browserZoom';
 import { syncTiledGeometry } from '../../canvas/tiledGeometry';
@@ -434,6 +435,12 @@ export function useCanvasControls(
         gesture.owner = CANVAS_OWNER;
         gesture.at = Date.now();
       }
+
+      // The canvas is handling this wheel: every "someone else owns it" branch above has already
+      // returned, so this is the one point where a pan or a zoom is committed to. Streaming yields
+      // to it (ENG-301); a wheel that scrolled a transcript never reaches here and never stalls the
+      // answer the user is reading.
+      markInteraction();
 
       e.preventDefault();
       if (inertiaFrameRef.current) {
