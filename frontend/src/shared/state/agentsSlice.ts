@@ -27,7 +27,9 @@ export interface AgentMessage {
   /** Round-tripped optimistic-bubble id; addMessage dedupes the echo against the placeholder. */
   client_message_id?: string;
   /** Frontend-only optimistic lifecycle; dropped on server-echoed messages. */
-  optimistic_status?: 'pending' | 'failed';
+  // 'queued' = accepted by the backend but held until the running turn ends. Not the same
+  // as sent, and a user who cannot tell them apart reads the agent as ignoring them.
+  optimistic_status?: 'pending' | 'failed' | 'queued';
   /** Server-stamped duration/token counts; today only thinking messages set these. */
   elapsed_ms?: number;
   tokens?: number;
@@ -876,6 +878,20 @@ const agentsSlice = createSlice({
       });
     },
 
+    // A send that arrived mid-turn is parked server-side and replays when the turn ends, which can
+    // be many minutes on a long run. Marking the bubble is what separates "held" from "ignored".
+    markOptimisticQueued(
+      state,
+      action: PayloadAction<{ sessionId: string; clientMessageId: string }>,
+    ) {
+      const session = state.sessions[action.payload.sessionId];
+      if (!session) return;
+      const msg = session.messages.find(
+        (m) => m.client_message_id === action.payload.clientMessageId && m.optimistic_status === 'pending',
+      );
+      if (msg) msg.optimistic_status = 'queued';
+    },
+
     markOptimisticFailed(
       state,
       action: PayloadAction<{ sessionId: string; clientMessageId: string }>,
@@ -1555,6 +1571,7 @@ export const {
   addMessage,
   addOptimisticMessage,
   markOptimisticFailed,
+  markOptimisticQueued,
   recordCompaction,
   setTurnLabel,
   clearTurnLabel,

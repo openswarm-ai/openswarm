@@ -6,6 +6,7 @@ import {
   updateSessionName,
   updateGroupMeta,
   addMessage,
+  markOptimisticQueued,
   addApprovalRequest,
   removeApprovalRequest,
   updateSessionStatus,
@@ -577,6 +578,16 @@ class WebSocketManager {
               }));
             }
           }
+        }
+        break;
+
+      case 'agent:message_queued':
+        // Typed at a running agent: the backend holds it until the turn ends. Say so on the bubble,
+        // or the only reading available is "it ignored me" (measured: 11 minutes of that).
+        if (session_id && data.client_message_id) {
+          store.dispatch(markOptimisticQueued({
+            sessionId: session_id, clientMessageId: String(data.client_message_id),
+          }));
         }
         break;
 

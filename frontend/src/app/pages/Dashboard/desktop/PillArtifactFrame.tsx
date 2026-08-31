@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
+import { DarkTokensScope } from '@/shared/styles/ThemeContext';
 
 /** Widest and narrowest a collapsed artifact may get dragged to. */
 const MIN_W = 240;
@@ -84,6 +85,8 @@ function PillArtifactFrame({ name, children }: Props): React.ReactElement {
   return (
     <Box
       // The "dark" class scopes the vendored tool-ui theme: pill artifacts always sit on the dark glass surface, so a light widget card here read as a white slab.
+      // The class alone only dresses the vendored CSS; MUI inputs inside kept the app's LIGHT text
+      // colour and went invisible on this dark glass, so the scope below moves both sources together.
       className="osw-artifact dark"
       onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
       onClick={(e: React.MouseEvent) => e.stopPropagation()}
@@ -92,7 +95,7 @@ function PillArtifactFrame({ name, children }: Props): React.ReactElement {
       // shrink to must widen the frame, never cut the widget; clipping is not a size option.
       sx={{ position: 'relative', width, minWidth: 'min-content', maxWidth: '90vw', '&:hover .osw-artifact-grip': { opacity: 1 } }}
     >
-      {children}
+      <DarkTokensScope>{children}</DarkTokensScope>
       <Box
         className="osw-artifact-grip"
         onPointerDown={onHandleDown}

@@ -1055,8 +1055,12 @@ const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEd
     ? content.slice(0, 200)
     : JSON.stringify(content).slice(0, 200);
 
-  const optimisticStatus = (message as any).optimistic_status as 'pending' | 'failed' | undefined;
-  const isPending = optimisticStatus === 'pending';
+  const optimisticStatus = (message as any).optimistic_status as 'pending' | 'failed' | 'queued' | undefined;
+  // Queued means the backend has it but the agent is mid-turn and will not see it until that turn
+  // ends. It reads as pending (dimmed) and says so, because "held" and "ignored" look identical
+  // otherwise, and Stop is the control that delivers it now.
+  const isQueued = optimisticStatus === 'queued';
+  const isPending = optimisticStatus === 'pending' || isQueued;
   const isFailed = optimisticStatus === 'failed';
 
   return (
@@ -1093,6 +1097,8 @@ const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEd
           overflow: 'hidden',
           opacity: isPending ? 0.7 : 1,
           transition: 'opacity 0.2s, border-color 0.2s',
+          // A queued send needs to say why it is dimmed. Without words, held and ignored look the same.
+          ...(isQueued ? { position: 'relative' } : {}),
           // User bubbles ease in instead of popping. Assistant bubbles are left alone on purpose: they reveal by typing, and animating them would flash at the streaming -> committed handoff. Transform+opacity only, so it rides the compositor and never shifts layout or the scroll.
           ...(isUser && !editing ? {
             animation: 'msgBubbleEnter 160ms ease-out',
@@ -1320,6 +1326,14 @@ const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEd
         )}
       </Box>
 
+      {isQueued && isUser && (
+        <Typography
+          variant="caption"
+          sx={{ display: 'block', mt: 0.5, textAlign: 'right', color: c.text.muted }}
+        >
+          Waiting for the current step to finish. Press Stop to send it now.
+        </Typography>
+      )}
       <PlanPickerModal
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}

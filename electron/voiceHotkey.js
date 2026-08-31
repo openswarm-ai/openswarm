@@ -30,6 +30,8 @@ const LEGACY_COMBO = process.platform === 'darwin' ? 'Meta+Shift+d' : 'Ctrl+Shif
 const TAP_FRESH_MS = 200;
 // How long a tap may stay silent before we stop calling it "awaiting proof" and call it broken.
 const FN_PROOF_GRACE_MS = 60_000;
+// How often to re-ask "was the user typing while the watcher stayed silent?".
+const FN_DEAF_POLL_MS = 15_000;
 const FALLBACK_DEFER_MS = 90;
 
 // "Meta+Shift+d" (renderer parts format, same as new_agent_shortcut) -> matcher pieces.
@@ -106,6 +108,8 @@ function installVoiceHotkey(getMainWindow) {
   // What the watcher TOLD us, as opposed to what we guessed from it still being alive.
   let fnPermission = 'unknown';
   let fnWireAlive = false;
+  // Proof the USER was at the keyboard, which is what makes a silent tap mean anything.
+  let rendererSawKeys = false;
   let unusableNotified = false;
   let lastHotkeyIssue = null;
   let lastTapKeyMs = 0;
@@ -271,9 +275,23 @@ function installVoiceHotkey(getMainWindow) {
     // Armed is not working. If the tap is still deaf after a spell of real use, that is a dead key,
     // not a shy one, and the user deserves to hear it rather than keep pressing a key that no
     // longer does anything (it regressed silently once already).
-    setTimeout(() => {
-      if (fnProc && !primaryProven() && !fnWireAlive) notifyPrimaryUnusable('tap-deaf');
-    }, FN_PROOF_GRACE_MS);
+    // "No fn events yet" is NOT evidence of a deaf tap. The watcher only taps flagsChanged, so
+    // wireAlive needs a MODIFIER press; a user who reads the screen, clicks around, or types a
+    // lowercase prompt produces none. The old fixed timer therefore told anyone who was merely
+    // quiet for a minute that their fn key was broken, which is a lying status, and it pushed them
+    // onto the fallback chord for a key that worked fine (observed 2026-08-30 on a packaged build:
+    // "granted" then "tap-deaf" on a tap that was never touched).
+    //
+    // Deafness is only a fact when the user WAS at the keyboard and the watcher still heard nothing,
+    // so wait for that pairing instead of for the clock, and keep waiting rather than giving up.
+    const deafPoll = setInterval(() => {
+      if (unusableNotified || primaryProven() || !fnProc) { clearInterval(deafPoll); return; }
+      if (fnWireAlive) { clearInterval(deafPoll); return; }
+      if (!rendererSawKeys) return;
+      clearInterval(deafPoll);
+      notifyPrimaryUnusable('tap-deaf');
+    }, FN_DEAF_POLL_MS);
+    if (typeof deafPoll.unref === 'function') deafPoll.unref();
     // macOS's own Globe-key action (emoji picker by default) fires on a quick fn tap alongside us;
     // tell the renderer once so it can point the user at "Press Globe key to: Do Nothing".
     require('child_process').exec('defaults read com.apple.HIToolbox AppleFnUsageType', (err, out) => {
@@ -431,6 +449,7 @@ function installVoiceHotkey(getMainWindow) {
       if (input.type !== 'keyDown' || input.isAutoRepeat) return;
       // The relay is the ONLY path a chord has while app-scoped, so knowing it is actually wired
       // beats inferring it from an absence of complaints.
+      rendererSawKeys = true;
       if (!relayProven.has(contents.id)) {
         relayProven.add(contents.id);
         console.log(`[voice] relay live on webContents ${contents.id} (${contents.getType()}), first key=${input.key}`);

@@ -48,6 +48,7 @@ import { extractLatestShowUi, extractPendingAskUi, freezeIfDone, artifactName, h
 import { useDragEndBackstops } from '../hooks/interaction/useDragEndBackstops';
 import { useBrowserPillShot } from '../desktop/useBrowserPillShot';
 import { subscribeFollowingBrowsers, isSurfaceFollowing } from '../desktop/followingBrowsers';
+import { shallowEqual } from 'react-redux';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import AskQuestionCard from '@/app/pages/AgentChat/tool-ui/AskQuestionCard';
 import AgentChat from '@/app/pages/AgentChat/AgentChat';
@@ -56,7 +57,6 @@ import { useClaudeTokens, DarkTokensScope } from '@/shared/styles/ThemeContext';
 import { GLASS_SURFACE, GLASS_SURFACE_BLUR, GLASS_SURFACE_TEXT } from '@/shared/styles/glassSurface';
 import { useDashboardActive } from '@/shared/hooks/useDashboardActive';
 import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScrollPassthrough';
-import { useStreamingMessage } from '@/shared/state/streamingSlice';
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
 import { setCardSidecar } from '@/shared/state/workflowsSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
@@ -227,6 +227,10 @@ function summarizeToolInput(toolName: string, toolInput: Record<string, any>): s
     }
   }
 }
+
+/** How much of a streaming message the collapsed card paints. Also the subscription boundary:
+ * past this many characters the head is stable and the card stops re-rendering. */
+const PREVIEW_CHARS = 120;
 
 function getToolDisplayName(toolName: string): string {
   const mcp = parseMcpToolName(toolName);
@@ -605,16 +609,25 @@ const AgentCard: React.FC<Props> = ({
   };
 
   const lastMessage = session.messages[session.messages.length - 1];
-  // Subscribe to this card's own streaming entry so per-character mutations don't churn other cards.
-  const streamingMessage = useStreamingMessage(session.id);
-  const isStreaming = !!streamingMessage;
+  // The card shows a 120-CHARACTER preview, so subscribing to the streaming entry itself made every
+  // token of a long answer re-render all 1,464 lines of this component, on every streaming card at
+  // once. AgentChat already solved this (it takes the message id and lets a leaf own the text); the
+  // equivalent here is to project to what is actually painted. Past the first 120 characters the
+  // head stops changing, so the card goes quiet for the rest of the stream instead of churning.
+  const stream = useAppSelector((st) => {
+    const m = st.streaming.bySession[session.id];
+    if (!m) return { on: false, head: '' };
+    const body = (m.content || '').slice(0, PREVIEW_CHARS);
+    return { on: true, head: m.role === 'tool_call' ? `[${m.tool_name || ''}] ${body}` : body };
+  }, shallowEqual);
+  const isStreaming = stream.on;
   const previewContent = isStreaming
-    ? (streamingMessage!.role === 'tool_call'
-        ? `[${getToolDisplayName(streamingMessage!.tool_name || '')}] ${streamingMessage!.content}`
-        : streamingMessage!.content
-      ).slice(0, 120)
+    ? (stream.head.startsWith('[')
+        ? stream.head.replace(/^\[([^\]]*)\]/, (_m, t) => `[${getToolDisplayName(t)}]`)
+        : stream.head
+      ).slice(0, PREVIEW_CHARS)
     : lastMessage && typeof lastMessage.content === 'string'
-      ? lastMessage.content.slice(0, 120)
+      ? lastMessage.content.slice(0, PREVIEW_CHARS)
       : session.last_message_preview ?? '';
   const hasPending = session.pending_approvals.length > 0;
   const pendingReq = session.pending_approvals[0];

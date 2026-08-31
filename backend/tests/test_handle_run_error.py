@@ -61,8 +61,11 @@ def test_cli_missing_shows_repair_card_not_dead_path(monkeypatch):
     sys_msgs = [m for m in session.messages if m.role == "system"]
     assert sys_msgs, "expected a system card"
     card = sys_msgs[-1].content
-    assert "antivirus" in card
-    assert "reinstall" in card
+    # Case-folded: the card opens its second sentence with "Antivirus", and a capital letter is not
+    # a behaviour change. This assertion was checking the copy's punctuation, not its meaning.
+    low = card.lower()
+    assert "antivirus" in low
+    assert "reinstall" in low
     # The raw path dump is exactly the unactionable card we're replacing.
     assert "AppData" not in card
 

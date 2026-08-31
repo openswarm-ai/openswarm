@@ -85,6 +85,34 @@ P_PROSE_DECLINE_RE = re.compile(
     re.I)
 
 
+# A task that names a ROUTE, not a page. The read script stages ONE page and asks one aux call over
+# its text, so a "go to A, then click through to B, then to C" task is answerable from page 1 only by
+# guessing. Measured live 2026-08-30 on the packaged candidate: a 4-hop Wikipedia task ran the child
+# with turns=1 and llm=0ms (the loop never started) and came back reporting INSUFFICIENT for page 2,
+# which is ENG-355's shape arriving through the child instead of the orchestrator.
+#
+# Declining here costs a slower full loop; accepting costs a partial answer dressed as a complete one,
+# so this fails toward the loop on purpose. It needs a SEQUENCE, never a bare navigation verb, because
+# "go to X and read the heading" is exactly what this path is for.
+P_MULTI_HOP_RE = re.compile(
+    r"\bclick(?:ing)?\s+(?:through|into)\b"
+    r"|\bfrom\s+(?:there|that\s+page)\b"
+    r"|\bone\s+at\s+a\s+time\b"
+    r"|\beach\s+of\s+(?:the(?:se|m)?|those)\b"
+    r"|\b(?:then|next|after\s+that)\b[^.]{0,60}?\b(?:click|navigate|go\s+to|open|visit|follow)\b"
+    r"|\b(?:click|navigate|go\s+to|open|visit|follow)\b[^.]{0,60}?\b(?:then|next|after\s+that)\b",
+    re.I,
+)
+
+
+def needs_multi_page(task: str) -> bool:
+    """True when the task describes a ROUTE across pages, which one staged read cannot answer."""
+    t = task or ""
+    if len(set(re.findall(r'https?://[^\s<>"\')\]]+', t))) >= 2:
+        return True
+    return bool(P_MULTI_HOP_RE.search(t))
+
+
 def is_answer(reply: str) -> Optional[str]:
     """The usable answer text, or None. Declines, empties, and hedge-shaped replies
     all fail closed to the loop, so a thin extraction can never become a wrong answer."""
@@ -104,6 +132,11 @@ async def run_read_script(
     Never raises; never acts on the page beyond reading it."""
     t0 = time.monotonic()
     if aux_client is None or not aux_model:
+        return None
+    # Bail BEFORE the aux call: a route task cannot be answered from one staged page, and paying for
+    # the call only buys a confident-sounding partial.
+    if needs_multi_page(task):
+        logger.info("[browser-read-script] task spans several pages; running the loop instead")
         return None
     try:
         from backend.apps.agents.core.aux_llm import safe_resp_text

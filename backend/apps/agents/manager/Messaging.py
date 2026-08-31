@@ -89,6 +89,12 @@ class Messaging(AgentManagerProtocol):
         existing = self.tasks.get(session_id)
         if existing and not existing.done():
             # A mid-turn message used to be silently dropped here (no bubble, no trace); queue it and the turn task's done callback replays it.
+            # Queued is NOT the same as sent, and the difference is the whole user experience: a
+            # person who types "actually stop, just tell me X" watches the agent carry on for as long
+            # as the current turn lasts. Measured live 2026-08-30: 11 minutes and 119 further tool
+            # calls, with the message leaving no trace in the transcript or the API, so the only
+            # honest reading available to the user was "it ignored me". Pressing Stop flushed it in
+            # 15s. So say it out loud, and name the control that actually works.
             self.pending_messages.setdefault(session_id, []).append(QueuedMessage(
                 prompt=prompt, mode=mode, model=model, provider=provider, images=images,
                 context_paths=context_paths, forced_tools=forced_tools,
@@ -98,6 +104,16 @@ class Messaging(AgentManagerProtocol):
                 selected_setting_ids=selected_setting_ids,
                 client_message_id=client_message_id,
             ))
+            if not hidden:
+                await ws_manager.send_to_session(session_id, "agent:message_queued", {
+                    "session_id": session_id,
+                    "client_message_id": client_message_id,
+                    "queued": len(self.pending_messages.get(session_id) or []),
+                })
+                logger.info(
+                    f"[queued-send] {session_id}: message held until the running turn ends "
+                    f"({len(self.pending_messages.get(session_id) or [])} waiting); Stop sends it now"
+                )
             return
 
         session_changed = False

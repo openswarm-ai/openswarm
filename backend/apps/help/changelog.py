@@ -22,6 +22,21 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.1",
+        headline="Browser research follows links instead of guessing, and long runs finish what they start.",
+        highlights=[
+            "A browsing task that spans several pages now actually walks them. Asking an agent to start somewhere and follow links through to another page no longer answers from the first page alone.",
+            "Long jobs hold together. A run that reads, edits and re-runs tests over a hundred steps keeps its place and finishes with the detail intact.",
+            "Panning the canvas no longer snags when the pointer crosses Settings or the Marketplace, and scrolling a settings row scrolls the row instead of dragging the whole board.",
+        ],
+        fixes=[
+            "The dictation notice no longer claims the fn key is broken when you simply have not pressed a key yet. It only says so once there is real evidence the key is not getting through.",
+            "Text boxes inside agent cards are readable in light mode again. The free text field on a question could previously render dark on dark.",
+            "A blocked or refused request no longer leaves the chat unusable, and the provider's wording is never stored as if the agent had said it.",
+            "If security software quarantines the bundled agent runtime, the app puts it back itself instead of leaving you to find the file.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.9",
         headline="Agents keep going when the connection does not, and the fn key finally works.",
         highlights=[
