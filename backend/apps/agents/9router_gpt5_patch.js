@@ -98,7 +98,32 @@ const _http = require('http');
   } catch (_) {}
 })();
 
-const TARGET_HOSTS = new Set(['api.openai.com']);
+const TARGET_HOSTS = new Set(['api.openai.com', 'api.anthropic.com']);
+
+// ENG-418: continuous history pruning rides the same interceptor. Loaded lazily and fail-open so
+// a missing or broken module costs the prune, never the request.
+let _prune = null;
+function historyPrune(bodyStr) {
+  try {
+    if (_prune === null) {
+      _prune = require(require('path').join(__dirname, '9router_history_prune.js'));
+      try { process.stderr.write('[history-prune] installed\n'); } catch (_) {}
+    }
+    return _prune.maybePrune(bodyStr);
+  } catch (_) {
+    _prune = { maybePrune: (b) => b };
+    try { process.stderr.write('[history-prune] FAILED to load; requests pass through unpruned\n'); } catch (_) {}
+    return bodyStr;
+  }
+}
+
+function transformBody(bodyStr, host) {
+  // Order matters only in that both must see valid JSON; each is a no-op off its own shape.
+  let out = bodyStr;
+  if (host === 'api.openai.com') out = maybeRewriteBody(out);
+  out = historyPrune(out);
+  return out;
+}
 const DEBUG = process.env.OPENSWARM_DEBUG_GPT5_PATCH === '1';
 
 function _log(msg) {
@@ -169,6 +194,7 @@ function patchHttpRequest(orig) {
     if (!TARGET_HOSTS.has(host)) {
       return orig.apply(this, args);
     }
+    const targetHost = host;
 
     let req;
     try { req = orig.apply(this, args); } catch (e) { throw e; }
@@ -217,7 +243,7 @@ function patchHttpRequest(orig) {
         let bodyStr = '';
         if (isStringMode === true) bodyStr = chunks.join('');
         else if (isStringMode === false) bodyStr = Buffer.concat(chunks).toString('utf8');
-        const rewritten = maybeRewriteBody(bodyStr);
+        const rewritten = transformBody(bodyStr, targetHost);
         if (rewritten !== bodyStr) {
           const newBuf = Buffer.from(rewritten, 'utf8');
           try {
@@ -270,7 +296,7 @@ if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__openswarm_gpt5
         try { host = new URL(url).hostname.toLowerCase(); } catch (_) { return origFetch.call(this, input, init); }
         if (!TARGET_HOSTS.has(host)) return origFetch.call(this, input, init);
         if (init && typeof init.body === 'string') {
-          const rewritten = maybeRewriteBody(init.body);
+          const rewritten = transformBody(init.body, host);
           if (rewritten !== init.body) {
             const newInit = Object.assign({}, init, { body: rewritten });
             const newLen = String(Buffer.byteLength(rewritten, 'utf8'));
@@ -300,3 +326,6 @@ if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__openswarm_gpt5
     _log('fetch install failed: ' + (e && e.message ? e.message : String(e)));
   }
 }
+
+// Exported for the wiring test only; --require ignores exports.
+module.exports = { transformBody };
