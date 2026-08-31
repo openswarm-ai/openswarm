@@ -22,6 +22,16 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.4",
+        headline="The startup self-heal now waits for the router to actually be ready.",
+        highlights=[
+            "A chat that starts while the app's model router is still waking up now recovers on its own instead of failing with an error card.",
+        ],
+        fixes=[
+            "The automatic recovery for a chat that started during a router restart no longer retries before the router is ready, and it now recognises the error even when the router cuts the message short.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.10-exp.3",
         headline="A model hiccup at startup can no longer sink a long run an hour later.",
         highlights=[
