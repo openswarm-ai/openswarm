@@ -446,8 +446,10 @@ def is_connection_lost(exc: BaseException) -> bool:
 # through: same shape as a dead socket (the process holds a corpse), not as a 429 (a healthy
 # connection carrying a no). Anchored on both halves so an unrelated 400 mentioning caching can't
 # claim a respawn.
+# "cache_" not "cache_control": the router truncates the upstream message mid-word ("...and
+# cache_ (reset after 15s)", live 2026-08-31), and anchoring on the full word missed the real error.
 P_STALE_TOOL_SCHEMA = re.compile(
-    r"defer_loading[^\n]{0,80}cache_control|cache_control[^\n]{0,80}defer_loading",
+    r"defer_loading[^\n]{0,80}cache_|cache_control[^\n]{0,80}defer_loading",
     re.IGNORECASE,
 )
 

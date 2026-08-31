@@ -93,5 +93,9 @@ def try_stale_tool_schema_self_heal(session: AgentSession) -> bool:
     session.needs_respawn = True
     session.pending_continuation = True
     session.pending_continuation_prompt = STALE_TOOL_SCHEMA_RETRY_PROMPT
-    session.pending_continuation_delay_s = 0
+    # The CLI decides deferral at connect from whether the router answers, and the router takes
+    # ~10-20s to genuinely serve after a revive. A 0s retry reconnected in <1s into the same dead
+    # window and burned the budget (live, 2026-08-31); the same session then completed on a plain
+    # resend once the router was warm, which is what dates the failure to timing, not the transcript.
+    session.pending_continuation_delay_s = 20
     return True

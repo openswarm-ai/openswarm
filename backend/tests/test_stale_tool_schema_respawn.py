@@ -23,6 +23,15 @@ REAL = (
     'set. Tools with defer_loading cannot use prompt caching. (reset after 30s)"}}'
 )
 REAL_SHOWUI = REAL.replace("CreateBrowserAgent", "ShowUI")
+# The router truncates the upstream message mid-word; this is the byte-real card text from the
+# packaged exp.3 drill (2026-08-31), and the first classifier missed it by anchoring on the full
+# word "cache_control".
+REAL_TRUNCATED = (
+    "The agent runtime reported this turn failed (stop_sequence). API Error: 400 "
+    '{"error":{"message":"[claude/claude-sonnet-4-6] [400]: Tool '
+    "'mcp__openswarm-core__CreateBrowserAgent' cannot have both defer_loading=true and cache_ "
+    '(reset after 15s)"}}'
+)
 
 
 def p_session() -> AgentSession:
@@ -32,6 +41,17 @@ def p_session() -> AgentSession:
 def test_the_real_400_from_the_live_drill_is_recognised():
     assert is_stale_tool_schema_error(RuntimeError(REAL))
     assert is_stale_tool_schema_error(RuntimeError(REAL_SHOWUI))
+
+
+def test_the_router_truncated_form_is_recognised():
+    assert is_stale_tool_schema_error(RuntimeError(REAL_TRUNCATED))
+
+
+def test_the_respawn_waits_out_the_router_warm_up():
+    """A 0s retry reconnects into the same dead window the first CLI hit (live: second 400 in <1s)."""
+    s = p_session()
+    assert try_stale_tool_schema_self_heal(s) is True
+    assert s.pending_continuation_delay_s >= 15
 
 
 def test_it_is_also_found_when_the_text_arrives_on_stderr():
@@ -61,7 +81,6 @@ def test_one_respawn_is_armed_then_the_budget_is_spent():
     assert try_stale_tool_schema_self_heal(s) is True
     assert s.needs_respawn is True
     assert s.pending_continuation is True
-    assert s.pending_continuation_delay_s == 0
 
     s.pending_continuation = False  # the dispatcher consumed it
     assert try_stale_tool_schema_self_heal(s) is False, "a second identical 400 must card, not loop"
