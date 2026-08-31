@@ -22,31 +22,18 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
-        version="1.7.10-exp.5",
-        headline="When recovery runs out of road, the error card tells the truth.",
-        highlights=[
-            "If a chat still cannot recover after the automatic retry, the message now says the app's router was restarting and that sending again picks up where it left off, instead of blaming the model.",
-        ],
-        fixes=[],
-    ),
-    ReleaseNote(
-        version="1.7.10-exp.4",
-        headline="The startup self-heal now waits for the router to actually be ready.",
-        highlights=[
-            "A chat that starts while the app's model router is still waking up now recovers on its own instead of failing with an error card.",
-        ],
-        fixes=[
-            "The automatic recovery for a chat that started during a router restart no longer retries before the router is ready, and it now recognises the error even when the router cuts the message short.",
-        ],
-    ),
-    ReleaseNote(
         version="1.7.10-exp.3",
-        headline="A model hiccup at startup can no longer sink a long run an hour later.",
+        headline="Answers stream smoothly while you scroll, long chats stay alive, and Windows can stop antivirus breaking the app.",
         highlights=[
-            "If the local model router is briefly down when a chat starts, the chat now heals itself the moment the problem would have bitten, instead of failing with an error card after doing an hour of work.",
+            "Scrolling a chat no longer stalls the answer being written into it. Reading along used to pause the text and then dump it all at once; it now streams straight through.",
+            "Long chats stop filling up. Older tool output is cleared from what gets re-sent on each step while the most recent results stay word for word, so a hundred-step job keeps working instead of hitting the wall.",
+            "Windows: a new Antivirus exclusion switch in Settings, then Advanced. If security software keeps removing part of OpenSwarm, this stops it, with Windows asking you to approve the change and turning it off undoing it.",
         ],
         fixes=[
-            "Reconnecting a subscription really does restart the router again. A stale health check could previously report the restart as done while the router stayed down for twenty seconds, and every chat started in that window was set up to fail.",
+            "A chat that starts while the app's model router is still waking up now recovers on its own instead of failing with an error card after a long run.",
+            "Reconnecting a subscription really does restart the router again. A stale health check could report the restart as done while the router stayed down for twenty seconds, and every chat started in that window was set up to fail.",
+            "When recovery genuinely runs out of road, the message says the router was restarting and that sending again picks up where you left off, instead of telling you to switch models.",
+            "The antivirus message now offers to add the exclusion for you, which is the step people gave up on.",
         ],
     ),
     ReleaseNote(
