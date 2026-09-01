@@ -6,10 +6,12 @@ import LinksWidget from './LinksWidget';
 import VendoredToolUi from '@toolui/VendoredToolUi';
 import type { ShowUiPayload } from './showUiPayload';
 import { useOpenUrlInBrowserCard } from './useOpenUrlInBrowserCard';
+import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 /** One switch for every surface that renders a ShowUI payload (chat bubble, pill artifact); ambient = low-cost render for resting surfaces. */
 function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambient?: boolean }): React.ReactElement | null {
   const openUrl = useOpenUrlInBrowserCard();
+  const c = useClaudeTokens();
   if (payload.component === 'weather') return <WeatherWidget props={payload.props} ambient={ambient} />;
   if (payload.component === 'plan') return <PlanWidget props={payload.props} />;
   if (payload.component === 'stats') return <StatsWidget props={payload.props} />;
@@ -50,8 +52,13 @@ function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambien
     return (
       <div>
         <div style={{ marginBottom: 6, paddingLeft: 4, paddingRight: 4 }}>
-          {title && <div style={{ fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.35 }}>{title}</div>}
-          {desc && <div style={{ fontSize: '0.8125rem', opacity: 0.72, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>}
+          {/* Colour explicitly, never inherited. This header sits above a vendored card whose own
+              surface is dark, and with no colour of its own it took whatever the ancestor happened to
+              carry: on a light-mode app that is near-black text on a dark card, i.e. an invisible
+              title (screenshot 2026-08-31). Same class as ENG-419: a surface that fixes its own
+              background owes its text a token in the same place. */}
+          {title && <div style={{ fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.35, color: c.text.primary }}>{title}</div>}
+          {desc && <div style={{ fontSize: '0.8125rem', color: c.text.secondary, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>}
         </div>
         {widget}
       </div>
