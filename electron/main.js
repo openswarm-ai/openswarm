@@ -1287,9 +1287,10 @@ async function startBackend() {
   console.log(`Starting backend: ${pythonPath} (exists=${pythonExists}) on port ${backendPort}`);
   console.log(`Project root: ${projectRoot}`);
 
+  // backend.serve, not `-m uvicorn backend.main:app`: an agent's `pkill -f "uvicorn backend.main"` aimed at its own app must not match ours.
   backendProcess = spawn(
     pythonPath,
-    ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', String(backendPort), '--timeout-graceful-shutdown', '8'],
+    ['-m', 'backend.serve', '--host', '127.0.0.1', '--port', String(backendPort), '--timeout-graceful-shutdown', '8'],
     {
       cwd: projectRoot,
       env,
