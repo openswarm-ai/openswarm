@@ -55,7 +55,8 @@ const WidgetCopyChip: React.FC<WidgetCopyChipProps> = ({ component, props, conta
       const node = containerRef.current;
       if (node) {
         // Visuals (chart, stats, map, image...) copy as a real image; 2x for retina-crisp pastes.
-        const dataUrl = await toPng(node as HTMLElement, { pixelRatio: 2 });
+        // skipFonts: the Google Fonts stylesheets are CSP-blocked for fetch, so embedding them only logs errors and changes nothing.
+        const dataUrl = await toPng(node as HTMLElement, { pixelRatio: 2, skipFonts: true });
         const blob = await (await fetch(dataUrl)).blob();
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
         flashCopied();

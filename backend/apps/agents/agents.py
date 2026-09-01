@@ -276,6 +276,12 @@ async def generate_group_meta(session_id: str, body: dict):
     tool_calls = body.get("tool_calls", [])
     if not group_id or not tool_calls:
         raise HTTPException(status_code=400, detail="group_id and tool_calls are required")
+    # Same disk fallback as GET /sessions/{id}: after a backend restart every settled chat is on disk, not in memory, and this used to 500 on the first tool group the renderer labelled.
+    if agent_manager.get_session(session_id) is None:
+        try:
+            await agent_manager.resume_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session not found")
 
     # Dedup: share an in-flight Future across callers; refinement requests bypass since they may want fresh results.
     is_refinement = body.get("is_refinement", False)

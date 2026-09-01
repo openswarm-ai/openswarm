@@ -1202,7 +1202,7 @@ async function enumerateCandidates(wv: BrowserWebview): Promise<RankItem[]> {
     await walkSession(child.sessionId, _AX_CHILD_TIMEOUT_MS, 'child frame');
   }
   if (framesDropped > 0) {
-    console.log(`[cdp] enumerateCandidates capped at ${_MAX_TOTAL_FRAMES} frames; dropped ${framesDropped}`);
+    console.debug(`[cdp] enumerateCandidates capped at ${_MAX_TOTAL_FRAMES} frames; dropped ${framesDropped}`);
   }
   return candidates;
 }
