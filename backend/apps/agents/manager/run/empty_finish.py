@@ -35,6 +35,17 @@ EXHAUSTED_NOTE_NO_PROGRESS = (
     "another model."
 )
 
+# Same "no work this turn", but in a chat that has ALREADY done a lot of it. Telling that user the
+# agent "could not get started" is plainly false to anyone reading their own transcript, and telling
+# them to switch models sends them after the wrong thing: a new model inherits the same long
+# conversation and stalls the same way. Seen live 2026-09-01 (Ken, 1.7.9): one chat, 322 tool calls,
+# input 111K-164K, six stalls in an hour, and this was the note it ended on.
+EXHAUSTED_NOTE_LONG_CHAT = (
+    "The agent stopped without replying, and this conversation has gotten long enough that it is "
+    "the likely cause. Send your message again to retry, or start a fresh chat for the next part; "
+    "switching models will not help, since a new one carries the same conversation."
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -155,6 +166,18 @@ def p_recovery_retry_pending(session: AgentSession) -> bool:
 
 
 @typechecked
+def session_showed_work(session: AgentSession) -> bool:
+    """Whether this CHAT has real work behind it, regardless of what this one turn managed.
+
+    `turn_showed_work` answers "is there anything to point at since the user last spoke", which is
+    the right question for the note's wording but the wrong one for its ADVICE: a chat with hundreds
+    of tool calls that stalls is a depth problem, not a model problem."""
+    from backend.apps.agents.manager.session.history_compaction import get_branch_messages
+    return any(getattr(m, "role", "") in ("tool_call", "tool_result")
+               for m in get_branch_messages(session))
+
+
+@typechecked
 def turn_showed_work(session: AgentSession) -> bool:
     """Whether anything the note could point at actually exists since the user last spoke."""
     from backend.apps.agents.manager.session.history_compaction import get_branch_messages
@@ -186,7 +209,12 @@ def surface_exhausted(session: AgentSession, session_id: str) -> None:
         import asyncio
         from backend.apps.agents.core.models import Message
         from backend.apps.agents.core.ws_manager import ws_manager
-        p_note = EXHAUSTED_NOTE if turn_showed_work(session) else EXHAUSTED_NOTE_NO_PROGRESS
+        if turn_showed_work(session):
+            p_note = EXHAUSTED_NOTE
+        elif session_showed_work(session):
+            p_note = EXHAUSTED_NOTE_LONG_CHAT
+        else:
+            p_note = EXHAUSTED_NOTE_NO_PROGRESS
         p_msg = Message(role="system", content=p_note, branch_id=session.active_branch_id)
         session.messages.append(p_msg)
         asyncio.get_running_loop().create_task(ws_manager.send_to_session(session_id, "agent:message", {

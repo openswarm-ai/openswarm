@@ -15,6 +15,7 @@ from backend.apps.agents.manager.streaming.state import TurnState
 from backend.apps.agents.core.error_classify import (
     is_context_overflow_error,
     is_long_context_error,
+    is_context_pressure_death,
     is_stale_tool_schema_error,
     is_transient_capacity_error,
     is_free_trial_exhausted,
@@ -561,6 +562,38 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             "session_id": session_id,
             "message": error_msg.model_dump(mode="json"),
         })
+    elif is_context_pressure_death(e, turn.compact_boundaries, extra_text=p_stderr_tail):
+        # Autocompact thrash that OUTLIVED the pressure valve. The valve gets one fresh-session
+        # rebuild (agent_manager); a conversation that refills the window within three turns simply
+        # does it again, and the second death used to fall through to the generic card, which says
+        # "switch this agent to another model". That is wrong twice: it blames the provider for our
+        # context problem, and a different model inherits the same oversized conversation and
+        # thrashes identically. Seen live 2026-09-01 on a real user's LinkedIn run (sonnet-5).
+        friendly_msg = (
+            "This chat has grown too large to keep compacting: it refills the model's context "
+            "faster than it can be summarized, which is also why it started forgetting earlier "
+            "steps. Start a fresh chat to carry on (your recent context comes with it). Switching "
+            "models will not help, because a new one inherits the same conversation."
+        )
+        error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+        absorb_repeat_card(session, error_msg)
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": error_msg.model_dump(mode="json"),
+        })
+        try:
+            from backend.apps.service.client import submit_diagnostic
+            submit_diagnostic({
+                "kind": "model_error",
+                "subkind": "autocompact_thrash",
+                "flight": flight_recorder.build_envelope(session_id, "model_error", "autocompact_thrash", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
+                "session_id": session_id,
+                "model": session.model,
+                "compact_boundaries": turn.compact_boundaries,
+                "error_preview": redact_for_telemetry(str(e), limit=400),
+            })
+        except Exception:
+            logger.debug("submit_diagnostic autocompact_thrash failed", exc_info=True)
     elif is_router_unavailable_error(f"{e} {p_stderr_tail}"):
         # Our own router is down. Naming it beats "unclassified": this is the one failure family
         # where the fix is entirely on our side of the wire.
