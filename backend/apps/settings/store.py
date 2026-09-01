@@ -60,9 +60,18 @@ P_LEGACY_LADDER_V1 = DEFAULT_SYSTEM_PROMPT.replace(
     "5. **No tool fits.** WebSearch / WebFetch for information. BrowserAgent only for "
     "visual interaction, form filling, or sites with no API path.\n\n",
 )
+# The revision shipped before the reply-language anchor. Derived, so it stays byte-exact as the rest
+# of the prompt evolves: without it every existing install keeps a prompt that never names a language.
+P_LEGACY_NO_LANGUAGE_ANCHOR = DEFAULT_SYSTEM_PROMPT.replace(
+    "Write to the user in the language THEY wrote to you in. If their message is in English, "
+    "answer in English, including questions and any UI text you generate.\n",
+    "",
+)
+
 P_LEGACY_DEFAULT_SYSTEM_PROMPTS = (
     P_LEGACY_DEFAULT_SYSTEM_PROMPT,
     P_LEGACY_LADDER_V1,
+    P_LEGACY_NO_LANGUAGE_ANCHOR,
     P_LEGACY_DEFAULT_SYSTEM_PROMPT.replace(
         "1. Connected MCP tools; fastest and most reliable. To reach an integration you "
         "don't already see, use MCPSearch then MCPActivate; never ToolSearch for it.\n",

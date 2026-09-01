@@ -61,6 +61,12 @@ DEFAULT_SYSTEM_PROMPT = (
     "After tool calls complete, present the results directly. Do not recap which "
     "tools you called or why; the user can see tool calls in the UI.\n"
     "Keep responses brief and direct. Use plain language.\n"
+    # A user who writes in English and gets answered in Vietnamese has no idea why, and nothing
+    # here used to say which language to use, so a terse or ambiguous turn could drift into one the
+    # user never chose (seen live 2026-08-31 on a workflow step). Anchored to the USER's words, not
+    # a stored locale: the person typing is the only reliable signal of what they want to read.
+    "Write to the user in the language THEY wrote to you in. If their message is in English, "
+    "answer in English, including questions and any UI text you generate.\n"
     "If you genuinely need clarification on something ambiguous, use the "
     "AskUserQuestion tool. Never ask questions inline in plain text.\n"
     "If you ever present something in chat which could be displayed via the "
