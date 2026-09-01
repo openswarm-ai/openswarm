@@ -320,6 +320,31 @@ class RunOptions(AgentManagerProtocol):
             if distilled:
                 fenced = wrap_platform_note(f"Summary of earlier conversation (older turns compacted):\n{distilled}")
                 history = f"{fenced}\n\n{history}" if history else fenced
+            elif session.compacted_through_msg_id and p_mode != "none":
+                # A rebuild that drops old turns AND carries no gist of them is the agent's memory
+                # loss, and until now it happened in total silence: the distiller returns "" for five
+                # different reasons (feature off, cutoff gone from the branch, empty body, the aux
+                # call raising, the aux call returning nothing) and only one of them logs, at DEBUG.
+                # The recap never carries the model's own replies by design, so this summary IS the
+                # memory; without it the agent knows what was ASKED and which tools ran, but not what
+                # it concluded, which is exactly the "confidently describes work that isn't there"
+                # report. Say it out loud and stamp it, so the next report is diagnosable instead of
+                # unexplainable (the ENG-397 move).
+                logger.warning(
+                    f"Agent {session_id}: rebuilding past a compaction cutoff with NO distilled "
+                    f"summary; this turn loses the gist of its own earlier work (prefix={p_mode})"
+                )
+                try:
+                    from backend.apps.service.client import submit_diagnostic
+                    submit_diagnostic({
+                        "kind": "recap_summary_missing",
+                        "session_id": session_id,
+                        "model": session.model,
+                        "prefix_mode": p_mode,
+                        "recap_chars": len(history or ""),
+                    })
+                except Exception:
+                    logger.debug("submit_diagnostic recap_summary_missing failed", exc_info=True)
             if history:
                 # SYSTEM channel, not the user message (ENG-358 structural fix): a transcript recap
                 # inside user content is byte-for-byte what anti-distillation filters hunt, and no
