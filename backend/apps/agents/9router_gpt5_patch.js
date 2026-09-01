@@ -100,19 +100,26 @@ const _http = require('http');
 
 const TARGET_HOSTS = new Set(['api.openai.com', 'api.anthropic.com']);
 
-// ENG-418: continuous history pruning rides the same interceptor. Loaded lazily and fail-open so
-// a missing or broken module costs the prune, never the request.
+// ENG-418: continuous history pruning rides the same interceptor. Fail-open: a missing or broken
+// module costs the prune, never the request. Loaded EAGERLY so the verdict line lands in the router's
+// start log at boot, where the backend reads it; a lazy load only spoke on the first request, which
+// left a dead pruner indistinguishable from a quiet one until a chat had already paid for it.
 let _prune = null;
-function historyPrune(bodyStr) {
+function loadHistoryPrune() {
   try {
-    if (_prune === null) {
-      _prune = require(require('path').join(__dirname, '9router_history_prune.js'));
-      try { process.stderr.write('[history-prune] installed\n'); } catch (_) {}
-    }
-    return _prune.maybePrune(bodyStr);
+    _prune = require(require('path').join(__dirname, '9router_history_prune.js'));
+    try { process.stderr.write('[history-prune] installed\n'); } catch (_) {}
   } catch (_) {
     _prune = { maybePrune: (b) => b };
     try { process.stderr.write('[history-prune] FAILED to load; requests pass through unpruned\n'); } catch (_) {}
+  }
+}
+loadHistoryPrune();
+function historyPrune(bodyStr) {
+  try {
+    return _prune.maybePrune(bodyStr);
+  } catch (_) {
+    try { process.stderr.write('[history-prune] request passed through unpruned (transform threw)\n'); } catch (_) {}
     return bodyStr;
   }
 }

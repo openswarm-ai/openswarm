@@ -26,6 +26,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
+from backend.apps.nine_router.history_prune_state import report_history_prune_state
 
 logger = logging.getLogger(__name__)
 
@@ -667,6 +668,7 @@ async def p_ensure_running_impl():
             await asyncio.sleep(0.5)
             if is_running():
                 logger.info("9Router started successfully")
+                report_history_prune_state(p_cap_path, p_is_packaged)
                 return
         # Verify-at-boot: it never answered. Report with the captured tail + the exit code (non-None = it crashed; None = wedged or just slow).
         p_report_start_failure(

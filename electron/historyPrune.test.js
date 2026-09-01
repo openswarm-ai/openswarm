@@ -225,3 +225,37 @@ test('old SMALL results age too, newest stay sacred (the 32% floor from the real
     assert.match(res[i].content[0].text, /nothing to commit/, 'a recent small IS the answer and must survive');
   }
 });
+
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const pathMod = require('node:path');
+const PATCH_SRC = pathMod.join(__dirname, '..', 'backend', 'apps', 'agents', '9router_gpt5_patch.js');
+
+function bootPatchWith(pruneModuleSource) {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'osw-patch-'));
+  fs.copyFileSync(PATCH_SRC, pathMod.join(dir, '9router_gpt5_patch.js'));
+  if (pruneModuleSource !== null) fs.writeFileSync(pathMod.join(dir, '9router_history_prune.js'), pruneModuleSource);
+  const r = spawnSync(process.execPath, ['--require', pathMod.join(dir, '9router_gpt5_patch.js'), '-e', 'process.stdout.write("booted")'], { encoding: 'utf8' });
+  fs.rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+
+test('the pruner announces itself at LOAD, before any request (liveness, not just correctness)', () => {
+  const real = fs.readFileSync(pathMod.join(__dirname, '..', 'backend', 'apps', 'agents', '9router_history_prune.js'), 'utf8');
+  const r = bootPatchWith(real);
+  assert.strictEqual(r.stdout, 'booted');
+  assert.match(r.stderr, /\[history-prune\] installed/, 'the installed line must land at boot, with zero requests sent');
+});
+
+test('a broken pruner module says so at boot and the router still boots (fail-open, loudly)', () => {
+  const r = bootPatchWith('throw new Error("simulated broken pruner");');
+  assert.strictEqual(r.stdout, 'booted', 'a dead pruner must never take the router down with it');
+  assert.match(r.stderr, /\[history-prune\] FAILED to load; requests pass through unpruned/);
+});
+
+test('a MISSING pruner module is the same story as a broken one', () => {
+  const r = bootPatchWith(null);
+  assert.strictEqual(r.stdout, 'booted');
+  assert.match(r.stderr, /FAILED to load/);
+});
