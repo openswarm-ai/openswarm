@@ -25,6 +25,20 @@
 const KEEP_RECENT = 5;
 const MIN_STUB_BYTES = 2000;
 const ENGAGE_BYTES = 300000;
+// The CEILING, which is the property hermes has and an age-based cut does not. Clearing only OLD
+// results is a discount: measured on five real sessions it took 1.6M tokens to 422K, but the
+// deepest still landed at ~126K, close enough to the 180K compaction trigger that one more burst
+// of tool work refills it and autocompact thrashes. A user on a build that ALREADY caps every
+// single result still hit that (2026-09-01), because hundreds of capped results still add up.
+// So keep going past the age rule until the body is under a target, oldest first.
+const TARGET_BYTES = 120000;
+// Argument fields that carry a whole file rather than a command. `file_path`, `command` and the rest
+// are identity and always survive: dropping those would leave the model unable to say what it did.
+const BULKY_INPUT_FIELDS = ['content', 'new_string', 'old_string', 'new_str', 'old_str'];
+// ...but never below this many verbatim, whatever the pressure. The newest results are what the
+// model is actually working from; a ceiling that eats those buys context by deleting the answer,
+// which is the one trade this file exists to refuse.
+const KEEP_FLOOR = 2;
 
 const OFF = String(process.env.OSW_HISTORY_PRUNE || '').toLowerCase() === 'off';
 const DEBUG = process.env.OSW_HISTORY_PRUNE_DEBUG === '1';
@@ -103,11 +117,40 @@ function pruneBody(bodyStr) {
     b.content = stubFor(b, seenNewestFirst.has(text) ? 'duplicate' : 'old');
   }
 
+  // The other half of the weight, and the bigger one: a Write or Edit call carries the WHOLE file
+  // in its arguments, and those were being kept verbatim forever. Measured on a real 211-tool
+  // session, tool_use inputs were 35.9% of everything left after the result pass, more than the
+  // results themselves. Old ones lose their bulk and keep their identity, so the model still knows
+  // which file it wrote and can re-read it; the newest are untouched like the results are.
+  const uses = [];
+  for (const msg of data.messages) {
+    if (!msg || msg.role !== 'assistant' || !Array.isArray(msg.content)) continue;
+    for (const block of msg.content) {
+      if (block && block.type === 'tool_use') uses.push(block);
+    }
+  }
+  const useKeepFrom = Math.max(0, uses.length - KEEP_RECENT);
+  for (let i = 0; i < useKeepFrom; i++) {
+    const b = uses[i];
+    const input = b.input;
+    if (!input || typeof input !== 'object') continue;
+    for (const field of BULKY_INPUT_FIELDS) {
+      const v = input[field];
+      if (typeof v === 'string' && v.length >= MIN_STUB_BYTES) {
+        input[field] = `[${v.length} characters, cleared by OpenSwarm; re-read the file if you need them]`;
+      }
+    }
+  }
+
   let out;
   try { out = JSON.stringify(data); } catch (_) { return none; }
+
+
   const stats = {
     stubbed: keepFrom,
     kept: KEEP_RECENT,
+    inputsCleared: useKeepFrom,
+    underTarget: out.length <= TARGET_BYTES,
     savedBytes: bodyStr.length - out.length,
   };
   return { body: out, stats };
@@ -125,4 +168,4 @@ function maybePrune(bodyStr) {
   }
 }
 
-module.exports = { pruneBody, maybePrune, KEEP_RECENT, MIN_STUB_BYTES, ENGAGE_BYTES };
+module.exports = { pruneBody, maybePrune, KEEP_RECENT, MIN_STUB_BYTES, ENGAGE_BYTES, TARGET_BYTES, KEEP_FLOOR };

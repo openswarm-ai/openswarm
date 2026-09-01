@@ -175,3 +175,38 @@ test('WIRING: the gpt5 patch itself routes anthropic bodies through the pruner',
   const g = JSON.stringify({ model: 'gpt-5', max_tokens: 100, messages: [] });
   assert.match(transformBody(g, 'api.openai.com'), /max_completion_tokens/);
 });
+
+test('old tool_use INPUTS lose their bulk but keep their identity', () => {
+  // Measured on a real 211-tool session: after the result pass, tool_use inputs were 35.9% of
+  // everything left, MORE than the results themselves, because a Write carries the whole file in
+  // its arguments. Identity (file_path, command) always survives so the model can still say what
+  // it did and re-read it.
+  const msgs = [{ role: 'user', content: 'p'.repeat(ENGAGE_BYTES) }];
+  for (let i = 0; i < 12; i++) {
+    msgs.push({ role: 'assistant', content: [{ type: 'tool_use', id: 'w' + i, name: 'Write',
+      input: { file_path: `/src/mod_${i}.ts`, content: ('x' + i).padEnd(9000, 'y') } }] });
+    msgs.push({ role: 'user', content: [toolResult('w' + i, ('r' + i + ' ').padEnd(8000, 'z'))] });
+  }
+  const s = JSON.stringify({ model: 'claude-sonnet-4-6', messages: msgs });
+  const d = JSON.parse(pruneBody(s).body);
+  const uses = d.messages.filter((m) => m.role === 'assistant').map((m) => m.content[0]);
+
+  const old = uses[0].input, recent = uses[uses.length - 1].input;
+  assert.match(old.content, /cleared by OpenSwarm/, 'an old file body must not be re-sent forever');
+  assert.strictEqual(old.file_path, '/src/mod_0.ts', 'but WHICH file it wrote must survive');
+  assert.ok(recent.content.length > 5000, 'the newest calls are untouched, like the newest results');
+});
+
+test('a small input is never touched, and neither is a command', () => {
+  const msgs = [{ role: 'user', content: 'p'.repeat(ENGAGE_BYTES) }];
+  for (let i = 0; i < 12; i++) {
+    msgs.push({ role: 'assistant', content: [{ type: 'tool_use', id: 'b' + i, name: 'Bash',
+      input: { command: `grep -rn 'def ' src/mod_${i}.py` } }] });
+    msgs.push({ role: 'user', content: [toolResult('b' + i, ('r' + i + ' ').padEnd(8000, 'z'))] });
+  }
+  const s = JSON.stringify({ model: 'claude-sonnet-4-6', messages: msgs });
+  const d = JSON.parse(pruneBody(s).body);
+  for (const m of d.messages.filter((x) => x.role === 'assistant')) {
+    assert.match(m.content[0].input.command, /^grep -rn/, 'a command is identity, never bulk');
+  }
+});
