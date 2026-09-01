@@ -1,0 +1,76 @@
+name: defender-exclusion-drill
+
+# ENG-422: antivirus quarantining the bundled runtime left 22 of 25 affected installs permanently
+# broken, and the exclusion is the only thing that makes a repair STAY. The toggle that adds it can
+# only be proven on a real Windows box with a real Defender: everything else is logic. This job runs
+# the shipped script against the runner's own Defender and asserts both directions.
+
+on:
+  push:
+    paths:
+      - 'backend/scripts/add-defender-exclusion.ps1'
+      - 'electron/defenderExclusion.js'
+      - '.github/workflows/defender-exclusion-drill.yml'
+  workflow_dispatch:
+
+jobs:
+  drill:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Defender must actually be present, or this whole job is vacuous
+        shell: pwsh
+        run: |
+          $p = Get-MpPreference -ErrorAction Stop
+          Write-Host "Defender reachable. Existing exclusions: $($p.ExclusionPath.Count)"
+
+      - name: BEFORE - none of OpenSwarm's paths are excluded
+        shell: pwsh
+        run: |
+          $before = @(Get-MpPreference).ExclusionPath | Where-Object { $_ -match 'openswarm' }
+          Write-Host "openswarm exclusions before: $($before.Count)"
+          if ($before.Count -ne 0) { throw "the runner already excludes openswarm; the drill could not prove anything" }
+
+      - name: APPLY - the shipped script adds them (runner is already elevated, so no UAC)
+        shell: pwsh
+        run: |
+          # The three trees the script targets must exist, or Add-MpPreference has nothing to take.
+          New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\openswarm" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:APPDATA\openswarm" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.openswarm" | Out-Null
+          & backend\scripts\add-defender-exclusion.ps1 -Apply
+
+      - name: AFTER APPLY - all three paths are really excluded, read back from Defender itself
+        shell: pwsh
+        run: |
+          $now = @(Get-MpPreference).ExclusionPath
+          $want = @("$env:LOCALAPPDATA\openswarm", "$env:APPDATA\openswarm", "$env:USERPROFILE\.openswarm")
+          foreach ($w in $want) {
+            if ($now -notcontains $w) { throw "MISSING exclusion: $w" }
+            Write-Host "excluded: $w"
+          }
+
+      - name: -Status reports them, so the user-facing read-back is honest too
+        shell: pwsh
+        run: |
+          $out = & backend\scripts\add-defender-exclusion.ps1 -Status | Out-String
+          Write-Host $out
+          if ($out -notmatch 'openswarm') { throw "-Status did not report the exclusions it just added" }
+
+      - name: REMOVE - the toggle is reversible, which is what makes it safe to offer
+        shell: pwsh
+        run: |
+          & backend\scripts\add-defender-exclusion.ps1 -Remove
+          $after = @(Get-MpPreference).ExclusionPath | Where-Object { $_ -match 'openswarm' }
+          if ($after.Count -ne 0) { throw "REMOVE left $($after.Count) exclusion(s) behind: $after" }
+          Write-Host "all openswarm exclusions removed; the runner is back to how it started"
+
+      - name: The dry run must change NOTHING (it is the default, and users hit it first)
+        shell: pwsh
+        run: |
+          & backend\scripts\add-defender-exclusion.ps1 | Out-Null
+          $after = @(Get-MpPreference).ExclusionPath | Where-Object { $_ -match 'openswarm' }
+          if ($after.Count -ne 0) { throw "the DRY RUN added $($after.Count) exclusion(s); it must never write" }
+          Write-Host "dry run wrote nothing, as designed"
