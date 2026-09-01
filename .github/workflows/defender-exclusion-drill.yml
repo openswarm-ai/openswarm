@@ -55,7 +55,10 @@ jobs:
       - name: -Status reports them, so the user-facing read-back is honest too
         shell: pwsh
         run: |
-          $out = & backend\scripts\add-defender-exclusion.ps1 -Status | Out-String
+          # The script reports with Write-Host, which does NOT go down the pipeline; 6>&1 redirects the
+          # information stream so the drill reads what a user would actually see. (Piping to Out-String
+          # alone captured nothing and failed a step whose product behaviour was correct.)
+          $out = (& backend\scripts\add-defender-exclusion.ps1 -Status 6>&1) | Out-String
           Write-Host $out
           if ($out -notmatch 'openswarm') { throw "-Status did not report the exclusions it just added" }
 
