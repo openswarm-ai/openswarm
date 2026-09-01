@@ -219,12 +219,11 @@ const CanvasWindowCard: React.FC<CanvasWindowCardProps> = ({
         background,
         border: tiling.isFullscreen ? 'none' : border,
         borderRadius: c.radius.lg,
-        boxShadow: (isDragging || isResizing) ? c.shadow.lg : c.shadow.md,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         zIndex: tiledSize ? 999990 : (isDragging || isResizing) ? 999999 : (zOverride ?? cardZOrder),
-        transition: noTransition ? 'none' : 'box-shadow 0.3s ease, border-color 0.2s ease',
+        transition: noTransition ? 'none' : 'border-color 0.2s ease',
       }}
     >
       {children({

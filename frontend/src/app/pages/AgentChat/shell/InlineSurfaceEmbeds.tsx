@@ -50,8 +50,8 @@ const BrowserEmbed: React.FC<{ c: ClaudeTokens; browserId: string; title: string
         onClick={onOpen}
         sx={{
           border: `1px solid ${c.border.subtle}`, borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
-          bgcolor: c.bg.elevated, transition: 'border-color 150ms, box-shadow 150ms',
-          '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.md },
+          bgcolor: c.bg.elevated, transition: 'border-color 150ms',
+          '&:hover': { borderColor: c.border.strong },
           '&:hover .osw-embed-open': { opacity: 1 },
         }}
       >
@@ -101,8 +101,8 @@ const AppEmbed: React.FC<{ c: ClaudeTokens; name: string; thumbnail: string | nu
       onClick={onOpen}
       sx={{
         border: `1px solid ${c.border.subtle}`, borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
-        bgcolor: c.bg.elevated, transition: 'border-color 150ms, box-shadow 150ms',
-        '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.md },
+        bgcolor: c.bg.elevated, transition: 'border-color 150ms',
+        '&:hover': { borderColor: c.border.strong },
         '&:hover .osw-embed-open': { opacity: 1 },
       }}
     >

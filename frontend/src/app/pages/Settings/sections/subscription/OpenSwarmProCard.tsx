@@ -132,7 +132,7 @@ const OpenSwarmProCard: React.FC = () => {
         <Box sx={{
           p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`,
           transition: c.transition,
-          '&:hover': { borderColor: c.border.medium, boxShadow: c.shadow.sm },
+          '&:hover': { borderColor: c.border.medium },
         }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>

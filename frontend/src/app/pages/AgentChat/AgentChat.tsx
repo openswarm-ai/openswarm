@@ -2166,7 +2166,6 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                   width: 36,
                   height: 36,
                   '&:hover': { bgcolor: c.bg.secondary },
-                  boxShadow: c.shadow.md,
                   zIndex: 1,
                 }}
               >

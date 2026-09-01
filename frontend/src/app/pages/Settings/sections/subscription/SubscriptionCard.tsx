@@ -40,7 +40,6 @@ const SubscriptionCard: React.FC<Props> = ({
       transition: c.transition,
       '&:hover': provider.preview ? {} : {
         borderColor: connected ? c.status.success + '4d' : c.border.medium,
-        boxShadow: c.shadow.sm,
       },
     }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>

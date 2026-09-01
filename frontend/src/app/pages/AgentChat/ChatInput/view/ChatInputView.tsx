@@ -128,7 +128,6 @@ export const ChatInputView: React.FC<Props> = (p) => {
               borderRadius: '16px',
               border: p.isDragOver ? `1px solid ${c.accent.primary}` : `1px solid ${c.border.subtle}`,
               bgcolor: c.bg.surface,
-              boxShadow: c.shadow.md,
               transition: 'border-color 0.15s',
             }),
       }}
