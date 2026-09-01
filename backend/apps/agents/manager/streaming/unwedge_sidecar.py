@@ -29,6 +29,15 @@ WEDGE_SECONDS = 25.0
 LATE_WEDGE_SECONDS = 120.0
 # Still heartbeating at the late deadline means a genuinely long call; only this long dies regardless, so a hung per-call thread cannot hang the session forever (ENG-368).
 HARD_WEDGE_SECONDS = 300.0
+# A delegated run is a whole other agent doing real work, so five minutes is a deadline for the
+# WRONG unit. The exemption above already says these tools may block for as long as the delegated run
+# takes, but it only governed the 25s arming: `wedge_verdict` never received the tool name, so the
+# ceiling killed them anyway. Measured in the field 2026-09-01: browser runs killed at 450s and 600s
+# outstanding on a healthy, heartbeating sidecar, each one ending the turn mute in front of the user.
+# The stale-heartbeat rule is untouched and still kills a genuinely dead sidecar in seconds, which is
+# the check that actually protects the session; this ceiling is only the backstop for "alive but the
+# call never returns", and for a delegated run that has to be measured in the delegated run's units.
+DELEGATED_HARD_WEDGE_SECONDS = 1800.0
 HEARTBEAT_FRESH_S = 12.0
 
 CORE_PREFIX = "mcp__openswarm-core__"
@@ -88,10 +97,28 @@ def heartbeat_age(session_id: str) -> float:
 
 
 @typechecked
-def wedge_verdict(outstanding_s: float, hb_age: float) -> str:
+def hard_ceiling_for(tool_name: str) -> float:
+    """The ceiling in the unit the WORK is measured in: a quick tool answers in milliseconds, a
+    delegated run takes as long as the browser/app/agent it handed off to.
+
+    Only a DECLARED delegation tool earns the longer one. An unknown name, an empty one, or a
+    non-core tool keeps the strict 300s, so a caller that forgets to pass the name gets today's
+    behaviour rather than a silent thirty-minute reprieve. The declared signal is the one shared
+    list in delegation_tool_names, which exists because two lists of names that must agree will not.
+    """
+    if tool_name.startswith(CORE_PREFIX) and tool_name[len(CORE_PREFIX):] in P_BLOCKING_TOOLS:
+        return DELEGATED_HARD_WEDGE_SECONDS
+    return HARD_WEDGE_SECONDS
+
+
+@typechecked
+def wedge_verdict(outstanding_s: float, hb_age: float, tool_name: str = "") -> str:
     """kill | extend. A stale heartbeat is a wedged PROCESS: kill at whichever deadline sees it. A fresh
-    one is a slow call: keep extending until the hard ceiling (a hung thread must not hang the session)."""
-    if outstanding_s >= HARD_WEDGE_SECONDS:
+    one is a slow call: keep extending until the hard ceiling (a hung thread must not hang the session).
+
+    The ceiling is per-tool, not one global constant: the old single 300s killed healthy delegated
+    runs, which is a deadline on the wrong unit of work."""
+    if outstanding_s >= hard_ceiling_for(tool_name):
         return "kill"
     if hb_age > HEARTBEAT_FRESH_S:
         return "kill"
@@ -170,9 +197,9 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         if not session_id:
             return
         outstanding = time.time() - started
-        verdict = wedge_verdict(outstanding, heartbeat_age(session_id))
+        verdict = wedge_verdict(outstanding, heartbeat_age(session_id), tool_name)
         if verdict == "extend":
-            p_next = LATE_WEDGE_SECONDS if outstanding < LATE_WEDGE_SECONDS else HARD_WEDGE_SECONDS
+            p_next = LATE_WEDGE_SECONDS if outstanding < LATE_WEDGE_SECONDS else hard_ceiling_for(tool_name)
             logger.info(
                 f"Agent {session_id}: core tool {tool_name} outstanding {outstanding:.0f}s but the "
                 f"sidecar heartbeat is fresh (alive, slow); re-checking at {p_next:.0f}s")
