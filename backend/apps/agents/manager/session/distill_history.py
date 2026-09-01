@@ -35,7 +35,16 @@ P_SYSTEM = (
     "You are a summarization agent creating a context checkpoint. Treat the conversation "
     "turns below as source material for a compact record of prior work, written in the third "
     "person ('The user asked...', 'The agent decided...'). Produce only the briefing; no "
-    "greeting, preamble, or prefix."
+    "greeting, preamble, or prefix.\n"
+    # The half a narrative summary silently drops, proven live 2026-09-01: told to remember an
+    # invented codename, the summary said a codename WAS invented and omitted the codename, so the
+    # agent answered "I do not know" after the very compaction this summary exists to survive. The
+    # input carries assistant text in full; the loss was purely this prompt rewarding narration
+    # over facts. Values are the memory; prose about the values is not.
+    "Preserve exact values verbatim: any name, codename, identifier, number, checksum, path, URL, "
+    "decision, or answer that was stated or computed must appear in the briefing character for "
+    "character, not described. When in doubt between narrating an event and quoting its value, "
+    "quote the value."
 )
 P_USER_TEMPLATE = (
     "Source material, between <transcript> tags: the earlier part of a conversation between a "
@@ -104,9 +113,23 @@ async def distilled_history_summary(session: AgentSession, settings: AppSettings
     # Membership check BEFORE the cache: after a branch edit the cutoff can vanish from the active branch, and a summary keyed on that id would be stale. If the cutoff is still here, everything before it is shared pre-fork history, so a cache hit is provably valid.
     if idx < 0:
         return ""
-    if session.compacted_summary and session.compacted_summary_through == cutoff:
+    # Summarize through the newest SETTLED assistant message, not just the dropped span. The recap
+    # never carries model replies (ENG-358: that shape is what the filter blocks), so on a rebuild
+    # anything the agent itself said AFTER the cutoff was carried by NOBODY: the distiller stopped
+    # at the cutoff and the recap skipped it. Proven live 2026-09-01: an invented codename stated
+    # after the cutoff was unrecoverable ("I do not know") on the very next rebuild, while the same
+    # fact inside the dropped span survives via this summary. The summary is model-written output
+    # of an aux call either way, so the filter posture is unchanged; the cache key just moves from
+    # the cutoff to the newest settled id, costing at most one aux call per rebuild.
+    p_end = idx
+    for i in range(len(msgs) - 1, idx, -1):
+        if getattr(msgs[i], "role", "") == "assistant":
+            p_end = i
+            break
+    p_through = msgs[p_end].id
+    if session.compacted_summary and session.compacted_summary_through == p_through:
         return session.compacted_summary
-    dropped = msgs[: idx + 1]
+    dropped = msgs[: p_end + 1]
     body = p_format_dropped(dropped)
     if not body.strip():
         return ""
@@ -119,7 +142,7 @@ async def distilled_history_summary(session: AgentSession, settings: AppSettings
         return ""
     summary = pin_missing_paths(summary, dropped)
     session.compacted_summary = summary
-    session.compacted_summary_through = cutoff
+    session.compacted_summary_through = p_through
     return summary
 
 
