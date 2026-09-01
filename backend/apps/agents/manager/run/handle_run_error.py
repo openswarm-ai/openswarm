@@ -31,7 +31,6 @@ from backend.apps.agents.core.error_classify import (
 from backend.apps.agents.core.is_router_unavailable_error import is_router_unavailable_error
 from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
 from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
-from backend.apps.agents.manager.run.RunOptions import PREFIX_NARROWNESS
 from backend.apps.agents.core import flight_recorder
 from backend.apps.agents.manager.run.empty_finish import count_tool_calls
 from backend.apps.agents.session_credential import api_key_twin_model
@@ -377,23 +376,14 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # The provider's abuse classifier declined the REQUEST, and on the subscription lane what it reads as "duplicating model outputs" is OUR recap of the chat on a fresh CLI session (192 blocks in 14 days, 0 on API keys); deterministic, so the one retry that can pass carries no history at all, the session stays that way, and every block is reported with the shape it sent.
         p_sent = session.history_prefix_sent
         p_report_model_error(f"policy_block:{p_sent}", session_id, session, turn, e, p_stderr_tail)
-        # Ratchet on the DECLARED mode, never on what happened to be rendered. `history_prefix_sent`
-        # defaults to "none" on every turn and is only overwritten when a fresh-session rebuild
-        # actually attaches a recap, so on a RESUMED turn (the common case) it reads "none" while the
-        # mode is still "minimal". Keying the ladder on it meant a block on a resumed turn skipped the
-        # ratchet entirely, went straight to "nothing left to strip", and left the mode untouched, so
-        # the next rebuild sent a recap again and blocked again. Live: one chat blocked 3x with
-        # sent going none -> minimal -> none, which ENG-399 says can never happen (2026-08-30).
-        p_mode = session.history_prefix_mode
-        if p_mode != "none":
-            p_next = PREFIX_NARROWNESS[PREFIX_NARROWNESS.index(p_mode) + 1]
-            session.history_prefix_mode = p_next
+        if p_sent != "none":
+            session.history_prefix_mode = "none"
             session.needs_fresh_session = True
             session.pending_continuation = True
             session.pending_continuation_prompt = (
                 "Continue the task exactly where you left off; the session summary was reduced "
                 "this turn, rely on the visible conversation.")
-            logger.warning(f"Agent {session_id}: provider content-policy block (sent={p_sent}); narrowing the recap {p_mode} -> {session.history_prefix_mode} and retrying")
+            logger.warning(f"Agent {session_id}: provider content-policy block on a turn carrying a {p_sent} history prefix; retrying with {session.history_prefix_mode}")
             return
         # The subscription lane declined and nothing is left to strip; fleet data says the same request passes on an API key (0 of 328 vs 4.4%), so a user who connected their own Anthropic key continues there, told in one line, instead of losing the ask (ENG-383).
         p_twin = api_key_twin_model(session.model or "", load_settings())
