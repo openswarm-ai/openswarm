@@ -210,3 +210,18 @@ test('a small input is never touched, and neither is a command', () => {
     assert.match(m.content[0].input.command, /^grep -rn/, 'a command is identity, never bulk');
   }
 });
+
+test('old SMALL results age too, newest stay sacred (the 32% floor from the real thrashing chat)', () => {
+  const msgs = [{ role: 'user', content: 'p'.repeat(ENGAGE_BYTES) }];
+  for (let i = 0; i < 45; i++) {
+    msgs.push({ role: 'user', content: [toolResult('s' + i, `ok ${i}: nothing to commit, working tree clean padded ${'x'.repeat(120)}`)] });
+  }
+  const s = JSON.stringify({ model: 'claude-sonnet-4-6', messages: msgs });
+  const d = JSON.parse(pruneBody(s).body);
+  const res = d.messages.slice(1).map((m) => m.content[0]);
+  const cleared = res.filter((b) => /Old result cleared/.test(b.content[0].text)).length;
+  assert.strictEqual(cleared, 15, '45 smalls, newest 30 kept, oldest 15 aged');
+  for (let i = 45 - 30; i < 45; i++) {
+    assert.match(res[i].content[0].text, /nothing to commit/, 'a recent small IS the answer and must survive');
+  }
+});

@@ -24,6 +24,13 @@
 
 const KEEP_RECENT = 5;
 const MIN_STUB_BYTES = 2000;
+// Small results are sacred while they are RECENT ("nothing to commit" IS the answer), but a
+// 735-tool chat carries hundreds of them and they became the floor: measured on the real thrashing
+// chat, small results were 32.0% (91,407 tokens) of everything the pruner left, more than any other
+// bucket. A status line from four hundred turns ago is stale state, not an answer. Newest
+// SMALL_KEEP_RECENT stay untouched; older ones collapse to a one-line stub that keeps nothing to
+// re-run because the tool_use above them already carries the command.
+const SMALL_KEEP_RECENT = 30;
 const ENGAGE_BYTES = 300000;
 // The CEILING, which is the property hermes has and an age-based cut does not. Clearing only OLD
 // results is a discount: measured on five real sessions it took 1.6M tokens to 422K, but the
@@ -92,17 +99,29 @@ function pruneBody(bodyStr) {
   try { data = JSON.parse(bodyStr); } catch (_) { return none; }
   if (!data || !Array.isArray(data.messages)) return none;
 
-  // Collect every prunable tool_result in transcript order.
+  // Collect every prunable tool_result in transcript order; small ones age on their own track.
   const candidates = [];
+  const smalls = [];
   for (const msg of data.messages) {
     if (!msg || msg.role !== 'user' || !Array.isArray(msg.content)) continue;
     for (const block of msg.content) {
       if (!block || block.type !== 'tool_result') continue;
       const size = blockText(block).length;
       if (size >= MIN_STUB_BYTES || blockHasImage(block)) candidates.push(block);
+      else if (size > 80) smalls.push(block);
     }
   }
-  if (candidates.length <= KEEP_RECENT) return none;
+  const smallKeepFrom = Math.max(0, smalls.length - SMALL_KEEP_RECENT);
+  for (let i = 0; i < smallKeepFrom; i++) {
+    smalls[i].content = [{ type: 'text', text: '[Old result cleared by OpenSwarm: '
+      + blockText(smalls[i]).length + ' characters from an earlier step.]' }];
+  }
+  if (candidates.length <= KEEP_RECENT && smallKeepFrom === 0) return none;
+  if (candidates.length <= KEEP_RECENT) {
+    let outSmall;
+    try { outSmall = JSON.stringify(data); } catch (_) { return none; }
+    return { body: outSmall, stats: { stubbed: smallKeepFrom, kept: KEEP_RECENT, savedBytes: bodyStr.length - outSmall.length } };
+  }
 
   const keepFrom = candidates.length - KEEP_RECENT;
   const seenNewestFirst = new Set();
