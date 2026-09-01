@@ -34,6 +34,10 @@ P_RELEASES: List[ReleaseNote] = [
             "Reconnecting a subscription really does restart the router again. A stale health check could report the restart as done while the router stayed down for twenty seconds, and every chat started in that window was set up to fail.",
             "When recovery genuinely runs out of road, the message says the router was restarting and that sending again picks up where you left off, instead of telling you to switch models.",
             "The antivirus message now offers to add the exclusion for you, which is the step people gave up on.",
+            "Agents remember their own conclusions across long chats. The summary that carries a chat past a context cleanup now quotes exact names, numbers and decisions instead of describing them, and covers recent turns it used to skip.",
+            "Browser and app agents doing genuinely long work are no longer cut off at five minutes; a frozen tool still is.",
+            "A chat that has grown too large now says so and suggests a fresh chat, instead of blaming the model and suggesting a switch that cannot help.",
+            "Agents answer in the language you wrote in, instead of occasionally drifting into another one.",
         ],
     ),
     ReleaseNote(
