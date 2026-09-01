@@ -8,7 +8,6 @@ import { handleSlashCommand } from '@/app/pages/AgentChat/ChatInput/hooks/slashC
 import type { AppDispatch } from '@/shared/state/store';
 import type { CardMenuRow } from '../desktop/openCardContextMenu';
 import { chord } from '../desktop/chord';
-import { tileMenuRows } from './tileMenuRows';
 
 interface AgentMenuArgs {
   session: AgentSession;
@@ -26,7 +25,6 @@ export function agentCardMenuRows({ session, dispatch, expanded, tileZone, expan
   return [
     { label: expanded ? 'Collapse' : 'Open', shortcut: chord('enter'), onClick: () => dispatch(expanded ? collapseSession(session.id) : expandSession(session.id)) },
     { label: tileZone === 'fullscreen' ? 'Exit Full Screen' : 'Full Screen', onClick: () => onTile(tileZone === 'fullscreen' ? 'restore' : 'fullscreen') },
-    { label: 'Tile to zone', submenu: tileMenuRows(onTile, tileZone) },
     { label: 'Bring to front', onClick: () => dispatch(bringToFront({ id: session.id, type: 'agent' })) },
     { kind: 'separator' },
     {

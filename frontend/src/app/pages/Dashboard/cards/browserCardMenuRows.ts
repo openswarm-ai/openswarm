@@ -4,7 +4,6 @@ import { setClipboardCards } from '@/shared/dashboardClipboard';
 import type { AppDispatch } from '@/shared/state/store';
 import type { CardMenuRow } from '../desktop/openCardContextMenu';
 import { chord } from '../desktop/chord';
-import { tileMenuRows } from './tileMenuRows';
 
 interface BrowserNav {
   reload: () => void;
@@ -49,7 +48,6 @@ export function browserCardMenuRows({
     { label: 'Copy URL', disabled: !activeUrl, onClick: () => { void navigator.clipboard.writeText(activeUrl); } },
     { kind: 'separator' },
     { label: tileZone === 'fullscreen' ? 'Exit Full Screen' : 'Full Screen', onClick: () => onTile(tileZone === 'fullscreen' ? 'restore' : 'fullscreen') },
-    { label: 'Tile to zone', submenu: tileMenuRows(onTile, tileZone) },
     { label: isMinimized ? 'Restore' : 'Minimize', onClick: onMinimize },
     { label: 'Bring to front', onClick: () => dispatch(bringToFront({ id: browserId, type: 'browser' })) },
     {

@@ -6,7 +6,6 @@ import { useCardTiling } from './useCardTiling';
 import { useCanvasWindowResize } from './useCanvasWindowResize';
 import { useDragEndBackstops } from '../hooks/interaction/useDragEndBackstops';
 import { openCardContextMenu, isNativeMenuTarget, type CardMenuRow } from '../desktop/openCardContextMenu';
-import { tileMenuRows } from './tileMenuRows';
 import type { CardType } from '@/shared/state/dashboardLayoutSlice';
 
 const DRAG_THRESHOLD = 3;
@@ -193,7 +192,6 @@ const CanvasWindowCard: React.FC<CanvasWindowCardProps> = ({
         const items: CardMenuRow[] = [
           { kind: 'header', label: selectName },
           { label: tiling.isFullscreen ? 'Exit Full Screen' : 'Full Screen', onClick: () => tiling.applyZone(tiling.isFullscreen ? 'restore' : 'fullscreen') },
-          { label: 'Tile to zone', submenu: tileMenuRows(tiling.applyZone, tiling.zone) },
         ];
         if (onMinimize) items.push({ label: minimized ? 'Restore' : 'Minimize', onClick: onMinimize });
         if (onBringToFront) items.push({ label: 'Bring to front', onClick: () => onBringToFront(cardId, cardType) });

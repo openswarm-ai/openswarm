@@ -5,10 +5,3 @@ body.dashboard-marquee-active * {
   -webkit-backdrop-filter: none !important;
 }
 
-/* While a traffic-light tile menu is open, its lights cluster stays visible and interactive even
-   when the hover that revealed it has moved on (to the menu itself); otherwise the menu fades
-   mid-approach and the click lands on nothing. */
-.osw-pill-lights:has(.osw-window-lights[data-tilemenu-open="1"]) {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}

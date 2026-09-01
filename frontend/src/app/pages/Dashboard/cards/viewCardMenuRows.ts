@@ -6,7 +6,6 @@ import { API_BASE } from '@/shared/config';
 import type { AppDispatch } from '@/shared/state/store';
 import type { CardMenuRow } from '../desktop/openCardContextMenu';
 import { chord } from '../desktop/chord';
-import { tileMenuRows } from './tileMenuRows';
 
 interface ViewMenuArgs {
   output: Output;
@@ -31,7 +30,6 @@ export function viewCardMenuRows({
     { label: 'Open another instance', onClick: () => dispatch(addViewCard({ outputId: output.id, newInstance: true })) },
     { kind: 'separator' },
     { label: tileZone === 'fullscreen' ? 'Exit Full Screen' : 'Full Screen', onClick: () => onTile(tileZone === 'fullscreen' ? 'restore' : 'fullscreen') },
-    { label: 'Tile to zone', submenu: tileMenuRows(onTile, tileZone) },
     { label: isMinimized ? 'Restore' : 'Minimize', onClick: onMinimize },
     { label: 'Bring to front', onClick: () => dispatch(bringToFront({ id: cardKey, type: 'view' })) },
     { kind: 'separator' },

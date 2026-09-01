@@ -12,7 +12,6 @@ import { dropMinimizedShot } from './minimizedShots';
 import { buildMinimizedEntries, MinimizedEntry, MinimizedRect } from './minimizedEntries';
 import MinimizedTile, { MINIMIZED_TILE_W } from './MinimizedTile';
 import { openCardContextMenu } from './openCardContextMenu';
-import { tileMenuRows } from '../cards/tileMenuRows';
 import type { BrowserCardPosition, ViewCardPosition } from '@/shared/state/dashboardLayoutSlice';
 import type { Output } from '@/shared/state/outputsSlice';
 
@@ -113,9 +112,6 @@ function MinimizedStack({ browserCards, viewCards, outputs, selectedIds, onResto
             items: [
               { label: 'Restore', onClick: () => restore(entry) },
               { label: 'Restore full screen', onClick: () => tile(entry, 'fullscreen') },
-              ...(entry.kind === 'browser' || entry.kind === 'view'
-                ? [{ label: 'Tile to zone', submenu: tileMenuRows((zone) => tile(entry, zone)) }]
-                : []),
               { kind: 'separator' },
               { label: 'Close', danger: true, onClick: () => close(entry) },
             ],
