@@ -38,6 +38,10 @@ P_RELEASES: List[ReleaseNote] = [
             "Browser and app agents doing genuinely long work are no longer cut off at five minutes; a frozen tool still is.",
             "A chat that has grown too large now says so and suggests a fresh chat, instead of blaming the model and suggesting a switch that cannot help.",
             "Agents answer in the language you wrote in, instead of occasionally drifting into another one.",
+            "Restarting an app you are building can no longer restart OpenSwarm itself. The app's server and OpenSwarm's own shared a process name, so the usual restart command took both down and every running chat stopped without a word.",
+            "Scrolling up in the wide side areas of a full-screen chat scrolls the conversation instead of being ignored, and does not snap you back to the bottom.",
+            "Cards, the message box and settings panels no longer draw drop shadows, which were repainted on every pan for no visible gain.",
+            "The green window button is Full Screen (or restore) only; the fill, halves and quarters tiling menu is gone.",
         ],
     ),
     ReleaseNote(
