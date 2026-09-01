@@ -179,7 +179,15 @@ def test_valve_never_loops(monkeypatch) -> None:
 
     assert len(calls) == 2
     assert session.status == "error"
-    assert [m for m in session.messages if m.role == "system" and str(m.content).startswith("Error:")]
+    # The second death used to fall through to the raw "Error: ..." blob. It is now owned by the
+    # autocompact-thrash card (handle_run_error), which names the conversation as the cause and
+    # rules out switching models. Either way the invariant this test exists for holds: exactly one
+    # retry, then a terminal card, never a third attempt.
+    cards = [m for m in session.messages if m.role == "system"]
+    assert cards, "the exhausted valve must leave a card, not silence"
+    low = str(cards[-1].content).lower()
+    assert "fresh chat" in low, "the honest thrash card, not the raw blob"
+    assert "switching models will not help" in low
 
 
 def test_midturn_break_completes_and_fires_the_hidden_continuation(monkeypatch) -> None:
