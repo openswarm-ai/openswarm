@@ -45,6 +45,10 @@ P_RELEASES: List[ReleaseNote] = [
             "Picking a very long chat back up no longer restarts it at the edge of the context window. The recap it rebuilds from is now bounded (the newest steps in full, older ones as one-line stubs, the rest counted), so a chat with hundreds of tool calls resumes at a fraction of the size and stops compacting on its first step.",
             "A chat that was still running when OpenSwarm's engine shut down now says so in the chat, with a line to send a message to continue, instead of looking like you stopped it yourself.",
             "If something on your computer stops the agent's engine process mid-task, OpenSwarm restarts it and continues the same conversation, instead of showing an error and starting the chat over from a summary.",
+            "Links and downloads inside an App card work again. Every target=_blank link and window.open used to be dropped silently; they now open in their own window that shares the app's session, so an app's PDF or report export actually opens.",
+            "Self-heals show themselves. A stuck built-in tool being restarted, the model summarizing its own history, and a run waiting on a lost connection or a rate limit are now visible on the card, and a raw runtime error shows a card with the details behind a disclosure instead of a blank transcript.",
+            "A page the browser refuses to load (a blocked port, a dead address) is reported as a failed navigation instead of being described as a blank page.",
+            "A collapsed chat card never previews an internal prompt as if you had typed it, and a chat interrupted by a restart keeps its Resume chip.",
         ],
     ),
     ReleaseNote(

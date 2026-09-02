@@ -11,7 +11,7 @@ import { resolveInput } from './resolveUrl';
 import { rankAndCapInteractives, type RankItem } from './interactiveRanking';
 import { shouldStopWaiting, SETTLE_POLL_MS, settleProbeJs } from './browserSettle';
 import { unwrapCdpEval } from './cdpEval';
-import { navigationOutcome, sameDoc } from './navigationOutcome';
+import { loadFailureError, navigationOutcome, sameDoc } from './navigationOutcome';
 import { handleCanvasCommand } from './canvasCommandHandler';
 import { typeChars, type TypedKeys } from './typeChars';
 
@@ -381,17 +381,28 @@ async function handleNavigate(wv: BrowserWebview, params: Record<string, any>): 
     removeReady = () => wv.removeEventListener('dom-ready', onReady);
   });
   let aborted = false;
-  const fullyLoaded = wv.loadURL(url).catch((err: any) => {
+  // A load Chromium refuses (unsafe port, DNS, connection refused) still fires dom-ready for its empty error document, which used to win the race and turn the refusal into "Navigated to" (ENG-404 drill, 2026-09-01).
+  let loadFailure: string | null = null;
+  const onFail = (e: Event) => {
+    const f = e as Event & { errorCode?: number; errorDescription?: string; isMainFrame?: boolean };
+    if (f.isMainFrame !== false && f.errorCode !== undefined && f.errorCode !== -3) loadFailure = `${f.errorDescription || 'load failed'} (${f.errorCode})`;
+  };
+  wv.addEventListener('did-fail-load', onFail);
+  const fullyLoaded = wv.loadURL(url).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
     // ERR_ABORTED can be a benign supersede OR a nav the guest refused outright; the landed-URL check below tells them apart.
-    if (err?.message?.includes('ERR_ABORTED')) { aborted = true; return; }
-    throw err;
+    if (msg.includes('ERR_ABORTED')) { aborted = true; return; }
+    loadFailure = loadFailure || msg;
   });
-  fullyLoaded.catch(() => {}); // a late load failure shouldn't throw once dom-ready returned
   try {
     await Promise.race([fullyLoaded, domReady]);
+    // dom-ready can beat the rejection by a few ms; give the refusal its say before trusting the document.
+    await Promise.race([fullyLoaded, new Promise<void>((r) => setTimeout(r, 300))]);
   } finally {
     removeReady();
+    wv.removeEventListener('did-fail-load', onFail);
   }
+  if (loadFailure) return loadFailureError(url, loadFailure);
   // A navigate that lands on a raw JSON/API document (Instagram's topsearch, any /api/... GET)
   // paints an unreadable wall in the card and reads as a crash to the user. Hand the data to the
   // agent as the result instead, and quietly get the card off the wall, so a person never sees

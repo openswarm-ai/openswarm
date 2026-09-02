@@ -16,3 +16,11 @@ export function navigationOutcome(requested: string, before: string, landed: str
   if (!sameDoc(landed, requested)) return { kind: 'redirected', url: landed, requested };
   return { kind: 'ok', url: landed };
 }
+
+/** The error a navigate returns when Chromium refused the load outright (unsafe port, DNS, connection refused): the guest then shows its own empty document, which reads as "a blank page" unless the agent is told. */
+export function loadFailureError(requested: string, failure: string): { error: string; url: string } {
+  return {
+    error: `Navigation to ${requested} FAILED (${failure}). The browser is showing its empty error document, not the site; retry once, and if it fails again report the failure instead of describing the page.`,
+    url: requested,
+  };
+}
