@@ -106,6 +106,8 @@ def register_builtin_mcp_servers(
             "OPENSWARM_AGENT_MODEL": session.model,
             "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(pre_selected_bids),
             "OPENSWARM_SELECTED_APP_IDS": ",".join(selected_app_ids),
+            # The drill flag never reached the sidecar, so `sidecar_wedge` armed nothing for weeks (found 2026-09-02).
+            "OSW_FAULT": os.environ.get("OSW_FAULT", ""),
         },
         "type": "stdio",
     }

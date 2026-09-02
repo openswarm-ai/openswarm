@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -109,10 +110,34 @@ def send_response(id_, result=None, error=None):
         sys.stdout.flush()
 
 
+P_FROZEN = False
+
+
+def p_fault_once(name: str) -> bool:
+    """Drill seam, marker-file one-shot: the parent backend arms OSW_FAULT, and the FIRST sidecar of a
+    session fires it; the sidecar the CLI respawns afterwards finds the marker and runs clean, which
+    is the road the watchdog's retry needs."""
+    import tempfile
+    if name not in {p.strip() for p in os.environ.get("OSW_FAULT", "").split(",") if p.strip()}:
+        return False
+    marker = os.path.join(tempfile.gettempdir(), f"osw-fault-{name}-{os.environ.get('OPENSWARM_PARENT_SESSION_ID', '')}")
+    if os.path.exists(marker):
+        return False
+    open(marker, "w").close()
+    return True
+
+
 def p_call_async(id_, tool_name: str, arguments: dict) -> None:
     mod = P_ROUTE.get(tool_name)
     if mod is None:
         send_response(id_, {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True})
+        return
+    # A wedged sidecar answers nothing AND stops breathing: the heartbeat is what tells the watchdog "alive but slow" from "dead", so a fault that kept beating would drill the wrong branch.
+    if p_fault_once("sidecar_wedge"):
+        global P_FROZEN
+        P_FROZEN = True
+        sys.stderr.write(f"[fault] sidecar_wedge: {tool_name} will never answer and the heartbeat has stopped\n")
+        time.sleep(3600)
         return
     try:
         send_response(id_, p_call(mod, tool_name, arguments))
@@ -134,11 +159,12 @@ def start_heartbeat():
 
     def p_beat():
         while True:
-            try:
-                with open(path, "a"):
-                    os.utime(path, None)
-            except Exception:
-                pass
+            if not P_FROZEN:
+                try:
+                    with open(path, "a"):
+                        os.utime(path, None)
+                except Exception:
+                    pass
             p_time.sleep(5)
 
     threading.Thread(target=p_beat, daemon=True, name="hb").start()

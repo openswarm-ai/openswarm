@@ -64,6 +64,7 @@ WIRED_IN = {
     "cli_context_squeeze": "backend/apps/agents/manager/configure_provider_env.py",
     "stale_tool_schema": TURN_RUNNER,
     "unclassified_error": TURN_RUNNER,
+    "sidecar_wedge": "backend/apps/agents/combined_meta_mcp_server.py",
 }
 
 
@@ -151,8 +152,8 @@ def test_a_recoverable_fault_fires_once_so_the_retry_finds_a_clear_road(monkeypa
 
 
 def test_every_known_fault_is_wired_somewhere():
-    assert set(WIRED_IN) == KNOWN_FAULTS - {"sidecar_wedge"}, \
-        "a fault this build knows but wires nowhere is a guard that can never be drilled"
+    assert set(WIRED_IN) == KNOWN_FAULTS, \
+        "a fault this build knows but wires nowhere is a guard that can never be drilled (sidecar_wedge was exactly that for weeks)"
     for kind in WIRED_IN:
         assert p_block(kind).strip(), f"{kind} has an empty branch"
 
@@ -198,3 +199,14 @@ def test_the_unclassified_fault_is_owned_by_no_classifier():
         assert not pred(exc), pred.__name__
     assert not is_auth_error(exc)
     assert not is_connection_lost(exc)
+
+
+def test_the_sidecar_wedge_stops_answering_and_stops_breathing():
+    """The heartbeat is the watchdog's alive-versus-dead signal; a wedge that kept beating would drill
+    the "slow but alive" branch instead of the kill the fault exists to provoke."""
+    block = p_block("sidecar_wedge")
+    assert "P_FROZEN = True" in block and "time.sleep(" in block
+    src = open("backend/apps/agents/combined_meta_mcp_server.py").read()
+    assert "if not P_FROZEN:" in src.split("def p_beat")[1].split("threading.Thread")[0]
+    env = open("backend/apps/agents/manager/register_builtin_mcp_servers.py").read()
+    assert '"OSW_FAULT": os.environ.get("OSW_FAULT", "")' in env, "the sidecar must inherit the drill flag"
