@@ -75,6 +75,10 @@ class TurnRunner(AgentManagerProtocol):
                 "'mcp__openswarm-core__ShowUI' cannot have both defer_loading=true and cache_ "
                 "(reset after 15s)\"}}"
             )
+        # One-shot, and deliberately a text NO classifier owns: it must fall through to the generic
+        # branch, whose raw "Error: ..." card used to render as nothing at all (self-heal audit, 2026-09-01).
+        if p_fault_once("unclassified_error"):
+            raise RuntimeError("Command failed with exit code 1 (exit code: 1)\nError output: Check stderr output for details")
 
         async def prompt_stream():
             yield {

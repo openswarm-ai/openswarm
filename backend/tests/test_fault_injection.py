@@ -63,6 +63,7 @@ WIRED_IN = {
     "dead_lane": "backend/apps/agents/manager/run/lane_preflight.py",
     "cli_context_squeeze": "backend/apps/agents/manager/configure_provider_env.py",
     "stale_tool_schema": TURN_RUNNER,
+    "unclassified_error": TURN_RUNNER,
 }
 
 
@@ -181,3 +182,19 @@ def test_the_harness_declares_what_it_cannot_reach():
     from backend.apps.agents.core.fault_injection import UNREACHABLE_WITH
     assert "empty_finish" in UNREACHABLE_WITH
     assert set(UNREACHABLE_WITH) <= KNOWN_FAULTS
+
+
+def test_the_unclassified_fault_is_owned_by_no_classifier():
+    """The drill exists to reach the generic branch; if any classifier ever claims this text the
+    drill silently measures a different door."""
+    from backend.apps.agents.core.error_classify import (
+        is_auth_error, is_connection_lost, is_context_overflow_error, is_external_kill_error,
+        is_stale_tool_schema_error, is_transient_capacity_error,
+    )
+    text = re.search(r'RuntimeError\("(.+?)"\)', p_block("unclassified_error")).group(1).encode().decode("unicode_escape")
+    exc = RuntimeError(text)
+    assert "exit code 1 " in text or "exit code 1\n" in text
+    for pred in (is_external_kill_error, is_stale_tool_schema_error, is_transient_capacity_error, is_context_overflow_error):
+        assert not pred(exc), pred.__name__
+    assert not is_auth_error(exc)
+    assert not is_connection_lost(exc)

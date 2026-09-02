@@ -28,6 +28,7 @@ KNOWN_FAULTS: Set[str] = {
     "dead_lane",         # the router has already given up on the credential (ENG-414 preflight)
     "cli_context_squeeze",  # a tiny context window, so autocompact thrash is drillable (ENG-418)
     "stale_tool_schema",  # the CLI's deferred-tool 400, byte-real incl. truncation (ENG-394 wall 2)
+    "unclassified_error",  # a raw runtime failure no classifier owns, so the snag card is drillable (self-heal audit)
 }
 
 # The window `cli_context_squeeze` pretends the model has, and the number is load-bearing.
