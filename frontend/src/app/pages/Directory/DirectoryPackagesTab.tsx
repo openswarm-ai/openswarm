@@ -1,0 +1,233 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import Box from '@mui/material/Box';
+import Alert from '@mui/material/Alert';
+import Snackbar from '@mui/material/Snackbar';
+import Typography from '@mui/material/Typography';
+import CircularProgress from '@mui/material/CircularProgress';
+import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useAppDispatch, useAppSelector } from '@/shared/hooks';
+import { fetchMarketplaceListings } from '@/shared/state/marketplaceCatalogSlice';
+import { fetchSkills } from '@/shared/state/skillsSlice';
+import { fetchOutputs } from '@/shared/state/outputsSlice';
+import { fetchWorkflows } from '@/shared/state/workflowsSlice';
+import ImportModal from '@/app/components/share/ImportModal';
+import { importNeedsConfirm } from '@/app/components/share/importNeedsConfirm';
+import { importCommit } from '@/app/components/share/shareApi';
+import type { ImportPreflight } from '@/app/components/share/shareTypes';
+import DirectoryFilterBar from './DirectoryFilterBar';
+import PackageCard from './packages/PackageCard';
+import PackageDialog from './packages/detail/PackageDialog';
+import PackageBundleCard from './packages/PackageBundleCard';
+import PackageBundleDialog from './packages/detail/PackageBundleDialog';
+import { stagePackageInstall } from './packages/installPackage';
+import { KIND_LABELS, isBundle, resolveBundleMembers, type Listing } from './packages/catalog';
+
+type Toast = { message: string; severity: 'success' | 'error' } | null;
+
+// The store tab: packages published to the marketplace sheet. Install downloads the .swarm and hands
+// it to the ordinary bundle import, so what a package can do to this machine is reviewed the same way
+// a dropped file is.
+const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void }> = ({ onInstalled }) => {
+  const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
+  const { listings, loading, loaded, source, error } = useAppSelector((s) => s.marketplaceCatalog);
+  const [query, setQuery] = useState('');
+  const [kinds, setKinds] = useState<string[]>([]);
+  const [sort, setSort] = useState('newest');
+  const [openListing, setOpenListing] = useState<Listing | null>(null);
+  const [openBundle, setOpenBundle] = useState<Listing | null>(null);
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const [installedIds, setInstalledIds] = useState<string[]>([]);
+  const [confirm, setConfirm] = useState<{ preflight: ImportPreflight; listingId: string } | null>(null);
+  const [committing, setCommitting] = useState(false);
+  const [toast, setToast] = useState<Toast>(null);
+
+  useEffect(() => {
+    dispatch(fetchMarketplaceListings(false));
+  }, [dispatch]);
+
+  const packages = useMemo(() => listings.filter((l) => !isBundle(l)), [listings]);
+  const bundles = useMemo(() => listings.filter(isBundle), [listings]);
+  const kindOptions = useMemo(
+    () => Array.from(new Set(packages.map((l) => l.kind).filter(Boolean))).sort()
+      .map((k) => ({ value: k, label: KIND_LABELS[k] || k })),
+    [packages],
+  );
+
+  const matchesQuery = (l: Listing, q: string): boolean =>
+    !q || [l.title, l.description, l.tags, l.author].some((field) => field.toLowerCase().includes(q));
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = packages.filter((l) => (kinds.length === 0 || kinds.includes(l.kind)) && matchesQuery(l, q));
+    return [...rows].sort((a, b) => {
+      if (sort === 'name') return a.title.localeCompare(b.title);
+      if (sort === 'kind') return a.kind.localeCompare(b.kind);
+      return (b.updated_at || '').localeCompare(a.updated_at || '');
+    });
+  }, [packages, query, kinds, sort]);
+
+  // A bundle has no single kind, so it leaves the view entirely once the user narrows to one.
+  const visibleBundles = useMemo(() => {
+    if (kinds.length > 0) return [];
+    const q = query.trim().toLowerCase();
+    return bundles.filter((b) => matchesQuery(b, q));
+  }, [bundles, query, kinds]);
+
+  const finish = (preflight: ImportPreflight, listingId: string, rootType: string) => {
+    setInstalledIds((prev) => (prev.includes(listingId) ? prev : [...prev, listingId]));
+    setToast({ message: `Added ${preflight.summary.root.name}`, severity: 'success' });
+    // Nothing else refetches these on import, so an installed package would otherwise stay invisible.
+    if (rootType === 'skill') dispatch(fetchSkills());
+    if (rootType === 'app') dispatch(fetchOutputs());
+    if (rootType === 'workflow') dispatch(fetchWorkflows(undefined));
+    onInstalled?.(rootType);
+  };
+
+  const commit = async (preflight: ImportPreflight, listingId: string) => {
+    setCommitting(true);
+    try {
+      const res = await importCommit(preflight.staging_token);
+      finish(preflight, listingId, res.root_type);
+      setConfirm(null);
+    } catch (e: unknown) {
+      setToast({ message: e instanceof Error ? e.message : "We couldn't finish the install.", severity: 'error' });
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const install = async (listingId: string) => {
+    setInstallingId(listingId);
+    try {
+      const preflight = await stagePackageInstall(listingId);
+      if (importNeedsConfirm(preflight)) setConfirm({ preflight, listingId });
+      else await commit(preflight, listingId);
+    } catch (e: unknown) {
+      setToast({ message: e instanceof Error ? e.message : "We couldn't download this package.", severity: 'error' });
+    } finally {
+      setInstallingId(null);
+    }
+  };
+
+  const installBundle = async (bundle: Listing) => {
+    const members = resolveBundleMembers(bundle, listings).filter((m) => m.download_url);
+    if (members.length === 0) {
+      setToast({ message: 'This bundle has no installable packages yet.', severity: 'error' });
+      return;
+    }
+    // One at a time: each member gets its own review, and a bundle must not be a way to skip one.
+    for (const member of members) {
+      await install(member.id);
+    }
+  };
+
+  const body = (): React.ReactElement => {
+    if (loading && !loaded) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 8 }}>
+          <CircularProgress size={24} sx={{ color: c.accent.primary }} />
+        </Box>
+      );
+    }
+    if (visible.length === 0 && visibleBundles.length === 0) {
+      return (
+        <Typography sx={{ fontSize: '0.9375rem', color: c.text.tertiary, pt: 6, textAlign: 'center' }}>
+          {error ? error : 'No packages match that search yet.'}
+        </Typography>
+      );
+    }
+    return (
+      <>
+        {visibleBundles.length > 0 && (
+          <Box sx={{ mb: 2.5 }}>
+            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.tertiary, mb: 1 }}>
+              Collections
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.75 }}>
+              {visibleBundles.map((bundle) => (
+                <PackageBundleCard
+                  key={bundle.id}
+                  bundle={bundle}
+                  members={resolveBundleMembers(bundle, listings)}
+                  onOpen={() => setOpenBundle(bundle)}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.75, alignContent: 'start' }}>
+          {visible.map((listing) => (
+            <PackageCard
+              key={listing.id}
+              listing={listing}
+              onOpen={() => setOpenListing(listing)}
+              onTag={(tag) => setQuery(tag)}
+            />
+          ))}
+        </Box>
+      </>
+    );
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 1.75 }}>
+      <DirectoryFilterBar
+        searchPlaceholder="Search packages, tags, authors"
+        query={query}
+        onQuery={setQuery}
+        filterSections={[{ label: 'Kind', options: kindOptions }]}
+        filterSelected={kinds}
+        onToggleFilter={(value) => setKinds((prev) => (prev.includes(value) ? prev.filter((k) => k !== value) : [...prev, value]))}
+        sortOptions={[
+          { value: 'newest', label: 'Newest' },
+          { value: 'name', label: 'Name' },
+          { value: 'kind', label: 'Kind' },
+        ]}
+        sortValue={sort}
+        onSort={setSort}
+      />
+      {source === 'cache' && (
+        <Typography sx={{ fontSize: '0.8125rem', color: c.text.muted }}>
+          Showing the last catalog we loaded; the marketplace could not be reached just now.
+        </Typography>
+      )}
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>{body()}</Box>
+      <PackageDialog
+        listing={openListing}
+        installing={!!openListing && installingId === openListing.id}
+        installed={!!openListing && installedIds.includes(openListing.id)}
+        onInstall={() => { if (openListing) void install(openListing.id); }}
+        onClose={() => setOpenListing(null)}
+      />
+      <PackageBundleDialog
+        bundle={openBundle}
+        members={openBundle ? resolveBundleMembers(openBundle, listings) : []}
+        installing={installingId !== null}
+        onInstallAll={() => { if (openBundle) void installBundle(openBundle); }}
+        onInstallMember={(id) => { void install(id); }}
+        onOpenMember={(member) => { setOpenBundle(null); setOpenListing(member); }}
+        onClose={() => setOpenBundle(null)}
+      />
+      <ImportModal
+        preflight={confirm?.preflight ?? null}
+        open={!!confirm}
+        committing={committing}
+        onConfirm={() => confirm && commit(confirm.preflight, confirm.listingId)}
+        onClose={() => setConfirm(null)}
+      />
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={4000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={toast?.severity || 'success'} variant="filled" onClose={() => setToast(null)}>
+          {toast?.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+};
+
+export default DirectoryPackagesTab;

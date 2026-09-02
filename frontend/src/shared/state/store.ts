@@ -8,6 +8,7 @@ import modesReducer from './modesSlice';
 import settingsReducer from './settingsSlice';
 import mcpRegistryReducer from './mcpRegistrySlice';
 import skillRegistryReducer from './skillRegistrySlice';
+import marketplaceCatalogReducer from './marketplaceCatalogSlice';
 import outputsReducer from './outputsSlice';
 import dashboardLayoutReducer from './dashboardLayoutSlice';
 import dashboardsReducer from './dashboardsSlice';
@@ -31,6 +32,7 @@ export const store = configureStore({
     settings: settingsReducer,
     mcpRegistry: mcpRegistryReducer,
     skillRegistry: skillRegistryReducer,
+    marketplaceCatalog: marketplaceCatalogReducer,
     outputs: outputsReducer,
     dashboardLayout: dashboardLayoutReducer,
     dashboards: dashboardsReducer,

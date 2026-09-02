@@ -43,6 +43,7 @@ from backend.apps.outputs.outputs import outputs
 from backend.apps.outputs.versions_routes import output_versions
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.swarm.swarm import swarm
+from backend.apps.marketplace.marketplace import marketplace
 from backend.apps.service.service import service
 from backend.apps.subscription.router import subscription
 from backend.apps.auth.router import auth
@@ -60,7 +61,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
-main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, output_versions, dashboards, swarm, service, subscription, auth, web, onboarding, voice, memory, help_app, anthropic_proxy, workflows, cloud_workflows, openai_passthrough, apps_sdk])
+main_app = MainApp([health, agents, skills, tools_lib, modes, settings, mcp_registry, skill_registry, outputs, output_versions, dashboards, swarm, marketplace, service, subscription, auth, web, onboarding, voice, memory, help_app, anthropic_proxy, workflows, cloud_workflows, openai_passthrough, apps_sdk])
 app = main_app.app
 
 # Generate per-install auth token BEFORE we bind the HTTP port. By the time any request lands, the token file exists. See backend/auth.py.

@@ -82,13 +82,14 @@ async def export_bundle(body: ExportRequest) -> Response:
     )
 
 
-@swarm.router.post("/import/preflight")
-async def import_preflight(file: UploadFile = File(...)) -> ImportPreflightResponse:
-    raw = await file.read()
+def stage_bundle_for_import(raw: bytes, filename: str) -> ImportPreflightResponse:
+    """Stage bytes for import and hand back the review. Every door that installs a bundle comes
+    through here (a dropped file, a marketplace package), so the conflict/secret review and the
+    one staging store can never diverge per door."""
     if len(raw) > MAX_TOTAL_BYTES:
         raise HTTPException(status_code=400, detail="file is too large")
     try:
-        sandbox, manifest, warnings = closure.stage_upload(raw, file.filename or "")
+        sandbox, manifest, warnings = closure.stage_upload(raw, filename)
         conflicts = closure.detect_conflicts(sandbox, manifest)
         review = closure.review_bundle(sandbox, manifest)
     except BundleError as e:
@@ -103,6 +104,12 @@ async def import_preflight(file: UploadFile = File(...)) -> ImportPreflightRespo
         review=review,
         warnings=warnings,
     )
+
+
+@swarm.router.post("/import/preflight")
+async def import_preflight(file: UploadFile = File(...)) -> ImportPreflightResponse:
+    raw = await file.read()
+    return stage_bundle_for_import(raw, file.filename or "")
 
 
 @swarm.router.post("/import/commit")
