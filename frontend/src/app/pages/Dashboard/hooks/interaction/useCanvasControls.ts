@@ -125,7 +125,10 @@ export function useCanvasControls(
   const applyLiveToDom = useCallback(() => {
     const { panX, panY, zoom } = stateRef.current;
     const content = contentRef.current;
-    if (content) content.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    if (content) {
+      content.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+      content.style.setProperty('--canvas-zoom', String(zoom));
+    }
     const grid = gridRef.current;
     if (grid) {
       const spacing = 24 * zoom;
