@@ -231,6 +231,8 @@ class AppRuntime:
             self.p_reset_terminal_log()
             # Every boot re-decides serve mode from scratch; a stale True from the previous boot would make ready/frontend_url claim a processless app is fine after a restart that exists to spawn one.
             self.serve_static = False
+            # Same for the bind-timeout verdict: a restart that then binds fine must not keep telling the card the boot failed.
+            self.boot_failed = False
             if self.is_new_mode:
                 # Acquire the module-level boot lock BEFORE the spawn so only one new-mode workspace is mid-bundle at a time. The lock is released by the bind-poll task the moment vite emits "frontend ready" (or its 180s timeout fires), which is the moment the next workspace can start its own vite without competing for the same CPU. See `p_await_frontend_bind` for the release.
                 p_boot_lock = get_vite_boot_lock()
