@@ -70,7 +70,8 @@ import { composerPlaceholder } from './composerPlaceholder';
 import ApprovalBar, { BatchApprovalBar } from './shell/ApprovalBar';
 import ForceStopAgentBar from './ForceStopAgentBar';
 import { ProviderRetryPill, RateLimitPill, ReconnectWaitPill } from './shell/RateLimitPill';
-import { ContextRecoveredPill } from './shell/ContextRecoveredPill';
+import { SelfHealPill } from './shell/SelfHealPill';
+import { countSummarizedUserTurns } from './bubbles/compactionCount';
 import ChatInput, { ChatInputHandle } from './ChatInput';
 import FollowupChips from './FollowupChips';
 import ContextDrawer from './shell/ContextDrawer';
@@ -1841,8 +1842,16 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               const reason = session.context_overflow.reason;
               const isAuth = reason === 'openswarm_pro_auth_expired' || reason === 'anthropic_auth_invalid' || reason === 'auth_error';
               const isOutOfTokens = reason === 'out_of_tokens';
-              const title = isOutOfTokens ? 'Out of tokens' : isAuth ? 'Sign-in required' : 'Context full';
-              const primaryLabel = isOutOfTokens ? 'Got it' : isAuth ? 'Open Settings' : 'Start a fresh chat';
+              const isFreeTrial = reason === 'free_trial_exhausted';
+              const isOutOfCredits = reason === 'out_of_credits';
+              const opensSettings = isAuth || isFreeTrial || isOutOfCredits;
+              const title = isOutOfTokens ? 'Out of tokens'
+                : isFreeTrial ? 'Free runs used up'
+                : isOutOfCredits ? 'Out of credits'
+                : isAuth ? 'Sign-in required' : 'Context full';
+              const primaryLabel = isOutOfTokens ? 'Got it'
+                : isFreeTrial ? 'Connect a model'
+                : opensSettings ? 'Open Settings' : 'Start a fresh chat';
               // In the workflow build chat, switching models here also sets the workflow's scheduled run model, so spell that consequence out.
               const message = isOutOfTokens && workflowEditId
                 ? `${session.context_overflow.message} Whichever model you switch to here becomes the model this workflow runs on.`
@@ -1850,7 +1859,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               const onPrimary = () => {
                 if (isOutOfTokens) {
                   if (id) dispatch(clearContextOverflow({ sessionId: id }));
-                } else if (isAuth) {
+                } else if (opensSettings) {
                   dispatch(openSettingsCard({ tab: 'models' }));
                 } else {
                   const did = session?.dashboard_id;
@@ -1907,9 +1916,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
               const compactionChip = isCompactionAnchor ? (
                 <CompactionMarker
                   key={`compaction-${item.id}`}
-                  collapsedCount={
-                    Math.max(0, renderItems.findIndex((it) => it.id === session.compacted_through_msg_id) + 1)
-                  }
+                  collapsedCount={countSummarizedUserTurns(activeBranchMessages, session.compacted_through_msg_id)}
                 />
               ) : null;
 
@@ -2186,7 +2193,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
         <RateLimitPill sessionId={session.id} />
         <ReconnectWaitPill sessionId={session.id} />
         <ProviderRetryPill sessionId={session.id} />
-        <ContextRecoveredPill sessionId={session.id} />
+        <SelfHealPill sessionId={session.id} />
 
         {isGlowing ? (
           <Box

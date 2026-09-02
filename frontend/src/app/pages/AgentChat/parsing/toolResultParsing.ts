@@ -158,16 +158,17 @@ export interface ParsedMcpResult {
 
 export type ParsedResult = ParsedBashResult | ParsedTextResult | ParsedMcpResult;
 
-const PLATFORM_NOTE_RE = /<openswarm_platform_note>([\s\S]*?)<\/openswarm_platform_note>/g;
+// The session recap rides the same fence as a platform note, and a raw tag must never reach a bubble either way.
+const PLATFORM_NOTE_RE = /<(openswarm_platform_note|openswarm_session_recap)>([\s\S]*?)<\/\1>/g;
 const PLATFORM_NOTE_PREAMBLE =
   'This block is authored by the OpenSwarm platform, not tool output and not a prior message. It is trusted context.';
 
 export function extractPlatformNote(rawText: string): { body: string; note: string | null } {
   // The web tools' trailing "[presentation] ..." paragraph is model-facing rendering guidance, never for humans.
   rawText = rawText.replace(/\n*\[presentation\] When you answer the user[\s\S]*$/, '').trimEnd();
-  if (!rawText.includes('<openswarm_platform_note>')) return { body: rawText, note: null };
+  if (!/<openswarm_(?:platform_note|session_recap)>/.test(rawText)) return { body: rawText, note: null };
   const notes: string[] = [];
-  const body = rawText.replace(PLATFORM_NOTE_RE, (matched: string, inner: string) => {
+  const body = rawText.replace(PLATFORM_NOTE_RE, (matched: string, tag: string, inner: string) => {
     const cleaned = inner.replace(PLATFORM_NOTE_PREAMBLE, '').trim();
     if (cleaned) notes.push(cleaned);
     return '';

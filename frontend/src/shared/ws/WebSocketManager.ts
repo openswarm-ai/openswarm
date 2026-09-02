@@ -18,7 +18,7 @@ import {
   setReconnectWait,
   clearReconnectWait,
   setProviderRetrying,
-  setContextRecovered,
+  setSelfHeal,
   setAppDepsChanged,
   setMcpSuggestions,
   addBranch,
@@ -757,7 +757,18 @@ class WebSocketManager {
       case 'agent:context_recovered':
         // The backend hit a context-overflow crash mid-turn, rebuilt from its local copy, and retried on its own. Transient muted pill so the recovery is visible without reading like an error.
         if (session_id) {
-          store.dispatch(setContextRecovered({ sessionId: session_id }));
+          store.dispatch(setSelfHeal({ sessionId: session_id, kind: 'context_overflow' }));
+        }
+        break;
+
+      case 'agent:tool_recovered':
+        // The sidecar watchdog restarted a wedged built-in tool and the agent is redoing that step; same muted pill, different words.
+        if (session_id) {
+          store.dispatch(setSelfHeal({
+            sessionId: session_id,
+            kind: 'tool_restarted',
+            outstandingS: typeof data.outstanding_s === 'number' ? data.outstanding_s : null,
+          }));
         }
         break;
 
@@ -775,6 +786,9 @@ class WebSocketManager {
             sessionId: session_id,
             throughMsgId: data.compacted_through_msg_id ?? null,
           }));
+        } else if (session_id && data.reason === 'cli_compacted') {
+          // The model compacted its OWN transcript: none of our messages were dropped, so no permanent marker and no token reset, just the transient pill.
+          store.dispatch(setSelfHeal({ sessionId: session_id, kind: 'cli_compacted' }));
         }
         break;
 
@@ -817,6 +831,27 @@ class WebSocketManager {
             sessionId: session_id,
             reason: 'out_of_tokens',
             message: data.message ?? "You're out of tokens on this model.",
+          }));
+        }
+        break;
+
+      case 'agent:free_trial_exhausted':
+        // Same blocked-session slot; the backend designed this card and nothing consumed the event.
+        if (session_id) {
+          store.dispatch(setContextOverflow({
+            sessionId: session_id,
+            reason: 'free_trial_exhausted',
+            message: data.message ?? "You've used your free runs. Connect a model to keep going.",
+          }));
+        }
+        break;
+
+      case 'agent:out_of_credits':
+        if (session_id) {
+          store.dispatch(setContextOverflow({
+            sessionId: session_id,
+            reason: 'out_of_credits',
+            message: data.message ?? "Your model provider reports you're out of credits or over your usage limit.",
           }));
         }
         break;

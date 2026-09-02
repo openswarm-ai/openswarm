@@ -12,6 +12,8 @@ const WELCOME_EXPLORATORY_PROMPT =
   "want and care about before you start, then do it. If it's already concrete, just do it. " +
   'Keep any questions brief and friendly, never a wall of text.';
 
+export type SelfHealKind = 'context_overflow' | 'tool_restarted' | 'cli_compacted';
+
 export interface AgentMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'system' | 'thinking';
@@ -123,7 +125,8 @@ export interface AgentSession {
   // Parked waiting for the connection back; unlike the pills above this can last minutes, so the UI has to say so.
   reconnect_wait?: { retry_in_s: number | null; attempt: number | null; at: string } | null;
   provider_retrying?: { attempt: number | null; delay_ms: number | null; at: string } | null;
-  context_recovered?: { at: string } | null;
+  // One transient "OpenSwarm healed something mid-turn" pill; the kind picks the wording.
+  self_heal?: { kind: SelfHealKind; at: string; outstanding_s: number | null } | null;
   // Set when a view-builder turn installed/changed deps, so the app card does a HARD reload (Vite restart) at turn-finish instead of the soft one. Reset when the next turn starts.
   app_deps_changed?: boolean;
   mcp_suggestions?: Array<{ id: string; title: string; description: string; reason?: string }>;
@@ -1095,14 +1098,23 @@ const agentsSlice = createSlice({
       if (session) session.app_deps_changed = true;
     },
 
-    setContextRecovered(state, action: PayloadAction<{ sessionId: string }>) {
+    setSelfHeal(
+      state,
+      action: PayloadAction<{ sessionId: string; kind: SelfHealKind; outstandingS?: number | null }>
+    ) {
       const session = state.sessions[action.payload.sessionId];
-      if (session) session.context_recovered = { at: new Date().toISOString() };
+      if (session) {
+        session.self_heal = {
+          kind: action.payload.kind,
+          at: new Date().toISOString(),
+          outstanding_s: action.payload.outstandingS ?? null,
+        };
+      }
     },
 
-    clearContextRecovered(state, action: PayloadAction<{ sessionId: string }>) {
+    clearSelfHeal(state, action: PayloadAction<{ sessionId: string }>) {
       const session = state.sessions[action.payload.sessionId];
-      if (session) session.context_recovered = null;
+      if (session) session.self_heal = null;
     },
 
     clearContextOverflow(
@@ -1587,8 +1599,8 @@ export const {
   clearReconnectWait,
   setProviderRetrying,
   clearProviderRetrying,
-  setContextRecovered,
-  clearContextRecovered,
+  setSelfHeal,
+  clearSelfHeal,
   setAppDepsChanged,
   clearContextOverflow,
   setMcpSuggestions,

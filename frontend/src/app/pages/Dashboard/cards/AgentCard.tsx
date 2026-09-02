@@ -60,7 +60,8 @@ import { useOverlayScrollPassthrough } from '../hooks/interaction/useOverlayScro
 import { isCanvasInteractionActive, onCanvasInteractionEnd } from '@/shared/canvasInteractionState';
 import { setCardSidecar } from '@/shared/state/workflowsSlice';
 import { openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
-import { friendlyStatusLabel } from '@/shared/statusLabel';
+import { cardStatusWord } from '@/shared/statusLabel';
+import { lastConversationMessage, resumeOwed } from './resumeOwed';
 import { useCanvasWindowResize } from './useCanvasWindowResize';
 
 /** Extract up to 3 substantive user-prompt steps to seed a workflow. */
@@ -608,7 +609,8 @@ const AgentCard: React.FC<Props> = ({
     tiling.applyZone(zone);
   };
 
-  const lastMessage = session.messages[session.messages.length - 1];
+  // Hidden harness prompts ("Finish the task, then answer in plain text.") used to leak into the preview.
+  const lastMessage = lastConversationMessage(session.messages);
   // The card shows a 120-CHARACTER preview, so subscribing to the streaming entry itself made every
   // token of a long answer re-render all 1,464 lines of this component, on every streaming card at
   // once. AgentChat already solved this (it takes the message id and lets a leaf own the text); the
@@ -680,11 +682,10 @@ const AgentCard: React.FC<Props> = ({
   // status==='stopped' lit the chip on every deliberately-stopped or ancient session at once
   // (Eric's board, 2026-08-17); a chat whose last word was the assistant's owes nothing.
   const pillInterrupted = React.useMemo(() => {
-    if (session.status !== 'stopped' || session.workflow_run_id) return false;
+    if (session.workflow_run_id) return false;
     const branch = session.active_branch_id || 'main';
-    const msgs = (session.messages || []).filter((m) => (m.branch_id || 'main') === branch && !m.hidden);
-    const last = msgs[msgs.length - 1];
-    return !!last && last.role === 'user';
+    const msgs = (session.messages || []).filter((m) => (m.branch_id || 'main') === branch);
+    return resumeOwed(session.status, msgs);
   }, [session.status, session.workflow_run_id, session.messages, session.active_branch_id]);
   const handleResumeInterrupted = React.useCallback(() => {
     dispatch(sendMessageThunk({
@@ -1158,7 +1159,7 @@ const AgentCard: React.FC<Props> = ({
             {session.status !== 'completed' && session.status !== 'stopped' && !session.is_welcome_draft && (
               <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: c.text.tertiary, whiteSpace: 'nowrap' }}>
-                  {session.queued && session.status === 'running' ? 'queued' : friendlyStatusLabel(session.status)}
+                  {cardStatusWord(session)}
                 </Typography>
               </Box>
             )}

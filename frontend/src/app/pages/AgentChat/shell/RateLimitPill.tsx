@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Fade from '@mui/material/Fade';
 import Typography from '@mui/material/Typography';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { clearProviderRetrying, clearRateLimited } from '@/shared/state/agentsSlice';
+import { clearProviderRetrying, clearRateLimited, clearReconnectWait } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 /** Mid-turn CLI backoff pill (ENG-178): the provider 500/429'd and the CLI is silently waiting up
@@ -104,12 +104,25 @@ export const RateLimitPill: React.FC<{ sessionId: string }> = ({ sessionId }) =>
  * rather than finished: it wakes itself on a widening schedule and continues where it left off.
  * This is the one pill that must NOT auto-clear on a short timer, because the wait it describes can
  * be fifteen minutes; an agent sitting silent that long is exactly what makes people force-quit and
- * lose the task. It clears when the next turn actually lands. */
+ * lose the task. It clears when the next turn actually lands; if that frame never arrives it admits
+ * it is still trying once the announced wait plus grace has passed, and gives up ten minutes later. */
 export const ReconnectWaitPill: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const c = useClaudeTokens();
+  const dispatch = useAppDispatch();
   const rw = useAppSelector((s) => s.agents.sessions[sessionId]?.reconnect_wait);
+  const [overdue, setOverdue] = useState(false);
+
+  useEffect(() => {
+    setOverdue(false);
+    if (!rw) return;
+    const graceMs = Math.min((rw.retry_in_s ?? 0) + 120, 30 * 60) * 1000;
+    const t1 = setTimeout(() => setOverdue(true), graceMs);
+    const t2 = setTimeout(() => dispatch(clearReconnectWait({ sessionId })), graceMs + 10 * 60_000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [rw, sessionId, dispatch]);
 
   const label = (() => {
+    if (overdue) return 'Still trying to reconnect';
     const secs = rw?.retry_in_s ?? 0;
     if (!secs) return 'Connection lost, retrying';
     const mins = Math.round(secs / 60);

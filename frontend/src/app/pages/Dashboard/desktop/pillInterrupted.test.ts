@@ -26,11 +26,11 @@ test('the chip resumes with one click and does not select the card', () => {
 
 test('the card derives interrupted from stopped AND an unanswered user message', () => {
   const cond = card.slice(card.indexOf('const pillInterrupted'), card.indexOf('const handleResumeInterrupted'));
-  assert.ok(cond.includes("session.status !== 'stopped' || session.workflow_run_id"), 'run sidecars own pause/resume from the workflow card');
+  assert.ok(cond.includes('if (session.workflow_run_id) return false'), 'run sidecars own pause/resume from the workflow card');
   // The 2026-08-17 board: bare status==stopped lit the chip on EVERY old/deliberately-stopped
-  // session at once; only a chat whose last visible word is the USER'S owes a resume.
-  assert.ok(cond.includes("last.role === 'user'"), 'a chat the assistant finished answering owes nothing');
-  assert.ok(cond.includes('!m.hidden'), 'hidden harness nudges must not make a finished chat look owed');
+  // session at once; only a chat whose last real word is the USER'S owes a resume. The rule itself
+  // (system notes and hidden nudges skipped) is pinned behaviourally in cards/resumeOwed.test.ts.
+  assert.ok(cond.includes('resumeOwed(session.status, msgs)'), 'the owed-response rule has one definition');
   assert.ok(card.includes('interrupted={pillInterrupted}'), 'wire-check: the flag must reach the pill');
   assert.ok(card.includes('onResumeInterrupted={handleResumeInterrupted}'));
 });

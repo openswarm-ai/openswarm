@@ -25,6 +25,7 @@ import { renderUserTextWithPills } from './renderUserTextWithPills';
 import { estimateRenderedTextHeight, oversizedCharThreshold, RECHECK_VISIBILITY_EVENT } from './markdownMeasure';
 import { THINKING_LABELS } from '../thinkingLabels';
 import { extractPlatformNote } from '../parsing/toolResultParsing';
+import { classifySystemNotice } from './systemNoticeKind';
 import { AgentMessage, retryLastUserMessage } from '@/shared/state/agentsSlice';
 import { openSettingsCard } from '@/shared/state/dashboardLayoutSlice';
 import { fetchSubscriptionStatus } from '@/shared/state/subscriptionsSlice';
@@ -886,14 +887,44 @@ const MessageBubble: React.FC<Props> = React.memo((props) => {
     const rawSysText = typeof content === 'string' ? content : JSON.stringify(content);
     const { body: sysBody, note: sysNote } = extractPlatformNote(rawSysText);
     const sysText = sysNote || sysBody;
-    // A raw subprocess/API failure ("Command failed with exit code 1", API Error JSON) is dev jargon, and the same failure is already shown as a friendly card on the assistant side. Swallow just that stderr dump so the user sees one calm card, not jargon beneath it.
-    // Widen this at your peril: the silent-quit seal's honest lines ride the same system role, and swallowing one turns a stopped agent back into an unexplained Done pill. backend/tests/test_empty_finish.py pins that they survive.
-    if (/Command failed with exit code|API Error:|invalid_request_error|"type"\s*:\s*"error"|Check stderr output/i.test(sysText)) {
-      return null;
+    // A raw runtime dump used to render as null here, on the theory that a friendly card was shown elsewhere; system-role messages never reach parseOpenSwarmError, so the user got "needs attention" over a blank transcript.
+    if (classifySystemNotice(sysText) === 'raw_error') {
+      return (
+        <Box sx={{ display: 'flex', my: 0.75 }}>
+          <Box
+            sx={{
+              p: 1.8,
+              borderRadius: `${c.radius.lg}px`,
+              border: `1px solid ${c.status.warning}40`,
+              bgcolor: `${c.status.warning}10`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.7,
+              maxWidth: '100%',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ErrorSlime size={22} />
+              <Typography sx={{ fontSize: '0.875rem', fontWeight: 600, color: c.text.primary }}>
+                That request hit a snag
+              </Typography>
+            </Box>
+            <Typography sx={{ fontSize: '0.8125rem', color: c.text.secondary, lineHeight: 1.5 }}>
+              Something went wrong on that one. Send your message again to retry.
+            </Typography>
+            <Box component="details" sx={{ fontSize: '0.75rem', color: c.text.tertiary }}>
+              <Box component="summary" sx={{ cursor: 'pointer', userSelect: 'none' }}>Details</Box>
+              <Box component="pre" sx={{ m: 0, mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit' }}>
+                {sysText}
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      );
     }
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
-        <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', fontStyle: 'italic' }}>
+        <Typography sx={{ color: c.text.ghost, fontSize: '0.8125rem', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
           {sysText}
         </Typography>
       </Box>
