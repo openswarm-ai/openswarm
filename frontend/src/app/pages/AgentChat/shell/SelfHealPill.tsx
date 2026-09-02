@@ -26,7 +26,7 @@ const COPY: Record<SelfHealKind, { text: string; why: (outstandingS: number | nu
 export const SelfHealPill: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
-  const heal = useAppSelector((s) => s.agents.sessions[sessionId]?.self_heal);
+  const heal = useAppSelector((s) => s.agents.selfHeals[sessionId]);
 
   useEffect(() => {
     if (!heal) return;

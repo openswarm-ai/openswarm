@@ -125,8 +125,6 @@ export interface AgentSession {
   // Parked waiting for the connection back; unlike the pills above this can last minutes, so the UI has to say so.
   reconnect_wait?: { retry_in_s: number | null; attempt: number | null; at: string } | null;
   provider_retrying?: { attempt: number | null; delay_ms: number | null; at: string } | null;
-  // One transient "OpenSwarm healed something mid-turn" pill; the kind picks the wording.
-  self_heal?: { kind: SelfHealKind; at: string; outstanding_s: number | null } | null;
   // Set when a view-builder turn installed/changed deps, so the app card does a HARD reload (Vite restart) at turn-finish instead of the soft one. Reset when the next turn starts.
   app_deps_changed?: boolean;
   mcp_suggestions?: Array<{ id: string; title: string; description: string; reason?: string }>;
@@ -176,8 +174,17 @@ interface HistorySearchState {
   loading: boolean;
 }
 
+// One transient "OpenSwarm healed something mid-turn" pill per session; the kind picks the wording.
+export interface SelfHeal {
+  kind: SelfHealKind;
+  at: string;
+  outstanding_s: number | null;
+}
+
 interface AgentsState {
   sessions: Record<string, AgentSession>;
+  // Kept OUTSIDE the session objects on purpose: every server refresh replaces a session wholesale, and a flag stored on it died before the pill could mount.
+  selfHeals: Record<string, SelfHeal>;
   history: Record<string, HistorySession>;
   activeSessionId: string | null;
   expandedSessionIds: string[];
@@ -190,6 +197,7 @@ interface AgentsState {
 
 const initialState: AgentsState = {
   sessions: {},
+  selfHeals: {},
   history: {},
   activeSessionId: null,
   expandedSessionIds: [],
@@ -1102,19 +1110,15 @@ const agentsSlice = createSlice({
       state,
       action: PayloadAction<{ sessionId: string; kind: SelfHealKind; outstandingS?: number | null }>
     ) {
-      const session = state.sessions[action.payload.sessionId];
-      if (session) {
-        session.self_heal = {
-          kind: action.payload.kind,
-          at: new Date().toISOString(),
-          outstanding_s: action.payload.outstandingS ?? null,
-        };
-      }
+      state.selfHeals[action.payload.sessionId] = {
+        kind: action.payload.kind,
+        at: new Date().toISOString(),
+        outstanding_s: action.payload.outstandingS ?? null,
+      };
     },
 
     clearSelfHeal(state, action: PayloadAction<{ sessionId: string }>) {
-      const session = state.sessions[action.payload.sessionId];
-      if (session) session.self_heal = null;
+      delete state.selfHeals[action.payload.sessionId];
     },
 
     clearContextOverflow(

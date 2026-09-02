@@ -83,8 +83,9 @@ def squeezed_context_window() -> int:
     if n < VALVE_ELIGIBLE_WINDOW:
         logger.warning(
             "cli_context_squeeze window %d puts the compaction trigger under a turn's ~%d-token "
-            "baseline, so OUR mid-turn breaker is INELIGIBLE and cannot fire at any input. This "
-            "run can reproduce the CLI's autocompact thrash; it can say nothing about our valve.",
+            "baseline, so the breaker's CROSSING rule is INELIGIBLE (every reading already sits above "
+            "the trigger); only its 20,000-token growth rule can fire here, so a break in this run "
+            "proves that half alone. The run still reproduces the CLI's autocompact thrash.",
             n, TURN_BASELINE_TOKENS,
         )
     return n
