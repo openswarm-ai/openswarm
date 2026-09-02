@@ -70,5 +70,5 @@ def unverified_reads_line(action_log: List[Dict]) -> str:
         return ""
     if any(a.get("ok") and str(a.get("result_summary") or "").strip() for a in p_reads):
         return ""
-    return ("No page content was read back successfully during this run, so any specific values "
-            "above are unverified and must not be treated as confirmed.")
+    return ("**Heads up: no page content was read back successfully during this run, so any specific "
+            "values above are unverified and must not be treated as confirmed.**")

@@ -258,3 +258,16 @@ def is_transient(err: ProviderError) -> bool:
             return False
         return err.reset_seconds is not None and err.reset_seconds <= 6 * 3600
     return False
+
+
+# The GPT subscription lane rotates its token every couple of minutes and the 401 that lands inside
+# the window used to be worded four different ways depending on the door it came through.
+CODEX_ROTATION_RETRY_NOTICE = (
+    "GPT subscription token just rotated (automatic, every couple minutes). Retrying your request "
+    "automatically in about a minute, no action needed."
+)
+CODEX_ROTATION_RESEND_NOTICE = (
+    "GPT subscription token just rotated (automatic, every couple minutes). Send your message again "
+    "in about a minute and it will go through; nothing to reconnect. If it keeps happening, open "
+    "Settings > Models and click Reconnect on the OpenAI / GPT row."
+)

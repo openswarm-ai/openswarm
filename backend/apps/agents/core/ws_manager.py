@@ -25,6 +25,19 @@ BROWSER_CMD_REBROADCAST_S = 3.0
 P_WS_RECONNECT_WAIT_S = 8.0
 
 
+def preview_text(messages: list) -> str:
+    """The last thing the USER or the model said, never a hidden harness prompt or a system note:
+    a collapsed card used to preview "Finish the task, then answer in plain text." as if the user
+    had typed it. Accepts message dicts or objects."""
+    for m in reversed(messages or []):
+        get = (lambda k, d=None: m.get(k, d)) if isinstance(m, dict) else (lambda k, d=None: getattr(m, k, d))
+        if get("hidden") or get("role") not in ("user", "assistant"):
+            continue
+        c = get("content", "")
+        return c[:120] if isinstance(c, str) else ""
+    return ""
+
+
 def slim_status_data(event: str, data: dict) -> dict:
     """agent:status frames carry session METADATA, never the transcript: every message already
     reaches clients as its own agent:message event (and the stream), so re-shipping full history
@@ -36,11 +49,10 @@ def slim_status_data(event: str, data: dict) -> dict:
     if not isinstance(sess, dict) or not sess.get("messages"):
         return data
     messages = sess["messages"]
-    last = messages[-1].get("content", "")
     first_user = next((m.get("content") for m in messages if m.get("role") == "user"), "")
     slim = dict(sess)
     slim["messages"] = []
-    slim["last_message_preview"] = last[:120] if isinstance(last, str) else ""
+    slim["last_message_preview"] = preview_text(messages)
     slim["first_user_message"] = first_user[:200] if isinstance(first_user, str) else ""
     slim["message_count"] = len(messages)
     out = dict(data)

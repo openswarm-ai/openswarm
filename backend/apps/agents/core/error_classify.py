@@ -464,8 +464,8 @@ def is_stale_tool_schema_error(exc: BaseException, extra_text: str = "") -> bool
 # narrow. 401 stays out (a rotating token really does heal, which is why the reset-hint rule exists),
 # and so do 408/429. Matched only in status POSITION, so a "400" in a line number or a byte count
 # cannot promote itself into a verdict (ENG-365 learned that the hard way with "line 401,").
-# 143/137 when the CLI re-raises the signal it caught; -15/-9 when it could not (SIGKILL is uncatchable, so a SIGKILL always arrives as -9).
-P_KILLED_EXIT = re.compile(r"Command failed with exit code (143|137|-15|-9)\b")
+# A negative code is the signal that killed the process (-9 SIGKILL, -15 SIGTERM, -2 SIGINT, -1 excluded: the SDK's own wait() sentinel); 129-159 is the same signal re-raised by a handler (128+n).
+P_KILLED_EXIT = re.compile(r"Command failed with exit code (-(?:[2-9]|[12]\d|3[01])|1(?:29|[3-4]\d|5\d))\b")
 
 
 @typechecked

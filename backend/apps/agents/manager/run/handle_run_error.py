@@ -8,6 +8,8 @@ import logging
 from typing import List
 from typeguard import typechecked
 
+from backend.apps.agents.manager.streaming.provider_error_speech import CODEX_ROTATION_RESEND_NOTICE, CODEX_ROTATION_RETRY_NOTICE
+
 from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.settings.settings import load_settings
@@ -383,7 +385,8 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 "attempt": session.reconnect_attempts,
             })
             return
-        session.status = "completed"
+        # Nothing reached the user this turn and the retries are spent: that is a failure the card must show, not a green Done next to "stopped before reporting back".
+        session.status = "completed" if turn.current_turn_emitted else "error"
         if turn.stream_text_msg_id:
             try:
                 await ws_manager.send_to_session(session_id, "agent:stream_end", {
@@ -523,7 +526,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 if p_codex_rotation:
                     p_notice = Message(
                         role="system",
-                        content="GPT subscription token just rotated (automatic, every couple minutes). Retrying your request automatically in about a minute, no action needed.",
+                        content=CODEX_ROTATION_RETRY_NOTICE,
                         branch_id=session.active_branch_id,
                     )
                     session.messages.append(p_notice)
@@ -538,12 +541,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             ("codex/" in p_combined or "[codex/" in p_combined or p_model.startswith(("cx/", "gpt-")))
             and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or has_auth_status(p_combined))
         ):
-            friendly_msg = (
-                "GPT subscription token just rotated, this is "
-                "automatic and resets every couple minutes. Send "
-                "your message again in ~1 minute and it'll go "
-                "through. (No need to reconnect anything.)"
-            )
+            friendly_msg = CODEX_ROTATION_RESEND_NOTICE
             reason = "codex_token_rotating"
         elif "no credentials for provider" in p_combined:
             friendly_msg = (

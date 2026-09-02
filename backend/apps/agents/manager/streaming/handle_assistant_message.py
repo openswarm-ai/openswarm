@@ -122,6 +122,8 @@ async def handle_assistant_message(
         # One door for everything the provider says, so classify the class here instead of adding a fifth phrasing above; measured 14/14 caught, 0 false positives on 2035 real assistant messages.
         from backend.apps.agents.manager.streaming.provider_error_speech import (
             AUTH as P_ERR_AUTH,
+            CODEX_ROTATION_RESEND_NOTICE,
+            CODEX_ROTATION_RETRY_NOTICE,
             POLICY as P_ERR_POLICY,
             classify_provider_error,
             is_transient,
@@ -151,7 +153,7 @@ async def handle_assistant_message(
                 p_notice = Message(
                     id=uuid4().hex,
                     role="system",
-                    content="GPT subscription token just rotated (automatic, every couple minutes). Retrying your request automatically in about a minute, no action needed.",
+                    content=CODEX_ROTATION_RETRY_NOTICE,
                     branch_id=session.active_branch_id,
                 )
                 session.messages.append(p_notice)
@@ -161,12 +163,7 @@ async def handle_assistant_message(
                 })
             if not p_healed:
                 if p_is_codex:
-                    friendly = (
-                        "GPT subscription token is still refreshing. This usually clears on "
-                        "its own; wait a minute and send your message again. If it keeps "
-                        "happening, open Settings → Models and click Reconnect on the "
-                        "OpenAI / GPT row."
-                    )
+                    friendly = CODEX_ROTATION_RESEND_NOTICE
                     reason = "codex_token_expired"
                 elif "gemini-cli/" in lower_text or "[gemini" in lower_text:
                     friendly = (

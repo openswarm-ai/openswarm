@@ -157,6 +157,10 @@ class TurnRunner(AgentManagerProtocol):
                     if p_subtype == "compact_boundary":
                         turn.compact_boundaries += 1
                         session.cli_compactions += 1
+                        await ws_manager.send_to_session(session_id, "agent:context_status", {
+                            "session_id": session_id,
+                            "reason": "cli_compacted",
+                        })
                     elif p_subtype == "api_retry":
                         note_provider_retry(session_id, raw, turn)
 

@@ -132,6 +132,22 @@ RETRY_PROMPT = (
 
 
 @typechecked
+def announce_tool_recovery(session_id: str, tool_name: str, outstanding_s: float) -> None:
+    """The one self-heal a user could watch for five minutes and never be told about: the card kept
+    its working dot while the sidecar was shot and the step redone. One transient pill, sent from
+    the loop thread the watchdog already runs on."""
+    try:
+        from backend.apps.agents.core.ws_manager import ws_manager
+        asyncio.ensure_future(ws_manager.send_to_session(session_id, "agent:tool_recovered", {
+            "session_id": session_id,
+            "tool": tool_name.replace(CORE_PREFIX, ""),
+            "outstanding_s": round(outstanding_s),
+        }))
+    except Exception:
+        logger.debug("tool_recovered announce failed", exc_info=True)
+
+
+@typechecked
 def arm_retry(session: object) -> bool:
     """Queue one hidden continuation so the agent redoes the lost step. Reuses the seam the
     silent-quit nudge already owns, and never stacks on a continuation that is already pending.
@@ -247,5 +263,6 @@ def arm_wedge_watchdog(ctx: object, tool_use_id: str, tool_name: str) -> None:
         # shutdown leaks them parked forever (the suite's flaky hang at interpreter exit).
         threading.Thread(target=unwedge, args=(session_id, tool_name, outstanding), daemon=True, name="unwedge").start()
         arm_retry(getattr(ctx, "session", None))
+        announce_tool_recovery(session_id, tool_name, outstanding)
 
     loop.call_later(WEDGE_SECONDS, p_check)

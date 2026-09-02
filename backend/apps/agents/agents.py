@@ -11,6 +11,7 @@ from backend.apps.agents.agent_manager import agent_manager
 from backend.apps.agents.core.fault_injection import announce as p_announce_armed_faults
 from backend.apps.agents.core.models import AgentConfig, AgentSession, ApprovalResponse
 from backend.apps.agents.core.seq_log import seq_log
+from backend.apps.agents.core.ws_manager import preview_text
 from backend.apps.agents.manager.session.history_compaction import estimate_post_compact_input
 from backend.config.Apps import SubApp
 
@@ -52,14 +53,13 @@ def p_session_list_item(session: AgentSession) -> Dict[str, Any]:
     """Serialize dashboard metadata without retaining the full chat history."""
     data = session.model_dump(mode="json", exclude={"messages"})
     messages = session.messages
-    last_content = messages[-1].content if messages else ""
     first_user_content = next(
         (message.content for message in messages if message.role == "user"),
         "",
     )
     data.update(
         messages=[],
-        last_message_preview=last_content[:120] if isinstance(last_content, str) else "",
+        last_message_preview=preview_text(messages),
         first_user_message=(
             first_user_content[:200] if isinstance(first_user_content, str) else ""
         ),

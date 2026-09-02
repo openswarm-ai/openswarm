@@ -27,7 +27,7 @@ def p_session() -> AgentSession:
     return s
 
 
-def p_drive(monkeypatch, exc, session=None, stderr=None):
+def p_drive(monkeypatch, exc, session=None, stderr=None, emitted=False):
     events = []
 
     async def fake_send(session_id, event, data):
@@ -37,7 +37,9 @@ def p_drive(monkeypatch, exc, session=None, stderr=None):
     import backend.apps.service.client as service_client
     monkeypatch.setattr(service_client, "submit_diagnostic", lambda payload: None, raising=True)
     session = session or p_session()
-    asyncio.run(handle_run_error(exc, session, session.id, TurnState(), stderr or []))
+    turn = TurnState()
+    turn.current_turn_emitted = emitted
+    asyncio.run(handle_run_error(exc, session, session.id, turn, stderr or []))
     return session, events
 
 
@@ -64,6 +66,18 @@ def test_the_wait_widens_and_then_concedes(monkeypatch):
     session, events = p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session)
     assert session.pending_continuation is False
     assert "agent:rate_limited" in [e for e, _ in events]
+    # Nothing reached the user and the retries are spent: "completed" put a green Done next to the
+    # exhausted note (self-heal audit, 2026-09-01). A turn that got some text out still completes.
+    assert session.status == "error"
+
+
+def test_a_turn_that_already_spoke_ends_completed_when_the_budget_is_spent(monkeypatch):
+    session = p_session()
+    for _ in RECONNECT_BACKOFFS:
+        session.pending_continuation = False
+        p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session)
+    session.pending_continuation = False
+    session, _events = p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session, emitted=True)
     assert session.status == "completed"
 
 

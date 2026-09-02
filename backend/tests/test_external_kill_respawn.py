@@ -22,6 +22,9 @@ def test_the_real_143_and_every_signal_spelling_are_recognised():
     # A SIGKILL cannot be caught, so the SDK reports it as a negative signal number, never 137 (live, dev kill matrix A3).
     assert is_external_kill_error(RuntimeError("Command failed with exit code -9 (exit code: -9)\nError output: Check stderr output for details"))
     assert is_external_kill_error(RuntimeError("Command failed with exit code -15 (exit code: -15)"))
+    # Any signal is the same story (dev kill matrix, 2026-09-01): SIGINT, SIGHUP, SIGABRT, raw or re-raised as 128+n.
+    for code in ("-2", "-1 " if False else "-6", "130", "134", "129", "159"):
+        assert is_external_kill_error(RuntimeError(f"Command failed with exit code {code} (exit code: {code})")), code
 
 
 @pytest.mark.parametrize("innocent", [
@@ -29,7 +32,9 @@ def test_the_real_143_and_every_signal_spelling_are_recognised():
     ("Command failed with exit code 143 (exit code: 143)", "API Error: 401 authentication_error"),
     ("Command failed with exit code 143 (exit code: 143)", "Error: request blocked by Usage Policy"),
     ("Command failed with exit code 1430", ""),
-    ("Command failed with exit code -1 (exit code: -1)", ""),
+    ("Command failed with exit code -1 (exit code: -1)", ""),  # the SDK's own wait() sentinel, not a signal
+    ("Command failed with exit code 128", ""),
+    ("Command failed with exit code 160", ""),
     ("Command failed with exit code -90", ""),
     ("Error code: 429 - rate limit", ""),
 ])
