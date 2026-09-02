@@ -135,15 +135,28 @@ class SessionPersistence(AgentManagerProtocol):
         self.crash_resume_queue = []
 
     @typechecked
+    def note_shutdown_stops(self) -> int:
+        """Stamp every chat with a live turn BEFORE the shutdown stops it. The lifespan stops the tasks
+        first and flushes second, so by flush time a running chat already reads "stopped" and the
+        note below never fired (dev kill matrix A9a, 2026-09-01). Returns how many were stamped."""
+        stamped = 0
+        for session_id in list(self.tasks.keys()):
+            session = self.sessions.get(session_id)
+            if session is None or session.status not in ("running", "waiting_approval"):
+                continue
+            session.messages.append(Message(role="system", content=SHUTDOWN_STOP_NOTE, branch_id=session.active_branch_id))
+            stamped += 1
+        return stamped
+
+    @typechecked
     async def persist_all_sessions(self) -> None:
         """Flush every in-memory session to JSON files (for graceful shutdown)."""
         for session_id, session in list(self.sessions.items()):
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
-                # Say who stopped it. A chat flushed as plain "stopped" reads exactly like the user's own
-                # Stop, and when something else killed the backend (an agent's pkill, 2026-09-01) the
-                # user's running work vanished with nothing saying why: silent loss, row 1.
-                session.messages.append(Message(role="system", content=SHUTDOWN_STOP_NOTE, branch_id=session.active_branch_id))
+                # A chat that was never a task (restored mid-turn, never resumed) still gets the note here.
+                if not session.messages or str(session.messages[-1].content) != SHUTDOWN_STOP_NOTE:
+                    session.messages.append(Message(role="system", content=SHUTDOWN_STOP_NOTE, branch_id=session.active_branch_id))
             session.closed_at = None
             for req in list(session.pending_approvals):
                 ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})

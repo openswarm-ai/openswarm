@@ -34,6 +34,8 @@ async def agents_lifespan():
     pool_sweeper = start_pool_sweeper(agent_manager.client_pool)
     yield
     logger.info("Agents sub-app shutting down")
+    # Stamp before stopping: once stop_agent has run, a live chat is indistinguishable from one the user stopped.
+    agent_manager.note_shutdown_stops()
     for session_id in list(agent_manager.tasks.keys()):
         await agent_manager.stop_agent(session_id)
     await agent_manager.persist_all_sessions()

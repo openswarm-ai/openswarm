@@ -36,3 +36,21 @@ def test_a_settled_chat_is_flushed_untouched(monkeypatch) -> None:
     doc = saved[s.id]
     assert doc["status"] == "completed"
     assert doc["messages"][-1]["role"] == "user", "no note on a chat that was not running"
+
+
+def test_the_lifespan_stamps_live_turns_before_it_stops_them(monkeypatch) -> None:
+    """Placement, not just behaviour: stop_agent flips running -> stopped, so a note keyed on
+    "running" at flush time never fires for a chat that was a task (dev kill matrix A9a)."""
+    import inspect
+    from backend.apps.agents import agents as agents_mod
+    src = inspect.getsource(agents_mod.agents_lifespan)
+    assert src.index("note_shutdown_stops()") < src.index("stop_agent(session_id)")
+    s = p_session("running")
+    agent_manager.sessions.clear(); agent_manager.sessions[s.id] = s
+    monkeypatch.setitem(agent_manager.tasks, s.id, object())
+    try:
+        assert agent_manager.note_shutdown_stops() == 1
+    finally:
+        agent_manager.tasks.pop(s.id, None)
+    assert s.messages[-1].role == "system" and "not your Stop" in str(s.messages[-1].content)
+    assert agent_manager.note_shutdown_stops() == 0, "a settled or already-stamped chat is not stamped twice"

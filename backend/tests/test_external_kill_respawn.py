@@ -16,9 +16,12 @@ def p_session() -> AgentSession:
     return AgentSession(name="t", model="sonnet")
 
 
-def test_the_real_143_and_a_sigkill_137_are_recognised():
+def test_the_real_143_and_every_signal_spelling_are_recognised():
     assert is_external_kill_error(RuntimeError(REAL))
     assert is_external_kill_error(RuntimeError("Command failed with exit code 137 (exit code: 137)"))
+    # A SIGKILL cannot be caught, so the SDK reports it as a negative signal number, never 137 (live, dev kill matrix A3).
+    assert is_external_kill_error(RuntimeError("Command failed with exit code -9 (exit code: -9)\nError output: Check stderr output for details"))
+    assert is_external_kill_error(RuntimeError("Command failed with exit code -15 (exit code: -15)"))
 
 
 @pytest.mark.parametrize("innocent", [
@@ -26,6 +29,8 @@ def test_the_real_143_and_a_sigkill_137_are_recognised():
     ("Command failed with exit code 143 (exit code: 143)", "API Error: 401 authentication_error"),
     ("Command failed with exit code 143 (exit code: 143)", "Error: request blocked by Usage Policy"),
     ("Command failed with exit code 1430", ""),
+    ("Command failed with exit code -1 (exit code: -1)", ""),
+    ("Command failed with exit code -90", ""),
     ("Error code: 429 - rate limit", ""),
 ])
 def test_other_failures_never_claim_it(innocent):
