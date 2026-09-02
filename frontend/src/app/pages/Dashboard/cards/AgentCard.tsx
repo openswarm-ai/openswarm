@@ -446,6 +446,13 @@ const AgentCard: React.FC<Props> = ({
   const justDraggedRef = useRef(false);
   const lastPointerRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
 
+  // macOS rule: pressing anywhere in a window makes it the front window. Capture phase, so the chat
+  // body's own stopPropagation (which keeps clicks from toggling selection) cannot swallow it. An
+  // already-selected card and shift-presses are left to the header, so multi-select still toggles.
+  const handleSelectOnPress = useCallback((e: React.PointerEvent) => {
+    if (isSelected || e.button !== 0 || e.shiftKey) return;
+    onCardSelect?.(session.id, 'agent', false);
+  }, [isSelected, onCardSelect, session.id]);
   const handleDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     // A press on an interactive control (an AskUI option/Confirm/Send, a composer field, any
@@ -773,6 +780,7 @@ const AgentCard: React.FC<Props> = ({
           ? new Date(session.created_at).getTime() || undefined
           : undefined
       }
+      onPointerDownCapture={handleSelectOnPress}
       onClick={(e: React.MouseEvent) => {
         if (justDraggedRef.current) return;
         onCardSelect?.(session.id, 'agent', e.shiftKey);
@@ -852,11 +860,7 @@ const AgentCard: React.FC<Props> = ({
             ? `0 0 0 2px ${accentColor}40, 0 0 16px ${accentColor}22`
             : isDragging
               ? c.shadow.lg
-              : isSelected
-                ? `0 0 0 1px #3b82f6, ${c.shadow.md}`
-                : expanded
-                  ? c.shadow.md
-                  : c.shadow.sm,
+              : 'none',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -901,7 +905,7 @@ const AgentCard: React.FC<Props> = ({
               boxShadow: `0 0 0 2px ${c.accent.primary}25, 0 0 14px ${c.accent.primary}18, 0 0 28px ${c.accent.primary}08`,
             },
             '100%': {
-              boxShadow: c.shadow.sm,
+              boxShadow: 'none',
             },
           },
         }),
@@ -939,7 +943,6 @@ const AgentCard: React.FC<Props> = ({
           }),
           border: isFullscreen ? 'none' : isSelected ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
           borderRadius: isTiled ? '12px' : '20px',
-          boxShadow: '0 18px 48px rgba(0,0,0,0.4)',
           // The hover header floats ABOVE the card; the root must not clip it (the chat body clips itself).
           ...(isTiled ? {} : { overflow: 'visible' }),
         }),
@@ -1028,6 +1031,8 @@ const AgentCard: React.FC<Props> = ({
               tiled={false}
             />
           </Box>
+          {/* Map-pin rule: the capsule counter-zooms against the camera so its label stays legible zoomed out (12px at half zoom read as 6px). CSS zoom, not transform: it grows the LAYOUT box, so paint containment on the pill cannot clip it; at zoom 1 this is 1. */}
+          <Box className="osw-pill-zoom" sx={{ zoom: 'max(1, min(4, calc(0.9 / var(--canvas-zoom, 1))))' }}>
           <AgentNarratorPill
             label={pillLabel}
             running={pillRunning}
@@ -1043,6 +1048,7 @@ const AgentCard: React.FC<Props> = ({
             selected={isSelected}
             highlighted={isHighlighted}
           />
+          </Box>
         </Box>
       )}
 
