@@ -14,7 +14,7 @@ from typing import Set
 from typeguard import typechecked
 
 from backend.apps.agents.manager.streaming.unwedge_sidecar import (
-    HEARTBEAT_FRESH_S, CORE_PREFIX, RETRY_PROMPT, arm_retry, heartbeat_age, unwedge,
+    HEARTBEAT_FRESH_S, CORE_PREFIX, RETRY_PROMPT, arm_retry, delegation_children_born_after, heartbeat_age, unwedge,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,17 +49,7 @@ def delegation_children_settled(session_id: str, since: float) -> bool:
     p_parent = agent_manager.sessions.get(session_id)
     if p_parent is not None and getattr(p_parent, "ended_by_user", False):
         return False
-    kids = []
-    for s in agent_manager.sessions.values():
-        if getattr(s, "parent_session_id", None) != session_id or getattr(s, "mode", "") != "browser-agent":
-            continue
-        born = getattr(s, "created_at", None)
-        try:
-            if born is None or born.timestamp() < since:
-                continue
-        except Exception:
-            continue
-        kids.append(s)
+    kids = delegation_children_born_after(session_id, since)
     if not kids:
         return False
     return all(getattr(s, "status", "") in ("completed", "error", "failed", "stopped") for s in kids)

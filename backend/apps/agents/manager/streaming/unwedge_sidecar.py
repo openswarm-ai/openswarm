@@ -14,7 +14,7 @@ import os
 import subprocess
 import threading
 import time
-from typing import Set
+from typing import Dict, List, Set
 
 from typeguard import typechecked
 
@@ -147,6 +147,42 @@ def arm_retry(session: object) -> bool:
 
 
 @typechecked
+def delegation_children_born_after(session_id: str, since: float) -> List[object]:
+    """The browser/app children this session spawned after `since`. One definition, shared by the
+    watchdog's settled test and the unwedge envelope, so the two can never count different children."""
+    from backend.apps.agents.agent_manager import agent_manager
+    kids: List[object] = []
+    for s in agent_manager.sessions.values():
+        if getattr(s, "parent_session_id", None) != session_id or getattr(s, "mode", "") != "browser-agent":
+            continue
+        born = getattr(s, "created_at", None)
+        try:
+            if born is None or born.timestamp() < since:
+                continue
+        except Exception:
+            continue
+        kids.append(s)
+    return kids
+
+
+@typechecked
+def children_summary(session_id: str, since: float) -> List[Dict[str, object]]:
+    """What the children looked like at the moment of a kill: status plus how long ago each was born.
+    Haik's 154 CreateBrowserAgent kills could not be split into "child finished, result lost" versus
+    "child died first" because the envelope carried only tool, seconds and pids (read 2026-09-01)."""
+    now = time.time()
+    out: List[Dict[str, object]] = []
+    for s in delegation_children_born_after(session_id, since):
+        born = getattr(s, "created_at", None)
+        try:
+            age = round(now - born.timestamp(), 1) if born is not None else None
+        except Exception:
+            age = None
+        out.append({"status": str(getattr(s, "status", "") or ""), "age_s": age, "tools": len(getattr(s, "tool_latencies", {}) or {})})
+    return out
+
+
+@typechecked
 def unwedge(session_id: str, tool_name: str, outstanding_s: float) -> int:
     """CONT first: a STOPPED process queues TERM forever (the ghost-reaper lesson, ENG-196), so
     thaw it, then TERM, then KILL. Returns how many sidecars were put down."""
@@ -169,6 +205,7 @@ def unwedge(session_id: str, tool_name: str, outstanding_s: float) -> int:
                 "tool": tool_name,
                 "outstanding_s": round(outstanding_s, 1),
                 "pids": pids,
+                "children": children_summary(session_id, time.time() - outstanding_s),
             })
         except Exception:
             pass
