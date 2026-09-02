@@ -42,6 +42,7 @@ P_RELEASES: List[ReleaseNote] = [
             "Scrolling up in the wide side areas of a full-screen chat scrolls the conversation instead of being ignored, and does not snap you back to the bottom.",
             "Cards, the message box and settings panels no longer draw drop shadows, which were repainted on every pan for no visible gain.",
             "The green window button is Full Screen (or restore) only; the fill, halves and quarters tiling menu is gone.",
+            "Picking a very long chat back up no longer restarts it at the edge of the context window. The recap it rebuilds from is now bounded (the newest steps in full, older ones as one-line stubs, the rest counted), so a chat with hundreds of tool calls resumes at a fraction of the size and stops compacting on its first step.",
         ],
     ),
     ReleaseNote(
