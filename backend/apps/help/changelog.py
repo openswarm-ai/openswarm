@@ -43,6 +43,7 @@ P_RELEASES: List[ReleaseNote] = [
             "Cards, the message box and settings panels no longer draw drop shadows, which were repainted on every pan for no visible gain.",
             "The green window button is Full Screen (or restore) only; the fill, halves and quarters tiling menu is gone.",
             "Picking a very long chat back up no longer restarts it at the edge of the context window. The recap it rebuilds from is now bounded (the newest steps in full, older ones as one-line stubs, the rest counted), so a chat with hundreds of tool calls resumes at a fraction of the size and stops compacting on its first step.",
+            "A chat that was still running when OpenSwarm's engine shut down now says so in the chat, with a line to send a message to continue, instead of looking like you stopped it yourself.",
         ],
     ),
     ReleaseNote(
