@@ -14,7 +14,9 @@
 // blindness it was meant to fix: the agent stalls either way, and now the human's sign-in is burnt
 // too. So the opener relationship wins; making popups agent-addressable has to happen some other
 // way (register the native popup's webContents id, which the CDP layer can already drive).
-function popupRoute(contentsType, disposition) {
+// isAppPreview = the opener is an App card: a browser card lives in BROWSER_PARTITION with none of the app's cookies, so the app's own PDF export would land on its sign-in page; a native child shares the opener's session.
+function popupRoute(contentsType, disposition, isAppPreview = false) {
+  if (isAppPreview) return 'native';
   if (disposition === 'foreground-tab' || disposition === 'background-tab') return 'card';
   return 'native';
 }

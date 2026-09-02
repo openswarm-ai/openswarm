@@ -477,6 +477,8 @@ const ViewPreview = forwardRef<ViewPreviewHandle, Props>(({
           src={effectiveSrc}
           // Autoplay matches BrowserCard default; plugins/nodeintegration stay off.
           webpreferences="autoplayPolicy=no-user-gesture-required"
+          // Without this Electron drops every target=_blank link and window.open before the shell's popup router runs (an app's PDF exports did nothing); string-valued because React drops boolean unknown attrs.
+          {...({ allowpopups: 'true' } as any)}
           style={{
             width: '100%',
             height: '100%',

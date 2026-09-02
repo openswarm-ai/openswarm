@@ -161,12 +161,14 @@ const AppShell: React.FC = () => {
     };
   }, []);
 
+  const browserCards = useAppSelector((s) => s.dashboardLayout.browserCards);
   const openUrlInBrowser = useCallback((url: string, webContentsId?: number, background?: boolean) => {
     const dashMatch = location.pathname.match(/^\/dashboard\/(.+)/);
     if (dashMatch) {
       if (webContentsId != null) {
         const browserId = findBrowserByWebContentsId(webContentsId);
-        if (browserId) {
+        // App cards sit in the same webview registry so agents can drive them; a popup from one must become a browser card, not a tab on a browser that does not exist (addBrowserTab drops those silently).
+        if (browserId && browserCards[browserId]) {
           // Middle-click / background-tab disposition: add the tab but don't steal focus from the current one, like a real browser.
           dispatch(addBrowserTab({ browserId, url, makeActive: !background }));
           return;
@@ -190,7 +192,7 @@ const AppShell: React.FC = () => {
         });
       }
     }
-  }, [location.pathname, dashboardList, dispatch, navigate]);
+  }, [location.pathname, dashboardList, browserCards, dispatch, navigate]);
 
   useEffect(() => {
     let lastUrl = '';

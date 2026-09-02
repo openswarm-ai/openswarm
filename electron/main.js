@@ -3056,9 +3056,11 @@ app.on('web-contents-created', (_event, contents) => {
   }
 
   contents.setWindowOpenHandler(({ url, disposition }) => {
+    // Same test the context menu uses: an App card's webview shares the main window's session, a browser card does not.
+    const isAppPreview = contents.getType() === 'webview' && !!mainWindow && !mainWindow.isDestroyed() && contents.session === mainWindow.webContents.session;
     // A popup opened by a browser card must become a card too, or it lands in a native window with
     // no browser_id and the agent driving that card goes blind mid-auth (ENG-279).
-    if (popupRoute(contents.getType(), disposition) === 'card') {
+    if (popupRoute(contents.getType(), disposition, isAppPreview) === 'card') {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('webview-new-window', url, contents.id, disposition);
       }
@@ -3082,8 +3084,9 @@ app.on('web-contents-created', (_event, contents) => {
       action: 'allow',
       overrideBrowserWindowOptions: {
         parent: mainWindow || undefined,
-        width: 520,
-        height: 680,
+        // 520x680 is an OAuth consent screen; an app's PDF or report needs a page-sized window.
+        width: isAppPreview ? 1000 : 520,
+        height: isAppPreview ? 780 : 680,
         center: true,
         fullscreen: false,
         fullscreenable: false,

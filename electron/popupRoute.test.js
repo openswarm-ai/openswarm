@@ -37,3 +37,24 @@ test('both routes are reachable, so the decision is not one-armed', () => {
   const seen = new Set([popupRoute('webview', 'new-window'), popupRoute('webview', 'foreground-tab')]);
   assert.equal(seen.size, 2, `only reached ${[...seen].join(', ')}`);
 });
+
+test('a popup from an App card goes native whatever the disposition: a browser card would not carry the app session', () => {
+  for (const d of ['foreground-tab', 'background-tab', 'new-window', undefined]) {
+    assert.equal(popupRoute('webview', d, true), 'native', `disposition ${d} from an app preview was reopened in the browser partition`);
+  }
+});
+
+test('the app-preview flag defaults off, so browser cards keep the ENG-279 routing', () => {
+  assert.equal(popupRoute('webview', 'foreground-tab'), 'card');
+  assert.equal(popupRoute('webview', 'foreground-tab', false), 'card');
+});
+
+test('main.js hands the app-preview verdict to popupRoute instead of deciding inline', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+  const handler = main.slice(main.indexOf('contents.setWindowOpenHandler(({ url, disposition })'));
+  const call = handler.slice(0, handler.indexOf('=== \'card\''));
+  assert.match(call, /popupRoute\(contents\.getType\(\), disposition, isAppPreview\)/, 'the handler must pass isAppPreview through');
+  assert.match(call, /contents\.session === mainWindow\.webContents\.session/, 'app preview is recognised by session, the same test the context menu uses');
+});
