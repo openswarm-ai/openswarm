@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from typeguard import typechecked
 import os
 import re
@@ -22,6 +22,11 @@ SESSION_RECAP_CLOSE = "</openswarm_session_recap>"
 # Per-turn caps so the re-grounded recap stays compact (summaries, not replays) and cannot reinflate the context window from one giant tool input/output.
 RECAP_TOOL_INPUT_CAP = 200
 RECAP_TOOL_RESULT_CAP = 500
+# Whole-trail budget: a rebuilt session must start far below the compaction trigger, whatever the chat's length. ~10K tokens.
+RECAP_TRAIL_MAX_CHARS = 40_000
+# Older calls survive as bare stubs (the command, so it can be re-run) inside this second budget; older still fold to a count.
+RECAP_STUB_MAX_CHARS = 24_000
+RECAP_STUB_CHARS = 120
 
 # Inline budget for a spilled tool result, split head/tail. Same total as the old head-only 4KB, but a test summary or build verdict lives at the END of the output and head-only threw it away every time.
 SPILL_HEAD_CHARS = 2_500
@@ -133,7 +138,7 @@ def get_branch_messages(session) -> List:
 
 
 @typechecked
-def trail_lines(messages, cutoff_msg_id: Optional[str] = None) -> List[str]:
+def trail_lines(messages, cutoff_msg_id: Optional[str] = None, max_trail_chars: int = RECAP_TRAIL_MAX_CHARS) -> List[str]:
     """The user's asks and the tool trail, and NEVER a line of model-authored prose.
 
     Extracted so every renderer bound for a model's context shares one definition of what is safe
@@ -163,7 +168,67 @@ def trail_lines(messages, cutoff_msg_id: Optional[str] = None) -> List[str]:
                 tool_name = m.content.get("tool_name") if isinstance(m.content, dict) else None
                 label = f"Tool result ({tool_name})" if tool_name else "Tool result"
                 lines.append(f"{label}: {strip_forged_sentinels(body)}")
-    return lines
+    return bound_trail(lines, max_trail_chars)
+
+
+@typechecked
+def bound_trail(lines: List[str], max_trail_chars: int) -> List[str]:
+    """Three tiers, newest first: full lines within `max_trail_chars`; then bare re-runnable call
+    stubs (no result lines, each cut to RECAP_STUB_CHARS) within RECAP_STUB_MAX_CHARS; then ONE
+    counted line for everything older. Asks are never dropped. Aging alone left one full line per
+    tool call forever: a real 766-call chat rebuilt with a 98K-token recap, so its first request was
+    192K tokens against a 180K trigger and the CLI compacted before the second tool call, every time
+    (the Recall Radar thrash, 2026-09-01)."""
+    p_tool = [i for i, l in enumerate(lines) if l.startswith("Tool call") or l.startswith("Tool result")]
+    if not p_tool:
+        return lines
+    p_spent = 0
+    p_full_from = len(p_tool)
+    for k in range(len(p_tool) - 1, -1, -1):
+        p_spent += len(lines[p_tool[k]]) + 1
+        if p_spent > max_trail_chars:
+            break
+        p_full_from = k
+    if p_full_from == 0:
+        return lines
+    p_stub: Dict[int, str] = {}
+    p_stub_spent = 0
+    p_stub_from = p_full_from
+    for k in range(p_full_from - 1, -1, -1):
+        i = p_tool[k]
+        if not lines[i].startswith("Tool call"):
+            continue
+        p_line = lines[i][:RECAP_STUB_CHARS]
+        if p_stub_spent + len(p_line) + 1 > RECAP_STUB_MAX_CHARS:
+            break
+        p_stub_spent += len(p_line) + 1
+        p_stub[i] = p_line
+        p_stub_from = k
+    p_folded_idx = p_tool[:p_stub_from]
+    p_counts: Dict[str, int] = {}
+    for i in p_folded_idx:
+        if lines[i].startswith("Tool call: "):
+            p_name = lines[i][len("Tool call: "):].split("(", 1)[0].strip() or "tool"
+            p_counts[p_name] = p_counts.get(p_name, 0) + 1
+    p_calls = sum(p_counts.values())
+    p_by_tool = ", ".join(f"{n} {c}" for n, c in sorted(p_counts.items(), key=lambda kv: -kv[1])[:8])
+    p_fold = f"[{p_calls} earlier tool calls are not shown to save space" + (f": {p_by_tool}" if p_by_tool else "") + "]"
+    p_folded = set(p_folded_idx)
+    p_middle = set(p_tool[p_stub_from:p_full_from])
+    p_out: List[str] = []
+    p_fold_written = p_calls == 0
+    for i, l in enumerate(lines):
+        if i in p_folded:
+            if not p_fold_written:
+                p_out.append(p_fold)
+                p_fold_written = True
+            continue
+        if i in p_middle:
+            if i in p_stub:
+                p_out.append(p_stub[i])
+            continue
+        p_out.append(l)
+    return p_out
 
 
 @typechecked
