@@ -10,7 +10,7 @@ from typing import Optional
 
 from typeguard import typechecked
 
-from backend.apps.agents.core.models import AgentSession
+from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
 from backend.apps.agents.manager.session.session_store import (
     load_all_session_data,
@@ -47,6 +47,12 @@ def running_under_test() -> bool:
 
 
 from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtocol
+
+
+SHUTDOWN_STOP_NOTE = (
+    "This chat was still running when OpenSwarm's engine shut down, so it stopped here; that was not "
+    "your Stop. Send a message to continue from where it left off."
+)
 
 
 class SessionPersistence(AgentManagerProtocol):
@@ -134,6 +140,10 @@ class SessionPersistence(AgentManagerProtocol):
         for session_id, session in list(self.sessions.items()):
             if session.status in ("running", "waiting_approval"):
                 session.status = "stopped"
+                # Say who stopped it. A chat flushed as plain "stopped" reads exactly like the user's own
+                # Stop, and when something else killed the backend (an agent's pkill, 2026-09-01) the
+                # user's running work vanished with nothing saying why: silent loss, row 1.
+                session.messages.append(Message(role="system", content=SHUTDOWN_STOP_NOTE, branch_id=session.active_branch_id))
             session.closed_at = None
             for req in list(session.pending_approvals):
                 ws_manager.resolve_approval(req.id, {"behavior": "deny", "message": "Server shutting down"})
