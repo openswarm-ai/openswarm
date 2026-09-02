@@ -173,6 +173,7 @@ class Messaging(AgentManagerProtocol):
             session.empty_finish_surfaced = False
             session.auth_retry_used = False
             session.stale_tool_schema_retry_used = False
+            session.external_kill_retry_used = False
             # The repeat-quit floor and the vanishing-quit rule key on this; one false positive used to arm both for the session's life (ENG-364).
             session.empty_finish_total = 0
             # The borrowed API key was for one ask, and this is a new one; back to the lane they chose.

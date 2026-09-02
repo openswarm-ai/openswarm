@@ -99,3 +99,26 @@ def try_stale_tool_schema_self_heal(session: AgentSession) -> bool:
     # resend once the router was warm, which is what dates the failure to timing, not the transcript.
     session.pending_continuation_delay_s = 20
     return True
+
+
+EXTERNAL_KILL_RETRY_PROMPT = (
+    "The engine process running you was stopped from outside and has been restarted with this same "
+    "conversation. Carry on from exactly where you left off; if you were in the middle of a tool "
+    "step, redo that one step."
+)
+
+
+@typechecked
+def try_external_kill_self_heal(session: AgentSession) -> bool:
+    """One respawn for a CLI killed from outside (SIGTERM/SIGKILL with nothing on stderr): the new
+    process resumes the same transcript, so the turn continues on top of its work instead of being
+    carded and rebuilt. Its own budget, like the other one-shots; a second kill inside the same ask
+    means something on the machine is hunting the process and the user is owed the honest card."""
+    if session.external_kill_retry_used or session.pending_continuation:
+        return False
+    session.external_kill_retry_used = True
+    session.needs_respawn = True
+    session.pending_continuation = True
+    session.pending_continuation_prompt = EXTERNAL_KILL_RETRY_PROMPT
+    session.pending_continuation_delay_s = 2
+    return True

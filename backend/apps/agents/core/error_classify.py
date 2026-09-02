@@ -464,6 +464,23 @@ def is_stale_tool_schema_error(exc: BaseException, extra_text: str = "") -> bool
 # narrow. 401 stays out (a rotating token really does heal, which is why the reset-hint rule exists),
 # and so do 408/429. Matched only in status POSITION, so a "400" in a line number or a byte count
 # cannot promote itself into a verdict (ENG-365 learned that the hard way with "line 401,").
+P_KILLED_EXIT = re.compile(r"Command failed with exit code (143|137)\b")
+
+
+@typechecked
+def is_external_kill_error(exc: BaseException, extra_text: str = "") -> bool:
+    """The CLI process died of SIGTERM (143) or SIGKILL (137) with nothing of its own to say. Seen
+    2026-09-01 on a forked real chat (2 of 3 runs, 11-23 s after connect, empty stderr, no assistant
+    output yet) and across the fleet (one install 30x in an hour); nothing in our logs sends it. The
+    conversation is intact in the CLI's own transcript, so a respawn that RESUMES it is the cure; the
+    generic branch used to card it and force the expensive rebuild instead. A tail that carries an
+    error of its own is some other failure wearing the exit code, and is left to the other branches."""
+    if not P_KILLED_EXIT.search(f"{exc!s}"):
+        return False
+    tail = (extra_text or "").strip()
+    return not re.search(r"error", tail, re.IGNORECASE)
+
+
 P_PERMANENT_STATUS = re.compile(
     r"(?:API\s+Error:\s*|HTTP\s+|status(?:\s*code)?\s*[:=]\s*|\[)\s*(?:400|422)\b",
     re.IGNORECASE,

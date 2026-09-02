@@ -16,6 +16,7 @@ from backend.apps.agents.core.error_classify import (
     is_context_overflow_error,
     is_long_context_error,
     is_context_pressure_death,
+    is_external_kill_error,
     is_stale_tool_schema_error,
     is_transient_capacity_error,
     is_free_trial_exhausted,
@@ -199,6 +200,50 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             })
         except Exception:
             logger.debug("submit_diagnostic stale_tool_schema failed", exc_info=True)
+        return
+
+    # Same shape, different killer: the CLI process died of a signal with nothing to say for itself.
+    # The transcript is intact on disk, so a respawn that resumes it is the cure; the generic branch
+    # below would card it and force the recap rebuild, which on a long chat is the cliff itself.
+    if is_external_kill_error(e, extra_text=p_stderr_tail):
+        from backend.apps.agents.manager.streaming.auth_retry import try_external_kill_self_heal
+        if try_external_kill_self_heal(session):
+            logger.warning(f"Agent {session_id}: the CLI process was killed from outside ({str(e).splitlines()[0]}); respawning it and resuming the same transcript")
+            try:
+                from backend.apps.service.client import submit_diagnostic
+                submit_diagnostic({
+                    "kind": "recovered",
+                    "subkind": "external_kill_respawned",
+                    "session_id": session_id,
+                    "model": session.model,
+                    "error_preview": redact_for_telemetry(str(e), limit=200),
+                })
+            except Exception:
+                logger.debug("submit_diagnostic external_kill_respawned failed", exc_info=True)
+            return
+        logger.warning(f"Agent {session_id}: the CLI was killed from outside again after a respawn; carding it")
+        friendly_msg = (
+            "Something on this computer, not OpenSwarm, stopped the agent's engine process twice in a "
+            "row while it was working. Its work so far is above; send your message again to continue."
+        )
+        error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+        absorb_repeat_card(session, error_msg)
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": error_msg.model_dump(mode="json"),
+        })
+        try:
+            from backend.apps.service.client import submit_diagnostic
+            submit_diagnostic({
+                "kind": "model_error",
+                "subkind": "external_kill_respawn_exhausted",
+                "flight": flight_recorder.build_envelope(session_id, "model_error", "external_kill", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
+                "session_id": session_id,
+                "model": session.model,
+                "error_preview": redact_for_telemetry(str(e), limit=400),
+            })
+        except Exception:
+            logger.debug("submit_diagnostic external_kill_respawn_exhausted failed", exc_info=True)
         return
 
     if is_context_overflow_error(e, extra_text=p_stderr_tail):
