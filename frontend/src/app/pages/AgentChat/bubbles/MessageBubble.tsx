@@ -913,7 +913,7 @@ const MessageBubble: React.FC<Props> = React.memo((props) => {
               Something went wrong on that one. Send your message again to retry.
             </Typography>
             <Box component="details" sx={{ fontSize: '0.75rem', color: c.text.tertiary }}>
-              <Box component="summary" sx={{ cursor: 'pointer', userSelect: 'none' }}>Details</Box>
+              <Box component="summary" sx={{ cursor: 'pointer', userSelect: 'none', '&:focus:not(:focus-visible)': { outline: 'none' } }}>Details</Box>
               <Box component="pre" sx={{ m: 0, mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit' }}>
                 {sysText}
               </Box>
