@@ -6,7 +6,6 @@ failed to load looked identical to one that was working. This reads the verdict 
 start and says, loudly, what every chat on the machine just lost.
 """
 import logging
-import os
 from typing import Literal
 from typeguard import typechecked
 

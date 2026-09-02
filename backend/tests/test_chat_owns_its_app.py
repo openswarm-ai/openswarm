@@ -10,7 +10,6 @@ is populated ONLY by the dashboard element picker. Nothing linked "this session 
 to "this session may edit it".
 """
 
-import pytest
 
 from backend.apps.agents.manager.prompt import prompt_context as p_ctx
 

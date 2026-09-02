@@ -77,7 +77,7 @@ def test_a_turn_that_already_spoke_ends_completed_when_the_budget_is_spent(monke
         session.pending_continuation = False
         p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session)
     session.pending_continuation = False
-    session, _events = p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session, emitted=True)
+    session, p_events = p_drive(monkeypatch, ConnectionError("network is unreachable"), session=session, emitted=True)
     assert session.status == "completed"
 
 

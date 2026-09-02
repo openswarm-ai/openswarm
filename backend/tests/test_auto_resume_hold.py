@@ -34,8 +34,8 @@ def test_only_an_explicit_one_disarms_resume(monkeypatch):
     try:
         assert p_sp.auto_resume_held_because() is None
     finally:
-        import pytest as _p
-        sys.modules["pytest"] = _p
+        import pytest as p_mod
+        sys.modules["pytest"] = p_mod
 
 
 def test_pytest_still_holds_it_as_the_fallback():

@@ -59,7 +59,7 @@ def test_the_decline_contract_is_unchanged():
 import asyncio
 
 
-class _RecordingTools:
+class P_RecordingTools:
     def __init__(self):
         self.calls = []
 
@@ -68,9 +68,9 @@ class _RecordingTools:
         return {"text": "x" * 5000}
 
 
-def _run(task):
+def p_run(task):
     from backend.apps.agents.browser.browser_read_script import run_read_script
-    tools = _RecordingTools()
+    tools = P_RecordingTools()
     out = asyncio.run(run_read_script(
         aux_client=object(), aux_model="cheap-model", task=task,
         browser_id="b1", tab_id="t1", execute_tool=tools, current_url="https://example.com",
@@ -79,7 +79,7 @@ def _run(task):
 
 
 def test_run_read_script_declines_a_route_without_reading_the_page():
-    out, calls = _run(
+    out, calls = p_run(
         "Start at https://en.wikipedia.org/wiki/HTTP . From that page CLICK through to HTTP/2, "
         "then from there to QUIC, and give me the first sentence of each."
     )

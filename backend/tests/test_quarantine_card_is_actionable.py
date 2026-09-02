@@ -12,8 +12,8 @@ import re
 SRC = open("backend/apps/agents/manager/run/handle_run_error.py", encoding="utf-8").read()
 # Anchor on THIS card's own words: the file holds several `friendly_msg = (` blocks and slicing the
 # first one silently tested the long-context card instead.
-_start = SRC.index("bundled agent runtime")
-CARD = SRC[_start:SRC.index("error_msg = Message(", _start)]
+p_start = SRC.index("bundled agent runtime")
+CARD = SRC[p_start:SRC.index("error_msg = Message(", p_start)]
 
 
 def test_it_leads_with_the_fix_that_always_works():

@@ -73,7 +73,7 @@ async def test_a_bounce_cannot_report_success_after_killing_the_router(monkeypat
 
     monkeypatch.setattr(rp, "ensure_running", p_ensure)
     monkeypatch.setattr(bac.router_process, "ensure_running", p_ensure)
-    monkeypatch.setattr(bac.asyncio, "sleep", lambda *_a, **_k: p_noop())
+    monkeypatch.setattr(bac.asyncio, "sleep", lambda *p_a, **p_k: p_noop())
 
     async def p_noop():
         return None

@@ -10,7 +10,6 @@ Queueing beat the older behaviour (a silent drop), but silent-queued and silent-
 identical from the outside, which is the thing this pins.
 """
 
-import asyncio
 import inspect
 
 from backend.apps.agents.manager import Messaging

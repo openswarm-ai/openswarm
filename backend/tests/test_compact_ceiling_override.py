@@ -7,7 +7,6 @@ so the SAME code path runs in seconds. It must be inert unless deliberately set,
 trust a junk value.
 """
 
-import os
 
 import pytest
 

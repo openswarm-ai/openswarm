@@ -15,7 +15,6 @@ from backend.apps.agents.agent_manager import agent_manager
 from backend.apps.agents.agents import close_session as user_close_route
 from backend.apps.agents.agents import stop_agent as user_stop_route
 from backend.apps.agents.core.models import AgentSession
-from backend.apps.agents.manager.streaming import unwedge_sidecar
 from backend.apps.agents.manager.streaming import delegation_watchdog
 
 

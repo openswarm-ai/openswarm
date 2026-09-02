@@ -8,7 +8,6 @@ class, because the 4th real blocked prompt was already well-worded ("Quick hando
 were you working on... Summarize the build plan you landed on"). The fix is that the prompt is
 never written."""
 
-import json
 
 from backend.apps.agents import invoke_agent_mcp_server as inv
 from backend.apps.agents.core.models import AgentSession, Message
