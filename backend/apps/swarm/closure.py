@@ -197,6 +197,16 @@ def stage_upload(raw: bytes, filename: str) -> tuple[str, Manifest, list[str]]:
             sandbox = unpack(raw)
             try:
                 raw_manifest = read_manifest(sandbox)
+            except BundleError:
+                shutil.rmtree(sandbox, ignore_errors=True)
+                raise
+            # "manifest.json" is a name a dozen other tools use; a skill zip that happens to carry
+            # one is not a broken bundle, it is not a bundle at all. Decide on the CONTENT, so a
+            # tampered bundle of ours still fails loudly on the strict path below.
+            if not looks_like_our_manifest(raw_manifest):
+                shutil.rmtree(sandbox, ignore_errors=True)
+                return stage_skill_from_zip(raw, filename, warnings)
+            try:
                 verify_checksum(sandbox, raw_manifest)
                 manifest = Manifest(**raw_manifest)
                 validate_manifest(manifest)
@@ -215,6 +225,14 @@ def stage_upload(raw: bytes, filename: str) -> tuple[str, Manifest, list[str]]:
     if os.path.splitext(filename or "")[1].lower() not in (".md", ".markdown"):
         raise BundleError("unrecognized file; expected a .swarm bundle or a .md skill")
     return p_stage_skill_from_markdown(raw, filename, warnings)
+
+
+def looks_like_our_manifest(raw_manifest: object) -> bool:
+    """Ours, by the three keys only a .swarm manifest has. A tampered or truncated bundle of ours
+    still passes this and goes on to fail its checksum, which is the half that must not get lost."""
+    if not isinstance(raw_manifest, dict):
+        return False
+    return all(key in raw_manifest for key in ("bundle_id", "root", "entities"))
 
 
 def p_name_from_filename(filename: str) -> str:
