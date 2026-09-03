@@ -121,10 +121,10 @@ def test_a_caller_names_a_listing_id_never_a_url():
 
 
 def test_install_stages_through_the_same_door_as_a_dropped_file():
-    from backend.apps.swarm import swarm as swarm_routes
+    from backend.apps.marketplace import install_jobs
 
-    assert marketplace.stage_bundle_for_import is swarm_routes.stage_bundle_for_import
-    body = inspect.getsource(marketplace.install_preflight)
-    assert "stage_bundle_for_import" in body
+    body = inspect.getsource(install_jobs.run_job)
+    assert "from backend.apps.swarm.swarm import stage_bundle_for_import" in body
     for forbidden in ("write_folder_skill", "closure.commit", "import_commit"):
         assert forbidden not in body, "install must never write; it stages and lets the user confirm"
+        assert forbidden not in inspect.getsource(marketplace), "the routes must never write either"

@@ -82,7 +82,10 @@ done
 # single-process uvicorn.
 if [[ "${OPENSWARM_DEV:-}" == "1" ]]; then
     echo "OPENSWARM_DEV=1 detected, running uvicorn with --reload."
+    # A reload SIGTERMs the worker and waits for it; when the graceful shutdown wedges (2026-09-03: worker idle,
+    # listen queue 128/128, port dead for 13 minutes) the cap turns that wait into a real restart.
     python3 -m uvicorn backend.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload \
+        --timeout-graceful-shutdown 10 \
         --reload-dir "$BACKEND_DIR_ABSPATH" \
         "${UVICORN_EXCLUDE_ARGS[@]}"
 else

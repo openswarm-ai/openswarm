@@ -5,7 +5,6 @@ Both directions pinned: deltas stay session-only, and every other event still re
 dashboard socket, or narrator pills and status chips would go blind."""
 
 import pytest
-from unittest.mock import AsyncMock
 
 from backend.apps.agents.core.ws_manager import ws_manager
 

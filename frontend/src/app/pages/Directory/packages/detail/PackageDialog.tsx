@@ -20,13 +20,14 @@ interface Props {
   listing: Listing | null;
   onClose: () => void;
   state: PillState;
+  progress?: number | null;
   onInstall: () => void;
   onOpen: () => void;
 }
 
 // The package sheet: one Install action, no file to download. The bundle is fetched and reviewed by the
 // same import path a dropped .swarm takes, so the raw archive has no job on a store page.
-export default function PackageDialog({ listing, onClose, state, onInstall, onOpen }: Props) {
+export default function PackageDialog({ listing, onClose, state, progress, onInstall, onOpen }: Props) {
   const c = useClaudeTokens();
   if (!listing) return null;
   const details = detailsForListing(listing);
@@ -69,7 +70,7 @@ export default function PackageDialog({ listing, onClose, state, onInstall, onOp
               </Typography>
               <Typography sx={{ mt: 0.4, fontSize: '0.8125rem', color: c.text.muted }}>{meta}</Typography>
             </Box>
-            <InstallPill state={state} disabled={!listing.download_url} onGet={onInstall} onOpen={onOpen} />
+            <InstallPill state={state} progress={progress} disabled={!listing.download_url} onGet={onInstall} onOpen={onOpen} />
           </Stack>
 
           {listing.description && (

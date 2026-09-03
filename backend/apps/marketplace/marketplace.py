@@ -14,14 +14,9 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from backend.apps.marketplace import catalog
+from backend.apps.marketplace.install_jobs import InstallJob, JobPhase, get_job, run_job, start_job
 from backend.apps.marketplace.installs import InstallRecord, load_installs, record_install
-from backend.apps.marketplace.package_download import (
-    DownloadRefused,
-    download_package,
-    package_filename,
-)
 from backend.apps.swarm.models import ImportPreflightResponse
-from backend.apps.swarm.swarm import stage_bundle_for_import
 from backend.config.Apps import SubApp
 
 logger = logging.getLogger(__name__)
@@ -48,20 +43,55 @@ async def get_listings(refresh: bool = False) -> catalog.CatalogResponse:
     return await asyncio.to_thread(catalog.load_catalog, refresh)
 
 
-@marketplace.router.post("/install/preflight")
-async def install_preflight(body: InstallRequest) -> ImportPreflightResponse:
-    """Download the listing's bundle and stage it for the ordinary import confirm flow."""
+class InstallStartResponse(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
+    job_id: str
+
+
+class InstallJobStatus(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
+    job_id: str
+    phase: JobPhase
+    received: int
+    total: int
+    preflight: ImportPreflightResponse | None = None
+    error: str | None = None
+
+
+def job_status(job: InstallJob) -> InstallJobStatus:
+    return InstallJobStatus(job_id=job.id, phase=job.phase, received=job.received, total=job.total, preflight=job.preflight, error=job.error)
+
+
+# Fire-and-forget tasks need a reference or the loop may drop them mid-download.
+P_RUNNING: set[asyncio.Task[None]] = set()
+
+
+@marketplace.router.post("/install/start")
+async def install_start(body: InstallRequest) -> InstallStartResponse:
+    """Start downloading the listing's bundle; the job stages it for the ordinary import confirm
+    flow and the pill polls /install/{job_id} for byte progress and the review."""
     listing = await asyncio.to_thread(catalog.find_listing, body.id)
     if listing is None:
         raise HTTPException(status_code=404, detail="that package is not in the catalog any more")
     if not listing.download_url:
         raise HTTPException(status_code=400, detail="this listing has no package file yet")
-    try:
-        raw = await asyncio.to_thread(download_package, listing.download_url)
-    except DownloadRefused as e:
-        logger.warning("marketplace download refused for %s: %s", listing.id, e)
-        raise HTTPException(status_code=400, detail=str(e))
-    return stage_bundle_for_import(raw, package_filename(listing.id, listing.title))
+    job = start_job(listing.id)
+    task = asyncio.create_task(asyncio.to_thread(run_job, job, listing))
+    P_RUNNING.add(task)
+    task.add_done_callback(P_RUNNING.discard)
+    return InstallStartResponse(job_id=job.id)
+
+
+@marketplace.router.get("/install/{job_id}")
+async def install_status(job_id: str) -> InstallJobStatus:
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="that install is no longer running; start it again")
+    if job.phase == "failed":
+        logger.warning("marketplace install failed for %s: %s", job.listing_id, job.error)
+    return job_status(job)
 
 
 class InstallsResponse(BaseModel):

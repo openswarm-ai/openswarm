@@ -21,7 +21,8 @@ import PackageCard from './packages/PackageCard';
 import PackageDialog from './packages/detail/PackageDialog';
 import PackageBundleCard from './packages/PackageBundleCard';
 import PackageBundleDialog from './packages/detail/PackageBundleDialog';
-import { stagePackageInstall } from './packages/installPackage';
+import { stagePackageInstall, type InstallProgress } from './packages/installPackage';
+import { fractionOf } from './packages/installRing';
 import { fetchInstalls, installState, recordFor, recordInstall, type InstallRecord, type PillState } from './packages/installs';
 import { KIND_LABELS, isBundle, resolveBundleMembers, type Listing } from './packages/catalog';
 
@@ -43,6 +44,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
   const [openListing, setOpenListing] = useState<Listing | null>(null);
   const [openBundle, setOpenBundle] = useState<Listing | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [installs, setInstalls] = useState<Record<string, InstallRecord>>({});
   const [confirm, setConfirm] = useState<{ preflight: ImportPreflight; listingId: string } | null>(null);
   const [committing, setCommitting] = useState(false);
@@ -130,15 +132,18 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
   const install = async (listingId: string) => {
     setInstallingId(listingId);
     try {
-      const preflight = await stagePackageInstall(listingId);
+      const preflight = await stagePackageInstall(listingId, setProgress);
       if (marketplaceNeedsConfirm(preflight)) setConfirm({ preflight, listingId });
       else await commit(preflight, listingId);
     } catch (e: unknown) {
       setToast({ message: e instanceof Error ? e.message : "Couldn't download it. Try again.", severity: 'error' });
     } finally {
       setInstallingId(null);
+      setProgress(null);
     }
   };
+
+  const progressFor = (listingId: string): number | null => (installingId === listingId ? fractionOf(progress) : null);
 
   const installBundle = async (bundle: Listing) => {
     const members = resolveBundleMembers(bundle, listings).filter((m) => m.download_url);
@@ -213,6 +218,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
               key={listing.id}
               listing={listing}
               state={stateFor(listing)}
+              progress={progressFor(listing.id)}
               onOpen={() => setOpenListing(listing)}
               onGet={() => { void install(listing.id); }}
               onOpenInstalled={() => openInstalled(listing)}
@@ -257,6 +263,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
       <PackageDialog
         listing={openListing}
         state={openListing ? stateFor(openListing) : 'get'}
+        progress={openListing ? progressFor(openListing.id) : null}
         onInstall={() => { if (openListing) void install(openListing.id); }}
         onOpen={() => { if (openListing) openInstalled(openListing); }}
         onClose={() => setOpenListing(null)}
@@ -265,6 +272,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
         bundle={openBundle}
         members={openBundle ? resolveBundleMembers(openBundle, listings) : []}
         stateOf={(id) => { const l = listings.find((x) => x.id === id); return l ? stateFor(l) : 'get'; }}
+        progressOf={progressFor}
         onOpenInstalled={(member) => openInstalled(member)}
         installing={installingId !== null}
         onInstallAll={() => { if (openBundle) void installBundle(openBundle); }}

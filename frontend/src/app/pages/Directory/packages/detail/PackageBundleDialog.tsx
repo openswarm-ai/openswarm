@@ -20,6 +20,7 @@ interface Props {
   bundle: Listing | null;
   members: Listing[];
   stateOf: (listingId: string) => PillState;
+  progressOf: (listingId: string) => number | null;
   onOpenInstalled: (listing: Listing) => void;
   onClose: () => void;
   onOpenMember: (member: Listing) => void;
@@ -30,7 +31,7 @@ interface Props {
 
 // A bundle has no package of its own: the sheet lists it, the dialog installs its members. There is no
 // file to download here on purpose; a store page installs, it does not hand out archives.
-export default function PackageBundleDialog({ bundle, members, stateOf, onOpenInstalled, onClose, onOpenMember, onInstallAll, onInstallMember, installing }: Props) {
+export default function PackageBundleDialog({ bundle, members, stateOf, progressOf, onOpenInstalled, onClose, onOpenMember, onInstallAll, onInstallMember, installing }: Props) {
   const c = useClaudeTokens();
   if (!bundle) return null;
   const installable = members.filter((m) => m.download_url);
@@ -116,7 +117,7 @@ export default function PackageBundleDialog({ bundle, members, stateOf, onOpenIn
                         {KIND_LABELS[m.kind] || m.kind || 'Package'}{m.version ? ` · v${m.version}` : ''}
                       </Typography>
                     </Box>
-                    <InstallPill state={stateOf(m.id)} disabled={!m.download_url} onGet={() => onInstallMember(m.id)} onOpen={() => onOpenInstalled(m)} size="sm" />
+                    <InstallPill state={stateOf(m.id)} progress={progressOf(m.id)} disabled={!m.download_url} onGet={() => onInstallMember(m.id)} onOpen={() => onOpenInstalled(m)} size="sm" />
                   </Box>
                 );
               })}

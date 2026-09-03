@@ -12,13 +12,14 @@ import type { PillState } from './installs';
 interface Props {
   listing: Listing;
   state: PillState;
+  progress?: number | null;
   onOpen: () => void;
   onGet: () => void;
   onOpenInstalled: () => void;
   onTag: (tag: string) => void;
 }
 
-export default function PackageCard({ listing, state, onOpen, onGet, onOpenInstalled, onTag }: Props) {
+export default function PackageCard({ listing, state, progress, onOpen, onGet, onOpenInstalled, onTag }: Props) {
   const c = useClaudeTokens();
   const tags = parseTags(listing.tags).slice(0, 3);
 
@@ -78,7 +79,7 @@ export default function PackageCard({ listing, state, onOpen, onGet, onOpenInsta
             {listing.author ? ` · ${listing.author}` : ''}
           </Typography>
         </Box>
-        <InstallPill state={state} disabled={!listing.download_url} onGet={onGet} onOpen={onOpenInstalled} size="sm" />
+        <InstallPill state={state} progress={progress} disabled={!listing.download_url} onGet={onGet} onOpen={onOpenInstalled} size="sm" />
       </Stack>
 
       <Typography
