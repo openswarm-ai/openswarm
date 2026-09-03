@@ -185,3 +185,31 @@ def test_a_frozen_ghost_is_thawed_before_being_signalled(monkeypatch):
     assert sg.SIGCONT in sent, "a stopped ghost never receives TERM unless it is thawed first"
     assert sent.index(sg.SIGCONT) < sent.index(sg.SIGTERM), "CONT must come before TERM"
     assert sg.SIGKILL in sent, "a ghost that ignored TERM must be escalated, not left running"
+
+
+def test_a_packaged_backend_counts_as_a_live_owner():
+    """The packaged spawn is `python -m backend.serve --port N` (no "uvicorn", no "backend.main" in
+    argv, on purpose). With only the dev shape recognised, a packaged boot found no owner at all and
+    the fail-closed guard turned every reap into a no-op: ghosts lived for 8 hours at 500% CPU."""
+    ws = os.path.abspath(mod.WORKSPACE_DIR)
+    args = f"100 /Applications/OpenSwarm.app/Contents/Resources/python-env/bin/python3 -m backend.serve --port 8324\n200 node {ws}/app/vite\n"
+    ppid = "100 1\n200 100\n"
+    with patch.object(mod.subprocess, "run", side_effect=p_ps(args, ppid)):
+        assert mod.find_ghost_runtime_pids() == []
+
+
+def test_a_packaged_backend_that_died_leaves_reapable_ghosts():
+    ws = os.path.abspath(mod.WORKSPACE_DIR)
+    args = f"50 python3 -m backend.serve --port 8324\n200 node {ws}/app/vite\n"
+    ppid = "50 1\n200 1\n"
+    with patch.object(mod.subprocess, "run", side_effect=p_ps(args, ppid)):
+        assert mod.find_ghost_runtime_pids() == [200]
+
+
+def test_the_two_backend_argv_shapes_are_the_ones_the_spawns_use():
+    """Both spawn shapes, pinned here and in electron/backendSpawnName.test.js; an app's own
+    `uvicorn backend.main` dev server inside a workspace is NOT a backend of ours."""
+    assert mod.is_backend_argv("python -m uvicorn backend.main:app --port 8324")
+    assert mod.is_backend_argv("/x/python-env/bin/python3 -m backend.serve --port 8324")
+    assert not mod.is_backend_argv("node /tmp/ws/frontend/node_modules/.bin/vite")
+    assert not mod.is_backend_argv("bash run.sh")

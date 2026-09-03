@@ -29,6 +29,17 @@ logger = logging.getLogger(__name__)
 REAP_GRACE_SECONDS = float(os.environ.get("OSW_REAP_GRACE_SECONDS", "1.5"))
 
 
+# The two ways a backend is spawned: dev `uvicorn backend.main:app` and the packaged
+# `python -m backend.serve` (argv deliberately free of "uvicorn" and "backend.main", see serve.py).
+# The packaged shape was missing here for a day, so every packaged reap found no owner and did nothing.
+BACKEND_ARGV_SHAPES = (("uvicorn", "backend.main"), ("-m", "backend.serve"))
+
+
+@typechecked
+def is_backend_argv(args: str) -> bool:
+    return any(all(token in args for token in shape) for shape in BACKEND_ARGV_SHAPES)
+
+
 @typechecked
 def p_live_backend_pids() -> set:
     """PIDs of every running backend. A workspace process descended from one of these is ALIVE and
@@ -40,7 +51,7 @@ def p_live_backend_pids() -> set:
         return set()
     pids = set()
     for line in (out.stdout or "").splitlines():
-        if "uvicorn" not in line or "backend.main" not in line:
+        if not is_backend_argv(line):
             continue
         head = line.strip().split(None, 1)
         if head and head[0].isdigit():
