@@ -65,7 +65,11 @@ import {
   wakePendingLoad,
   hasDomReady,
   type BrowserWebview,
+  type ElectronNativeImage,
 } from '@/shared/browserRegistry';
+import { interactionActive } from '@/shared/interactionPriority';
+import { perfBaseline } from '@/shared/perfBaseline';
+import { encodeShotWhenIdle } from '@/shared/encodeShotWhenIdle';
 import { captureBrowserShot } from '@/shared/captureBrowserShot';
 import { setLastInteractedBrowser } from '@/shared/browserFocus';
 import { isAgentDrivenBrowser } from '@/shared/isAgentDrivenBrowser';
@@ -96,6 +100,8 @@ import { useCanvasWindowResize } from './useCanvasWindowResize';
 const PILL_SHOT_WARMUP_MS = 800;
 const PILL_SHOT_REFRESH_MS = 5000;
 const PILL_SHOT_WARMUP_MAX_MS = 8000;
+// The pill miniature is 320px wide, so a retina-2x shot is plenty and a quarter of a full-page encode.
+const PILL_SHOT_MAX_W = 640;
 const MIN_W = 400;
 const MIN_H = 300;
 
@@ -1149,19 +1155,23 @@ const BrowserCard: React.FC<Props> = ({
     let inFlight = false;
     const freeze = (): void => {
       // Capturing a webview an agent is mid-command on is the SharedImage-mailbox renderer crash.
-      if (inFlight || isAnyBrowserBusy()) return;
+      // Mid-gesture the capture's PNG encode (160-200 ms) landed on the drag's own frames; the next 5 s tick catches up.
+      if (inFlight || isAnyBrowserBusy() || (!perfBaseline() && interactionActive())) return;
       const wv = webviewMap.current.get(activeTabId);
       // capturePage THROWS on a guest that hasn't reached dom-ready yet, and an uncaught one here kills the whole card tree.
       if (!wv || !hasDomReady(wv)) return;
-      let shot: Promise<{ isEmpty: () => boolean; toDataURL: () => string }> | undefined;
+      let shot: Promise<ElectronNativeImage> | undefined;
       try { shot = wv.capturePage(); } catch { return; }
       if (!shot) return;
       inFlight = true;
       shot.then((img) => {
         inFlight = false;
         if (cancelled || img.isEmpty()) return;
-        saveMinimizedShot(browserId, img.toDataURL());
-        setPillShotSettled(true);
+        encodeShotWhenIdle(img, PILL_SHOT_MAX_W, (dataUrl) => {
+          if (cancelled || !dataUrl) return;
+          saveMinimizedShot(browserId, dataUrl);
+          setPillShotSettled(true);
+        });
       }, () => { inFlight = false; });
     };
     freeze();

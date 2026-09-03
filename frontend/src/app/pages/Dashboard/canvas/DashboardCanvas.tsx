@@ -458,13 +458,11 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
             backgroundSize: washLayers.size,
             backgroundRepeat: washLayers.repeat,
           } : {}),
-          cursor: canvas.isPanning
-            ? 'grabbing'
-            : (canvas.spaceHeld || canvas.cmdHeld)
-              ? 'grab'
-              : selection.marquee
-                ? 'crosshair'
-                : 'default',
+          cursor: (canvas.spaceHeld || canvas.cmdHeld)
+            ? 'grab'
+            : selection.marquee
+              ? 'crosshair'
+              : 'default',
         }}
       >
 

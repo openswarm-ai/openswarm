@@ -89,7 +89,11 @@ export function useCanvasControls(
   const gridRef = useRef<HTMLDivElement>(null);
 
   const [state, setState] = useState<CanvasState>({ panX: 0, panY: 0, zoom: 1 });
-  const [isPanning, setIsPanning] = useState(false);
+  // The grab cursor is a style write, not state: a state flip on mousedown rendered the whole board synchronously (77-100 ms under load) before the first pan frame.
+  const setPanCursor = useCallback((panning: boolean) => {
+    const vp = viewportRef.current;
+    if (vp) vp.style.cursor = panning ? 'grabbing' : '';
+  }, []);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [cmdHeld, setCmdHeld] = useState(false);
 
@@ -535,7 +539,7 @@ export function useCanvasControls(
     e.preventDefault();
     cancelAnimation();
     cancelInertia();
-    setIsPanning(true);
+    setPanCursor(true);
     setCanvasInteractionActive(true);
     velocityHistoryRef.current = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
     panStartRef.current = {
@@ -544,7 +548,7 @@ export function useCanvasControls(
       panX: stateRef.current.panX,
       panY: stateRef.current.panY,
     };
-  }, [cancelAnimation, cancelInertia]);
+  }, [cancelAnimation, cancelInertia, setPanCursor]);
 
   // RAF-coalesce drag pan; setState per event caused "hop hop hop" feel. Velocity history still captures per-event for inertia accuracy.
   const dragRafRef = useRef<number | null>(null);
@@ -608,7 +612,7 @@ export function useCanvasControls(
       velocityHistoryRef.current = [];
     }
     panStartRef.current = null;
-    setIsPanning(false);
+    setPanCursor(false);
     setCanvasInteractionActive(false);
     // Inertia keeps writing live and commits when it settles; otherwise this gesture ends here.
     if (!didInertia) commitLive();
@@ -616,7 +620,7 @@ export function useCanvasControls(
     if (wasPanning && !didInertia) {
       springBackIfNeeded();
     }
-  }, [startInertia, springBackIfNeeded, commitLive]);
+  }, [startInertia, springBackIfNeeded, commitLive, setPanCursor]);
 
   // Releasing the button OUTSIDE the window means our window never sees the mouseup, so the pan latch
   // stayed armed and the canvas followed the cursor forever, with no way to escape the app (ENG-257).
@@ -626,7 +630,7 @@ export function useCanvasControls(
     const release = () => {
       if (panStartRef.current) {
         panStartRef.current = null;
-        setIsPanning(false);
+        setPanCursor(false);
         setCanvasInteractionActive(false);
         commitLive();
       }
@@ -642,7 +646,7 @@ export function useCanvasControls(
       window.removeEventListener('blur', release);
       window.removeEventListener('mousemove', onStrayMove, true);
     };
-  }, [commitLive]);
+  }, [commitLive, setPanCursor]);
 
   useEffect(() => {
     return () => { cancelAnimation(); cancelInertia(); };
@@ -953,7 +957,6 @@ export function useCanvasControls(
 
   return {
     ...state,
-    isPanning,
     spaceHeld,
     cmdHeld,
     viewportRef,

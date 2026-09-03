@@ -437,6 +437,9 @@ const AgentCard: React.FC<Props> = ({
 
   const DRAG_THRESHOLD = 3;
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; startPanX: number; startPanY: number } | null>(null);
+  // Stable callbacks so the memoized chat never re-renders for the card's own chrome (a drag, a glow): under load one such render cost 1.6 s.
+  const closeChat = useCallback(() => { dispatch(collapseSession(session.id)); }, [dispatch, session.id]);
+  const branchChat = useMemo(() => (onBranch ? (newId: string) => onBranch(session.id, newId) : undefined), [onBranch, session.id]);
   const [isDragging, setIsDragging] = useState(false);
   const [localDragPos, setLocalDragPos] = useState<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
@@ -1252,13 +1255,13 @@ const AgentCard: React.FC<Props> = ({
               <AgentChat
                 key={session.id}
                 sessionId={session.id}
-                onClose={() => dispatch(collapseSession(session.id))}
+                onClose={closeChat}
                 embedded
                 fullscreenChat={isFullscreen}
                 autoFocus={autoFocusInput}
                 isGlowing={isGlowingRedux && !glowFading}
                 onDismissGlow={dismissGlow}
-                onBranch={onBranch ? (newId: string) => onBranch(session.id, newId) : undefined}
+                onBranch={branchChat}
               />
             ) : (
               <Box sx={{ flex: 1 }} />

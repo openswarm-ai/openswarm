@@ -8,6 +8,9 @@ import {
   type BrowserCardPosition,
 } from '@/shared/state/dashboardLayoutSlice';
 import { getWebview } from '@/shared/browserRegistry';
+import { interactionActive } from '@/shared/interactionPriority';
+import { perfBaseline } from '@/shared/perfBaseline';
+import { encodeShotWhenIdle } from '@/shared/encodeShotWhenIdle';
 import { getActivity, isAnyBrowserBusy } from '@/shared/browserCommandHandler';
 import { isKeepAliveBrowser } from '@/shared/browserFocus';
 import { captureTabCapsule } from '@/shared/browserStateCapsule';
@@ -275,8 +278,8 @@ async function refreshVisibleFrames(
   isSuspended: (id: string) => boolean,
   vp: Viewport,
 ): Promise<void> {
-  // Capturing while an agent drives a webview is the SharedImage-mailbox crash class; skip the whole pass.
-  if (isAnyBrowserBusy()) return;
+  // Capturing while an agent drives a webview is the SharedImage-mailbox crash class; skip the whole pass. Same mid-gesture: this ran 800 ms after a pan committed, i.e. on the next pan's first frames.
+  if (isAnyBrowserBusy() || (!perfBaseline() && interactionActive())) return;
   for (const [id, card] of Object.entries(cards)) {
     if (isSuspended(id)) continue;
     if (isMinimized(id)) continue;
@@ -315,9 +318,7 @@ async function captureCard(id: string, card: BrowserCardPosition): Promise<strin
       new Promise<null>((resolve) => setTimeout(() => resolve(null), CAPTURE_TIMEOUT_MS)),
     ]);
     if (!image || image.isEmpty()) return '';
-    return image.getSize().width > SNAPSHOT_MAX_W
-      ? image.resize({ width: SNAPSHOT_MAX_W, quality: 'good' }).toDataURL()
-      : image.toDataURL();
+    return await new Promise<string>((resolve) => encodeShotWhenIdle(image, SNAPSHOT_MAX_W, resolve));
   } catch {
     return '';
   }

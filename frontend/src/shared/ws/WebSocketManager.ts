@@ -36,6 +36,7 @@ import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '.
 import { remountAppPreview } from '../state/outputsSlice';
 import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
 import { interactionActive, installInteractionListeners } from '../interactionPriority';
+import { perfBaseline } from '@/shared/perfBaseline';
 import { addBrowserCardFromBackend, setBrowserDocked, markBrowserCardEnding, keepBrowserCardOpen, placeBesideCard, placeBelowCard, placeBrowserBesideChat, setBrowserCardPosition, setGlowingBrowserCards, fadeGlowingBrowserCards, clearGlowingBrowserCards, removeBrowserCard, GRID_GAP, WORKFLOW_CARD_GAP, openWorkflowsApp } from '../state/dashboardLayoutSlice';
 import { upsertOutput } from '../state/outputsSlice';
 import { setCardPosition } from '../state/dashboardLayoutSlice';
@@ -150,7 +151,8 @@ class WebSocketManager {
     // A live card drag owns the main thread: WS-driven renders mid-drag are what made dragging a
     // working agent feel laggy, and nobody reads streaming tokens while holding a card. Buffer until
     // the pointer settles, hard-capped by time and queue depth.
-    if (document.body.classList.contains('dashboard-marquee-active')) {
+    // A canvas pan or zoom owns the frame just as much as a card drag does, and had no hold at all.
+    if (document.body.classList.contains('dashboard-marquee-active') || (!perfBaseline() && interactionActive())) {
       if (!WebSocketManager._dragDeferredAt) WebSocketManager._dragDeferredAt = Date.now();
       if (Date.now() - WebSocketManager._dragDeferredAt < 2000 && WebSocketManager._messageQueue.length < 500) {
         WebSocketManager._flushScheduled = true;
@@ -222,9 +224,44 @@ class WebSocketManager {
       // treats as acceptable, so this cannot be worse than what a hidden chat already pays.
       const heldTooLong = this.bgHoldSince !== null && Date.now() - this.bgHoldSince >= BG_MAX_HOLD_MS;
       if (!this.backgrounded && interactionActive() && !heldTooLong) { this.armBgFlush(); return; }
+      // Every open chat hits the ceiling in the same tick, so their held streams used to land as one task of several synchronous renders (200-270 ms mid-pan, measured 2026-09-02). One chat per animation frame keeps the ceiling and spreads the cost.
+      if (!this.backgrounded && interactionActive() && !perfBaseline()) { WebSocketManager.spreadFlush(this); return; }
       this.flushBgDelta();
     }, delay);
   }
+
+  private static _spreadQueue: WebSocketManager[] = [];
+  private static _spreadScheduled = false;
+  private static _spreadTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private static spreadFlush(mgr: WebSocketManager) {
+    if (!WebSocketManager._spreadQueue.includes(mgr)) WebSocketManager._spreadQueue.push(mgr);
+    WebSocketManager.scheduleSpreadDrain();
+  }
+
+  private static scheduleSpreadDrain() {
+    if (WebSocketManager._spreadScheduled) return;
+    WebSocketManager._spreadScheduled = true;
+    requestAnimationFrame(WebSocketManager._drainSpread);
+    // rAF never fires while the window paints no frames; the timer keeps a held stream from stalling there.
+    WebSocketManager._spreadTimer = setTimeout(WebSocketManager._drainSpread, 300);
+  }
+
+  private static _drainSpread = () => {
+    if (!WebSocketManager._spreadScheduled) return;
+    WebSocketManager._spreadScheduled = false;
+    if (WebSocketManager._spreadTimer !== null) {
+      clearTimeout(WebSocketManager._spreadTimer);
+      WebSocketManager._spreadTimer = null;
+    }
+    const mgr = WebSocketManager._spreadQueue.shift();
+    if (mgr) mgr.flushBgDelta();
+    // One chat per frame turned a single hitch into a run of them on a short zoom (pass 2, 2026-09-02); one chat per quarter second keeps the ceiling and leaves the frames between them to the gesture.
+    if (WebSocketManager._spreadQueue.length > 0) {
+      WebSocketManager._spreadScheduled = true;
+      WebSocketManager._spreadTimer = setTimeout(WebSocketManager._drainSpread, 250);
+    }
+  };
 
   private flushBgDelta() {
     if (this.bgFlushTimer !== null) {

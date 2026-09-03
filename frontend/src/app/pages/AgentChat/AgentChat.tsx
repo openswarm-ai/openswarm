@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
+import { interactionActive } from '@/shared/interactionPriority';
+import { perfBaseline } from '@/shared/perfBaseline';
 import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -1479,7 +1481,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   viewportWidthRef.current = viewportWidth;
 
   // Measure mounted item heights so the spacers that stand in for unmounted items keep the scrollbar geometry stable (no jump when unloading above).
-  React.useLayoutEffect(() => {
+  const measureWindowItems = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     let changed = false;
@@ -1496,7 +1498,27 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     });
     // Guarded so this converges: once heights stop moving, no more version bumps.
     if (changed) setHeightVersion((v) => v + 1);
+  }, []);
+  // offsetHeight forces a synchronous style-and-layout pass over the whole transcript, and with no dependency list this ran on EVERY commit of every open chat: under eight agents it was the single worst function on the main thread (535 ms inside one 5.6 s pan, 2026-09-02). Mounted heights only move when the mounted set changes or something inside an item resizes, so measure on those two signals and never while a gesture is live; the ResizeObserver below reports after layout, so it forces nothing.
+  const mountedIdsKey = renderedVisibleItems.map((item) => item.id).join('\n');
+  const measuredIdsRef = useRef('');
+  React.useLayoutEffect(() => {
+    if (perfBaseline()) { measureWindowItems(); return; }
+    if (mountedIdsKey === measuredIdsRef.current || interactionActive()) return;
+    measuredIdsRef.current = mountedIdsKey;
+    measureWindowItems();
   });
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined' || perfBaseline()) return;
+    let raf: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (interactionActive() || raf !== null) return;
+      raf = requestAnimationFrame(() => { raf = null; measureWindowItems(); });
+    });
+    el.querySelectorAll<HTMLElement>('[data-window-item-id]').forEach((node) => observer.observe(node));
+    return () => { observer.disconnect(); if (raf !== null) cancelAnimationFrame(raf); };
+  }, [mountedIdsKey, measureWindowItems]);
 
   // Spacers reserve the cumulative height of the unmounted items above/below the window. heightVersion gates recompute off the ref-held measurements; we index the render-scope renderItems directly so id->height stays correct on the frame the transcript changes.
   const topSpacerHeight = useMemo(() => {
@@ -2679,4 +2701,5 @@ function FreeTrialModelNotice({ c, notice }: { c: ReturnType<typeof useClaudeTok
   );
 }
 
-export default AgentChat;
+// Memoized so the card around it can change chrome (drag, glow, selection) without re-rendering the transcript; the seam keeps the old behaviour for A/B runs.
+export default perfBaseline() ? AgentChat : React.memo(AgentChat);
