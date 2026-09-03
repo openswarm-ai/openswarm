@@ -187,8 +187,8 @@ const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
     <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
       <style>{thinkingShimmerKeyframes}</style>
       <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, py: 0.5, px: 1, ml: -1, minHeight: 28 }}>
-        <ThinkingMark color={c.text.tertiary} />
-        {label && (
+        {/* The dots stand alone; a real step label speaks by itself (Eric: the two together read oddly). */}
+        {label ? (
           <Box
             component="span"
             sx={{
@@ -206,6 +206,8 @@ const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
           >
             {label}…
           </Box>
+        ) : (
+          <ThinkingMark color={c.text.tertiary} />
         )}
       </Box>
     </Box>

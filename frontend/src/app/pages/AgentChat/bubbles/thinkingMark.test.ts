@@ -12,7 +12,8 @@ test('the pre-reply cue is the mark, with no default word', () => {
   const bubble = chat.slice(start, chat.indexOf('interface QueuedMessage', start));
   assert.match(bubble, /<ThinkingMark color=/);
   assert.ok(!bubble.includes('THINKING_LABELS'), 'a default "Thinking" word is back');
-  assert.match(bubble, /\{label && \(/, 'the shimmer label must be conditional on a real label');
+  assert.match(bubble, /\{label \? \(/, 'a real label shows by itself');
+  assert.match(bubble, /\) : \(\s*<ThinkingMark color=/, 'the mark shows only when there is no label');
 });
 
 test('the mark is a no-dependency lift and says where it came from', () => {
