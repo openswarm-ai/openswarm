@@ -179,12 +179,12 @@ const PlanTodoItem = memo(function PlanTodoItem({
             backdropFilter: isOpen ? "blur(2px)" : undefined,
           }}
         >
-          <CollapsibleTrigger className="group/todo flex w-full cursor-default items-start gap-3 px-2 py-1.5 text-left">
+          <CollapsibleTrigger className="group group/todo flex w-full cursor-default items-start gap-3 px-2 py-1.5 text-left">
             <div className="relative z-10">
               <TodoIcon status={todo.status} />
             </div>
             <span className="min-w-0 flex-1">{labelElement}</span>
-            <ChevronRight className="text-muted-foreground/50 group-hover/todo:text-muted-foreground mt-0.5 size-4 shrink-0 rotate-90 group-data-[state=open]/todo:[transform:rotateY(180deg)] motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.34,1.56,0.64,1)]" />
+            <ChevronRight className="text-muted-foreground/50 group-hover:text-muted-foreground mt-0.5 size-4 shrink-0 rotate-90 group-data-[state=open]/todo:[transform:rotateY(180deg)] motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.34,1.56,0.64,1)]" />
           </CollapsibleTrigger>
           <CollapsibleContent
             className="group/content"

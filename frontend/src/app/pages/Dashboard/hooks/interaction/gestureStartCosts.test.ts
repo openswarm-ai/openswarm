@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 
 // Three first-frame costs measured on a loaded board (2026-09-02): a React state flip for the pan cursor
 // (77-100 ms sync render), a full-page PNG encode per pill-tucked browser every 5 s (160-200 ms each,
@@ -34,4 +35,11 @@ test('the suspend pass waits for the gesture and its captures encode idle', () =
   const capture = src.slice(src.indexOf('async function captureCard'));
   assert.match(capture, /encodeShotWhenIdle\(image, SNAPSHOT_MAX_W/);
   assert.ok(!capture.includes('.toDataURL()'), 'captureCard encodes synchronously again');
+});
+
+test('the vendored widgets\' group-hover variant is keyed on .group, never on a bare :hover with a universal subject', () => {
+  const css = readFileSync(path.join(process.cwd(), 'src/toolui/toolui.css'), 'utf8');
+  assert.match(css, /@custom-variant group-hover \(\.group:hover &\);/);
+  const widgets = execSync('grep -rl "group-hover/" src/toolui --include=*.tsx || true', { cwd: process.cwd() }).toString().trim();
+  assert.equal(widgets, '', 'a named group-hover/<name> falls back to Tailwind\'s :is(:where(.group):hover *) shape: ' + widgets);
 });

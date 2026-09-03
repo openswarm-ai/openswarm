@@ -1,6 +1,8 @@
 /* Vendored tool-ui styling: Tailwind v4 UTILITIES ONLY (no preflight import, so MUI and app
    styles are untouched) plus the shadcn theme variables scoped to .tool-ui-scope. */
 @custom-variant dark (&:is(.dark *));
+/* Tailwind v4 compiles group-hover to `:is(:where(.group):hover *)`, which Blink keys on the bare :hover with a whole-subtree invalidation set: every hover flip anywhere on the board re-styled the hovered card's entire subtree (7,329 elements, 1.8 s under load). The v3 shape keys on .group and the utility class. */
+@custom-variant group-hover (.group:hover &);
 
 /* Layer order is load-bearing: the scoped mini-preflight lives in `base` so utilities always beat
    it. Unlayered it silently nuked every utility border and button background inside the scope. */
