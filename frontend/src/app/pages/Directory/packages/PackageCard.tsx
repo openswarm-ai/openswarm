@@ -2,7 +2,6 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { parseTags, KIND_LABELS, type Listing } from './catalog';
@@ -25,44 +24,41 @@ export default function PackageCard({ listing, onOpen, onTag }: Props) {
         flexDirection: 'column',
         cursor: 'pointer',
         bgcolor: c.bg.surface,
-        border: `1px solid ${c.border.subtle}`,
-        borderRadius: 3,
-        p: 2.5,
+        border: `${c.border.width} solid ${c.border.subtle}`,
+        borderRadius: `${c.radius.lg}px`,
+        p: 2,
         transition: c.transition,
-        '&:hover': {
-          borderColor: c.border.medium,
-          boxShadow: c.shadow.md,
-          transform: 'translateY(-2px)',
-        },
+        // No lift on hover: every other surface in this app answers with the border and a hairline shadow, and a card that jumps reads cheap next to them.
+        '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.sm },
       }}
     >
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }}>
+      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.25 }}>
         <Box
           sx={{
-            width: 44,
-            height: 44,
-            borderRadius: 2,
+            width: 40,
+            height: 40,
+            borderRadius: `${c.radius.md}px`,
             flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: `${c.accent.primary}14`,
+            bgcolor: c.bg.secondary,
             overflow: 'hidden',
           }}
         >
           {listing.icon_url ? (
             <Box component="img" src={listing.icon_url} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <ExtensionIcon sx={{ fontSize: 22, color: c.accent.primary }} />
+            <ExtensionIcon sx={{ fontSize: 20, color: c.text.tertiary }} />
           )}
         </Box>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography
             sx={{
-              fontSize: '1rem',
-              fontWeight: 620,
+              fontSize: '0.9375rem',
+              fontWeight: 650,
               color: c.text.primary,
-              letterSpacing: '-0.01em',
+              letterSpacing: '-0.006em',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -70,47 +66,53 @@ export default function PackageCard({ listing, onOpen, onTag }: Props) {
           >
             {listing.title}
           </Typography>
-          <Typography sx={{ fontSize: '0.78rem', color: c.text.muted }}>
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 0.1 }}>
             {KIND_LABELS[listing.kind] || listing.kind || 'Package'}
             {listing.version ? ` · v${listing.version}` : ''}
+            {listing.author ? ` · ${listing.author}` : ''}
           </Typography>
         </Box>
       </Stack>
 
       <Typography
         sx={{
-          fontSize: '0.875rem',
-          color: c.text.secondary,
-          lineHeight: 1.5,
-          mb: 1.75,
+          fontSize: '0.8438rem',
+          color: c.text.tertiary,
+          lineHeight: 1.55,
+          mb: 1.5,
           display: '-webkit-box',
           WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
+          // Fixed two lines so every card in a row ends its body at the same baseline.
           minHeight: '2.6em',
         }}
       >
         {listing.description || 'No description provided.'}
       </Typography>
 
-      <Stack direction="row" spacing={0.75} sx={{ mt: 'auto', flexWrap: 'wrap', gap: 0.75 }}>
+      <Stack direction="row" sx={{ mt: 'auto', flexWrap: 'wrap', gap: 0.75 }}>
         {tags.map((t) => (
-          <Chip
+          <Box
             key={t}
-            label={`#${t}`}
-            size="small"
-            onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+            role="button"
+            onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
               onTag(t);
             }}
             sx={{
-              height: 22,
-              fontSize: '0.72rem',
-              bgcolor: c.bg.secondary,
-              color: c.text.tertiary,
-              '&:hover': { color: c.text.primary },
+              px: 0.9,
+              py: 0.2,
+              borderRadius: `${c.radius.sm}px`,
+              border: `${c.border.width} solid ${c.border.subtle}`,
+              fontSize: '0.7188rem',
+              color: c.text.muted,
+              transition: c.transition,
+              '&:hover': { color: c.text.secondary, borderColor: c.border.medium },
             }}
-          />
+          >
+            {t}
+          </Box>
         ))}
       </Stack>
     </Box>

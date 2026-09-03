@@ -103,12 +103,14 @@ interface Props {
   sortOptions: PickerOption[];
   sortValue: string;
   onSort: (v: string) => void;
+  // Optional left-hand content for the controls row; without it that band is empty with two pills pushed to the far right.
+  leading?: React.ReactNode;
 }
 
 // The Directory's search row + chip/filter row, shared by both tabs (same chrome on claude.ai).
 const DirectoryFilterBar: React.FC<Props> = ({
   searchPlaceholder, query, onQuery,
-  filterSections, filterSelected, onToggleFilter, sortOptions, sortValue, onSort,
+  filterSections, filterSelected, onToggleFilter, sortOptions, sortValue, onSort, leading,
 }) => {
   const c = useClaudeTokens();
   return (
@@ -135,7 +137,8 @@ const DirectoryFilterBar: React.FC<Props> = ({
           },
         }}
       />
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+        <Box sx={{ minWidth: 0 }}>{leading}</Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <FilterPill sections={filterSections} selected={filterSelected} onToggle={onToggleFilter} />
           <SortPill options={sortOptions} value={sortValue} onChange={onSort} />

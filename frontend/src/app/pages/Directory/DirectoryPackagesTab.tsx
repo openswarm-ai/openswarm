@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -122,6 +123,20 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
     }
   };
 
+  const sectionLabel = (label: string, count?: number): React.ReactElement | null => {
+    if (!label) return null;
+    return (
+      <Stack direction="row" spacing={0.75} alignItems="baseline" sx={{ mb: 1 }}>
+        <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: c.text.tertiary, letterSpacing: '0.01em' }}>
+          {label}
+        </Typography>
+        {typeof count === 'number' && (
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.ghost }}>{count}</Typography>
+        )}
+      </Stack>
+    );
+  };
+
   const body = (): React.ReactElement => {
     if (loading && !loaded) {
       return (
@@ -140,11 +155,9 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
     return (
       <>
         {visibleBundles.length > 0 && (
-          <Box sx={{ mb: 2.5 }}>
-            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: c.text.tertiary, mb: 1 }}>
-              Collections
-            </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.75 }}>
+          <Box sx={{ mb: 3 }}>
+            {sectionLabel('Collections')}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {visibleBundles.map((bundle) => (
                 <PackageBundleCard
                   key={bundle.id}
@@ -156,7 +169,16 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
             </Box>
           </Box>
         )}
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.75, alignContent: 'start' }}>
+        {visible.length > 0 && sectionLabel(visibleBundles.length > 0 ? 'All packages' : '', visible.length)}
+        <Box
+          sx={{
+            display: 'grid',
+            // Fills the width at any card size, so an odd count leaves one gap rather than half a row.
+            gridTemplateColumns: 'repeat(auto-fill, minmax(272px, 1fr))',
+            gap: 1.25,
+            alignContent: 'start',
+          }}
+        >
           {visible.map((listing) => (
             <PackageCard
               key={listing.id}
@@ -186,6 +208,13 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
         ]}
         sortValue={sort}
         onSort={setSort}
+        leading={
+          loaded ? (
+            <Typography sx={{ fontSize: '0.8125rem', color: c.text.muted }}>
+              {visible.length + visibleBundles.length} {visible.length + visibleBundles.length === 1 ? 'result' : 'results'}
+            </Typography>
+          ) : null
+        }
       />
       {source === 'cache' && (
         <Typography sx={{ fontSize: '0.8125rem', color: c.text.muted }}>

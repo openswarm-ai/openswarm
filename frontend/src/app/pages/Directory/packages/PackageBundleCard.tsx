@@ -2,11 +2,11 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
-import Inventory2Icon from '@mui/icons-material/Inventory2';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExtensionIcon from '@mui/icons-material/Extension';
+import Inventory2Icon from '@mui/icons-material/Inventory2Outlined';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { KIND_LABELS, type Listing } from './catalog';
+import { type Listing } from './catalog';
 
 interface Props {
   bundle: Listing;
@@ -14,60 +14,58 @@ interface Props {
   onOpen: () => void;
 }
 
-// Leads with a stacked-icon motif of its first few members and a count, so a bundle reads as a collection at a glance rather than as another single package.
+// A collection is one wide row, not a card in the package grid: it groups the things below it, and a
+// half-width card with empty space beside it reads as a layout that broke rather than a section.
 export default function PackageBundleCard({ bundle, members, onOpen }: Props) {
   const c = useClaudeTokens();
   const preview = members.slice(0, 4);
-  const kinds = Array.from(new Set(members.map((m) => KIND_LABELS[m.kind] || m.kind).filter(Boolean)));
+  const names = members.map((m) => m.title).filter(Boolean);
 
   return (
     <Box
       onClick={onOpen}
       sx={{
         display: 'flex',
-        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 1.75,
         cursor: 'pointer',
         bgcolor: c.bg.surface,
-        border: `1px solid ${c.border.subtle}`,
-        borderRadius: 3,
-        p: 2.5,
+        border: `${c.border.width} solid ${c.border.subtle}`,
+        borderRadius: `${c.radius.lg}px`,
+        px: 2,
+        py: 1.75,
         transition: c.transition,
-        position: 'relative',
-        overflow: 'hidden',
-        '&:hover': {
-          borderColor: c.accent.primary,
-          boxShadow: c.shadow.md,
-          transform: 'translateY(-2px)',
-        },
+        '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.sm },
       }}
     >
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }}>
-        <Box
-          sx={{
-            width: 48,
-            height: 48,
-            borderRadius: 2.5,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: `${c.accent.primary}1A`,
-            overflow: 'hidden',
-          }}
-        >
-          {bundle.icon_url ? (
-            <Box component="img" src={bundle.icon_url} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <Inventory2Icon sx={{ fontSize: 24, color: c.accent.primary }} />
-          )}
-        </Box>
-        <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Box
+        sx={{
+          width: 40,
+          height: 40,
+          borderRadius: `${c.radius.md}px`,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: c.bg.secondary,
+          overflow: 'hidden',
+        }}
+      >
+        {bundle.icon_url ? (
+          <Box component="img" src={bundle.icon_url} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <Inventory2Icon sx={{ fontSize: 20, color: c.text.tertiary }} />
+        )}
+      </Box>
+
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Stack direction="row" spacing={1} alignItems="baseline" sx={{ minWidth: 0 }}>
           <Typography
             sx={{
-              fontSize: '1.05rem',
-              fontWeight: 660,
+              fontSize: '0.9375rem',
+              fontWeight: 650,
               color: c.text.primary,
-              letterSpacing: '-0.01em',
+              letterSpacing: '-0.006em',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -75,38 +73,35 @@ export default function PackageBundleCard({ bundle, members, onOpen }: Props) {
           >
             {bundle.title}
           </Typography>
-          <Typography sx={{ fontSize: '0.78rem', color: c.accent.primary, fontWeight: 600 }}>
-            Bundle · {members.length} {members.length === 1 ? 'package' : 'packages'}
+          <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, flexShrink: 0 }}>
+            {members.length} {members.length === 1 ? 'package' : 'packages'}
           </Typography>
-        </Box>
-      </Stack>
+        </Stack>
+        <Typography
+          sx={{
+            fontSize: '0.8125rem',
+            color: c.text.tertiary,
+            lineHeight: 1.5,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {bundle.description || names.join(', ') || 'A curated collection of packages.'}
+        </Typography>
+      </Box>
 
-      <Typography
-        sx={{
-          fontSize: '0.875rem',
-          color: c.text.secondary,
-          lineHeight: 1.5,
-          mb: 1.75,
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-          minHeight: '2.6em',
-        }}
-      >
-        {bundle.description || 'A curated collection of packages.'}
-      </Typography>
-
-      <Stack direction="row" spacing={-0.75} sx={{ mt: 'auto', alignItems: 'center' }}>
+      <Stack direction="row" sx={{ alignItems: 'center', flexShrink: 0 }}>
         {preview.map((m, i) => (
           <Box
             key={m.id}
+            title={m.title}
             sx={{
-              width: 30,
-              height: 30,
-              borderRadius: 1.5,
+              width: 28,
+              height: 28,
+              borderRadius: `${c.radius.sm}px`,
               flexShrink: 0,
-              ml: i === 0 ? 0 : '-8px',
+              ml: i === 0 ? 0 : '-7px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -119,29 +114,18 @@ export default function PackageBundleCard({ bundle, members, onOpen }: Props) {
             {m.icon_url ? (
               <Box component="img" src={m.icon_url} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              <ExtensionIcon sx={{ fontSize: 15, color: c.text.muted }} />
+              <ExtensionIcon sx={{ fontSize: 14, color: c.text.muted }} />
             )}
           </Box>
         ))}
         {members.length > preview.length && (
-          <Typography sx={{ ml: 1, fontSize: '0.78rem', color: c.text.muted }}>
-            +{members.length - preview.length} more
+          <Typography sx={{ ml: 1, fontSize: '0.75rem', color: c.text.muted }}>
+            +{members.length - preview.length}
           </Typography>
         )}
-        {kinds.length > 0 && (
-          <Chip
-            label={kinds.slice(0, 2).join(' · ')}
-            size="small"
-            sx={{
-              ml: 'auto',
-              height: 22,
-              fontSize: '0.72rem',
-              bgcolor: c.bg.secondary,
-              color: c.text.tertiary,
-            }}
-          />
-        )}
       </Stack>
+
+      <ChevronRightIcon sx={{ fontSize: 18, color: c.text.ghost, flexShrink: 0 }} />
     </Box>
   );
 }
