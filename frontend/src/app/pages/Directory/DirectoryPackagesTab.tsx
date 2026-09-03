@@ -13,7 +13,7 @@ import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { fetchWorkflows } from '@/shared/state/workflowsSlice';
 import { addViewCard, openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import ImportModal from '@/app/components/share/ImportModal';
-import { importNeedsConfirm } from '@/app/components/share/importNeedsConfirm';
+import { marketplaceNeedsConfirm } from '@/app/components/share/marketplaceNeedsConfirm';
 import { importCommit } from '@/app/components/share/shareApi';
 import type { ImportPreflight } from '@/app/components/share/shareTypes';
 import DirectoryFilterBar from './DirectoryFilterBar';
@@ -131,7 +131,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
     setInstallingId(listingId);
     try {
       const preflight = await stagePackageInstall(listingId);
-      if (importNeedsConfirm(preflight)) setConfirm({ preflight, listingId });
+      if (marketplaceNeedsConfirm(preflight)) setConfirm({ preflight, listingId });
       else await commit(preflight, listingId);
     } catch (e: unknown) {
       setToast({ message: e instanceof Error ? e.message : "We couldn't download this package.", severity: 'error' });

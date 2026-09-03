@@ -7,11 +7,11 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import CircularProgress from '@mui/material/CircularProgress';
 import CloseIcon from '@mui/icons-material/Close';
-import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
 import IncludesList from './IncludesList';
+import ReviewFindings from './ReviewFindings';
 import { ImportPreflight } from './shareTypes';
 
 interface Props {
@@ -52,14 +52,7 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
           </Box>
           <Box sx={{ px: 3, pb: 3 }}>
             <IncludesList summary={preflight.summary} />
-            {preflight.review && preflight.review.findings.length > 0 && (
-              <Box sx={{ mt: 1.75, display: 'flex', gap: 0.85, alignItems: 'center' }}>
-                <ShieldOutlinedIcon sx={{ fontSize: 15, color: c.status.warning, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, lineHeight: 1.4 }}>
-                  {preflight.review.findings.join(' ')}
-                </Typography>
-              </Box>
-            )}
+            {preflight.review && preflight.review.findings.length > 0 && <ReviewFindings review={preflight.review} />}
             {preflight.conflicts.length > 0 && (
               <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 1.5 }}>
                 Some items already exist and will be added as copies.

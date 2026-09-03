@@ -62,10 +62,11 @@ test('Packages is the default marketplace tab and the old skills store is gone',
 // Install must not grow a second write path; it stages and lets the shared confirm surface decide.
 test('the packages tab installs through the shared bundle import, not its own writer', () => {
   const tab = fs.readFileSync(path.join(process.cwd(), 'src/app/pages/Directory/DirectoryPackagesTab.tsx'), 'utf8');
-  assert.match(tab, /importNeedsConfirm/);
+  // The store's own gate (block or a hand-supplied need), asked before the shared commit; a dropped file keeps the stricter importNeedsConfirm.
+  assert.match(tab, /marketplaceNeedsConfirm/);
   assert.match(tab, /importCommit/);
   assert.match(tab, /<ImportModal/);
-  const gate = tab.indexOf('importNeedsConfirm(preflight)');
+  const gate = tab.indexOf('marketplaceNeedsConfirm(preflight)');
   const commit = tab.indexOf('else await commit(preflight');
   assert.ok(gate > 0 && commit > gate, 'the confirm gate is asked BEFORE anything is committed');
 });
