@@ -40,7 +40,7 @@ test('the reveal still advances, it just advances on commits', () => {
 test('the typed feel is kept rather than dropped', () => {
   // hermes renders streamed text with a memoised parse, a caret, and no pacing at all. That is the
   // same conclusion one step further; the velocity model is what makes this read like typing.
-  for (const knob of ['TARGET_LAG_S', 'RATE_SMOOTH_S', 'MAX_CPS']) {
+  for (const knob of ['LAG_MIN_S', 'lagForGap', 'RATE_SMOOTH_S', 'MAX_CPS']) {
     assert.ok(smooth.includes(knob), `${knob} is part of the feel this exists for`);
   }
 });

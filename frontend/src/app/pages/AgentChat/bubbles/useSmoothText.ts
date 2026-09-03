@@ -34,13 +34,32 @@ import { useEffect, useRef, useState } from 'react';
  * further; keeping the velocity model preserves the typed feel this was built for.
  */
 
-const TARGET_LAG_S = 0.35;   // stay this far behind = the buffer that prevents stalls
+// The lag is the buffer that prevents stalls, so it has to be at least one arrival interval: the
+// CLI hands us text in ~90-char lumps every ~580 ms (measured 2026-09-03 at the SDK boundary, while
+// the router underneath streamed every 30-90 ms), and a fixed 0.35 s drained each lump and then sat
+// idle for the rest of the gap, which read as burst, pause, burst. Fine-grained lanes keep the floor.
+const LAG_MIN_S = 0.3;
+const LAG_MAX_S = 0.9;
+const LAG_GAP_RATIO = 1.25;
+const GAP_EMA = 0.3;
+
+export function lagForGap(gapEmaS: number | null): number {
+  if (gapEmaS == null || !Number.isFinite(gapEmaS) || gapEmaS <= 0) return LAG_MIN_S;
+  return Math.min(LAG_MAX_S, Math.max(LAG_MIN_S, gapEmaS * LAG_GAP_RATIO));
+}
+
+/** EMA of the interval between text arrivals; the first arrival seeds it. */
+export function nextGapEma(prev: number | null, gapS: number): number {
+  if (prev == null) return gapS;
+  return prev + (gapS - prev) * GAP_EMA;
+}
 const RATE_SMOOTH_S = 0.25;  // how fast the reveal speed eases toward its target
 const MAX_CPS = 1000;        // cap so a huge paste/burst still reveals smoothly, not instantly
 const MAX_DT_S = 0.05;       // clamp elapsed after a frame drop / tab switch so we don't leap
-// 60ms ~= 17fps, which still reads as typing. It was 150ms when a per-frame DOM write hid the
-// commit cadence; with React the only writer, that cadence IS the reveal, and 150 looked stepped.
-const COMMIT_MS = 60;
+// Every frame. At 60 ms the eye got 12 characters every 67 ms, which reads as words popping (Eric:
+// "chunky"); at 16 ms it gets 3 per frame. Measured 2026-09-03 on a 9,000-char reply: frame time
+// p50/p90/p99 17/17/18 ms in both arms, 8 vs 2 frames over 25 ms across 49 s, so a commit per frame is free.
+const COMMIT_MS = 16;
 
 export function useSmoothText(
   target: string,
@@ -58,6 +77,8 @@ export function useSmoothText(
   const lastRef = useRef<number>(0);                           // last frame timestamp
   const committedRef = useRef<number>(committedLen);
   const lastCommitAtRef = useRef<number>(0);
+  const lastArrivalRef = useRef<number>(0);
+  const gapEmaRef = useRef<number | null>(null);
 
   const rafRef = useRef<number | null>(null);
   const tickRef = useRef<((now: number) => void) | null>(null);
@@ -78,7 +99,7 @@ export function useSmoothText(
       const dt = dtRaw > MAX_DT_S ? MAX_DT_S : dtRaw;
 
       const backlog = Math.max(0, full - posRef.current);
-      const desired = backlog / TARGET_LAG_S;            // speed that holds the lag steady (0 when caught up)
+      const desired = backlog / lagForGap(gapEmaRef.current); // speed that holds the lag steady (0 when caught up)
       const k = Math.min(1, dt / RATE_SMOOTH_S);
       let cps = cpsRef.current + (desired - cpsRef.current) * k; // EMA-smooth the speed itself, both up and down
       if (cps > MAX_CPS) cps = MAX_CPS;
@@ -121,6 +142,10 @@ export function useSmoothText(
   // persistent-loop comment above warns about); it only restarts one that parked itself at idle.
   useEffect(() => {
     if (!enabled) return;
+    // Every growth is an arrival; the interval between them sizes the lag above.
+    const now = performance.now();
+    if (lastArrivalRef.current) gapEmaRef.current = nextGapEma(gapEmaRef.current, (now - lastArrivalRef.current) / 1000);
+    lastArrivalRef.current = now;
     if (rafRef.current === null && tickRef.current && posRef.current < target.length) {
       lastRef.current = 0;
       rafRef.current = requestAnimationFrame(tickRef.current);
@@ -132,6 +157,8 @@ export function useSmoothText(
     if (posRef.current > target.length) {
       posRef.current = enabled ? 0 : target.length;
       cpsRef.current = 0;
+      lastArrivalRef.current = 0;
+      gapEmaRef.current = null;
       lastRef.current = 0;
       committedRef.current = enabled ? 0 : target.length;
       setCommittedLen(enabled ? 0 : target.length);
