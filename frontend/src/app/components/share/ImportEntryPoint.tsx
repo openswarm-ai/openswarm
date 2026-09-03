@@ -67,7 +67,7 @@ const ImportEntryPoint: React.FC = () => {
         setConfirm(null);
         confirmRef.current = false;
       } catch (e: any) {
-        setToast({ msg: e?.message || "We couldn't finish the import.", sev: 'error' });
+        setToast({ msg: e?.message || "Couldn't finish installing.", sev: 'error' });
       } finally {
         setCommitting(false);
       }
@@ -88,7 +88,7 @@ const ImportEntryPoint: React.FC = () => {
       try {
         [, pf] = await Promise.all([delay(DIGEST_MS), importPreflight(file)]);
       } catch (e: any) {
-        setToast({ msg: e?.message || "We couldn't read this file.", sev: 'error' });
+        setToast({ msg: e?.message || "Couldn't read that file.", sev: 'error' });
         return;
       }
       if (importNeedsConfirm(pf)) {

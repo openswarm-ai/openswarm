@@ -21,7 +21,7 @@ export async function publishPreflight(outputId: string): Promise<ReviewSummary>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ output_id: outputId }),
   });
-  if (!res.ok) throw new Error("We couldn't check this app.");
+  if (!res.ok) throw new Error("Couldn't check this app. Try again.");
   const data = await res.json();
   return data.review as ReviewSummary;
 }
@@ -48,7 +48,7 @@ export async function unpublishApp(outputId: string): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ output_id: outputId }),
   });
-  const fallback = "We couldn't unpublish this app. It may still be live.";
+  const fallback = "Couldn't unpublish. It may still be live.";
   if (!res.ok) throw new Error(fallback);
   let body: { ok?: boolean; error?: string } | null = null;
   try {

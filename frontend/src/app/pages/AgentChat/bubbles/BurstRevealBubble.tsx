@@ -8,6 +8,8 @@ interface Props {
   // Captured once at mount: a message that arrived whole mid-run types itself out; history never re-animates.
   animate: boolean;
   onGrew?: () => void;
+  // Fires once when the reveal has drained (or at once when nothing animates), so chrome below the bubble can wait for the answer to settle.
+  onSettled?: () => void;
   viewportHeight?: number;
   viewportWidth?: number;
   scrollRoot?: Element | null;
@@ -16,7 +18,7 @@ interface Props {
 /** Short post-tool answers often COMMIT whole and skip the streaming slice entirely, so they popped
     while true streams typed. Route fresh commits through the same smooth reveal (assistant-ui's
     drain pattern), then settle into the identical committed render so the handoff can't flash. */
-function BurstRevealBubble({ message, animate, onGrew, viewportHeight, viewportWidth, scrollRoot }: Props): React.ReactElement {
+function BurstRevealBubble({ message, animate, onGrew, onSettled, viewportHeight, viewportWidth, scrollRoot }: Props): React.ReactElement {
   const [shouldAnimate] = useState(animate);
   const full = typeof message.content === 'string' ? message.content : '';
   const [done, setDone] = useState(!shouldAnimate || full.length === 0);
@@ -26,6 +28,11 @@ function BurstRevealBubble({ message, animate, onGrew, viewportHeight, viewportW
   }, [done, text.length, full.length]);
   const grewRef = React.useRef(onGrew);
   grewRef.current = onGrew;
+  const settledRef = React.useRef(onSettled);
+  settledRef.current = onSettled;
+  useEffect(() => {
+    if (done) settledRef.current?.();
+  }, [done]);
   useEffect(() => {
     if (!done) grewRef.current?.();
   }, [text.length, done]);

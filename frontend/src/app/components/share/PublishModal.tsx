@@ -86,7 +86,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
     let alive = true;
     publishPreflight(outputId)
       .then((r) => alive && (setReview(r), setPhase('review')))
-      .catch((e) => alive && (setErrorMsg(e?.message || "We couldn't check this app."), setPhase('error')));
+      .catch((e) => alive && (setErrorMsg(e?.message || "Couldn't check this app. Try again."), setPhase('error')));
     return () => {
       alive = false;
     };
@@ -141,7 +141,7 @@ const PublishModal: React.FC<Props> = ({ outputId, outputName, open, onClose }) 
       onClose();
     } catch (e: any) {
       setConfirmUnpublish(false);
-      setToast(e?.message || "We couldn't unpublish.");
+      setToast(e?.message || "Couldn't unpublish.");
     } finally {
       setBusy(false);
     }

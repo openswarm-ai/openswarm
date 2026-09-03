@@ -27,4 +27,11 @@ def test_the_snapshot_is_sent_after_the_hello_ack_not_before():
     snapshot = src.index('"event": "agent:stream_snapshot"')
     assert hello < snapshot
     handler = src[src.index('if event == "client:hello":'):src.index('elif event == "client:ping":')]
-    assert "stream_snapshot_payload(session_id, p_am.live_partial)" in handler
+    assert "stream_snapshot_payload(session_id, p_am.live_partial, p_am.live_thinking)" in handler
+
+
+def test_a_socket_that_connects_mid_thought_gets_the_thinking_so_far_and_the_answer_wins_once_it_flows():
+    thinking = {"s1": PartialReply(msg_id="t1", text="Considering the four legs", branch_id="main")}
+    assert stream_snapshot_payload("s1", {}, thinking) == {"session_id": "s1", "message_id": "t1", "role": "thinking", "text": "Considering the four legs"}
+    text = {"s1": PartialReply(msg_id="m1", text="The Eiffel", branch_id="main")}
+    assert stream_snapshot_payload("s1", text, thinking)["role"] == "assistant"

@@ -270,6 +270,7 @@
       "backend/apps/agents/manager/streaming/PartialReply.py::PartialReply.msg_id",
       "backend/apps/agents/manager/streaming/state.py::ThinkingState.msg_id",
       "backend/apps/agents/manager/streaming/state.py::TurnState.stream_text_msg_id",
+      "backend/apps/agents/manager/streaming/state.py::TurnState.stream_thinking_msg_id",
       "backend/apps/apps_sdk/apps_sdk.py::GrantResolveRequest.request_id",
       "backend/apps/apps_sdk/tool_grants.py::PendingGrant.request_id",
       "backend/apps/dashboards/models.py::BrowserCardPosition.browser_id",

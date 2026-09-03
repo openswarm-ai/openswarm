@@ -24,7 +24,7 @@ export async function exportPreflight(target: ShareTarget): Promise<ExportPrefli
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: target.kind, id: target.id }),
   });
-  if (!res.ok) throw new Error(await _detail(res, "We couldn't read this for sharing."));
+  if (!res.ok) throw new Error(await _detail(res, "Couldn't read this. Try again."));
   return res.json();
 }
 
@@ -34,7 +34,7 @@ export async function downloadSwarm(target: ShareTarget, filename: string, allow
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: target.kind, id: target.id, allow_secrets: allowSecrets }),
   });
-  if (!res.ok) throw new Error(await _detail(res, "We couldn't build the file."));
+  if (!res.ok) throw new Error(await _detail(res, "Couldn't build the file. Try again."));
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -51,7 +51,7 @@ export async function importPreflight(file: File): Promise<ImportPreflight> {
   form.append('file', file);
   // No Content-Type header: the browser sets the multipart boundary itself.
   const res = await fetch(`${API_BASE}/swarm/import/preflight`, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(await _detail(res, "We couldn't read this file."));
+  if (!res.ok) throw new Error(await _detail(res, "Couldn't read that file."));
   return res.json();
 }
 
@@ -64,6 +64,6 @@ export async function importCommit(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ staging_token: stagingToken, accept_requirements: acceptRequirements }),
   });
-  if (!res.ok) throw new Error(await _detail(res, "We couldn't finish the import."));
+  if (!res.ok) throw new Error(await _detail(res, "Couldn't finish installing."));
   return res.json();
 }

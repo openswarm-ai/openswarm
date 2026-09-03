@@ -5,7 +5,7 @@ writes the manager's live-partial mirror, exactly as it did inline."""
 
 import time
 from datetime import datetime
-from typing import Dict
+from typing import Optional, Dict
 from uuid import uuid4
 
 from typeguard import typechecked
@@ -33,6 +33,7 @@ async def handle_stream_event(
     turn: TurnState,
     thinking: ThinkingState,
     live_partial: Dict[str, PartialReply],
+    live_thinking: Optional[Dict[str, PartialReply]] = None,
 ) -> None:
     event = message.event
     event_type = event.get("type")
@@ -60,6 +61,8 @@ async def handle_stream_event(
             # Reasoning trace from thinking-capable models (GPT-5.3 Codex, Gemini 3 Pro/Flash, Claude with extended thinking). Rendered as a collapsible "thinking" message in the UI via the existing stream infrastructure, the frontend already handles role="thinking" for the DynamicIsland/agent card rendering.
             thinking_msg_id = uuid4().hex
             turn.stream_block_index_map[index] = thinking_msg_id
+            turn.stream_thinking_msg_id = thinking_msg_id
+            turn.stream_thinking_accum = ""
             # Server-stamp start so we can accumulate per-turn elapsed_ms across multiple thinking blocks (think → tool → think → answer turns sum correctly).
             thinking.block_starts[index] = time.time()
             await ws_manager.send_to_session(session_id, "agent:stream_start", {
@@ -104,6 +107,9 @@ async def handle_stream_event(
         elif msg_id and delta_type == "thinking_delta":
             # Thinking content streams as thinking_delta with a "thinking" field (not "text")
             think_chunk = delta.get("thinking", "")
+            turn.stream_thinking_accum += think_chunk
+            if live_thinking is not None and turn.stream_thinking_msg_id:
+                live_thinking[session_id] = PartialReply(msg_id=turn.stream_thinking_msg_id, text=turn.stream_thinking_accum, branch_id=session.active_branch_id)
             await ws_manager.send_to_session(session_id, "agent:stream_delta", {
                 "session_id": session_id,
                 "message_id": msg_id,
@@ -121,6 +127,11 @@ async def handle_stream_event(
     elif event_type == "content_block_stop":
         index = event.get("index")
         msg_id = turn.stream_block_index_map.get(index)
+        if msg_id and msg_id == turn.stream_thinking_msg_id:
+            turn.stream_thinking_msg_id = None
+            turn.stream_thinking_accum = ""
+            if live_thinking is not None:
+                live_thinking.pop(session_id, None)
         # If this was a thinking block, accumulate elapsed_ms server-side. We don't include per-block elapsed/tokens on the WS event, the pill stays in "Thinking…" until the AssistantMessage lands carrying the per-turn aggregate values.
         if index in thinking.block_starts:
             thinking.total_ms += int(

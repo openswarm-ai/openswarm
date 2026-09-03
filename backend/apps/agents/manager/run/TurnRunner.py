@@ -170,7 +170,7 @@ class TurnRunner(AgentManagerProtocol):
 
                 if isinstance(message, StreamEvent):
                     await handle_stream_event(
-                        message, session, session_id, turn, thinking, self.live_partial
+                        message, session, session_id, turn, thinking, self.live_partial, self.live_thinking
                     )
 
                 elif isinstance(message, AssistantMessage):

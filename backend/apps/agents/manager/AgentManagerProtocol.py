@@ -28,6 +28,7 @@ class AgentManagerProtocol:
     sessions: Dict[str, AgentSession]
     tasks: Dict[str, asyncio.Task]
     live_partial: Dict[str, PartialReply]
+    live_thinking: Dict[str, PartialReply]
     cancel_events: Dict[str, asyncio.Event]
     client_pool: Dict[str, ClientHandle]
     hook_ctxs: Dict[str, HookContext]

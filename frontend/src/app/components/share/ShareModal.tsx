@@ -44,7 +44,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
     let alive = true;
     exportPreflight(target)
       .then((pf) => alive && setPreflight(pf))
-      .catch((e) => alive && setError(e?.message || "We couldn't read this for sharing."))
+      .catch((e) => alive && setError(e?.message || "Couldn't read this. Try again."))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
@@ -64,7 +64,7 @@ const ShareModal: React.FC<Props> = ({ target, open, onClose }) => {
       setToast(`Saved ${preflight.filename}`);
       onClose();
     } catch (e: any) {
-      setError(e?.message || "We couldn't build the file.");
+      setError(e?.message || "Couldn't build the file. Try again.");
     } finally {
       setDownloading(false);
     }

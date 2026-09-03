@@ -39,6 +39,9 @@ class TurnState(BaseModel):
     stream_tool_msg_ids_ordered: List[str] = []
     stream_block_index_map: Dict[int, str] = {}
     stream_text_accum: str = ""
+    # The thinking block in flight, so a socket that connects mid-thought can be handed it (the text snapshot's twin).
+    stream_thinking_msg_id: Optional[str] = None
+    stream_thinking_accum: str = ""
     current_turn_emitted: bool = False
     number: int = 0
     first_event: bool = True

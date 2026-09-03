@@ -15,13 +15,22 @@ from backend.apps.agents.manager.streaming.PartialReply import PartialReply
 
 
 @typechecked
-def stream_snapshot_payload(session_id: str, live_partial: Dict[str, PartialReply]) -> Optional[dict]:
+def stream_snapshot_payload(
+    session_id: str,
+    live_partial: Dict[str, PartialReply],
+    live_thinking: Optional[Dict[str, PartialReply]] = None,
+) -> Optional[dict]:
+    # The answer wins over the thought: once text is flowing the thinking block is over.
     partial = live_partial.get(session_id)
+    role = "assistant"
+    if partial is None or not partial.msg_id or not partial.text:
+        partial = (live_thinking or {}).get(session_id)
+        role = "thinking"
     if partial is None or not partial.msg_id or not partial.text:
         return None
     return {
         "session_id": session_id,
         "message_id": partial.msg_id,
-        "role": "assistant",
+        "role": role,
         "text": partial.text,
     }

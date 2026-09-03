@@ -935,8 +935,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const prevStreamingIdRef = useRef<string | null>(null);
   const wasFollowingRef = useRef(true);
   const pinAbortRef = useRef(false);
+  // Read synchronously in render: justStreamedId is set in an effect AFTER the commit render, so the committed reply mounted with animate=true and typed itself out again from zero.
+  const lastStreamingIdRef = useRef<string | null>(null);
   // Keep the follow-intent fresh while streaming so it's accurate at the instant the stream ends (handleScroll updates isAtBottomRef on every real scroll).
   if (streamingMessageId) wasFollowingRef.current = isAtBottomRef.current;
+  if (streamingMessageId) lastStreamingIdRef.current = streamingMessageId;
   useEffect(() => {
     const prev = prevStreamingIdRef.current;
     prevStreamingIdRef.current = streamingMessageId;
@@ -1121,6 +1124,13 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [id, mode, model, dispatch]);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  // Assistant ids whose burst reveal has drained; the action bar under a reply mounts only then, so it never sits under the first revealed line.
+  const [settledIds, setSettledIds] = useState<Set<string>>(() => new Set());
+  // Ids whose burst reveal actually started; the burst flag itself flips false one render later (the id is then "seen"), which used to mount the bar under an empty, still-revealing bubble.
+  const revealingIdsRef = useRef<Set<string>>(new Set());
+  const markSettled = useCallback((id: string) => {
+    setSettledIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  }, []);
 
   const handleSaveEdit = useCallback(
     (messageId: string, newContent: string) => {
@@ -2007,7 +2017,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 !isEditing &&
                 !seenMessageIdsRef.current.has(msg.id) &&
                 msg.id !== justStreamedId &&
+                msg.id !== lastStreamingIdRef.current &&
                 (sessionRunning || awaitingResponse);
+              if (burstAnimate) revealingIdsRef.current.add(msg.id);
               seenMessageIdsRef.current.add(msg.id);
               const siblings = getSiblingBranches(msg.id);
               const hasBranches = siblings.length > 0;
@@ -2046,6 +2058,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       message={msg}
                       animate={burstAnimate}
                       onGrew={stickToBottomIfNeeded}
+                      onSettled={() => markSettled(msg.id)}
                       viewportHeight={viewportHeight}
                       viewportWidth={viewportWidth}
                       scrollRoot={scrollRoot}
@@ -2061,7 +2074,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       scrollRoot={scrollRoot}
                     />
                   )}
-                  {!isEditing && (msg.role === 'user' || (msg.role === 'assistant' && lastAssistantIdsInTurn.has(msg.id))) && (
+                  {!isEditing && (msg.role === 'user' || (msg.role === 'assistant' && lastAssistantIdsInTurn.has(msg.id) && (!revealingIdsRef.current.has(msg.id) || settledIds.has(msg.id)))) && (
                     <MessageActionBar
                       role={msg.role as 'user' | 'assistant'}
                       sessionId={session.id}
