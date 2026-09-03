@@ -57,9 +57,9 @@ import StreamingBubble from './bubbles/StreamingBubble';
 import WelcomeQuickReplies from './WelcomeQuickReplies';
 import InlineSurfaceEmbeds from './shell/InlineSurfaceEmbeds';
 import { useWelcomeGreeting } from './useWelcomeGreeting';
-import { THINKING_LABELS } from './thinkingLabels';
 import MessageBubble from './bubbles/MessageBubble';
 import BurstRevealBubble from './bubbles/BurstRevealBubble';
+import ThinkingMark from './bubbles/ThinkingMark';
 import { estimateRenderedTextHeight, RECHECK_VISIBILITY_EVENT } from './bubbles/markdownMeasure';
 import CompactionMarker from './bubbles/CompactionMarker';
 import MessageActionBar from './shell/MessageActionBar';
@@ -180,32 +180,33 @@ const ThinkingBubble: React.FC<{ label?: string | null }> = ({ label }) => {
   const c = useClaudeTokens();
   const shimmerBase = c.text.tertiary;
   const shimmerHighlight = c.text.primary;
-  // Aux-LLM label wins; otherwise the pill stays plain "Thinking". The whimsical verbs read as personality
-  // in the per-message thinking bubble (MessageBubble), but as a vague, confusing status on a working card.
-  const display = label ? `${label}…` : `${THINKING_LABELS[0].live}…`;
-  // A quiet shimmer LINE, not a bordered card: status shares one visual language with the
-  // per-message thinking row, so only real content gets bubbles (the ChatGPT/Claude pattern).
+  // The mark alone until there is something real to say (the Anthropic pattern): a word like "Thinking" is
+  // a promise the harness cannot keep on a slow lane, and it read as a status that never changed. The
+  // aux-written step label ("Reading files") is real, so it rides beside the mark when it exists.
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-start', my: 0.75 }}>
       <style>{thinkingShimmerKeyframes}</style>
-      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, py: 0.5, px: 1, ml: -1 }}>
-        <Box
-          component="span"
-          sx={{
-            fontSize: '0.8125rem',
-            fontWeight: 500,
-            background: `linear-gradient(90deg, ${shimmerBase} 0%, ${shimmerBase} 40%, ${shimmerHighlight} 50%, ${shimmerBase} 60%, ${shimmerBase} 100%)`,
-            backgroundSize: '200% 100%',
-            WebkitBackgroundClip: 'text',
-            backgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            color: 'transparent',
-            animation: 'thinking-shimmer 2s linear infinite',
-            transition: 'opacity 0.25s',
-          }}
-        >
-          {display}
-        </Box>
+      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, py: 0.5, px: 1, ml: -1, minHeight: 28 }}>
+        <ThinkingMark color={c.text.tertiary} />
+        {label && (
+          <Box
+            component="span"
+            sx={{
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              background: `linear-gradient(90deg, ${shimmerBase} 0%, ${shimmerBase} 40%, ${shimmerHighlight} 50%, ${shimmerBase} 60%, ${shimmerBase} 100%)`,
+              backgroundSize: '200% 100%',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              color: 'transparent',
+              animation: 'thinking-shimmer 2s linear infinite',
+              transition: 'opacity 0.25s',
+            }}
+          >
+            {label}…
+          </Box>
+        )}
       </Box>
     </Box>
   );
