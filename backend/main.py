@@ -209,6 +209,16 @@ async def websocket_session(websocket: WebSocket, session_id: str):
                         "ack": ack,
                     },
                 }))
+                # AFTER the ack, never before: the client drops stream frames until it has the ack.
+                from backend.apps.agents.agent_manager import agent_manager as p_am
+                from backend.apps.agents.core.stream_snapshot import stream_snapshot_payload
+                snapshot = stream_snapshot_payload(session_id, p_am.live_partial)
+                if snapshot is not None:
+                    await websocket.send_text(json.dumps({
+                        "event": "agent:stream_snapshot",
+                        "session_id": session_id,
+                        "data": snapshot,
+                    }))
             elif event == "client:ping":
                 # Heartbeat. Cheap, keeps NATs/firewalls from silently dropping the connection. Carry the client's nonce back so it can match pong→ping for round-trip latency tracking if it wants.
                 await websocket.send_text(json.dumps({

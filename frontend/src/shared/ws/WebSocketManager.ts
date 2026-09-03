@@ -32,7 +32,7 @@ import {
   setQueued,
   clearTurnLabel,
 } from '../state/agentsSlice';
-import { streamStart, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
+import { streamStart, streamSnapshot, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
 import { remountAppPreview } from '../state/outputsSlice';
 import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
 import { interactionActive, installInteractionListeners } from '../interactionPriority';
@@ -493,6 +493,13 @@ class WebSocketManager {
       return;
     }
 
+    // Sent once per (re)connect, after the resume ack, so it must not sit behind the replay-skip guard below that drops pre-ack stream frames.
+    if (event === 'agent:stream_snapshot') {
+      if (session_id && data.message_id && typeof data.text === 'string' && !this.skipStreamEvents) {
+        store.dispatch(streamSnapshot({ sessionId: session_id, messageId: data.message_id, role: data.role, text: data.text }));
+      }
+      return;
+    }
     if (this.skipStreamEvents) {
       if (event === 'agent:stream_start' || event === 'agent:stream_delta' || event === 'agent:stream_end') {
         return;

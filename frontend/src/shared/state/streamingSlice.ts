@@ -41,6 +41,19 @@ const streamingSlice = createSlice({
         tool_name: action.payload.toolName,
       };
     },
+    // A socket that connected mid-reply is handed the text so far; every delta before it was lost to this client, so this seeds rather than appends.
+    streamSnapshot(
+      state,
+      action: PayloadAction<{ sessionId: string; messageId: string; role: StreamingMessage['role']; text: string }>,
+    ) {
+      const entry = state.bySession[action.payload.sessionId];
+      if (entry && entry.id === action.payload.messageId && entry.content.length >= action.payload.text.length) return;
+      state.bySession[action.payload.sessionId] = {
+        id: action.payload.messageId,
+        role: action.payload.role,
+        content: action.payload.text,
+      };
+    },
     streamDelta(
       state,
       action: PayloadAction<{ sessionId: string; messageId: string; delta: string }>,
@@ -91,7 +104,7 @@ const streamingSlice = createSlice({
   },
 });
 
-export const { streamStart, streamDelta, streamEnd, clearStreamingForSession } = streamingSlice.actions;
+export const { streamStart, streamSnapshot, streamDelta, streamEnd, clearStreamingForSession } = streamingSlice.actions;
 export default streamingSlice.reducer;
 
 /** Subscribes only to one session's stream entry; null when no stream is active. */
