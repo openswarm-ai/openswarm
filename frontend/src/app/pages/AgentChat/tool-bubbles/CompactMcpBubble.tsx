@@ -178,7 +178,7 @@ export const CompactMcpBubble: React.FC<CompactMcpBubbleProps> = ({
         )}
       </Box>
 
-      <Collapse in={showBody && canToggleDetails} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE}>
+      <Collapse in={showBody && canToggleDetails} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE} unmountOnExit>
         <Box
           sx={{
             bgcolor: tc.TERM_BG,

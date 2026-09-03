@@ -203,7 +203,8 @@ export const DefaultToolBubble: React.FC<DefaultToolBubbleProps> = ({
           )}
         </Box>
 
-        <Collapse in={showBody && canToggleDetails} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE}>
+        {/* unmountOnExit: a collapsed body used to stay in the DOM (highlighted output, icons, all of it); 221 hidden bodies were 12,944 of one chat's 13,011 elements. */}
+        <Collapse in={showBody && canToggleDetails} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE} unmountOnExit>
         {/* Standalone rows hang their output off the indent rail; compact rows already sit inside the group's rail. */}
         <Box sx={mcpCompact ? { ...railEnterSx(showBody) } : { borderLeft: `2px solid ${c.border.medium}`, ml: 0.8, pl: 0.75, my: 0.25, ...railEnterSx(showBody) }}>
           {richRender ? (

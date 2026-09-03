@@ -245,7 +245,8 @@ const ToolGroupBubble: React.FC<Props> = React.memo(({ group, isSessionRunning =
         </Box>
         )}
 
-        <Collapse in={expanded} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE}>
+        {/* unmountOnExit: a collapsed group's rows (and their collapsed bodies) leave the DOM; the row you had opened inside comes back closed, the same as ChatGPT. */}
+        <Collapse in={expanded} timeout={COLLAPSE_MS} easing={COLLAPSE_EASE} unmountOnExit>
           <Box
             sx={{
               // ChatGPT's indent rail: detail hangs off a thin rule under the row, no enclosing box.

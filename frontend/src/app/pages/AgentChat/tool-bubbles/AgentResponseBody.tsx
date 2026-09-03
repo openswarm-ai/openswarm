@@ -8,7 +8,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 export const AgentResponseBody: React.FC<{ open: boolean; markdown: string }> = ({ open, markdown }) => {
   const c = useClaudeTokens();
   return (
-    <Collapse in={open}>
+    <Collapse in={open} unmountOnExit>
       <Box
         sx={{
           borderTop: `1px solid ${c.border.subtle}`,
