@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { parseTags, KIND_LABELS, type Listing } from './catalog';
+import PackageTagRow from './detail/PackageTagRow';
 
 interface Props {
   listing: Listing;
@@ -91,30 +92,7 @@ export default function PackageCard({ listing, onOpen, onTag }: Props) {
         {listing.description || 'No description provided.'}
       </Typography>
 
-      <Stack direction="row" sx={{ mt: 'auto', flexWrap: 'wrap', gap: 0.75 }}>
-        {tags.map((t) => (
-          <Box
-            key={t}
-            role="button"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              onTag(t);
-            }}
-            sx={{
-              px: 0.9,
-              py: 0.2,
-              borderRadius: `${c.radius.sm}px`,
-              border: `${c.border.width} solid ${c.border.subtle}`,
-              fontSize: '0.7188rem',
-              color: c.text.muted,
-              transition: c.transition,
-              '&:hover': { color: c.text.secondary, borderColor: c.border.medium },
-            }}
-          >
-            {t}
-          </Box>
-        ))}
-      </Stack>
+      <PackageTagRow tags={tags} onTag={onTag} sx={{ mt: 'auto' }} />
     </Box>
   );
 }

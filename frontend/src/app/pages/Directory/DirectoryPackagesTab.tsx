@@ -232,6 +232,7 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
       <PackageBundleDialog
         bundle={openBundle}
         members={openBundle ? resolveBundleMembers(openBundle, listings) : []}
+        installedIds={installedIds}
         installing={installingId !== null}
         onInstallAll={() => { if (openBundle) void installBundle(openBundle); }}
         onInstallMember={(id) => { void install(id); }}
