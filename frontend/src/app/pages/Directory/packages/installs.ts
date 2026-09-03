@@ -54,7 +54,7 @@ export async function recordInstall(rec: Omit<InstallRecord, 'installed_at'>): P
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...rec, installed_at: 0 }),
   });
-  if (!res.ok) throw new Error("Installed, but the store couldn't remember it.");
+  if (!res.ok) throw new Error('Installed, but it may show Install again after a restart.');
   const body = (await res.json()) as { installs: Record<string, InstallRecord> };
   return body.installs || {};
 }

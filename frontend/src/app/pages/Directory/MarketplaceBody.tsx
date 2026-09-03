@@ -80,7 +80,7 @@ const MarketplaceBody: React.FC = () => {
     <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, bgcolor: c.bg.surface }}>
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0, pt: 1.5 }}>
         <Box sx={{ width: 210, minWidth: 210, px: 2, pt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          {railRow('packages', 'Packages', <Inventory2OutlinedIcon sx={{ fontSize: 19, color: c.text.secondary }} />)}
+          {railRow('packages', 'Browse', <Inventory2OutlinedIcon sx={{ fontSize: 19, color: c.text.secondary }} />)}
           {railRow('connectors', 'Connectors', <GridViewOutlinedIcon sx={{ fontSize: 19, color: c.text.secondary }} />)}
           <Box sx={{ height: '1px', bgcolor: c.border.subtle, mx: 1.5, my: 1 }} />
           {railRow('my-skills', 'My skills', <FolderSpecialOutlinedIcon sx={{ fontSize: 19, color: c.text.secondary }} />)}

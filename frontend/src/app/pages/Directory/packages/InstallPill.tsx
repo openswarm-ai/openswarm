@@ -13,7 +13,7 @@ interface Props {
   size?: 'sm' | 'md';
 }
 
-// The one action a package has, the way the App Store draws it: Get, a spinner while it lands, then Open. It swallows the click so a card underneath never opens its sheet.
+// The one action a package has, the way the App Store draws it: Install, a spinner while it lands, then Open. It swallows the click so a card underneath never opens its sheet.
 export default function InstallPill({ state, disabled, onGet, onOpen, size = 'md' }: Props) {
   const c = useClaudeTokens();
   const sm = size === 'sm';
@@ -51,7 +51,7 @@ export default function InstallPill({ state, disabled, onGet, onOpen, size = 'md
       disableElevation
       sx={{ ...base, bgcolor: c.accent.primary, color: c.text.inverse, '&:hover': { bgcolor: c.accent.hover }, '&.Mui-disabled': { bgcolor: c.accent.primary, color: c.text.inverse, opacity: state === 'installing' ? 1 : 0.5 } }}
     >
-      {state === 'installing' ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : 'Get'}
+      {state === 'installing' ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : 'Install'}
     </Button>
   );
 }

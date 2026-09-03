@@ -67,7 +67,7 @@ export default function PackageBundleDialog({ bundle, members, stateOf, onOpenIn
                 {bundle.title}
               </Typography>
               <Typography sx={{ mt: 0.4, fontSize: '0.8125rem', color: c.text.muted }}>
-                {members.length} {members.length === 1 ? 'package' : 'packages'}{bundle.author ? ` · ${bundle.author}` : ''}
+                {members.length} {members.length === 1 ? 'item' : 'items'}{bundle.author ? ` · ${bundle.author}` : ''}
               </Typography>
             </Box>
             <Button
@@ -77,7 +77,7 @@ export default function PackageBundleDialog({ bundle, members, stateOf, onOpenIn
               disableElevation
               sx={{ ...pill, bgcolor: c.accent.primary, color: c.text.inverse, '&:hover': { bgcolor: c.accent.hover }, '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.muted } }}
             >
-              {installing ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : allInstalled ? 'Installed' : 'Get all'}
+              {installing ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : allInstalled ? 'Installed' : 'Install all'}
             </Button>
           </Stack>
 
@@ -92,7 +92,7 @@ export default function PackageBundleDialog({ bundle, members, stateOf, onOpenIn
             Included
           </Typography>
           {members.length === 0 ? (
-            <Typography sx={{ color: c.text.tertiary, fontSize: '0.875rem' }}>The packages in this bundle are no longer available.</Typography>
+            <Typography sx={{ color: c.text.tertiary, fontSize: '0.875rem' }}>The items in this bundle are no longer available.</Typography>
           ) : (
             <Stack spacing={0.75}>
               {members.map((m) => {

@@ -44,7 +44,7 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, pt: 2.5, pb: 1 }}>
             <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: c.text.primary }}>
-              Add {preflight.summary.root.name}?
+              Install {preflight.summary.root.name}?
             </Typography>
             <IconButton size="small" onClick={onClose} sx={{ color: c.text.tertiary }}>
               <CloseIcon sx={{ fontSize: 18 }} />
@@ -55,7 +55,7 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
             {preflight.review && preflight.review.findings.length > 0 && <ReviewFindings review={preflight.review} />}
             {preflight.conflicts.length > 0 && (
               <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, mt: 1.5 }}>
-                Some items already exist and will be added as copies.
+                Some of this already exists; copies will be added.
               </Typography>
             )}
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 2 }}>
@@ -80,7 +80,7 @@ const ImportModal: React.FC<Props> = ({ preflight, open, committing, onConfirm, 
                   boxShadow: 'none',
                 }}
               >
-                Add to OpenSwarm
+                Install
               </Button>
             </Box>
           </Box>

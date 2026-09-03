@@ -74,7 +74,7 @@ export default function PackageBundleCard({ bundle, members, onOpen }: Props) {
             {bundle.title}
           </Typography>
           <Typography sx={{ fontSize: '0.75rem', color: c.text.muted, flexShrink: 0 }}>
-            {members.length} {members.length === 1 ? 'package' : 'packages'}
+            {members.length} {members.length === 1 ? 'item' : 'items'}
           </Typography>
         </Stack>
         <Typography

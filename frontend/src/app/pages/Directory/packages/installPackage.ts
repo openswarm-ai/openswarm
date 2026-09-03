@@ -12,7 +12,7 @@ export async function stagePackageInstall(listingId: string): Promise<ImportPref
     body: JSON.stringify({ id: listingId }),
   });
   if (!res.ok) {
-    let detail = "We couldn't download this package.";
+    let detail = "Couldn't download it. Try again.";
     try {
       const body = (await res.json()) as { detail?: string };
       if (body.detail) detail = body.detail;

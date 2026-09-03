@@ -95,7 +95,7 @@ export default function PackageCard({ listing, state, onOpen, onGet, onOpenInsta
           minHeight: '2.6em',
         }}
       >
-        {listing.description || 'No description provided.'}
+        {listing.description || 'No description yet.'}
       </Typography>
 
       <PackageTagRow tags={tags} onTag={onTag} sx={{ mt: 'auto' }} />

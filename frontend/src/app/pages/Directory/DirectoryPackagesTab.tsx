@@ -110,7 +110,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
       setInstalls(await recordInstall(recordFor(listingId, rootType, rootId, version)));
     } catch (e: unknown) {
       setInstalls((prev) => ({ ...prev, [listingId]: { ...recordFor(listingId, rootType, rootId, version), installed_at: Date.now() / 1000 } }));
-      setToast({ message: e instanceof Error ? e.message : "Installed, but the store couldn't remember it.", severity: 'error' });
+      setToast({ message: e instanceof Error ? e.message : 'Installed, but it may show Install again after a restart.', severity: 'error' });
     }
   };
 
@@ -121,7 +121,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
       await finish(listingId, res.root_type, res.root_id);
       setConfirm(null);
     } catch (e: unknown) {
-      setToast({ message: e instanceof Error ? e.message : "We couldn't finish the install.", severity: 'error' });
+      setToast({ message: e instanceof Error ? e.message : "Couldn't finish installing.", severity: 'error' });
     } finally {
       setCommitting(false);
     }
@@ -134,7 +134,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
       if (marketplaceNeedsConfirm(preflight)) setConfirm({ preflight, listingId });
       else await commit(preflight, listingId);
     } catch (e: unknown) {
-      setToast({ message: e instanceof Error ? e.message : "We couldn't download this package.", severity: 'error' });
+      setToast({ message: e instanceof Error ? e.message : "Couldn't download it. Try again.", severity: 'error' });
     } finally {
       setInstallingId(null);
     }
@@ -143,7 +143,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
   const installBundle = async (bundle: Listing) => {
     const members = resolveBundleMembers(bundle, listings).filter((m) => m.download_url);
     if (members.length === 0) {
-      setToast({ message: 'This bundle has no installable packages yet.', severity: 'error' });
+      setToast({ message: 'Nothing in this bundle can be installed yet.', severity: 'error' });
       return;
     }
     // One at a time: each member gets its own review, and a bundle must not be a way to skip one.
@@ -177,7 +177,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
     if (visible.length === 0 && visibleBundles.length === 0) {
       return (
         <Typography sx={{ fontSize: '0.9375rem', color: c.text.tertiary, pt: 6, textAlign: 'center' }}>
-          {error ? error : 'No packages match that search yet.'}
+          {error ? error : 'Nothing matches that search.'}
         </Typography>
       );
     }
@@ -185,7 +185,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
       <>
         {visibleBundles.length > 0 && (
           <Box sx={{ mb: 3 }}>
-            {sectionLabel('Collections')}
+            {sectionLabel('Bundles')}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {visibleBundles.map((bundle) => (
                 <PackageBundleCard
@@ -198,7 +198,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
             </Box>
           </Box>
         )}
-        {visible.length > 0 && sectionLabel(visibleBundles.length > 0 ? 'All packages' : '', visible.length)}
+        {visible.length > 0 && sectionLabel(visibleBundles.length > 0 ? 'Everything' : '', visible.length)}
         <Box
           sx={{
             display: 'grid',
@@ -227,16 +227,16 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 1.75 }}>
       <DirectoryFilterBar
-        searchPlaceholder="Search packages, tags, authors"
+        searchPlaceholder="Search"
         query={query}
         onQuery={setQuery}
-        filterSections={[{ label: 'Kind', options: kindOptions }]}
+        filterSections={[{ label: 'Type', options: kindOptions }]}
         filterSelected={kinds}
         onToggleFilter={(value) => setKinds((prev) => (prev.includes(value) ? prev.filter((k) => k !== value) : [...prev, value]))}
         sortOptions={[
           { value: 'newest', label: 'Newest' },
           { value: 'name', label: 'Name' },
-          { value: 'kind', label: 'Kind' },
+          { value: 'kind', label: 'Type' },
         ]}
         sortValue={sort}
         onSort={setSort}
@@ -250,7 +250,7 @@ const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }
       />
       {source === 'cache' && (
         <Typography sx={{ fontSize: '0.8125rem', color: c.text.muted }}>
-          Showing the last catalog we loaded; the marketplace could not be reached just now.
+          Showing the last list we loaded. The store can't be reached right now.
         </Typography>
       )}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>{body()}</Box>

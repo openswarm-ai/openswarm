@@ -52,7 +52,7 @@ test('Packages is the default marketplace tab and the old skills store is gone',
   const dir = path.join(process.cwd(), 'src/app/pages/Directory');
   const body = fs.readFileSync(path.join(dir, 'MarketplaceBody.tsx'), 'utf8');
   assert.match(body, /useState<DirectoryTab>\('packages'\)/);
-  assert.match(body, /railRow\('packages', 'Packages'/);
+  assert.match(body, /railRow\('packages', 'Browse'/);
   assert.doesNotMatch(body, /DirectorySkillsTab/);
   assert.equal(fs.existsSync(path.join(dir, 'DirectorySkillsTab.tsx')), false);
   const open = fs.readFileSync(path.join(dir, 'openMarketplace.ts'), 'utf8');
