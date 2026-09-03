@@ -9,16 +9,15 @@ import TetherLayer from './TetherLayer';
 // whole dashboard tree (the ENG-88 input delay).
 const TetherLayerHost: React.FC<{ inputs: TetherInputs; c: ClaudeTokens }> = ({ inputs, c }) => {
   const [liveDrag, setLiveDrag] = useState<LiveDragInfo | null>(null);
-  // Tethers only exist while something glows AND that something is on the canvas; a DOCKED browser's glow draws no tether (geometry skips docked cards), so dragging its chat must not buy per-frame React either.
-  const hasTethers =
-    Object.keys(inputs.glowingAgentCards).length > 0 ||
-    Object.keys(inputs.glowingBrowserCards).some((bid) => !inputs.browserCards[bid]?.docked_to);
+  const tethers = useTethers(inputs, liveDrag);
+  // Per-frame React only while a line is actually drawn (a docked browser's glow draws none, and a
+  // board with nothing linked must not pay for a drag at all).
+  const hasTethers = tethers.length > 0;
   useEffect(() => {
     if (!hasTethers) { setLiveDrag(null); return undefined; }
     return subscribeLiveDrag(setLiveDrag);
   }, [hasTethers]);
-  const tethers = useTethers(inputs, liveDrag);
-  return <TetherLayer tethers={tethers} c={c} />;
+  return <TetherLayer tethers={tethers} zoom={inputs.zoom} c={c} />;
 };
 
 export default React.memo(TetherLayerHost);

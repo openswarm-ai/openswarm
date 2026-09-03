@@ -14,7 +14,7 @@ import { getCardRect } from '../../geometry/getCardRect';
 import { computeContentBounds } from '../../geometry/contentBounds';
 import { useDashboardUiState } from './useDashboardUiState';
 import { useLayoutSave } from './useLayoutSave';
-import type { TetherInputs } from '../../geometry/dashboardTethers';
+import type { TetherInputs, TetherSession } from '../../geometry/dashboardTethers';
 import { useArrowNav } from '../interaction/useArrowNav';
 import { useDashboardShortcuts } from '../interaction/useDashboardShortcuts';
 import { useDashboardClipboard } from '../interaction/useDashboardClipboard';
@@ -344,6 +344,14 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     measuredHeightsTick,
   });
 
+  // The tethers read six facts per session. Keyed on a signature of just those, so a streamed
+  // message (which replaces the sessions dict) does not re-run the tether geometry every chunk.
+  const tetherSessionsSig = sessionList.map((s) => `${s.id}|${s.mode}|${s.status}|${s.browser_id ?? ''}|${s.parent_session_id ?? ''}|${s.workflow_edit_id ?? ''}`).join('\n');
+  const tetherSessions = useMemo<TetherSession[]>(
+    () => sessionList.map((s) => ({ id: s.id, mode: s.mode, status: s.status, browser_id: s.browser_id, parent_session_id: s.parent_session_id, workflow_edit_id: s.workflow_edit_id })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tetherSessionsSig],
+  );
   // Bundled for the canvas's TetherLayerHost, which re-renders ALONE on drag frames; holding drag
   // state here re-rendered the whole page per pointer move (the ENG-88 input delay).
   const tetherInputs = useMemo<TetherInputs>(() => ({
@@ -359,12 +367,13 @@ export function useDashboardController(dashboardId: string, isActive: boolean) {
     expandedSessionIds,
     measuredHeightsRef,
     measuredHeightsTick,
-    sessionList,
+    sessions: tetherSessions,
     workflowsHub,
     workflowsMonitorCard,
     workflowsMonitorLabel,
     monitorRunSessionId,
-  }), [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, viewCards, outputs, expandedSessionIds, measuredHeightsRef, measuredHeightsTick, sessionList, workflowsHub, workflowsMonitorCard, workflowsMonitorLabel, monitorRunSessionId]);
+    zoom: canvas.zoom,
+  }), [glowingAgentCards, glowingBrowserCards, cards, browserCards, workflowCards, workflowItems, workflowOpenCards, viewCards, outputs, expandedSessionIds, measuredHeightsRef, measuredHeightsTick, tetherSessions, workflowsHub, workflowsMonitorCard, workflowsMonitorLabel, monitorRunSessionId, canvas.zoom]);
 
   return {
     c, dashboardId, dashboardName, canvas, selection, sessions, sessionList,

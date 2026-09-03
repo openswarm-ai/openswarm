@@ -12,19 +12,23 @@ import { EXPANDED_CARD_MIN_H } from '@/shared/state/dashboardLayoutSlice';
 const here = path.join(process.cwd(), 'src/app/pages/Dashboard/geometry');
 const tethers = fs.readFileSync(path.join(here, 'dashboardTethers.ts'), 'utf8');
 
-test('the sub-agent arrow goes through the shared anchor search', () => {
+test('the sub-agent arrow goes through the shared builder, and every family routes through one layout pass', () => {
   const i = tethers.indexOf('const agentTethers =');
   assert.ok(i > 0, 'agentTethers must still exist');
-  const body = tethers.slice(i, i + 400);
+  const body = tethers.slice(i, i + 600);
   assert.ok(body.includes('cardTether('), 'it must reuse the builder that picks anchors');
   assert.ok(!body.includes('srcX + src.width'), 'no hardcoded right-edge exit survives');
+  // One router: the workflow copy of the anchor search is gone for good.
+  assert.equal(tethers.match(/bestDist = Infinity/g), null);
+  assert.equal(tethers.match(/return layoutLinks\(links, zoom\)/g)!.length, 1);
 });
 
 test('every tether family reads one height formula, so none can drift', () => {
   // Four hand-rolled copies disagreed on the expanded case; that is why the arrow anchored where
   // the card was not and the sibling stack cursor left cards overlapping.
   assert.equal(tethers.match(/Math\.max\(EXPANDED_CARD_MIN_H/g), null);
-  assert.ok(tethers.match(/agentCardHeight\(/g)!.length >= 4);
+  assert.equal(tethers.match(/agentCardHeight\(/g)!.length, 1, 'one height read, in agentRect, shared by every family');
+  assert.equal(tethers.match(/renderedAgentCardHeight\(/g), null);
   const restack = fs.readFileSync(
     path.join(process.cwd(), 'src/app/pages/Dashboard/hooks/lifecycle/useSiblingRestack.ts'), 'utf8');
   assert.ok(restack.includes('agentCardHeight('), 'the restack must agree with the tether by construction');
