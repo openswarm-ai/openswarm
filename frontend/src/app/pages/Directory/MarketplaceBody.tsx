@@ -66,7 +66,7 @@ const MarketplaceBody: React.FC = () => {
   const content = (): React.ReactElement => {
     switch (view) {
       case 'packages':
-        return <DirectoryPackagesTab onInstalled={(rootType) => { if (rootType === 'skill') { setFocusSkillId(null); setView('my-skills'); } }} />;
+        return <DirectoryPackagesTab onOpenSkill={(id) => { setFocusSkillId(id); setView('my-skills'); }} />;
       case 'connectors':
         return <DirectoryConnectorsTab onOpenInstalled={(id) => { setFocusToolId(id); setView('my-connectors'); }} />;
       case 'my-skills':

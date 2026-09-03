@@ -6,14 +6,19 @@ import ExtensionIcon from '@mui/icons-material/Extension';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { parseTags, KIND_LABELS, type Listing } from './catalog';
 import PackageTagRow from './detail/PackageTagRow';
+import InstallPill from './InstallPill';
+import type { PillState } from './installs';
 
 interface Props {
   listing: Listing;
+  state: PillState;
   onOpen: () => void;
+  onGet: () => void;
+  onOpenInstalled: () => void;
   onTag: (tag: string) => void;
 }
 
-export default function PackageCard({ listing, onOpen, onTag }: Props) {
+export default function PackageCard({ listing, state, onOpen, onGet, onOpenInstalled, onTag }: Props) {
   const c = useClaudeTokens();
   const tags = parseTags(listing.tags).slice(0, 3);
 
@@ -73,6 +78,7 @@ export default function PackageCard({ listing, onOpen, onTag }: Props) {
             {listing.author ? ` · ${listing.author}` : ''}
           </Typography>
         </Box>
+        <InstallPill state={state} disabled={!listing.download_url} onGet={onGet} onOpen={onOpenInstalled} size="sm" />
       </Stack>
 
       <Typography

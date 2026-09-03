@@ -11,6 +11,7 @@ import { fetchMarketplaceListings } from '@/shared/state/marketplaceCatalogSlice
 import { fetchSkills } from '@/shared/state/skillsSlice';
 import { fetchOutputs } from '@/shared/state/outputsSlice';
 import { fetchWorkflows } from '@/shared/state/workflowsSlice';
+import { addViewCard, openWorkflowsApp } from '@/shared/state/dashboardLayoutSlice';
 import ImportModal from '@/app/components/share/ImportModal';
 import { importNeedsConfirm } from '@/app/components/share/importNeedsConfirm';
 import { importCommit } from '@/app/components/share/shareApi';
@@ -21,6 +22,7 @@ import PackageDialog from './packages/detail/PackageDialog';
 import PackageBundleCard from './packages/PackageBundleCard';
 import PackageBundleDialog from './packages/detail/PackageBundleDialog';
 import { stagePackageInstall } from './packages/installPackage';
+import { fetchInstalls, installState, recordFor, recordInstall, type InstallRecord, type PillState } from './packages/installs';
 import { KIND_LABELS, isBundle, resolveBundleMembers, type Listing } from './packages/catalog';
 
 type Toast = { message: string; severity: 'success' | 'error' } | null;
@@ -28,24 +30,46 @@ type Toast = { message: string; severity: 'success' | 'error' } | null;
 // The store tab: packages published to the marketplace sheet. Install downloads the .swarm and hands
 // it to the ordinary bundle import, so what a package can do to this machine is reviewed the same way
 // a dropped file is.
-const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void }> = ({ onInstalled }) => {
+const DirectoryPackagesTab: React.FC<{ onOpenSkill?: (skillId: string) => void }> = ({ onOpenSkill }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
   const { listings, loading, loaded, source, error } = useAppSelector((s) => s.marketplaceCatalog);
+  const outputs = useAppSelector((s) => s.outputs.items);
+  const skills = useAppSelector((s) => s.skills.items);
+  const workflows = useAppSelector((s) => s.workflows.items);
   const [query, setQuery] = useState('');
   const [kinds, setKinds] = useState<string[]>([]);
   const [sort, setSort] = useState('newest');
   const [openListing, setOpenListing] = useState<Listing | null>(null);
   const [openBundle, setOpenBundle] = useState<Listing | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
-  const [installedIds, setInstalledIds] = useState<string[]>([]);
+  const [installs, setInstalls] = useState<Record<string, InstallRecord>>({});
   const [confirm, setConfirm] = useState<{ preflight: ImportPreflight; listingId: string } | null>(null);
   const [committing, setCommitting] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
 
   useEffect(() => {
     dispatch(fetchMarketplaceListings(false));
+    // The live lists decide whether Open still has something to open; the record alone only says Get is done.
+    dispatch(fetchOutputs());
+    dispatch(fetchSkills());
+    dispatch(fetchWorkflows(undefined));
+    let alive = true;
+    fetchInstalls().then((m) => { if (alive) setInstalls(m); }).catch(() => {});
+    return () => { alive = false; };
   }, [dispatch]);
+
+  const stateFor = (listing: Listing): PillState => (
+    installingId === listing.id ? 'installing' : installState(listing, installs[listing.id], { outputs, skills, workflows })
+  );
+
+  const openInstalled = (listing: Listing) => {
+    const rec = installs[listing.id];
+    if (!rec) return;
+    if (rec.output_id) dispatch(addViewCard({ outputId: rec.output_id }));
+    else if (rec.workflow_id) dispatch(openWorkflowsApp({ workflowId: rec.workflow_id }));
+    else if (rec.skill_id) onOpenSkill?.(rec.skill_id);
+  };
 
   const packages = useMemo(() => listings.filter((l) => !isBundle(l)), [listings]);
   const bundles = useMemo(() => listings.filter(isBundle), [listings]);
@@ -75,21 +99,26 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
     return bundles.filter((b) => matchesQuery(b, q));
   }, [bundles, query, kinds]);
 
-  const finish = (preflight: ImportPreflight, listingId: string, rootType: string) => {
-    setInstalledIds((prev) => (prev.includes(listingId) ? prev : [...prev, listingId]));
-    setToast({ message: `Added ${preflight.summary.root.name}`, severity: 'success' });
+  // The pill turning into Open is the feedback, the way the App Store does it: no toast, no tab jump.
+  const finish = async (listingId: string, rootType: string, rootId: string) => {
+    const version = listings.find((l) => l.id === listingId)?.version ?? '';
     // Nothing else refetches these on import, so an installed package would otherwise stay invisible.
     if (rootType === 'skill') dispatch(fetchSkills());
     if (rootType === 'app') dispatch(fetchOutputs());
     if (rootType === 'workflow') dispatch(fetchWorkflows(undefined));
-    onInstalled?.(rootType);
+    try {
+      setInstalls(await recordInstall(recordFor(listingId, rootType, rootId, version)));
+    } catch (e: unknown) {
+      setInstalls((prev) => ({ ...prev, [listingId]: { ...recordFor(listingId, rootType, rootId, version), installed_at: Date.now() / 1000 } }));
+      setToast({ message: e instanceof Error ? e.message : "Installed, but the store couldn't remember it.", severity: 'error' });
+    }
   };
 
   const commit = async (preflight: ImportPreflight, listingId: string) => {
     setCommitting(true);
     try {
       const res = await importCommit(preflight.staging_token);
-      finish(preflight, listingId, res.root_type);
+      await finish(listingId, res.root_type, res.root_id);
       setConfirm(null);
     } catch (e: unknown) {
       setToast({ message: e instanceof Error ? e.message : "We couldn't finish the install.", severity: 'error' });
@@ -183,7 +212,10 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
             <PackageCard
               key={listing.id}
               listing={listing}
+              state={stateFor(listing)}
               onOpen={() => setOpenListing(listing)}
+              onGet={() => { void install(listing.id); }}
+              onOpenInstalled={() => openInstalled(listing)}
               onTag={(tag) => setQuery(tag)}
             />
           ))}
@@ -224,15 +256,16 @@ const DirectoryPackagesTab: React.FC<{ onInstalled?: (rootType: string) => void 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>{body()}</Box>
       <PackageDialog
         listing={openListing}
-        installing={!!openListing && installingId === openListing.id}
-        installed={!!openListing && installedIds.includes(openListing.id)}
+        state={openListing ? stateFor(openListing) : 'get'}
         onInstall={() => { if (openListing) void install(openListing.id); }}
+        onOpen={() => { if (openListing) openInstalled(openListing); }}
         onClose={() => setOpenListing(null)}
       />
       <PackageBundleDialog
         bundle={openBundle}
         members={openBundle ? resolveBundleMembers(openBundle, listings) : []}
-        installedIds={installedIds}
+        stateOf={(id) => { const l = listings.find((x) => x.id === id); return l ? stateFor(l) : 'get'; }}
+        onOpenInstalled={(member) => openInstalled(member)}
         installing={installingId !== null}
         onInstallAll={() => { if (openBundle) void installBundle(openBundle); }}
         onInstallMember={(id) => { void install(id); }}

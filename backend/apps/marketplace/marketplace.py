@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from backend.apps.marketplace import catalog
+from backend.apps.marketplace.installs import InstallRecord, load_installs, record_install
 from backend.apps.marketplace.package_download import (
     DownloadRefused,
     download_package,
@@ -61,3 +62,21 @@ async def install_preflight(body: InstallRequest) -> ImportPreflightResponse:
         logger.warning("marketplace download refused for %s: %s", listing.id, e)
         raise HTTPException(status_code=400, detail=str(e))
     return stage_bundle_for_import(raw, package_filename(listing.id, listing.title))
+
+
+class InstallsResponse(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
+    installs: dict[str, InstallRecord]
+
+
+@marketplace.router.get("/installed")
+async def get_installed() -> InstallsResponse:
+    return InstallsResponse(installs=load_installs())
+
+
+@marketplace.router.post("/installed")
+async def post_installed(body: InstallRecord) -> InstallsResponse:
+    if not body.listing_id or not body.root_type or not body.root_id():
+        raise HTTPException(status_code=400, detail="listing_id, root_type and the id of what was installed are required")
+    return InstallsResponse(installs=record_install(body))

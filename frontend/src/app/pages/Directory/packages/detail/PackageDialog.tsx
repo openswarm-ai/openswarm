@@ -1,13 +1,10 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogContent from '@mui/material/DialogContent';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -15,19 +12,21 @@ import { KIND_LABELS, parseTags, type Listing } from '../catalog';
 import { detailsForListing } from '../notionDetails';
 import PackageDetails from './PackageDetails';
 import PackageTagRow from './PackageTagRow';
+import InstallPill from '../InstallPill';
+import type { PillState } from '../installs';
 import PackageVideoSection from './PackageVideoSection';
 
 interface Props {
   listing: Listing | null;
   onClose: () => void;
+  state: PillState;
   onInstall: () => void;
-  installing: boolean;
-  installed?: boolean;
+  onOpen: () => void;
 }
 
 // The package sheet: one Install action, no file to download. The bundle is fetched and reviewed by the
 // same import path a dropped .swarm takes, so the raw archive has no job on a store page.
-export default function PackageDialog({ listing, onClose, onInstall, installing, installed }: Props) {
+export default function PackageDialog({ listing, onClose, state, onInstall, onOpen }: Props) {
   const c = useClaudeTokens();
   if (!listing) return null;
   const details = detailsForListing(listing);
@@ -70,16 +69,7 @@ export default function PackageDialog({ listing, onClose, onInstall, installing,
               </Typography>
               <Typography sx={{ mt: 0.4, fontSize: '0.8125rem', color: c.text.muted }}>{meta}</Typography>
             </Box>
-            <Button
-              onClick={onInstall}
-              variant="contained"
-              disableElevation
-              disabled={installing || !!installed || !listing.download_url}
-              startIcon={installed ? <CheckRoundedIcon sx={{ fontSize: 16 }} /> : undefined}
-              sx={{ borderRadius: `${c.radius.full}px`, textTransform: 'none', fontWeight: 600, fontSize: '0.8125rem', px: 2.25, py: 0.6, minWidth: 0, whiteSpace: 'nowrap', bgcolor: c.accent.primary, color: c.text.inverse, '&:hover': { bgcolor: c.accent.hover }, '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.muted } }}
-            >
-              {installing ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : installed ? 'Installed' : 'Install'}
-            </Button>
+            <InstallPill state={state} disabled={!listing.download_url} onGet={onInstall} onOpen={onOpen} />
           </Stack>
 
           {listing.description && (

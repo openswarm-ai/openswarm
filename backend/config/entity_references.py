@@ -32,6 +32,9 @@ class EntityKind(str, Enum):
     CLOUD_WORKFLOW = "cloud_workflow"
     # A provider login in 9router's own db, not one of our JSON records.
     PROVIDER_CONNECTION = "provider_connection"
+    SKILL = "skill"
+    # A row of the published marketplace sheet, resolved from the catalog we last fetched.
+    MARKETPLACE_LISTING = "marketplace_listing"
 
 
 class EntityStore(BaseModel):
@@ -67,9 +70,18 @@ ENTITY_STORES: List[EntityStore] = [
     # The one referent that does not live on this machine. preflight asks the cloud whether it still has the row; a miss renders as "nothing is running this", never as a silent blank.
     EntityStore(kind=EntityKind.CLOUD_WORKFLOW, module="backend.apps.workflows.cloud.client", lookup="preflight"),
     EntityStore(kind=EntityKind.PROVIDER_CONNECTION, module="backend.apps.nine_router.credential_store", lookup="read_credential"),
+    # A skill is a folder under ~/.claude/skills; its only by-id lookup is the path resolver.
+    EntityStore(kind=EntityKind.SKILL, module="backend.apps.skills.skills", lookup="skill_md_path"),
+    EntityStore(kind=EntityKind.MARKETPLACE_LISTING, module="backend.apps.marketplace.catalog", lookup="find_listing"),
 ]
 
 CROSS_ENTITY_REFERENCES: List[EntityReference] = [
+    EntityReference(module="backend.apps.marketplace.installs", model="InstallRecord", field="listing_id", target=EntityKind.MARKETPLACE_LISTING),
+    EntityReference(module="backend.apps.marketplace.installs", model="InstallRecord", field="output_id", target=EntityKind.OUTPUT),
+    EntityReference(module="backend.apps.marketplace.installs", model="InstallRecord", field="skill_id", target=EntityKind.SKILL),
+    EntityReference(module="backend.apps.marketplace.installs", model="InstallRecord", field="workflow_id", target=EntityKind.WORKFLOW),
+    EntityReference(module="backend.apps.marketplace.installs", model="InstallRecord", field="dashboard_id", target=EntityKind.DASHBOARD),
+    EntityReference(module="backend.apps.marketplace.installs", model="InstallRecord", field="session_id", target=EntityKind.SESSION),
     EntityReference(module="backend.apps.agents.core.models", model="AgentConfig", field="dashboard_id", target=EntityKind.DASHBOARD),
     EntityReference(module="backend.apps.agents.core.models", model="AgentConfig", field="selected_app_output_ids", target=EntityKind.OUTPUT),
     EntityReference(module="backend.apps.agents.core.models", model="AgentConfig", field="workflow_edit_id", target=EntityKind.WORKFLOW),

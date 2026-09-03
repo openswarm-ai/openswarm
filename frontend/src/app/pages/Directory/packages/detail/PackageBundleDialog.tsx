@@ -7,18 +7,20 @@ import DialogContent from '@mui/material/DialogContent';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import Inventory2Icon from '@mui/icons-material/Inventory2Outlined';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { KIND_LABELS, parseTags, type Listing } from '../catalog';
 import PackageTagRow from './PackageTagRow';
+import InstallPill from '../InstallPill';
+import type { PillState } from '../installs';
 
 interface Props {
   bundle: Listing | null;
   members: Listing[];
-  installedIds: string[];
+  stateOf: (listingId: string) => PillState;
+  onOpenInstalled: (listing: Listing) => void;
   onClose: () => void;
   onOpenMember: (member: Listing) => void;
   onInstallAll: () => void;
@@ -28,11 +30,11 @@ interface Props {
 
 // A bundle has no package of its own: the sheet lists it, the dialog installs its members. There is no
 // file to download here on purpose; a store page installs, it does not hand out archives.
-export default function PackageBundleDialog({ bundle, members, installedIds, onClose, onOpenMember, onInstallAll, onInstallMember, installing }: Props) {
+export default function PackageBundleDialog({ bundle, members, stateOf, onOpenInstalled, onClose, onOpenMember, onInstallAll, onInstallMember, installing }: Props) {
   const c = useClaudeTokens();
   if (!bundle) return null;
   const installable = members.filter((m) => m.download_url);
-  const allInstalled = installable.length > 0 && installable.every((m) => installedIds.includes(m.id));
+  const allInstalled = installable.length > 0 && installable.every((m) => stateOf(m.id) !== 'get');
   const pill = { borderRadius: `${c.radius.full}px`, textTransform: 'none' as const, fontWeight: 600, fontSize: '0.8125rem', px: 2, py: 0.6, minWidth: 0, whiteSpace: 'nowrap' as const };
 
   return (
@@ -75,7 +77,7 @@ export default function PackageBundleDialog({ bundle, members, installedIds, onC
               disableElevation
               sx={{ ...pill, bgcolor: c.accent.primary, color: c.text.inverse, '&:hover': { bgcolor: c.accent.hover }, '&.Mui-disabled': { bgcolor: c.bg.secondary, color: c.text.muted } }}
             >
-              {installing ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : allInstalled ? 'Installed' : 'Install all'}
+              {installing ? <CircularProgress size={14} thickness={5} sx={{ color: 'inherit' }} /> : allInstalled ? 'Installed' : 'Get all'}
             </Button>
           </Stack>
 
@@ -94,7 +96,6 @@ export default function PackageBundleDialog({ bundle, members, installedIds, onC
           ) : (
             <Stack spacing={0.75}>
               {members.map((m) => {
-                const done = installedIds.includes(m.id);
                 return (
                   <Box
                     key={m.id}
@@ -115,22 +116,7 @@ export default function PackageBundleDialog({ bundle, members, installedIds, onC
                         {KIND_LABELS[m.kind] || m.kind || 'Package'}{m.version ? ` · v${m.version}` : ''}
                       </Typography>
                     </Box>
-                    {done ? (
-                      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: c.text.muted, fontSize: '0.8125rem', flexShrink: 0 }}>
-                        <CheckRoundedIcon sx={{ fontSize: 16 }} />
-                        <span>Installed</span>
-                      </Stack>
-                    ) : (
-                      <Button
-                        onClick={(e) => { e.stopPropagation(); onInstallMember(m.id); }}
-                        disabled={installing || !m.download_url}
-                        variant="outlined"
-                        size="small"
-                        sx={{ ...pill, borderColor: c.border.strong, color: c.text.primary, '&:hover': { borderColor: c.text.primary, bgcolor: c.bg.elevated } }}
-                      >
-                        Install
-                      </Button>
-                    )}
+                    <InstallPill state={stateOf(m.id)} disabled={!m.download_url} onGet={() => onInstallMember(m.id)} onOpen={() => onOpenInstalled(m)} size="sm" />
                   </Box>
                 );
               })}
