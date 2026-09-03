@@ -200,13 +200,17 @@ const DashboardViewCard: React.FC<Props> = ({
     window.addEventListener('resize', measure);
     // A RO only fires on slot RESIZE; the chat tiling/untiling MOVES the slot without resizing the
     // window, so re-measure on camera writes + settle timers or the docked card lags behind.
-    window.addEventListener('openswarm:canvas-pan-changed', measure);
+    // One read per frame, after the frame's own layout: a direct read inside the per-frame camera fan-out forced a whole-board layout per card per frame.
+    let panRaf = 0;
+    const onPanChanged = (): void => { if (!panRaf) panRaf = requestAnimationFrame(() => { panRaf = 0; measure(); }); };
+    window.addEventListener('openswarm:canvas-pan-changed', onPanChanged);
     document.addEventListener('visibilitychange', measure);
     const timers = [60, 250, 700].map((ms) => window.setTimeout(measure, ms));
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', measure);
-      window.removeEventListener('openswarm:canvas-pan-changed', measure);
+      window.removeEventListener('openswarm:canvas-pan-changed', onPanChanged);
+      if (panRaf) cancelAnimationFrame(panRaf);
       document.removeEventListener('visibilitychange', measure);
       timers.forEach((tm) => window.clearTimeout(tm));
     };
@@ -287,11 +291,15 @@ const DashboardViewCard: React.FC<Props> = ({
     };
     evaluate();
     const unsubBudget = subscribeAppBudget(evaluate); // an eviction or a freed slot re-runs this card's decision
-    window.addEventListener('openswarm:canvas-pan-changed', evaluate);
+    // Same rule as the dock measure above: the viewport size read must not force a layout inside the per-frame camera fan-out.
+    let panRaf = 0;
+    const onPanChanged = (): void => { if (!panRaf) panRaf = requestAnimationFrame(() => { panRaf = 0; evaluate(); }); };
+    window.addEventListener('openswarm:canvas-pan-changed', onPanChanged);
     window.addEventListener('resize', evaluate);
     return () => {
       unsubBudget();
-      window.removeEventListener('openswarm:canvas-pan-changed', evaluate);
+      window.removeEventListener('openswarm:canvas-pan-changed', onPanChanged);
+      if (panRaf) cancelAnimationFrame(panRaf);
       window.removeEventListener('resize', evaluate);
       if (suspendTimerRef.current) { clearTimeout(suspendTimerRef.current); suspendTimerRef.current = null; }
     };

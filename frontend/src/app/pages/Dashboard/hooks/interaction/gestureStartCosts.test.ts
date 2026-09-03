@@ -43,3 +43,13 @@ test('the vendored widgets\' group-hover variant is keyed on .group, never on a 
   const widgets = execSync('grep -rl "group-hover/" src/toolui --include=*.tsx || true', { cwd: process.cwd() }).toString().trim();
   assert.equal(widgets, '', 'a named group-hover/<name> falls back to Tailwind\'s :is(:where(.group):hover *) shape: ' + widgets);
 });
+
+test('no card reads layout directly inside the per-frame camera fan-out', () => {
+  // Every openswarm:canvas-pan-changed listener that READS layout goes through a rAF coalescer; the direct listeners left are the drag re-pins, which only write.
+  for (const [file, allowed] of [['../../cards/BrowserCard.tsx', ['onScroll', 'onPanChange']], ['../../cards/DashboardViewCard.tsx', ['onPanChanged', 'onPanChange']], ['../../cards/AgentCard.tsx', ['onPanChange']]] as const) {
+    const src = read(file);
+    const listeners = [...src.matchAll(/addEventListener\('openswarm:canvas-pan-changed', (\w+)\)/g)].map((m) => m[1]);
+    assert.ok(listeners.length > 0, `${file} lost its camera listeners`);
+    for (const name of listeners) assert.ok(allowed.includes(name), `${file}: ${name} listens to the per-frame camera event directly (measure/evaluate must ride a rAF)`);
+  }
+});
