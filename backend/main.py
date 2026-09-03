@@ -212,7 +212,9 @@ async def websocket_session(websocket: WebSocket, session_id: str):
                 # AFTER the ack, never before: the client drops stream frames until it has the ack.
                 from backend.apps.agents.agent_manager import agent_manager as p_am
                 from backend.apps.agents.core.stream_snapshot import stream_snapshot_payload
-                snapshot = stream_snapshot_payload(session_id, p_am.live_partial, p_am.live_thinking)
+                p_sess = p_am.sessions.get(session_id)
+                p_in_flight = bool(p_sess is not None and p_sess.status in ("running", "waiting_approval"))
+                snapshot = stream_snapshot_payload(session_id, p_am.live_partial, p_am.live_thinking, in_flight=p_in_flight)
                 if snapshot is not None:
                     await websocket.send_text(json.dumps({
                         "event": "agent:stream_snapshot",

@@ -39,3 +39,11 @@ test('the socket handles the snapshot ABOVE the replay-skip guard that drops pre
   const dashboardSkip = src.indexOf('if (this.skipStreamEvents) {');
   assert.ok(snapshot < dashboardSkip, 'the snapshot handler decides skipStreamEvents itself, above the generic skip');
 });
+
+test('the socket refuses a snapshot for a session it already knows is finished', () => {
+  const src = fs.readFileSync(path.join(process.cwd(), 'src/shared/ws/WebSocketManager.ts'), 'utf8');
+  const i = src.indexOf("event === 'agent:stream_snapshot'");
+  const block = src.slice(i, i + 900);
+  assert.match(block, /agents\.sessions\[session_id\]\?\.status/);
+  assert.match(block, /!finished/);
+});

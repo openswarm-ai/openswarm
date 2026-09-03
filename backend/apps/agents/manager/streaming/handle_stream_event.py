@@ -48,6 +48,10 @@ async def handle_stream_event(
         block_type = block.get("type")
 
         if block_type == "text":
+            # The answer has begun, so the thought is over whether or not the CLI ever sent the block's stop
+            # (it does not for Haiku's thinking; a socket connecting later was handed a "still thinking" bubble).
+            if live_thinking is not None:
+                live_thinking.pop(session_id, None)
             if turn.stream_text_msg_id is None:
                 turn.stream_text_msg_id = uuid4().hex
                 await ws_manager.send_to_session(session_id, "agent:stream_start", {
@@ -144,6 +148,8 @@ async def handle_stream_event(
             })
 
     elif event_type == "message_stop":
+        if live_thinking is not None:
+            live_thinking.pop(session_id, None)
         if turn.stream_text_msg_id:
             await ws_manager.send_to_session(session_id, "agent:stream_end", {
                 "session_id": session_id,

@@ -19,8 +19,12 @@ def stream_snapshot_payload(
     session_id: str,
     live_partial: Dict[str, PartialReply],
     live_thinking: Optional[Dict[str, PartialReply]] = None,
+    in_flight: bool = True,
 ) -> Optional[dict]:
     # The answer wins over the thought: once text is flowing the thinking block is over.
+    # A finished turn has nothing live by definition; whatever the dicts still hold is a leak, never a reply.
+    if not in_flight:
+        return None
     partial = live_partial.get(session_id)
     role = "assistant"
     if partial is None or not partial.msg_id or not partial.text:

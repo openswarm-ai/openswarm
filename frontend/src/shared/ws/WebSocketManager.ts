@@ -495,7 +495,10 @@ class WebSocketManager {
 
     // Sent once per (re)connect, after the resume ack, so it must not sit behind the replay-skip guard below that drops pre-ack stream frames.
     if (event === 'agent:stream_snapshot') {
-      if (session_id && data.message_id && typeof data.text === 'string' && !this.skipStreamEvents) {
+      // A snapshot is only ever for a turn in flight; a finished session that still gets one is a leak, not a reply.
+      const snapStatus = session_id ? store.getState().agents.sessions[session_id]?.status : undefined;
+      const finished = snapStatus !== undefined && snapStatus !== 'running' && snapStatus !== 'waiting_approval';
+      if (session_id && data.message_id && typeof data.text === 'string' && !this.skipStreamEvents && !finished) {
         store.dispatch(streamSnapshot({ sessionId: session_id, messageId: data.message_id, role: data.role, text: data.text }));
       }
       return;

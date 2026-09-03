@@ -38,6 +38,7 @@ async def handle_assistant_message(
     thinking: ThinkingState,
     live_partial: Dict[str, PartialReply],
     sessions: Dict[str, AgentSession],
+    live_thinking: Optional[Dict[str, PartialReply]] = None,
 ) -> None:
     from claude_agent_sdk.types import ThinkingBlock, TextBlock, ToolUseBlock
 
@@ -266,6 +267,8 @@ async def handle_assistant_message(
             if p_fault_armed("empty_finish"):
                 turn.stream_text_accum = ""
                 live_partial.pop(session_id, None)
+                if live_thinking is not None:
+                    live_thinking.pop(session_id, None)
                 return
             asst_msg = Message(
                 id=turn.stream_text_msg_id or uuid4().hex,
@@ -276,6 +279,8 @@ async def handle_assistant_message(
             upsert_message(session, asst_msg)
             turn.stream_text_accum = ""
             live_partial.pop(session_id, None)
+            if live_thinking is not None:
+                live_thinking.pop(session_id, None)
             await ws_manager.send_to_session(session_id, "agent:message", {
                 "session_id": session_id,
                 "message": asst_msg.model_dump(mode="json"),

@@ -176,7 +176,7 @@ class TurnRunner(AgentManagerProtocol):
                 elif isinstance(message, AssistantMessage):
                     flight_recorder.crumb(session_id, "assistant-msg")
                     await handle_assistant_message(
-                        message, session, session_id, turn, thinking, self.live_partial, self.sessions
+                        message, session, session_id, turn, thinking, self.live_partial, self.sessions, self.live_thinking
                     )
                 elif isinstance(message, ResultMessage):
                     flight_recorder.crumb(session_id, "result-msg", subtype=str(getattr(message, "subtype", "")))
@@ -226,6 +226,7 @@ class TurnRunner(AgentManagerProtocol):
                 turn.stream_text_msg_id = None
             turn.stream_text_accum = ""
             self.live_partial.pop(session_id, None)
+            self.live_thinking.pop(session_id, None)
             for p_tool_msg_id in turn.stream_tool_msg_ids_ordered:
                 await ws_manager.send_to_session(session_id, "agent:stream_end", {
                     "session_id": session_id,

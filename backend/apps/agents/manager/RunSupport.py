@@ -200,6 +200,7 @@ class RunSupport(AgentManagerProtocol):
         instantly instead of waiting out the SDK teardown the cancel handler
         sits behind. Returns True if it committed something."""
         live = self.live_partial.pop(session.id, None)
+        self.live_thinking.pop(session.id, None)
         if not live:
             return False
         text = live.text or ""

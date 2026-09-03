@@ -100,6 +100,7 @@ class SessionLifecycle(AgentManagerProtocol):
         self.sessions.pop(session_id, None)
         self.tasks.pop(session_id, None)
         self.live_partial.pop(session_id, None)
+        self.live_thinking.pop(session_id, None)
         self.cancel_events.pop(session_id, None)
         self.pending_messages.pop(session_id, None)
         view_builder_render_retry_counts.pop(session_id, None)

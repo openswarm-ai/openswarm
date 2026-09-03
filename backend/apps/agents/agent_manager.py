@@ -361,6 +361,7 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
                         "message_id": p_tool_msg_id,
                     })
                 self.live_partial.pop(session_id, None)
+                self.live_thinking.pop(session_id, None)
                 # Tell the user we self-healed instead of retrying in silence: the frontend renders this as a muted transient pill (same language as the rate-limit pill), not an error card.
                 try:
                     await ws_manager.send_to_session(session_id, "agent:context_recovered", {
@@ -428,6 +429,7 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
             p_is_live_task = self.tasks.get(session_id) is asyncio.current_task()
             if p_is_live_task:
                 self.live_partial.pop(session_id, None)
+                self.live_thinking.pop(session_id, None)
                 # The floor: every terminal path funnels through here, so "turn ended with nothing readable" stops being representable instead of being caught shape by shape.
                 try:
                     from backend.apps.agents.manager.run.turn_spoke import ensure_turn_spoke
