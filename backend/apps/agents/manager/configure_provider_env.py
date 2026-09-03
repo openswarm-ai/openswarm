@@ -63,8 +63,9 @@ async def configure_provider_env(
     api_route_provider = (model_entry or {}).get("api") if is_pinned_api_route else None
 
     if is_pinned_api_route and api_route_provider == "anthropic" and getattr(global_settings, "anthropic_api_key", None):
+        from backend.apps.settings.credentials import own_key_cli_env as p_own_key_cli_env
         options_kwargs["env"] = {
-            "ANTHROPIC_API_KEY": global_settings.anthropic_api_key,
+            **p_own_key_cli_env(global_settings),
             "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
             # Pin subagents so they don't drift back to the proxy.
             "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-6",
@@ -177,7 +178,8 @@ async def configure_provider_env(
             options_kwargs["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "claude-haiku-4-5-20251001"
         logger.info(f"[MCP-DEBUG] Using OpenSwarm cloud proxy at {proxy_url}")
     elif api_type == "anthropic" and not resolved_is_9router and global_settings.anthropic_api_key:
-        options_kwargs["env"] = {"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}
+        from backend.apps.settings.credentials import own_key_cli_env as p_own_key_cli_env_fallback
+        options_kwargs["env"] = p_own_key_cli_env_fallback(global_settings)
         logger.info("[MCP-DEBUG] Using direct Anthropic API key")
     elif await router_available(global_settings):
         # Gemini-bound ids go through the local proxy for schema scrubbing; everything else hits 9Router directly.

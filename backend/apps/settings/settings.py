@@ -225,7 +225,7 @@ async def apply_settings_update(body: AppSettings, protect_fields: set[str] | No
             except Exception:
                 pass
 
-    secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
+    secret_keys = {"anthropic_api_key", "anthropic_workspace_id", "openai_api_key", "google_api_key", "openrouter_api_key",
                    "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
                    "openswarm_bearer_token", "free_trial_token", "installation_id", "analytics_token"}
     safe = {k: v for k, v in body.model_dump().items() if k not in secret_keys}
@@ -380,6 +380,7 @@ async def reset_system_prompt():
 # A preferences reset (the iOS "Reset All Settings" analogue): everything back to defaults EXCEPT the things a "reset my preferences" click must never silently sever, your connections (server-owned subscription fields AND your pasted provider credentials) and your identity. Hard-erase is the separate flow.
 P_RESET_PRESERVE_FIELDS = SERVER_OWNED_FIELDS + (
     "anthropic_api_key",
+    "anthropic_workspace_id",
     "openai_api_key",
     "google_api_key",
     "openrouter_api_key",

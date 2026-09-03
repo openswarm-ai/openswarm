@@ -358,9 +358,11 @@ def p_pick_upstream(model: str) -> tuple[str, dict[str, str]]:
                 return (proxy, {"Authorization": f"Bearer {bearer}"})
         ak = getattr(s, "anthropic_api_key", "") or ""
         if ak.strip():
+            from backend.apps.settings.credentials import anthropic_workspace_header as p_workspace_header
             return ("https://api.anthropic.com", {
                 "x-api-key": ak.strip(),
                 "anthropic-version": "2023-06-01",
+                **p_workspace_header(s),
             })
 
     return ("http://127.0.0.1:20128", {"x-api-key": "9router"})

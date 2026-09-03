@@ -308,6 +308,16 @@ def is_translation_error(exc: BaseException, extra_text: str = "") -> bool:
     return bool(P_TRANSLATION_ERROR_PATTERNS.search(combined))
 
 
+# Anthropic's own wording for an identity-linked key sent without a workspace id (400), with one it
+# cannot use (404 "Workspace `wrkspc_...` not found."), or with a malformed one.
+P_WORKSPACE_ID_RE = re.compile(r"anthropic-workspace-id|workspace\s+`?wrkspc_[\w-]*`?\s+not\s+found", re.IGNORECASE)
+
+
+def is_workspace_id_error(exc: BaseException, extra_text: str = "") -> bool:
+    """True when Anthropic refused the request over the workspace id, not the key itself."""
+    return bool(P_WORKSPACE_ID_RE.search(f"{exc!s}\n{extra_text}"))
+
+
 @typechecked
 def is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
     """True when the upstream error is a 401/403 auth failure.
@@ -320,6 +330,10 @@ def is_auth_error(exc: BaseException, extra_text: str = "") -> bool:
     combined = f"{exc!s}\n{extra_text}".strip()
     if not combined:
         return False
+    # A missing or wrong workspace id is a credential problem the user fixes in Settings; it used to land
+    # here only because "invalid_request_error ... API key" happened to match the generic regex below.
+    if is_workspace_id_error(exc, extra_text):
+        return True
     # A tool-schema translation 400 can carry provider/connection wording that trips the auth regex below; it isn't auth, so don't claim it is.
     if is_translation_error(exc, extra_text):
         return False

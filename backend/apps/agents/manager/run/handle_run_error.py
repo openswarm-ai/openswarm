@@ -8,7 +8,12 @@ import logging
 from typing import List
 from typeguard import typechecked
 
-from backend.apps.agents.manager.streaming.provider_error_speech import CODEX_ROTATION_RESEND_NOTICE, CODEX_ROTATION_RETRY_NOTICE
+from backend.apps.agents.manager.streaming.provider_error_speech import (
+    ANTHROPIC_WORKSPACE_ID_MISSING_NOTICE,
+    ANTHROPIC_WORKSPACE_ID_WRONG_NOTICE,
+    CODEX_ROTATION_RESEND_NOTICE,
+    CODEX_ROTATION_RETRY_NOTICE,
+)
 
 from backend.apps.agents.core.models import AgentSession, Message
 from backend.apps.agents.core.ws_manager import ws_manager
@@ -25,6 +30,7 @@ from backend.apps.agents.core.error_classify import (
     is_out_of_tokens,
     has_auth_status,
     is_auth_error,
+    is_workspace_id_error,
     is_content_policy_block,
     is_cert_failure,
     is_cli_binary_missing,
@@ -537,7 +543,12 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 logger.info(f"auth self-heal armed for {session_id} (codex_rotation={p_codex_rotation})")
                 return
         # Codex/OpenAI subscription tokens rotate every ~2-3 minutes, the user sees the rotation window as a 401 with "reset after 1m 59s" or similar. Don't ask them to reconnect; just tell them to wait it out and retry.
-        if (
+        # First, above every other reading: the key is fine, the workspace id is missing or wrong.
+        if is_workspace_id_error(e, extra_text=p_stderr_tail):
+            p_has_workspace = bool((getattr(load_settings(), "anthropic_workspace_id", None) or "").strip())
+            friendly_msg = ANTHROPIC_WORKSPACE_ID_WRONG_NOTICE if p_has_workspace else ANTHROPIC_WORKSPACE_ID_MISSING_NOTICE
+            reason = "anthropic_workspace_id"
+        elif (
             ("codex/" in p_combined or "[codex/" in p_combined or p_model.startswith(("cx/", "gpt-")))
             and ("authentication token is expired" in p_combined or "authentication token has expired" in p_combined or has_auth_status(p_combined))
         ):

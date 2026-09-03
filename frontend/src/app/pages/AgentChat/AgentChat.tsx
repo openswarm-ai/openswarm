@@ -1874,13 +1874,15 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             {session.context_overflow && (() => {
               const reason = session.context_overflow.reason;
               const isAuth = reason === 'openswarm_pro_auth_expired' || reason === 'anthropic_auth_invalid' || reason === 'auth_error';
+              const isWorkspace = reason === 'anthropic_workspace_id';
               const isOutOfTokens = reason === 'out_of_tokens';
               const isFreeTrial = reason === 'free_trial_exhausted';
               const isOutOfCredits = reason === 'out_of_credits';
-              const opensSettings = isAuth || isFreeTrial || isOutOfCredits;
+              const opensSettings = isAuth || isWorkspace || isFreeTrial || isOutOfCredits;
               const title = isOutOfTokens ? 'Out of tokens'
                 : isFreeTrial ? 'Free runs used up'
                 : isOutOfCredits ? 'Out of credits'
+                : isWorkspace ? 'Workspace ID needed'
                 : isAuth ? 'Sign-in required' : 'Context full';
               const primaryLabel = isOutOfTokens ? 'Got it'
                 : isFreeTrial ? 'Connect a model'

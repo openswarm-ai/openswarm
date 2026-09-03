@@ -704,6 +704,7 @@ async def probe_model(body: dict):
         import anthropic
         client = None
 
+        from backend.apps.settings.credentials import own_key_anthropic_client as p_own_key_client
         # Routing mirrors agent_manager: prefix takes precedence over Pro.
         resolved_is_9router = (
             isinstance(resolved, str)
@@ -715,7 +716,7 @@ async def probe_model(body: dict):
                 return {"ok": True, "skipped": True}
             client = anthropic.AsyncAnthropic(api_key="9router", base_url="http://localhost:20128")
         elif route == "api" and api_type == "anthropic" and getattr(settings, "anthropic_api_key", None):
-            client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            client = p_own_key_client(settings)
         elif api_type == "anthropic" and connection_mode == "openswarm-pro":
             bearer = getattr(settings, "openswarm_bearer_token", "") or ""
             proxy_url = (getattr(settings, "openswarm_proxy_url", None) or "https://api.openswarm.com").rstrip("/")
@@ -723,7 +724,7 @@ async def probe_model(body: dict):
                 return {"ok": True, "skipped": True}
             client = anthropic.AsyncAnthropic(auth_token=bearer, base_url=proxy_url)
         elif api_type == "anthropic" and getattr(settings, "anthropic_api_key", None):
-            client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            client = p_own_key_client(settings)
         else:
             if not p_9r_running():
                 return {"ok": True, "skipped": True}

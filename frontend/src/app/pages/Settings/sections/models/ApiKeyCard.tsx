@@ -77,6 +77,22 @@ const ApiKeyCard: React.FC<{
           Get key <OpenInNewIcon sx={{ fontSize: 11 }} />
         </Typography>
       </Box>
+      {config.field === 'anthropic_api_key' && value ? (
+        <Box sx={{ mt: 1 }}>
+          <TextField
+            value={form.anthropic_workspace_id ?? ''}
+            onChange={(e) => setForm({ ...form, anthropic_workspace_id: e.target.value.trim() || null })}
+            size="small"
+            fullWidth
+            placeholder="Workspace ID (wrkspc_...)"
+            inputProps={{ 'aria-label': 'Anthropic workspace ID' }}
+            sx={{ ...fieldSx, '& .MuiOutlinedInput-root': { ...fieldSx['& .MuiOutlinedInput-root'], fontFamily: c.font.mono } }}
+          />
+          <Typography sx={{ ...descSx, mt: 0.5 }}>
+            Only for a key that can act in more than one workspace. Find the ID under Settings, Workspaces in the Claude Console.
+          </Typography>
+        </Box>
+      ) : null}
     </Box>
   );
 };

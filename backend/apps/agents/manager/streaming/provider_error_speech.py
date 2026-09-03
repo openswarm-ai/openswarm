@@ -266,6 +266,18 @@ CODEX_ROTATION_RETRY_NOTICE = (
     "GPT subscription token just rotated (automatic, every couple minutes). Retrying your request "
     "automatically in about a minute, no action needed."
 )
+# Anthropic's personal and service-account keys can span workspaces; such a key needs the workspace id
+# on every request, and the generic "re-enter your key" card sent one user around in circles (2026-09-03).
+ANTHROPIC_WORKSPACE_ID_MISSING_NOTICE = (
+    "Your Anthropic API key is linked to your account and can act in more than one workspace, so "
+    "Anthropic needs to know which one to use. Open Settings > Models and enter the Workspace ID next "
+    "to your Anthropic key. You can find it in the ID column at platform.claude.com/settings/workspaces."
+)
+ANTHROPIC_WORKSPACE_ID_WRONG_NOTICE = (
+    "Anthropic did not accept the Workspace ID saved next to your Anthropic key. Open Settings > Models "
+    "and check it against the ID column at platform.claude.com/settings/workspaces; if the key is scoped "
+    "to a single workspace, leave the field empty."
+)
 CODEX_ROTATION_RESEND_NOTICE = (
     "GPT subscription token just rotated (automatic, every couple minutes). Send your message again "
     "in about a minute and it will go through; nothing to reconnect. If it keeps happening, open "

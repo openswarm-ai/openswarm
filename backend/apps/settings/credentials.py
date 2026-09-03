@@ -125,6 +125,34 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
     raise ValueError(f"No credentials for provider: {provider}")
 
 
+def anthropic_workspace_header(settings: AppSettings) -> dict[str, str]:
+    """Anthropic's identity-linked keys (personal and service-account) can span workspaces; such a key
+    must say which workspace every request acts in or the API answers 400 before the model is reached."""
+    workspace = (getattr(settings, "anthropic_workspace_id", None) or "").strip()
+    return {"anthropic-workspace-id": workspace} if workspace else {}
+
+
+def own_key_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
+    """The user's own Anthropic key as an SDK client. Every aux call on the key lane builds its client
+    here, so the workspace header cannot be present on one door and missing on another."""
+    import anthropic
+
+    return anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key,
+        default_headers=anthropic_workspace_header(settings) or None,
+    )
+
+
+def own_key_cli_env(settings: AppSettings) -> dict[str, str]:
+    """The user's own Anthropic key as the CLI's env. ANTHROPIC_CUSTOM_HEADERS is the CLI's documented
+    way to add a request header; a key with no workspace id gets exactly the env it always did."""
+    env = {"ANTHROPIC_API_KEY": settings.anthropic_api_key or ""}
+    header = anthropic_workspace_header(settings)
+    if header:
+        env["ANTHROPIC_CUSTOM_HEADERS"] = "\n".join(f"{name}: {value}" for name, value in header.items())
+    return env
+
+
 def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
     """Return an AsyncAnthropic client for the user's current connection mode."""
     import anthropic
@@ -138,7 +166,7 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
 
     # Prefer the user's own API key when present.
     if settings.anthropic_api_key:
-        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        return own_key_anthropic_client(settings)
 
     # Fall back to 9Router (free for users with Claude/ChatGPT/Gemini subscriptions).
     if p_check_9router():

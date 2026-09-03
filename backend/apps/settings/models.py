@@ -118,6 +118,8 @@ class AppSettings(BaseModel):
     # Off = agents can still READ your settings (redacted) but every SettingsWrite is refused.
     agent_settings_write_enabled: bool = True
     anthropic_api_key: Optional[str] = None
+    # A personal or service-account key that spans workspaces must name the one each request acts in (wrkspc_...).
+    anthropic_workspace_id: Optional[str] = None
     browser_homepage: str = "https://www.google.com"
     # Opt-in: let a blocked browser agent borrow the sign-in you already have in your everyday
     # browser instead of stopping to ask you to log in again. Default OFF because reading your real

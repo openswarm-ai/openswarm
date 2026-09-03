@@ -41,6 +41,7 @@ export interface AppSettings {
   dictation_sound_volume?: number;
   dictation_disabled_surfaces?: string;
   anthropic_api_key: string | null;
+  anthropic_workspace_id: string | null;
   openai_api_key?: string | null;
   google_api_key?: string | null;
   openrouter_api_key?: string | null;
@@ -185,6 +186,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dictation_sound_volume: 0.7,
   dictation_disabled_surfaces: '',
   anthropic_api_key: null,
+  anthropic_workspace_id: null,
   browser_homepage: 'https://duckduckgo.com',
   browser_import_signins: false,
   auto_select_mode_on_new_agent: false,
