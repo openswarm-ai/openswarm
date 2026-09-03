@@ -12,9 +12,18 @@ The two pre-existing workflow suites still carry their own local copies; new
 suites lean on these shared ones instead of re-pasting the boilerplate.
 """
 
-import asyncio
 import os
+import sys
 import tempfile
+
+# The suite used to run against the dev machine's REAL data root: one test saved an Output named "probe"
+# through a module its patch never reached, and 330 suite runs left 330 probe apps in Eric's Applications
+# window. The root is chosen when backend.config.paths is first imported, so this must run before any
+# backend import, and it says so loudly if it is too late.
+assert "backend.config.paths" not in sys.modules, "conftest must set OPENSWARM_DATA_ROOT before backend.config.paths is imported"
+os.environ["OPENSWARM_DATA_ROOT"] = tempfile.mkdtemp(prefix="osw_test_data_")
+
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
