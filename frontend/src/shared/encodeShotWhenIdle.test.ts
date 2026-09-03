@@ -57,3 +57,15 @@ test('an encoder that throws reports an empty string rather than killing the cal
   await wait(40);
   assert.equal(out, '');
 });
+
+test('shots that come due together encode one at a time with a breath between, never as one run', async () => {
+  const ticks: number[] = [];
+  const t0 = Date.now();
+  for (let i = 0; i < 4; i += 1) {
+    const log: string[] = [];
+    encodeShotWhenIdle(fakeImage(300 + i, log), 640, () => { ticks.push(Date.now() - t0); });
+  }
+  await wait(400);
+  assert.equal(ticks.length, 4);
+  for (let i = 1; i < ticks.length; i += 1) assert.ok(ticks[i] - ticks[i - 1] >= 40, `encodes ${i - 1} and ${i} ran ${ticks[i] - ticks[i - 1]} ms apart`);
+});
