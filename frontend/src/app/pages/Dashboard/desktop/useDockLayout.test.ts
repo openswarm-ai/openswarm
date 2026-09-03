@@ -1,9 +1,10 @@
-// ENG-331: at 40+ chats the rail runs at the 14px floor, where the bell curve is at its widest
+// ENG-331: past the floor the bell curve is at its widest; the floor moved 14 -> 20 on 2026-09-03 (60 chats were unreadable)
 // relative to the tile; these pin that the curve never crosses the entries/actions divider.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeMagnifyTransforms } from './useDockLayout';
 
+// The curve math is exercised at the old 14px floor on purpose: the numbers below were tuned there and the function is pure.
 const TILE = 14;
 const STEP = 18;
 const ENTRIES = 40;

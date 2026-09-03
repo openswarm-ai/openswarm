@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 const TILE_MAX = 30;
-// Apple's floor is deliberately tiny: magnification, not tile size, is what keeps a small tile hittable.
-const TILE_MIN = 14;
+// Apple's floor is tinier, but a 14px chat glyph was unreadable at 60 chats (Eric, 2026-09-03); past this the column scrolls.
+export const TILE_MIN = 20;
 const ROOT_PAD = 7;
 const GAP_RATIO = 0.3;
 const GAP_MIN = 3;
@@ -25,11 +25,20 @@ export interface DockLayout {
   scrollRef: React.MutableRefObject<HTMLDivElement | null>;
   tile: number;
   gap: number;
+  step: number;
   iconSize: number;
   scrolls: boolean;
   scrollHeight: number;
   bleed: number;
   applyMagnify: (clientY: number | null) => void;
+}
+
+/** How many whole tiles sit above and below the clip box at this scroll position. */
+export function hiddenCounts(scrollTop: number, clientHeight: number, scrollHeight: number, step: number): { above: number; below: number } {
+  if (step <= 0 || scrollHeight <= clientHeight) return { above: 0, below: 0 };
+  const above = Math.max(0, Math.round(scrollTop / step));
+  const below = Math.max(0, Math.round((scrollHeight - scrollTop - clientHeight) / step));
+  return { above, below };
 }
 
 function gapFor(tile: number): number {
@@ -209,6 +218,7 @@ export function useDockLayout({ cardCount, actionCount, dividerCount }: DockLayo
     scrollRef,
     tile,
     gap,
+    step,
     iconSize: Math.round(tile * ICON_RATIO),
     scrolls,
     scrollHeight,

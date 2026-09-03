@@ -10,7 +10,7 @@ import { getWebview } from '@/shared/browserRegistry';
 import { buildDockEntries, CardRect, DockEntry } from './dockEntries';
 import { openCardContextMenu } from './openCardContextMenu';
 import { dockTileMenuRows } from './dockTileMenuRows';
-import { useDockLayout } from './useDockLayout';
+import { hiddenCounts, useDockLayout } from './useDockLayout';
 import { DockTileIcon } from './DockTileIcon';
 import DockActionTiles, { DOCK_ACTION_COUNT } from './DockActionTiles';
 import DockHoverPreview from './DockHoverPreview';
@@ -53,7 +53,7 @@ function DesktopDock({
   const accent = useClaudeTokens().accent.primary;
   const [hovered, setHovered] = useState<{ id: string; top: number } | null>(null);
   const [liveShot, setLiveShot] = useState<{ id: string; dataUrl: string } | null>(null);
-  const [edges, setEdges] = useState<{ top: boolean; bottom: boolean }>({ top: false, bottom: false });
+  const [edges, setEdges] = useState<{ top: boolean; bottom: boolean; above: number; below: number }>({ top: false, bottom: false, above: 0, below: 0 });
   const hoverTimer = useRef<number | null>(null);
 
   // The dock consumes only name + turn_label per session, but the whole-dict identity changes on
@@ -66,7 +66,7 @@ function DesktopDock({
     [sessionsKey, cards, viewCards, browserCards, workflowCards, outputs],
   );
 
-  const { dockRef, scrollRef, tile, gap, iconSize, scrolls, scrollHeight, bleed, applyMagnify } = useDockLayout({
+  const { dockRef, scrollRef, tile, gap, step, iconSize, scrolls, scrollHeight, bleed, applyMagnify } = useDockLayout({
     cardCount: entries.length,
     actionCount: DOCK_ACTION_COUNT,
     dividerCount: entries.length > 0 ? 2 : 1,
@@ -99,13 +99,14 @@ function DesktopDock({
   const readEdges = useCallback((el: HTMLDivElement) => {
     const top = el.scrollTop > 1;
     const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-    setEdges((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
-  }, []);
+    const { above, below } = hiddenCounts(el.scrollTop, el.clientHeight - bleed * 2, el.scrollHeight - bleed * 2, step);
+    setEdges((prev) => (prev.top === top && prev.bottom === bottom && prev.above === above && prev.below === below ? prev : { top, bottom, above, below }));
+  }, [bleed, step]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && scrolls) readEdges(el);
-    else setEdges((prev) => (prev.top || prev.bottom ? { top: false, bottom: false } : prev));
+    else setEdges((prev) => (prev.top || prev.bottom ? { top: false, bottom: false, above: 0, below: 0 } : prev));
   }, [scrolls, scrollHeight, entries.length, readEdges, scrollRef]);
 
   // The fade is exactly the bleed band, which (since scrolling only happens at the tile floor, where bleed > tile)
@@ -119,10 +120,15 @@ function DesktopDock({
     ? (liveShot?.id === hoveredEntry.id ? liveShot.dataUrl : hoveredEntry.thumbnail || undefined)
     : undefined;
 
-  // Past the shrink floor the column scrolls, and a hidden scrollbar with no caret reads as "the rest is gone".
-  const carets: { key: string; top: number; icon: React.ReactNode }[] = [];
-  if (scrolls && edges.top) carets.push({ key: 'up', top: 0, icon: <KeyboardArrowUpRoundedIcon sx={{ fontSize: '0.75rem' }} /> });
-  if (scrolls && edges.bottom) carets.push({ key: 'down', top: scrollHeight - CARET_H, icon: <KeyboardArrowDownRoundedIcon sx={{ fontSize: '0.75rem' }} /> });
+  // Past the shrink floor the column scrolls, and a hidden scrollbar with a faded last tile read as "cut off"
+  // (Eric, 2026-09-03). Each edge now says how many tiles are past it, and a click pages that way.
+  const pageBy = (direction: 1 | -1) => {
+    const el = scrollRef.current;
+    if (el) el.scrollBy({ top: direction * Math.max(step, el.clientHeight - bleed * 2 - step), behavior: 'smooth' });
+  };
+  const carets: { key: string; top: number; count: number; icon: React.ReactNode; onClick: () => void }[] = [];
+  if (scrolls && edges.top) carets.push({ key: 'up', top: 0, count: edges.above, icon: <KeyboardArrowUpRoundedIcon sx={{ fontSize: '0.75rem' }} />, onClick: () => pageBy(-1) });
+  if (scrolls && edges.bottom) carets.push({ key: 'down', top: scrollHeight - CARET_H, count: edges.below, icon: <KeyboardArrowDownRoundedIcon sx={{ fontSize: '0.75rem' }} />, onClick: () => pageBy(1) });
 
   return (
     <Box
@@ -175,6 +181,10 @@ function DesktopDock({
               height: `${scrollHeight}px`,
               overflowY: 'auto',
               overscrollBehavior: 'contain',
+              // A wheel settles on a whole tile, so the clip edge lands in a gap instead of bisecting an icon.
+              scrollSnapType: 'y proximity',
+              scrollPaddingTop: `${bleed}px`,
+              scrollPaddingBottom: `${bleed}px`,
               // Bleed the clip box past the column so scrolling doesn't crop the magnified tiles.
               width: `${tile + bleed * 2}px`,
               mx: `${-bleed}px`,
@@ -217,6 +227,7 @@ function DesktopDock({
                   cursor: 'pointer',
                   overflow: 'hidden',
                   flexShrink: 0,
+                  scrollSnapAlign: 'start',
                   transition: 'box-shadow 140ms ease, background 140ms ease',
                   // Same grammar as the minimized rail: soft accent tint, ONE accent inner ring as the carrier, and the icon lifts. The outer glow is decoration, never the signal.
                   ...(isActive && {
@@ -243,6 +254,12 @@ function DesktopDock({
       {carets.map((c) => (
         <Box
           key={c.key}
+          data-dock-edge={c.key}
+          data-dock-hidden={c.count}
+          role="button"
+          aria-label={`${c.count} more ${c.key === 'up' ? 'above' : 'below'}`}
+          onClick={(e: React.MouseEvent) => { e.stopPropagation(); endHover(); c.onClick(); }}
+          onMouseEnter={endHover}
           sx={{
             position: 'absolute',
             left: 0,
@@ -252,11 +269,17 @@ function DesktopDock({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'rgba(255,255,255,0.72)',
-            pointerEvents: 'none',
+            gap: '1px',
+            fontSize: '0.5625rem',
+            fontWeight: 700,
+            lineHeight: 1,
+            color: 'rgba(255,255,255,0.78)',
+            cursor: 'pointer',
             zIndex: 40,
+            '&:hover': { color: '#fff' },
           }}
         >
+          {c.count > 0 ? <span>{c.count}</span> : null}
           {c.icon}
         </Box>
       ))}
