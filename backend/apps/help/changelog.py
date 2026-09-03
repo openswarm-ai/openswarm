@@ -22,7 +22,7 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
-        version="1.7.10-exp.4",
+        version="1.7.10-exp.5",
         headline="Answers type out steadily, installs show their progress, the dock stays readable with dozens of chats, and Anthropic keys that span workspaces work.",
         highlights=[
             "Answers type out steadily instead of arriving in word-sized lumps, and a chat you open while a reply is already being written shows the text so far instead of a blank wait.",
@@ -31,6 +31,7 @@ P_RELEASES: List[ReleaseNote] = [
             "Anthropic API keys that can act in more than one workspace now work. Enter the Workspace ID next to the key in Settings, Models; the chat card names this when a key needs it.",
         ],
         fixes=[
+            "A finished reply no longer leaves a still-thinking bubble under the answer when you open the chat afterwards.",
             "A quiet breathing mark replaces the word Thinking while the model works; a word appears only when there is a real step to name.",
             "A streamed reply no longer re-types itself from the start when it finishes, and its actions wait until the text has settled.",
             "Moving, zooming and dragging cards on a busy board no longer stutters on the first frame: collapsed tool output leaves the page, hovering no longer restyles a whole card, and screenshots are encoded off the gesture path.",
