@@ -22,6 +22,23 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.4",
+        headline="Answers type out steadily, installs show their progress, the dock stays readable with dozens of chats, and Anthropic keys that span workspaces work.",
+        highlights=[
+            "Answers type out steadily instead of arriving in word-sized lumps, and a chat you open while a reply is already being written shows the text so far instead of a blank wait.",
+            "Installing from the marketplace shows a ring that fills as the package downloads, then Open. An ordinary app installs in one click; only a blocking finding or a key you need to supply asks first.",
+            "The dock stays readable with dozens of chats: tiles never shrink below a legible size, scrolling settles on whole tiles, and the edges say how many chats are above or below and page there on click.",
+            "Anthropic API keys that can act in more than one workspace now work. Enter the Workspace ID next to the key in Settings, Models; the chat card names this when a key needs it.",
+        ],
+        fixes=[
+            "A quiet breathing mark replaces the word Thinking while the model works; a word appears only when there is a real step to name.",
+            "A streamed reply no longer re-types itself from the start when it finishes, and its actions wait until the text has settled.",
+            "Moving, zooming and dragging cards on a busy board no longer stutters on the first frame: collapsed tool output leaves the page, hovering no longer restyles a whole card, and screenshots are encoded off the gesture path.",
+            "App servers left behind by a backend that died are cleaned up again on packaged builds.",
+            "The marketplace review sheet leads with one line and folds the details; Install, Open and Installed are the only words on a package.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.10-exp.3",
         headline="Answers stream smoothly while you scroll, long chats stay alive, and Windows can stop antivirus breaking the app.",
         highlights=[

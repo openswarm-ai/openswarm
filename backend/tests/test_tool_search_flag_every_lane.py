@@ -36,11 +36,11 @@ def test_it_never_overrides_a_branch_that_set_it_deliberately():
 
 
 def test_it_survives_a_branch_that_ships_only_one_key():
-    """The direct-api-key lane is literally `{"ANTHROPIC_API_KEY": ...}`; that is the shape that
-    was missing the flag, and the same shape the base-override seam already had to be fixed for."""
+    """The direct-api-key lane ships only the key (plus the workspace header when one is set); that is
+    the shape that was missing the flag, and the same shape the base-override seam already had to be fixed for."""
     src = p_src()
-    assert '{"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}' in src
-    i = src.index('{"ANTHROPIC_API_KEY": global_settings.anthropic_api_key}')
+    assert 'options_kwargs["env"] = p_own_key_cli_env_fallback(global_settings)' in src
+    i = src.index('options_kwargs["env"] = p_own_key_cli_env_fallback(global_settings)')
     j = src.index('p_env.setdefault("ENABLE_TOOL_SEARCH", "auto")')
     assert i < j, "the setdefault runs after that branch assigns its env"
 
