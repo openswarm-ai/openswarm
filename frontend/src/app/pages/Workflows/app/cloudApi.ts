@@ -62,7 +62,13 @@ export interface CloudStatusUnknown extends CloudStatusShared {
   detail: string;
 }
 
-export type CloudStatus = CloudStatusReady | CloudStatusSignedOut | CloudStatusUnknown;
+// The signed-in cloud has no workflows API (its preflight route 404s): this app is ahead of it.
+export interface CloudStatusUnavailable extends CloudStatusShared {
+  state: 'unavailable';
+  reason: string;
+}
+
+export type CloudStatus = CloudStatusReady | CloudStatusSignedOut | CloudStatusUnknown | CloudStatusUnavailable;
 
 export interface CloudRun {
   id: string;

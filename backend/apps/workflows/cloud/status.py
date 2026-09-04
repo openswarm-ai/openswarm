@@ -49,6 +49,13 @@ class CloudStatusUnknown(CloudStatusBase):
     detail: str
 
 
+# The cloud we are signed into has no workflows API at all (the preflight route 404s): this app is ahead
+# of that control plane. Nothing was sent, and the toggle should say so instead of "declined".
+class CloudStatusUnavailable(CloudStatusBase):
+    state: Literal["unavailable"] = "unavailable"
+    reason: str
+
+
 class CloudStatusReady(CloudStatusBase):
     state: Literal["ready"] = "ready"
     plan: Optional[str] = None
@@ -62,7 +69,7 @@ class CloudStatusReady(CloudStatusBase):
     credential: CredentialReadiness
 
 
-CloudStatus = Union[CloudStatusReady, CloudStatusSignedOut, CloudStatusUnknown]
+CloudStatus = Union[CloudStatusReady, CloudStatusSignedOut, CloudStatusUnknown, CloudStatusUnavailable]
 
 
 @typechecked
@@ -124,6 +131,8 @@ async def compute_status(wf: Workflow) -> CloudStatus:
     except cloud.CloudUnreachable as exc:
         return CloudStatusUnknown(detail=exc.detail, **shared)
     except cloud.CloudRefused as exc:
+        if exc.status == 404:
+            return CloudStatusUnavailable(reason="Cloud runs are not available on your OpenSwarm Cloud yet; this version of the app is ahead of it. Nothing was sent.", **shared)
         return CloudStatusUnknown(detail=exc.message, **shared)
 
     p_mirror_cloud_state(wf, pre.hosted)

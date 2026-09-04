@@ -43,6 +43,7 @@ export function cloudAvailability(probe: CloudProbe): CloudAvailability {
     return { kind: 'blocked', reason: status.schedule_reason, action: null };
   }
   if (status.state === 'unknown') return { kind: 'unknown', detail: status.detail };
+  if (status.state === 'unavailable') return { kind: 'blocked', reason: status.reason, action: null };
   if (status.state === 'signed_out') {
     return {
       kind: 'blocked',
