@@ -111,7 +111,8 @@ def read_supporting_files(skill_dir: str) -> dict[str, bytes]:
         p_dirs[:] = [d for d in p_dirs if d not in WALK_SKIP_DIRS]
         for n in names:
             full = os.path.join(root, n)
-            rel = os.path.relpath(full, skill_dir)
+            # Slash keys on every OS, like the app exporter; a Windows export used to ship `scripts\\x.py`.
+            rel = os.path.relpath(full, skill_dir).replace(os.sep, "/")
             if rel == "SKILL.md" or n.startswith("."):
                 continue
             try:

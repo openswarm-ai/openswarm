@@ -93,6 +93,10 @@ class AppExportable:
             with open(dest, "wb") as f:
                 f.write(data)
             wrote_workspace = True
+        if files and not wrote_workspace:
+            # The bundle shipped files but none under workspace/: a hollow app would import "successfully" and
+            # then say its files are missing. Fail here, where the rollback still knows what to undo.
+            raise ValueError("the app's files are not where the bundle format puts them; nothing was imported")
         if wrote_workspace:
             p_localize_env(folder)
 

@@ -315,6 +315,13 @@ def p_read_payload(sandbox: str, ref: EntityRef) -> dict:
         return json.load(f)
 
 
+def bundle_key(full: str, base: str) -> str:
+    """A staged file's key inside the bundle: slash-separated on every OS. On Windows relpath gave
+    `workspace\\app\\...`, the app importer looked for `workspace/`, skipped every file, and saved a
+    hollow app that then said its files were missing (the Tisusa import, 2026-09-04)."""
+    return os.path.relpath(full, base).replace(os.sep, "/")
+
+
 def p_read_files(sandbox: str, ref: EntityRef) -> dict[str, bytes]:
     base = p_safe_join(sandbox, os.path.join(ref.path, "files"))
     out: dict[str, bytes] = {}
@@ -324,7 +331,7 @@ def p_read_files(sandbox: str, ref: EntityRef) -> dict[str, bytes]:
         for fn in fnames:
             full = os.path.join(root, fn)
             with open(full, "rb") as f:
-                out[os.path.relpath(full, base)] = f.read()
+                out[bundle_key(full, base)] = f.read()
     return out
 
 
