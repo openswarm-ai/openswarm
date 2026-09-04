@@ -671,6 +671,8 @@ async def create_output(body: OutputCreate):
         input_schema=body.input_schema,
         files=body.files,
         thumbnail=body.thumbnail,
+        # The request model has carried this since the workspace era; the route dropped it, so an API caller's app had no workspace and its card said the files were missing.
+        workspace_id=body.workspace_id,
         created_at=now,
         updated_at=now,
     )
