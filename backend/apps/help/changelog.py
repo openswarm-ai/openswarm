@@ -22,7 +22,7 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
-        version="1.7.10-exp.7",
+        version="1.7.10-exp.8",
         headline="Answers type out steadily, installs show their progress, the dock stays readable with dozens of chats, and Anthropic keys that span workspaces work.",
         highlights=[
             "Answers type out steadily instead of arriving in word-sized lumps, and a chat you open while a reply is already being written shows the text so far instead of a blank wait.",
@@ -31,6 +31,8 @@ P_RELEASES: List[ReleaseNote] = [
             "Anthropic API keys that can act in more than one workspace now work. Enter the Workspace ID next to the key in Settings, Models; the chat card names this when a key needs it.",
         ],
         fixes=[
+            "Windows: importing a .swarm app brings its files along. It used to save an empty app that said its files were missing.",
+            "A workflow's Cloud toggle says when your OpenSwarm Cloud cannot host runs yet, instead of a declined request.",
             "A chat whose engine process crashed between turns recovers on the next message instead of failing every message from then on; when it crashes twice, the card says so and what to do.",
             "Connecting Google Workspace or any other account is recognized the moment it completes, in every open window, and its tools are discovered right away instead of after an app reload.",
             "An app without a backend renders again after a reload. It used to come back blank once it switched to serving its built bundle.",
