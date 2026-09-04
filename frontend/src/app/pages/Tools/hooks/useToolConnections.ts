@@ -42,30 +42,45 @@ export function useToolConnections({ items, setSnackbar, setExpandedToolId }: De
       const { auth_url } = result.payload;
       const popup = window.open(auth_url, 'oauth', 'width=500,height=700,left=200,top=100');
 
-      const afterConnect = async () => {
-        const statusResult = await dispatch(fetchToolStatus(toolId));
-        if (fetchToolStatus.fulfilled.match(statusResult) && statusResult.payload.auth_status === 'connected') {
+      // The claim lands on the backend a moment AFTER the popup closes (and never posts back when the
+      // flow ran in the system browser), so a single status read at close time called a success a
+      // failure and the page never looked again (Haik, 2026-09-03). Three doors, one settle: the
+      // backend's tools:updated broadcast, the popup's own message, and a close-poll that keeps checking.
+      let settled = false;
+      const settle = async (connected: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('message', onMessage);
+        window.removeEventListener('openswarm:tool-updated', onUpdated);
+        clearInterval(pollInterval);
+        if (connected) {
           setSnackbar({ open: true, message: 'Account connected! Discovering tools…' });
           setExpandedToolId(toolId);
           dispatch(discoverTools(toolId));
         } else {
-          setSnackbar({ open: true, message: 'Account connected!' });
+          setSnackbar({ open: true, message: 'The sign-in window closed before the connection finished. Try Connect again.', severity: 'error' });
         }
       };
-
+      const readStatus = async (): Promise<boolean> => {
+        const statusResult = await dispatch(fetchToolStatus(toolId));
+        return fetchToolStatus.fulfilled.match(statusResult) && statusResult.payload.auth_status === 'connected';
+      };
+      const onUpdated = (event: Event) => {
+        const detail = (event as CustomEvent<{ toolId?: string; authStatus?: string }>).detail;
+        if (detail?.toolId === toolId) void settle(detail.authStatus === 'connected');
+      };
       const onMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'oauth_complete' && event.data?.tool_id === toolId) {
-          afterConnect();
-          window.removeEventListener('message', onMessage);
-        }
+        if (event.data?.type === 'oauth_complete' && event.data?.tool_id === toolId) void readStatus().then((ok) => settle(ok));
       };
       window.addEventListener('message', onMessage);
-
+      window.addEventListener('openswarm:tool-updated', onUpdated);
+      let closedChecks = 0;
       const pollInterval = setInterval(() => {
+        if (settled) { clearInterval(pollInterval); return; }
         if (popup?.closed) {
-          clearInterval(pollInterval);
-          afterConnect();
-          window.removeEventListener('message', onMessage);
+          // The claim can land a few seconds after the window closes; keep reading before concluding.
+          closedChecks += 1;
+          void readStatus().then((ok) => { if (ok || closedChecks >= 12) void settle(ok); });
         }
       }, 1000);
     } else {

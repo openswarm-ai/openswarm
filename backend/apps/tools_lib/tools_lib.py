@@ -159,6 +159,8 @@ def load_all_tools() -> list[ToolDefinition]:
 
 
 def save(tool: ToolDefinition):
+    # A fresh data root has no tools dir yet; the first save must not depend on boot having made it.
+    os.makedirs(DATA_DIR, exist_ok=True)
     with open(os.path.join(DATA_DIR, f"{tool.id}.json"), "w") as f:
         json.dump(tool.model_dump(), f, indent=2)
 
@@ -308,18 +310,31 @@ async def list_tools():
     return {"tools": tools}
 
 
-def p_connected_html() -> HTMLResponse:
+async def p_broadcast_tool_updated(tool: ToolDefinition) -> None:
+    """A connector's auth state changed on the backend; every open window refetches it instead of
+    guessing from a popup closing (the Tools page used to read the status ONCE the instant the popup
+    closed, usually before the claim had landed, and then never again until an app reload)."""
+    try:
+        from backend.apps.agents.core.ws_manager import ws_manager
+        await ws_manager.broadcast_global("tools:updated", {"tool_id": tool.id, "auth_status": tool.auth_status})
+    except Exception:
+        logger.exception("tools:updated broadcast failed for %s", tool.id)
+
+
+def p_connected_html(tool_id: str = "") -> HTMLResponse:
     """v1.0.25-style auto-close page. Same markup so the UX is unchanged."""
-    return HTMLResponse("""
+    # The page names the tool it connected; the app compares ids, and an id-less message matched nothing (Haik, 2026-09-03).
+    p_safe_id = re.sub(r"[^A-Za-z0-9_-]", "", tool_id or "")
+    return HTMLResponse(("""
     <html><body>
     <h2 style="font-family:sans-serif;color:#22c55e">Connected successfully!</h2>
     <p style="font-family:sans-serif;color:#666">You can close this window.</p>
     <script>
-      if (window.opener) window.opener.postMessage({type:'oauth_complete'}, '*');
+      if (window.opener) window.opener.postMessage({type:'oauth_complete', tool_id: '__TOOL_ID__'}, '*');
       setTimeout(function(){ window.close(); }, 1500);
     </script>
     </body></html>
-    """)
+    """).replace("__TOOL_ID__", p_safe_id))
 
 
 @tools_lib.router.get("/{tool_id}")
@@ -612,6 +627,7 @@ async def oauth_disconnect(tool_id: str):
     tool.auth_status = "configured"
     tool.connected_account_email = None
     save(tool)
+    await p_broadcast_tool_updated(tool)
     return {"ok": True, "tool": tool.model_dump()}
 
 
@@ -704,7 +720,8 @@ async def oauth_cloud_claim(
             logger.warning("Google userinfo lookup post-claim failed: %s", e)
     persist_cloud_tokens(tool, tokens)
     save(tool)
-    return p_connected_html()
+    await p_broadcast_tool_updated(tool)
+    return p_connected_html(tool.id)
 
 
 @tools_lib.router.post("/google-oauth-token")

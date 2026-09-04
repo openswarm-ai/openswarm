@@ -33,6 +33,7 @@ import {
   clearTurnLabel,
 } from '../state/agentsSlice';
 import { streamStart, streamSnapshot, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
+import { fetchToolStatus } from '../state/toolsSlice';
 import { remountAppPreview } from '../state/outputsSlice';
 import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
 import { interactionActive, installInteractionListeners } from '../interactionPriority';
@@ -656,6 +657,13 @@ class WebSocketManager {
         }
         break;
 
+      case 'tools:updated':
+        // A connector's auth state changed on the backend (an OAuth claim landed, a disconnect); refetch it and tell the Tools page.
+        if (data.tool_id) {
+          store.dispatch(fetchToolStatus(data.tool_id));
+          try { window.dispatchEvent(new CustomEvent('openswarm:tool-updated', { detail: { toolId: data.tool_id, authStatus: data.auth_status } })); } catch { /* not in a browser */ }
+        }
+        break;
       case 'agent:output_upserted':
         // Emitted by the backend when an Output row is created (canvas-launched App Builder seed) or updated (post-session meta.json sync). The upsert reducer merges over an existing row so a UI that already loaded the row doesn't lose locally-applied fields.
         if (data.output && data.output.id) {
