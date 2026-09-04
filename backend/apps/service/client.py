@@ -400,6 +400,8 @@ def submit_diagnostic(diagnostic: dict) -> None:
     # is deliberately capturing, so only the sink-less case is blocked.
     if os.environ.get("PYTEST_CURRENT_TEST") and test_sink is None:
         return
+    # The build that wrote an envelope is the first thing a field read needs, and it used to be inferred from which fields were present.
+    diagnostic.setdefault("app_version", APP_VERSION)
     try:
         from backend.apps.service.ring_buffer import snapshot
         diagnostic["recent_log"] = snapshot()

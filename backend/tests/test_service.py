@@ -214,6 +214,16 @@ def test_legacy_submit_diagnostic(sink):
     assert len(sink) == 1
 
 
+def test_every_diagnostic_carries_the_app_version(sink):
+    # Alex's -11 crashes (2026-09-04) had to be dated to a build by which envelope FIELDS they carried; the version rides every envelope now.
+    from backend.apps.service.client import submit_diagnostic
+    from backend.apps.service.version import APP_VERSION
+    submit_diagnostic({"kind": "model_error"})
+    _, body = sink[0]
+    assert body["d"]["diagnostic"]["app_version"] == APP_VERSION
+    assert APP_VERSION and APP_VERSION != "unknown"
+
+
 # --- spool -------------------------------------------------------------------
 
 def test_buffer_enqueue_and_drain(tmp_path):
