@@ -332,9 +332,15 @@ jobs:
           Invoke-RestMethod -Method Post -Uri "$B/outputs/workspace/seed" -Headers $H -ContentType "application/json" -Body (@{ workspace_id = $ws; template_mode = "flat"; files = @{ "index.html" = "<h1>round trip</h1>"; "app/nested.txt" = "deep" } } | ConvertTo-Json -Depth 5) | Out-Null
           $out = Invoke-RestMethod -Method Post -Uri "$B/outputs/create" -Headers $H -ContentType "application/json" -Body (@{ name = "CI round trip"; workspace_id = $ws } | ConvertTo-Json)
           $oid = if ($out.id) { $out.id } else { $out.output.id }
+          $seeded = Join-Path $env:APPDATA "OpenSwarm\data\outputs_workspace\$ws"
+          echo "created output=$oid workspace_id=$(if ($out.workspace_id) { $out.workspace_id } else { $out.output.workspace_id }) seeded files on disk=$((Get-ChildItem -Recurse -File $seeded -ErrorAction SilentlyContinue | Measure-Object).Count)"
           Invoke-WebRequest -Method Post -Uri "$B/swarm/export" -Headers $H -ContentType "application/json" -Body (@{ type = "app"; id = $oid } | ConvertTo-Json) -OutFile "$env:TEMP\roundtrip.swarm" -UseBasicParsing
+          $py = Join-Path $env:APP_DIR "resources\python-env\python.exe"
+          & $py -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); n=z.namelist(); print('bundle members=%d workspace=%d' % (len(n), sum('/files/workspace/' in x for x in n))); print('  ' + chr(10).join('  '+x for x in n[:12]))" "$env:TEMP\roundtrip.swarm"
           $pre = Invoke-RestMethod -Method Post -Uri "$B/swarm/import/preflight" -Headers $H -Form @{ file = Get-Item "$env:TEMP\roundtrip.swarm" }
+          echo "preflight ok=$($pre.ok) counts=$($pre.summary.counts | ConvertTo-Json -Compress) token=$($pre.staging_token.Substring(0,8))"
           $com = Invoke-RestMethod -Method Post -Uri "$B/swarm/import/commit" -Headers $H -ContentType "application/json" -Body (@{ staging_token = $pre.staging_token; accept_requirements = @() } | ConvertTo-Json)
+          echo "commit=$($com | ConvertTo-Json -Compress)"
           $rec = Invoke-RestMethod -Uri "$B/outputs/$($com.root_id)" -Headers $H
           if ($rec.output) { $rec = $rec.output }
           echo "imported workspace_id=$($rec.workspace_id)"
