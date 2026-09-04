@@ -309,3 +309,39 @@ jobs:
           echo "health=$code"
           Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue
           if ($code -ne 200) { throw "backend never became healthy" }
+
+      - name: .swarm app round trip on real Windows (export, import, the workspace lands)
+        shell: pwsh
+        run: |
+          # ENG-463: the staging reader keyed files with backslashes, the importer looked for workspace/, and every
+          # Windows import saved a hollow app. This exports a workspace app and imports it back on the installed build.
+          $env:OPENSWARM_E2E = "1"
+          Start-Process -FilePath $env:APP_EXE
+          $tok = $null; $code = 0
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 3
+            $p = Join-Path $env:APPDATA "OpenSwarm\data\auth.token"
+            if (Test-Path $p) { $tok = (Get-Content $p -Raw).Trim() }
+            try { $code = (Invoke-WebRequest -Uri "http://127.0.0.1:8324/api/health/check" -UseBasicParsing -TimeoutSec 2).StatusCode } catch { $code = 0 }
+            if ($code -eq 200 -and $tok) { break }
+          }
+          if (-not $tok -or $code -ne 200) { Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue; throw "backend or token never came up" }
+          $H = @{ Authorization = "Bearer $tok" }
+          $B = "http://127.0.0.1:8324/api"
+          $ws = [guid]::NewGuid().ToString("N")
+          Invoke-RestMethod -Method Post -Uri "$B/outputs/workspace/seed" -Headers $H -ContentType "application/json" -Body (@{ workspace_id = $ws; template_mode = "flat"; files = @{ "index.html" = "<h1>round trip</h1>"; "app/nested.txt" = "deep" } } | ConvertTo-Json -Depth 5) | Out-Null
+          $out = Invoke-RestMethod -Method Post -Uri "$B/outputs/create" -Headers $H -ContentType "application/json" -Body (@{ name = "CI round trip"; workspace_id = $ws } | ConvertTo-Json)
+          $oid = if ($out.id) { $out.id } else { $out.output.id }
+          Invoke-WebRequest -Method Post -Uri "$B/swarm/export" -Headers $H -ContentType "application/json" -Body (@{ type = "app"; id = $oid } | ConvertTo-Json) -OutFile "$env:TEMP\roundtrip.swarm" -UseBasicParsing
+          $pre = Invoke-RestMethod -Method Post -Uri "$B/swarm/import/preflight" -Headers $H -Form @{ file = Get-Item "$env:TEMP\roundtrip.swarm" }
+          $com = Invoke-RestMethod -Method Post -Uri "$B/swarm/import/commit" -Headers $H -ContentType "application/json" -Body (@{ staging_token = $pre.staging_token; accept_requirements = @() } | ConvertTo-Json)
+          $rec = Invoke-RestMethod -Uri "$B/outputs/$($com.root_id)" -Headers $H
+          if ($rec.output) { $rec = $rec.output }
+          echo "imported workspace_id=$($rec.workspace_id)"
+          $probe = 0
+          if ($rec.workspace_id) { $probe = (Invoke-WebRequest -Uri "$B/outputs/workspace/$($rec.workspace_id)" -Headers $H -UseBasicParsing).StatusCode }
+          $nested = Join-Path $env:APPDATA "OpenSwarm\data\outputs_workspace\$($rec.workspace_id)\app\nested.txt"
+          echo "workspace probe=$probe nested file present=$(Test-Path $nested)"
+          Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue
+          if (-not $rec.workspace_id) { throw "the imported app has no workspace: the Windows backslash import" }
+          if ($probe -ne 200 -or -not (Test-Path $nested)) { throw "round trip failed" }
