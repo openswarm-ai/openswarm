@@ -129,7 +129,8 @@ xattr -dr com.apple.quarantine "$RUNAPP" 2>/dev/null
 if lsof -nP -iTCP:8324 -sTCP:LISTEN >/dev/null 2>&1; then
   bad "port :8324 is already taken" "kill the other backend first, or this check passes on its reply"
 fi
-PATH="/usr/bin:/bin:/usr/sbin:/sbin" "$RUNAPP/Contents/MacOS/OpenSwarm" >/tmp/osw-smoke.log 2>&1 &
+# OPENSWARM_NO_UPDATE: this instance shares the REAL updater cache; with the experimental toggle off it downloaded Latest and the pending 1.7.9 landed on the user's app at its next quit (2026-09-03).
+OPENSWARM_NO_UPDATE=1 PATH="/usr/bin:/bin:/usr/sbin:/sbin" "$RUNAPP/Contents/MacOS/OpenSwarm" >/tmp/osw-smoke.log 2>&1 &
 LAUNCHED=$!
 BOOTED=0
 for _ in $(seq 1 60); do
