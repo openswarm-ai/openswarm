@@ -106,7 +106,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
             "",
             f"NEXT: read {path}/SKILL.md now — it's the full App Builder reference (stack, layout, rules); follow it.",
             "Then build by writing files under the workspace path; the preview hot-reloads on save.",
-            "Housekeeping: write meta.json (name/description) first; `bash restart.sh` restarts the runtime; `.openswarm/terminal.log` is the live terminal (check it before declaring done).",
+            "Housekeeping: write meta.json (name, description, and icon: ONE emoji that stands for the app, shown in the dock and the Applications window) first; `bash restart.sh` restarts the runtime; `.openswarm/terminal.log` is the live terminal (check it before declaring done).",
         ]
         return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 

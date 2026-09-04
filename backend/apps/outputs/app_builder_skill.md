@@ -559,7 +559,7 @@ Common deps already in the template:
 - **Edits are auto-saved**. As soon as you write a file via the Edit/Write tool, it's on disk. Vite HMR re-renders the preview within ~100ms.
 - **`bash restart.sh` restarts the app runtime yourself** — backend + vite, no user action needed. Use it after `bash backend_init.sh`, after editing `.env`, or whenever backend code must reload (uvicorn runs WITHOUT --reload, so backend edits do NOT hot-apply). Never ask the user to restart for you, and never try to kill/rerun run.sh — the harness owns the process. If `restart.sh` is missing (older app), `mkdir -p .openswarm && touch .openswarm/restart-requested` does the same thing.
 - After a restart, wait a few seconds and check `.openswarm/terminal.log` to confirm the boot looked clean.
-- **`meta.json`** at workspace root drives the app's name + description in the OpenSwarm sidebar and on the app's live card on the dashboard. Write it FIRST when starting a new app (see step 1 of the Quick start checklist), and revise it any time the app's purpose shifts.
+- **`meta.json`** at workspace root drives the app's name, description and icon (one emoji) in the OpenSwarm dock, the Applications window and the app's live card on the dashboard. Write it FIRST when starting a new app (see step 1 of the Quick start checklist), and revise it any time the app's purpose shifts.
 
 ---
 
@@ -638,8 +638,10 @@ When making a new app from scratch:
    The sidebar and the app's dashboard card show this name to the user; until
    you write it, both surfaces sit at "Untitled App". Don't wait until the end of
    the turn to fill it in, pick a name from the user's prompt and ship it now.
+   Add `icon`: ONE emoji that stands for the app (it becomes the app's mark in the dock and the
+   Applications window; words and icon names render as the generic grid, never as a letter).
    Example: prompt "make doodle jump" → `{"name": "Doodle Jumper", "description":
-   "Endless platform-hopper inspired by Doodle Jump."}`. You can revise it later
+   "Endless platform-hopper inspired by Doodle Jump.", "icon": "🦘"}`. You can revise it later
    if the app's purpose shifts.
 2. **REPLACE** `frontend/src/pages/index.tsx`. The starter ships with a
    "Brewing your app" placeholder — this is intentional, it's what the user

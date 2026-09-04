@@ -4,6 +4,7 @@ import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import { MessageCircle } from 'lucide-react';
 import { pickIcon } from '../canvas/DashboardGlyph';
+import { appIconGlyph } from '@/shared/appIconGlyph';
 import { displayChatTitle } from '@/shared/state/sessionDisplay';
 import type { AgentSession } from '@/shared/state/agentsSlice';
 import type {
@@ -102,7 +103,9 @@ export function buildDockEntries({ sessions, cards, viewCards, browserCards, wor
       rect: vc,
       tileBg: 'linear-gradient(135deg, #ef9552, #d96a2b)',
       // Never letters in the dock: a real symbol reads as an app, a glyph initial reads as a bug.
-      icon: <GridViewRoundedIcon sx={{ fontSize: 16, color: '#fff' }} />,
+      icon: appIconGlyph(output?.icon)
+        ? <span style={{ fontSize: 16, lineHeight: 1 }}>{appIconGlyph(output?.icon)}</span>
+        : <GridViewRoundedIcon sx={{ fontSize: 16, color: '#fff' }} />,
       thumbnail: output?.thumbnail,
     });
   }

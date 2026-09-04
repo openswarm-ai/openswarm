@@ -19,6 +19,7 @@ from backend.apps.outputs.models import (
 )
 from backend.apps.outputs.code_safety import get_code_warnings
 from backend.apps.outputs.executor import execute_backend_code
+from backend.apps.outputs.app_icon import glyph_icon
 from backend.apps.outputs.publish_capability import check_publish_capability
 from backend.apps.outputs.publish_common import slugify, PublishError
 from backend.apps.outputs.publish_scan import scan_for_publish, quick_ast_gate
@@ -217,13 +218,15 @@ def write_meta_json_fields(workspace_id: str, fields: dict) -> bool:
 
 
 def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = None) -> bool:
-    """Sync the Output row's name/description from meta.json (or fallback_name when
-    meta.json has no name). Only overwrites placeholder values; user renames win."""
+    """Sync the Output row's name/description/icon from meta.json (or fallback_name when
+    meta.json has no name). Name and description only overwrite placeholder values (user renames
+    win); the icon is the agent's channel, so a new emoji there always lands."""
     try:
         folder = os.path.join(WORKSPACE_DIR, workspace_id)
         meta_path = os.path.join(folder, "meta.json")
         name = ""
         description = ""
+        icon = None
         if os.path.exists(meta_path):
             try:
                 with open(meta_path) as f:
@@ -231,11 +234,12 @@ def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = No
                 if isinstance(meta, dict):
                     name = str(meta.get("name") or "").strip()
                     description = str(meta.get("description") or "").strip()
+                    icon = glyph_icon(meta.get("icon"))
             except (OSError, json.JSONDecodeError, ValueError):
                 pass
         if not name and fallback_name:
             name = str(fallback_name).strip()
-        if not name and not description:
+        if not name and not description and not icon:
             return False
         matching = [o for o in load_all() if o.workspace_id == workspace_id]
         if not matching:
@@ -247,6 +251,9 @@ def sync_output_from_meta_json(workspace_id: str, fallback_name: str | None = No
             changed = True
         if description and not output.description and output.description != description:
             output.description = description
+            changed = True
+        if icon and output.icon != icon:
+            output.icon = icon
             changed = True
         if changed:
             output.updated_at = datetime.now().isoformat()
@@ -685,9 +692,16 @@ async def update_output(output_id: str, body: OutputUpdate):
     save(output)
     # A rename must reach meta.json too, or the UI and the file agents read drift apart (ENG-308).
     p_sent = body.model_dump(exclude_unset=True)
-    p_meta = {k: getattr(output, k) for k in ("name", "description") if k in p_sent and getattr(output, k)}
+    p_meta = {k: getattr(output, k) for k in ("name", "description", "icon") if k in p_sent and getattr(output, k)}
     if p_meta:
         write_meta_json_fields(getattr(output, "workspace_id", "") or "", p_meta)
+    # The dock and the Applications window hold their own copy of the row; without this an icon or
+    # name an agent set through the API stayed on the old glyph until the next full fetch.
+    from backend.apps.agents.core.ws_manager import ws_manager
+    try:
+        await ws_manager.broadcast_global("agent:output_upserted", {"output": output.model_dump(mode="json")})
+    except Exception:
+        logger.exception("output update broadcast failed for %s", output_id)
     return {"ok": True, "output": output.model_dump()}
 
 
