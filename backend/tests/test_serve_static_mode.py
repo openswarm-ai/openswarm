@@ -41,7 +41,11 @@ def test_start_serves_static_when_not_edited(tmp_path, monkeypatch):
     rt = AppRuntime("ws-t", ws)
     assert asyncio.run(rt.start()) is True
     assert rt.serve_static is True and rt.process is None and rt.ready is True
-    assert "/serve/frontend/dist/index.html" in (rt.frontend_url or "")
+    # The app lives at the root of its own loopback server, the shape vite gives it (ENG-458: a deep path left React Router apps blank).
+    import re as p_re
+    assert p_re.fullmatch(r"http://127\.0\.0\.1:\d+/", rt.frontend_url or ""), rt.frontend_url
+    asyncio.run(rt.stop())
+    assert rt.frontend_url is None, "stop() must drop the bundle server with the URL"
 
 
 def test_start_skips_serve_when_edited(tmp_path, monkeypatch):
