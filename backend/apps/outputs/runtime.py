@@ -111,6 +111,8 @@ class AppRuntime:
         self.frontend_port: Optional[int] = None
         # Serve-mode (ENG-209): a fresh built bundle + no agent editing means NO process at all; the workspace serve route delivers frontend/dist and this flag makes ready/frontend_url say so.
         self.serve_static: bool = False
+        # Serve mode's one process-less process: the loopback static server that hands the bundle out at `/`.
+        self.p_bundle_server: Optional[object] = None
         # New-mode only: flips True once something is actually listening on frontend_port (we kick off a background poll task in p_start_new_mode). frontend_url returns null until this flips, so the preview pane doesn't try to navigate to an unbound port and show a "Site can't be reached" error mid-npm-install.
         self.p_frontend_ready: bool = False
         # Set when the bind poll gave up; the status payload carries it so the card can stop spinning honestly.
@@ -193,10 +195,9 @@ class AppRuntime:
     def frontend_url(self) -> Optional[str]:
         # Gated on `_frontend_ready` (set by the background bind-poll task in p_start_new_mode) so the preview pane only switches over once Vite is actually accepting connections. Without this, the editor flashes a "Site can't be reached" error while `npm install` is running. Also gated on `running`: a vite that crashed or got orphaned still has _frontend_ready=True, and handing the webview that dead port is the ERR_FAILED you see on reopen. No live process, no URL. And gated on `not _suspended`: a SIGSTOP'd idle runtime is "running" (returncode is None) but frozen, so its port won't answer.
         if self.serve_static:
-            # The existing workspace serve route: index injection + token rewrite apply, and the dist's relative assets resolve under the same path.
-            from backend.auth import init_auth_token
-            p_port = os.environ.get("OPENSWARM_PORT", "8324")
-            return f"http://127.0.0.1:{p_port}/api/outputs/workspace/{self.workspace_id}/serve/frontend/dist/index.html?token={init_auth_token()}"
+            # The app at `/`, the same shape vite gives it; a deep path under the backend's serve route left every React Router app blank.
+            p_server = self.p_bundle_server
+            return getattr(p_server, "url", None) if p_server is not None else None
         if self.frontend_port and self.p_frontend_ready and self.running and not self.p_suspended:
             return f"http://127.0.0.1:{self.frontend_port}/"
         return None
@@ -231,6 +232,7 @@ class AppRuntime:
             self.p_reset_terminal_log()
             # Every boot re-decides serve mode from scratch; a stale True from the previous boot would make ready/frontend_url claim a processless app is fine after a restart that exists to spawn one.
             self.serve_static = False
+            self.p_stop_bundle_server()
             # Same for the bind-timeout verdict: a restart that then binds fine must not keep telling the card the boot failed.
             self.boot_failed = False
             if self.is_new_mode:
@@ -260,9 +262,17 @@ class AppRuntime:
         if self.instance == 1 and not p_declares_backend:
             from backend.apps.outputs.static_serve import static_fresh, workspace_being_edited
             if static_fresh(self.workspace_path) and not workspace_being_edited(self.workspace_path):
-                self.serve_static = True
-                self.p_broadcast(LogLine("runtime", "[runtime] serving the built bundle (no dev server); editing an app boots vite automatically"))
-                return True
+                from backend.apps.outputs.static_serve import BundleServer
+                p_server = BundleServer(os.path.join(self.workspace_path, "frontend", "dist"))
+                try:
+                    p_server.start()
+                except OSError:
+                    logger.exception("bundle server failed to bind for %s; booting vite instead", self.workspace_id)
+                else:
+                    self.p_bundle_server = p_server
+                    self.serve_static = True
+                    self.p_broadcast(LogLine("runtime", f"[runtime] serving the built bundle at {p_server.url} (no dev server); editing an app boots vite automatically"))
+                    return True
         # Legacy workspaces (scaffolded pre-multi-instance) ignore the forced ports; self-heal their run.sh so a second instance stops colliding on the primary's ports.
         ensure_force_port_shim(self.workspace_path)
         env_path = os.path.join(self.workspace_path, ".env")
@@ -495,8 +505,18 @@ class AppRuntime:
         env["npm_config_ignore_scripts"] = "true"
         return env
 
+    def p_stop_bundle_server(self) -> None:
+        p_server, self.p_bundle_server = self.p_bundle_server, None
+        if p_server is not None:
+            try:
+                p_server.stop()  # type: ignore[attr-defined]
+            except Exception:
+                logger.exception("bundle server stop failed for %s", self.workspace_id)
+
     async def stop(self) -> None:
         async with self.p_lock:
+            # Serve mode has no process, so this has to run BEFORE the early return below or the server leaks.
+            self.p_stop_bundle_server()
             if not self.process or self.process.returncode is not None:
                 # Still cancel the bind poller in case stop() races a never-launched runtime; defensive no-op otherwise.
                 if self.p_frontend_ready_task and not self.p_frontend_ready_task.done():

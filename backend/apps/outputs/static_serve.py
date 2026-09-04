@@ -7,11 +7,61 @@ import asyncio
 import logging
 import os
 import subprocess
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
 from typeguard import typechecked
 
 logger = logging.getLogger(__name__)
+
+
+class P_BundleHandler(SimpleHTTPRequestHandler):
+    """Static files out of the dist, with the SPA fallback every router app expects: a path that names
+    no file (and has no extension) is the app's own route, so it gets index.html, not a 404."""
+
+    def send_head(self):  # type: ignore[override]
+        path = self.translate_path(self.path)
+        if not os.path.exists(path) and "." not in os.path.basename(self.path.split("?", 1)[0]):
+            self.path = "/"
+        return super().send_head()
+
+    def log_message(self, format, *args):  # type: ignore[override]
+        return None
+
+
+class BundleServer:
+    """A loopback static server for one built bundle. Serve mode used to hand the app a deep path
+    under the backend's authenticated serve route, and every React Router app matched no route there
+    and rendered nothing (Haik's users, 2026-09-03: "frontend-only apps after reloading do not
+    render"). Vite serves the app at `/`; so does this, so the app cannot tell the two modes apart."""
+
+    def __init__(self, dist_dir: str) -> None:
+        self.dist_dir = dist_dir
+        self.port: Optional[int] = None
+        self.p_server: Optional[ThreadingHTTPServer] = None
+        self.p_thread: Optional[threading.Thread] = None
+
+    def start(self) -> int:
+        handler = partial(P_BundleHandler, directory=self.dist_dir)
+        self.p_server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.p_server.daemon_threads = True
+        self.port = int(self.p_server.server_address[1])
+        self.p_thread = threading.Thread(target=self.p_server.serve_forever, name=f"bundle-server-{self.port}", daemon=True)
+        self.p_thread.start()
+        return self.port
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/"
+
+    def stop(self) -> None:
+        server, self.p_server = self.p_server, None
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        self.port = None
 
 
 @typechecked
