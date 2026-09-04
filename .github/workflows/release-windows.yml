@@ -307,25 +307,12 @@ jobs:
             if ($code -eq 200) { break }
           }
           echo "health=$code"
-          Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue
-          if ($code -ne 200) { throw "backend never became healthy" }
-
-      - name: .swarm app round trip on real Windows (export, import, the workspace lands)
-        shell: pwsh
-        run: |
-          # ENG-463: the staging reader keyed files with backslashes, the importer looked for workspace/, and every
-          # Windows import saved a hollow app. This exports a workspace app and imports it back on the installed build.
-          $env:OPENSWARM_E2E = "1"
-          Start-Process -FilePath $env:APP_EXE
-          $tok = $null; $code = 0
-          foreach ($i in 1..60) {
-            Start-Sleep -Seconds 3
-            $p = Join-Path $env:APPDATA "OpenSwarm\data\auth.token"
-            if (Test-Path $p) { $tok = (Get-Content $p -Raw).Trim() }
-            try { $code = (Invoke-WebRequest -Uri "http://127.0.0.1:8324/api/health/check" -UseBasicParsing -TimeoutSec 2).StatusCode } catch { $code = 0 }
-            if ($code -eq 200 -and $tok) { break }
-          }
-          if (-not $tok -or $code -ne 200) { Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue; throw "backend or token never came up" }
+          if ($code -ne 200) { Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue; throw "backend never became healthy" }
+          # ENG-463: a .swarm app round trip on the running app. The staging reader keyed files with backslashes, the
+          # importer looked for workspace/, and every Windows import saved a hollow app that then said its files were missing.
+          $tok = $null
+          foreach ($i in 1..20) { $p = Join-Path $env:APPDATA "OpenSwarm\data\auth.token"; if (Test-Path $p) { $tok = (Get-Content $p -Raw).Trim() }; if ($tok) { break }; Start-Sleep -Seconds 3 }
+          if (-not $tok) { Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue; throw "no auth token under APPDATA\OpenSwarm\data" }
           $H = @{ Authorization = "Bearer $tok" }
           $B = "http://127.0.0.1:8324/api"
           $ws = [guid]::NewGuid().ToString("N")
@@ -351,3 +338,4 @@ jobs:
           Stop-Process -Name "OpenSwarm" -Force -ErrorAction SilentlyContinue
           if (-not $rec.workspace_id) { throw "the imported app has no workspace: the Windows backslash import" }
           if ($probe -ne 200 -or -not (Test-Path $nested)) { throw "round trip failed" }
+
