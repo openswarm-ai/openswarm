@@ -861,7 +861,14 @@ async def settings_meta(action: str, request: Request):
     parent_session_id = body.get("parent_session_id", "")
 
     if action == "read":
-        return JSONResponse({"settings": redact_settings(load_settings().model_dump())})
+        from backend.apps.settings.models import LEGACY_SUBSCRIPTION_TOKEN_FIELDS
+        from backend.apps.nine_router.connected import connected_subscription_providers, subscription_labels
+        view = redact_settings(load_settings().model_dump())
+        # The three dead token fields read as "not configured" and taught the agent to tell a subscribed user they were not connected.
+        for field in LEGACY_SUBSCRIPTION_TOKEN_FIELDS:
+            view.pop(field, None)
+        view["connected_subscriptions"] = subscription_labels(await connected_subscription_providers())
+        return JSONResponse({"settings": view})
 
     if action == "write":
         changes = body.get("changes")

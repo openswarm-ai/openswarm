@@ -101,6 +101,9 @@ def p_format_read(settings: dict) -> str:
         if isinstance(val, dict) and "configured" in val:
             state = f"configured (…{val['last4']})" if val.get("configured") else "not configured"
             lines.append(f"- {key}: {state}")
+        elif key == "connected_subscriptions":
+            shown = (", ".join(val) if val else "none") if isinstance(val, list) else str(val)
+            lines.append(f"- {key}: {shown} (subscriptions live in the app's router, not in these settings; a chat on a Claude, GPT or Gemini model runs on the matching one)")
         else:
             lines.append(f"- {key}: {json.dumps(val)}")
     return "\n".join(lines)

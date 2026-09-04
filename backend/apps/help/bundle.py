@@ -167,7 +167,9 @@ def p_build_report(req: BundleRequest) -> str:
 @help_app.router.get("/knowledge")
 @typechecked
 async def get_help_knowledge() -> HelpKnowledgeResponse:
-    return build_knowledge_response()
+    from backend.apps.nine_router.connected import connected_subscription_providers
+
+    return build_knowledge_response(await connected_subscription_providers())
 
 
 @help_app.router.get("/whats-new")

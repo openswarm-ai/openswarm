@@ -79,6 +79,9 @@ DEFAULT_SYSTEM_PROMPT = (
 DEFAULT_MODEL = "sonnet-5"
 
 
+LEGACY_SUBSCRIPTION_TOKEN_FIELDS = ("claude_subscription_token", "openai_subscription_token", "gemini_subscription_token")
+
+
 class AppSettings(BaseModel):
     default_system_prompt: Optional[str] = DEFAULT_SYSTEM_PROMPT
     default_folder: Optional[str] = None
@@ -148,6 +151,7 @@ class AppSettings(BaseModel):
     notify_sound: bool = True
     # Off by default: a notification for the window you are already looking at is just noise.
     notify_when_focused: bool = False
+    # Nothing has written these since subscriptions moved into 9router; kept so old settings files still load. Never answer "connected?" from them.
     claude_subscription_token: Optional[str] = None
     openai_subscription_token: Optional[str] = None
     gemini_subscription_token: Optional[str] = None

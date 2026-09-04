@@ -81,7 +81,7 @@ def test_dictation_falls_back_to_the_platform_default_when_unset():
 
 
 def test_prompt_forbids_guessing_and_permits_not_knowing():
-    prompt = build_knowledge_response().system_prompt
+    prompt = build_knowledge_response([]).system_prompt
     assert "Never invent a button" in prompt
     assert "Never invent a bug status" in prompt
     assert "you don't know" in prompt.lower()
@@ -90,13 +90,13 @@ def test_prompt_forbids_guessing_and_permits_not_knowing():
 
 
 def test_prompt_states_it_cannot_see_live_bug_reports():
-    prompt = build_knowledge_response().system_prompt
+    prompt = build_knowledge_response([]).system_prompt
     assert "cannot see live bug reports" in prompt
     assert "no live view of" in prompt
 
 
 def test_prompt_carries_every_topic_and_issue():
-    prompt = build_system_prompt(build_shortcuts("Meta+l", None), "9.9.9")
+    prompt = build_system_prompt(build_shortcuts("Meta+l", None), "9.9.9", "on their own API key")
     for topic in HELP_TOPICS:
         assert f"[{topic.id}]" in prompt
     for issue in KNOWN_ISSUES:
@@ -106,5 +106,5 @@ def test_prompt_carries_every_topic_and_issue():
 
 def test_prompt_stays_within_a_sane_token_budget():
     """It rides the cached prefix, but an unbounded knowledge blob still costs a cache write."""
-    prompt = build_knowledge_response().system_prompt
+    prompt = build_knowledge_response([]).system_prompt
     assert len(prompt) < 24_000, "help knowledge is growing past its budget; tighten the topics"

@@ -93,8 +93,9 @@ def build_shortcuts(new_agent_combo: str, dictation_combo: Optional[str]) -> Lis
 
 
 @typechecked
-def p_provider_state() -> str:
-    """One honest line about whether this install can actually run a model."""
+def p_provider_state(connected_subscriptions: Optional[List[str]]) -> str:
+    """One honest line about whether this install can actually run a model. The subscriptions come
+    from the router (None when it cannot say); the settings file's token fields are dead."""
     from backend.apps.settings.store import load_settings
 
     s = load_settings()
@@ -107,14 +108,12 @@ def p_provider_state() -> str:
         getattr(s, f, None)
         for f in ("anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key")
     )
-    subbed = any(
-        getattr(s, f, None)
-        for f in ("claude_subscription_token", "openai_subscription_token", "gemini_subscription_token")
-    )
-    if subbed:
+    if connected_subscriptions:
         return "on a connected provider subscription"
     if keyed:
         return "on their own API key"
+    if connected_subscriptions is None:
+        return "in an unknown model state (the app's router is not running, so subscriptions cannot be checked); do not tell them nothing is connected"
     return "with NO model connected yet, so most agent work will fail until they connect one in Settings > Models"
 
 
@@ -137,7 +136,7 @@ def p_issues_block() -> str:
 
 
 @typechecked
-def build_system_prompt(shortcuts: List[HelpShortcut], app_version: str) -> str:
+def build_system_prompt(shortcuts: List[HelpShortcut], app_version: str, provider_state: str) -> str:
     shortcut_lines = "\n".join(f"- {s.keys}: {s.action}" for s in shortcuts)
     os_name = "macOS" if IS_MAC else platform.system()
     return "\n".join(
@@ -145,7 +144,7 @@ def build_system_prompt(shortcuts: List[HelpShortcut], app_version: str) -> str:
             ROLE,
             "",
             "<this_install>",
-            f"OpenSwarm version {app_version} on {os_name}. This user is {p_provider_state()}.",
+            f"OpenSwarm version {app_version} on {os_name}. This user is {provider_state}.",
             "These are live facts about the machine you are talking to; trust them over anything you recall.",
             "</this_install>",
             "",
@@ -175,7 +174,7 @@ def build_system_prompt(shortcuts: List[HelpShortcut], app_version: str) -> str:
 
 
 @typechecked
-def build_knowledge_response() -> HelpKnowledgeResponse:
+def build_knowledge_response(connected_subscriptions: Optional[List[str]]) -> HelpKnowledgeResponse:
     from backend.apps.service.version import APP_VERSION
     from backend.apps.settings.store import load_settings
 
@@ -185,7 +184,7 @@ def build_knowledge_response() -> HelpKnowledgeResponse:
         getattr(s, "dictation_shortcut", None),
     )
     return HelpKnowledgeResponse(
-        system_prompt=build_system_prompt(shortcuts, APP_VERSION),
+        system_prompt=build_system_prompt(shortcuts, APP_VERSION, p_provider_state(connected_subscriptions)),
         topics=HELP_TOPICS,
         known_issues=KNOWN_ISSUES,
         shortcuts=shortcuts,

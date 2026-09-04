@@ -96,21 +96,8 @@ async def p_has_connected_subscription() -> bool:
     connections live in 9Router, not settings, so the sync check above misses
     them; this catches a sub connected while the trial was armed."""
     try:
-        from backend.apps.nine_router import (
-            is_running as p_9r_running,
-            get_providers as p_9r_providers,
-            NINE_ROUTER_CLAUDE_PRO_NAME,
-        )
-        if not p_9r_running():
-            return False
-        conns = await p_9r_providers()
-        # Exclude our OWN managed node: the free trial registers itself as a `claude` connection here, and counting it would make the trial think a real model is connected and clear itself on the next boot (works once, dead on relaunch).
-        return any(
-            c.get("isActive")
-            and c.get("provider") in ("claude", "codex", "gemini-cli")
-            and c.get("name") != NINE_ROUTER_CLAUDE_PRO_NAME
-            for c in conns
-        )
+        from backend.apps.nine_router.connected import connected_subscription_providers
+        return bool(await connected_subscription_providers())
     except Exception:
         return False
 
