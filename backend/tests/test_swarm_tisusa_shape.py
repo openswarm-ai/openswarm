@@ -37,7 +37,7 @@ def build_tisusa_shaped_tree(root: str) -> list[str]:
         full = os.path.join(root, *rel.split("/"))
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, "wb") as f:
-            f.write(b"\x89PNG" + b"\0" * (1_262_398 - 4) if rel == BIG_FILE else f"// {rel}\n".encode())
+            f.write(b"\x89PNG" + os.urandom(1_262_398 - 4) if rel == BIG_FILE else f"// {rel}\n".encode())
     return rels
 
 
@@ -66,8 +66,12 @@ def test_a_tisusa_shaped_bundle_round_trips_with_every_file_on_this_os():
     assert imported is not None and imported.workspace_id, "the app imported without a workspace (the hollow-app shape)"
     dest = os.path.join(appmod.OUTPUTS_WORKSPACE_DIR, imported.workspace_id)
     on_disk = sorted(os.path.relpath(os.path.join(r, f), dest).replace(os.sep, "/") for r, _, fs in os.walk(dest) for f in fs)
-    assert len(on_disk) == 507, f"{len(on_disk)} files landed, expected 507"
+    # 507 from the bundle plus the .env the importer regenerates from .env.example for this machine (the
+    # real Tisusa import lands 508 the same way).
+    assert ".env" in on_disk, "the importer did not localize an .env from .env.example"
+    landed = [r for r in on_disk if r != ".env"]
+    assert len(landed) == 507, f"{len(landed)} files landed, expected 507"
     for rel in DOTFILES + SPACED + [LONG_PATH, BIG_FILE]:
-        assert rel in on_disk, f"{rel} did not land"
+        assert rel in landed, f"{rel} did not land"
     assert os.path.getsize(os.path.join(dest, *BIG_FILE.split("/"))) == 1_262_398
-    assert sorted(rels) == on_disk
+    assert sorted(rels) == landed
