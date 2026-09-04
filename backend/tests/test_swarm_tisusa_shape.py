@@ -18,7 +18,7 @@ from backend.apps.swarm.models import EntityType
 TISUSA_DEPTHS = {0: 28, 1: 29, 2: 27, 3: 130, 4: 107, 5: 60, 6: 72, 7: 49, 8: 5}
 DOTFILES = [".env.example", ".gitattributes", ".gitignore", ".prettierrc", ".eslintrc.json", ".npmrc", ".nvmrc"]
 SPACED = ["docs/Design Notes.md", "public/brand assets/logo.svg"]
-LONG_PATH = "app/features/settings/integrations/providers/components/ProviderCredential.tsx"
+LONG_PATH = "app/features/settings/integrations/providers/components/ProviderCredentialFo.tsx"
 BIG_FILE = "public/hero.png"
 
 
