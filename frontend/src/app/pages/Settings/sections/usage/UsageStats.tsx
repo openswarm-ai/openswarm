@@ -158,7 +158,7 @@ const UsageStats: React.FC = () => {
 
           <Typography sx={sectionSx}>Routed requests (all traffic, lifetime)</Typography>
           <Typography sx={{ color: c.text.ghost, fontSize: '0.75rem', mb: 1 }}>
-            Everything routed through the local model router since install, including background helpers; not limited to the window above.
+            Everything routed through the local model router since install, including background helpers; not limited to the window above. The dollar figure is what this traffic would cost at pay-per-use API rates, not a charge: on a subscription or the free trial you paid nothing extra for it.
           </Typography>
           <Box sx={{ display: 'flex', gap: 1.25 }}>
             <Box sx={cardSx}>
@@ -171,7 +171,7 @@ const UsageStats: React.FC = () => {
             </Box>
             <Box sx={cardSx}>
               <Typography sx={bigSx}>$<CountUp value={stats.total_cost_usd} format={(n) => n.toFixed(2)} /></Typography>
-              <Typography sx={capSx}>API value covered</Typography>
+              <Typography sx={capSx}>Worth at API prices, not billed</Typography>
             </Box>
           </Box>
         </>
