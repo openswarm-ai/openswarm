@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { laneLabel } from './UsageStats';
+import { laneLabel } from './usageLanes';
 
 // Chuya (1.7.9, 2026-09-04) read "$0.40 API value covered" as money she was being charged and filmed it
 // going to $0.41 as proof the app was billing her instead of using her subscription. The figure is an
