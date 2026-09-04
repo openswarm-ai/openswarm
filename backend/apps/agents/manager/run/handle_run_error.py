@@ -24,6 +24,8 @@ from backend.apps.agents.core.error_classify import (
     is_long_context_error,
     is_context_pressure_death,
     is_external_kill_error,
+    crash_signal_name,
+    process_exit_code,
     is_stale_tool_schema_error,
     is_transient_capacity_error,
     is_free_trial_exhausted,
@@ -230,10 +232,19 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 logger.debug("submit_diagnostic external_kill_respawned failed", exc_info=True)
             return
         logger.warning(f"Agent {session_id}: the CLI was killed from outside again after a respawn; carding it")
-        friendly_msg = (
-            "Something on this computer, not OpenSwarm, stopped the agent's engine process twice in a "
-            "row while it was working. Its work so far is above; send your message again to continue."
-        )
+        p_crash = crash_signal_name(e)
+        if p_crash:
+            # A crash signal is the engine falling over, not a hand on the kill switch; the fix is on the machine.
+            friendly_msg = (
+                f"The agent's engine process crashed twice in a row ({p_crash}). Its work so far is above. "
+                "Quit and reopen OpenSwarm, then send your message again; if it keeps happening, send us "
+                "the newest claude crash report from ~/Library/Logs/DiagnosticReports."
+            )
+        else:
+            friendly_msg = (
+                "Something on this computer, not OpenSwarm, stopped the agent's engine process twice in a "
+                "row while it was working. Its work so far is above; send your message again to continue."
+            )
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         absorb_repeat_card(session, error_msg)
         await ws_manager.send_to_session(session_id, "agent:message", {
@@ -244,7 +255,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             from backend.apps.service.client import submit_diagnostic
             submit_diagnostic({
                 "kind": "model_error",
-                "subkind": "external_kill_respawn_exhausted",
+                "subkind": f"external_kill_respawn_exhausted:{process_exit_code(e)}",
                 "flight": flight_recorder.build_envelope(session_id, "model_error", "external_kill", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
                 "session_id": session_id,
                 "model": session.model,

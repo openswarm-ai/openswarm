@@ -480,6 +480,31 @@ def is_stale_tool_schema_error(exc: BaseException, extra_text: str = "") -> bool
 # cannot promote itself into a verdict (ENG-365 learned that the hard way with "line 401,").
 # A negative code is the signal that killed the process (-9 SIGKILL, -15 SIGTERM, -2 SIGINT, -1 excluded: the SDK's own wait() sentinel); 129-159 is the same signal re-raised by a handler (128+n).
 P_KILLED_EXIT = re.compile(r"Command failed with exit code (-(?:[2-9]|[12]\d|3[01])|1(?:29|[3-4]\d|5\d))\b")
+# The persistent client's own words when the CLI is already dead by the time we write to it: the process
+# died of a signal between turns (Alex, 2026-09-03: 33 turns in 72 h on two lanes, `exit code: -11`, a
+# segfault at spawn), and the generic branch carded every one without ever replacing the corpse.
+P_DEAD_PROCESS_WRITE = re.compile(r"Cannot write to terminated process \(exit code: (-?\d+)\)")
+P_CRASH_SIGNALS = {-4: "illegal instruction", -6: "abort", -7: "bus error", -10: "bus error", -11: "segmentation fault"}
+
+
+@typechecked
+def process_exit_code(exc: BaseException) -> Optional[int]:
+    """The exit code a dead-CLI error carries, whichever of the two shapes it wears."""
+    text = f"{exc!s}"
+    m = P_DEAD_PROCESS_WRITE.search(text) or P_KILLED_EXIT.search(text)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+@typechecked
+def crash_signal_name(exc: BaseException) -> Optional[str]:
+    """A name when the CLI died of a crash signal (not SIGTERM/SIGKILL, which something else sent)."""
+    code = process_exit_code(exc)
+    return P_CRASH_SIGNALS.get(code) if code is not None else None
 
 
 @typechecked
@@ -490,7 +515,8 @@ def is_external_kill_error(exc: BaseException, extra_text: str = "") -> bool:
     conversation is intact in the CLI's own transcript, so a respawn that RESUMES it is the cure; the
     generic branch used to card it and force the expensive rebuild instead. A tail that carries an
     error of its own is some other failure wearing the exit code, and is left to the other branches."""
-    if not P_KILLED_EXIT.search(f"{exc!s}"):
+    text = f"{exc!s}"
+    if not (P_KILLED_EXIT.search(text) or P_DEAD_PROCESS_WRITE.search(text)):
         return False
     tail = (extra_text or "").strip()
     return not re.search(r"error", tail, re.IGNORECASE)
