@@ -439,14 +439,15 @@ async def usage_summary(window: str = "30d"):
         for key, val in (nine_router_stats.get("byModel") or {}).items():
             cost_by_model[key] = {
                 "cost": val.get("cost", 0),
-                "requests": val.get("count", 0),
+                # 9router's stats call the counter `requests`; an older shape called it `count`.
+                "requests": val.get("requests", val.get("count", 0)),
                 "prompt_tokens": val.get("promptTokens", 0),
                 "completion_tokens": val.get("completionTokens", 0),
             }
         for key, val in (nine_router_stats.get("byProvider") or {}).items():
             cost_by_provider[key] = {
                 "cost": val.get("cost", 0),
-                "requests": val.get("count", 0),
+                "requests": val.get("requests", val.get("count", 0)),
             }
 
     return {
