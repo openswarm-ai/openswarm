@@ -1,0 +1,41 @@
+name: swarm-import-drill
+
+# A Tisusa-shaped .swarm app (507 files, eight deep, dotfiles, spaces, an 80-char path, a 1.2 MB file)
+# exported, staged and imported by the real code on Windows and macOS. Windows is the arm that matters:
+# the staging reader keyed files with backslashes there and every app import saved a hollow app (ENG-463).
+on:
+  push:
+    paths:
+      - 'backend/apps/swarm/**'
+      - 'backend/apps/outputs/workspace_io.py'
+      - 'backend/tests/test_swarm_tisusa_shape.py'
+      - 'backend/tests/test_swarm_windows_paths.py'
+      - '.github/workflows/swarm-import-drill.yml'
+  workflow_dispatch:
+
+jobs:
+  drill:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install the backend's locked dependencies plus the test runner
+        run: |
+          pip install -r backend/requirements.lock
+          pip install -r backend/requirements-dev.txt
+
+      - name: Export, stage and import the Tisusa-shaped bundle with the real code
+        env:
+          OSW_NEVER_KILL_ROUTER: '1'
+        run: python -m pytest backend/tests/test_swarm_tisusa_shape.py backend/tests/test_swarm_windows_paths.py -q -p no:cacheprovider
