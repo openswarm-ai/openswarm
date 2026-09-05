@@ -72,6 +72,11 @@ const subscriptionsSlice = createSlice({
       state.status = action.payload;
     },
     // Optimistic: 9Router /providers lags /exchange, so refetching right after would clobber the just-connected state with stale data. The 30s poller reconciles.
+    // The backend re-probes a "mid-refresh" 401 on its own after the rotation window and pushes the verdict here; the boot-time fetch is long gone by then.
+    healthReported(state, action: PayloadAction<{ dead: DeadProvider[] }>) {
+      state.healthDead = action.payload.dead ?? [];
+      state.healthToastOpen = state.healthDead.length > 0 || state.healthCliMissing;
+    },
     markSubscriptionConnected(state, action: PayloadAction<{ provider: string }>) {
       if (!state.status) return;
       const { provider } = action.payload;
@@ -113,7 +118,7 @@ const subscriptionsSlice = createSlice({
   },
 });
 
-export const { setSubscriptionStatus, markSubscriptionConnected, hideProviderHealthToast } = subscriptionsSlice.actions;
+export const { setSubscriptionStatus, markSubscriptionConnected, hideProviderHealthToast, healthReported } = subscriptionsSlice.actions;
 
 // Stable empty ref so the selector doesn't hand back a fresh [] each call (forces needless rerenders).
 const EMPTY_CONNECTIONS: SubscriptionConnection[] = [];

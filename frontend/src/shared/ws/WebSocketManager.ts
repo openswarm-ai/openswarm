@@ -34,6 +34,7 @@ import {
 } from '../state/agentsSlice';
 import { streamStart, streamSnapshot, streamDelta, streamEnd, clearStreamingForSession } from '../state/streamingSlice';
 import { fetchToolStatus } from '../state/toolsSlice';
+import { healthReported } from '../state/subscriptionsSlice';
 import { remountAppPreview } from '../state/outputsSlice';
 import { BackgroundDeltaBuffer } from './BackgroundDeltaBuffer';
 import { interactionActive, installInteractionListeners } from '../interactionPriority';
@@ -657,6 +658,11 @@ class WebSocketManager {
         }
         break;
 
+      case 'subscriptions:health':
+        if (Array.isArray(data.dead)) {
+          store.dispatch(healthReported({ dead: data.dead }));
+        }
+        break;
       case 'tools:updated':
         // A connector's auth state changed on the backend (an OAuth claim landed, a disconnect); refetch it and tell the Tools page.
         if (data.tool_id) {
