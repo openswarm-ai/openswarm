@@ -297,3 +297,41 @@ export function parseNumericLike(input: string): number | null {
   }
   return null;
 }
+
+// Long tables used to render every row, so a "collapsed" card could tower over the expanded one.
+export const DEFAULT_ROW_CAP = 6;
+// Roughly a header plus six rows at the table's default density; past it the body scrolls in place.
+export const DEFAULT_CAPPED_MAX_HEIGHT = "312px";
+
+/** The height cap the scroll container actually uses: a user's drag beats the payload's explicit maxHeight, which beats the row-count default. */
+export function effectiveTableMaxHeight(
+  explicit: string | undefined,
+  userPx: number | null,
+  rowCount: number,
+): string | undefined {
+  if (userPx != null) return `${userPx}px`;
+  if (explicit) return explicit;
+  return rowCount > DEFAULT_ROW_CAP ? DEFAULT_CAPPED_MAX_HEIGHT : undefined;
+}
+
+// Rendering every row is the cost, not showing it: a 5,000-row payload put 370,000 React fibers under ONE
+// widget, and twice over, because the auto layout mounted the table and the card view together and hid one
+// with a container query (census 2026-09-05: 742,090 of the page's 793,776 fibers). A window is what a reader
+// reaches by scrolling the capped body a few times; a "Show more" row hands out the next one.
+export const RENDER_ROW_WINDOW = 60;
+
+export function renderedRowCount(total: number, windows: number): number {
+  return Math.min(total, Math.max(1, windows) * RENDER_ROW_WINDOW);
+}
+
+// The container query flipped to cards under --container-md; the same number now decides which ONE layout mounts.
+export const CARD_LAYOUT_MAX_WIDTH = 448;
+
+export type ResolvedTableLayout = "table" | "cards";
+
+/** Unmeasured (first paint, no ResizeObserver) reads as the wide layout; a narrow container flips to cards on the same frame. */
+export function pickLayout(layout: "auto" | ResolvedTableLayout, widthPx: number | null): ResolvedTableLayout {
+  if (layout !== "auto") return layout;
+  if (widthPx == null) return "table";
+  return widthPx < CARD_LAYOUT_MAX_WIDTH ? "cards" : "table";
+}

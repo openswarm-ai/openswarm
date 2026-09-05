@@ -23,6 +23,9 @@ import {
   sortData,
   createDataTableRowKeys,
   getDataTableMobileDescriptionId,
+  effectiveTableMaxHeight,
+  pickLayout,
+  renderedRowCount,
 } from "./utilities";
 import { renderFormattedValue } from "./formatters";
 import type {
@@ -218,6 +221,34 @@ function DataTableLayout({
       ),
     [data, rowIdKey],
   );
+  // One layout mounts, chosen by the measured width; the old pair-and-hide doubled every row.
+  const hostRef = React.useRef<HTMLDivElement>(null);
+  const [width, setWidth] = React.useState<number | null>(null);
+  React.useLayoutEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    setWidth(el.offsetWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (typeof w === "number") setWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const mode = pickLayout(layout, width);
+  // Rows are handed out a window at a time; a new payload starts over.
+  const [windows, setWindows] = React.useState(1);
+  React.useEffect(() => { setWindows(1); }, [data]);
+  const shown = renderedRowCount(data.length, windows);
+  const rows = React.useMemo(() => data.slice(0, shown), [data, shown]);
+  const shownKeys = React.useMemo(() => rowKeys.slice(0, shown), [rowKeys, shown]);
+  const hidden = data.length - shown;
+  const showMore = hidden > 0 ? (
+    <Button type="button" variant="ghost" size="sm" onClick={() => setWindows((n) => n + 1)} data-slot="data-table-show-more">
+      Show more rows ({hidden.toLocaleString()} more)
+    </Button>
+  ) : null;
   const mobileDescriptionId = React.useMemo(
     () => getDataTableMobileDescriptionId(String(id ?? "data-table")),
     [id],
@@ -233,20 +264,14 @@ function DataTableLayout({
 
   return (
     <div
+      ref={hostRef}
       className={cn("@container w-full min-w-80", className)}
       data-tool-ui-id={id}
       data-slot="data-table"
-      data-layout={layout}
+      data-layout={mode}
     >
-      <div
-        className={cn(
-          layout === "table"
-            ? "block"
-            : layout === "cards"
-              ? "hidden"
-              : "hidden @md:block",
-        )}
-      >
+      {mode === "table" && (
+      <div className="block">
         <div className="relative">
           <div
             className={cn(
@@ -277,21 +302,20 @@ function DataTableLayout({
               {data.length === 0 ? (
                 <DataTableEmpty message={emptyMessage} />
               ) : (
-                <DataTableContent />
+                <DataTableContent rows={rows as unknown as DataTableRowData[]} rowKeys={shownKeys} footer={showMore ? (
+                  <TableRow>
+                    <TableCell colSpan={Math.max(1, columns.length)} className="py-1 text-center">{showMore}</TableCell>
+                  </TableRow>
+                ) : null} />
               )}
             </Table>
           </div>
         </div>
       </div>
+      )}
 
+      {mode === "cards" && (
       <div
-        className={cn(
-          layout === "cards"
-            ? ""
-            : layout === "table"
-              ? "hidden"
-              : "@md:hidden",
-        )}
         role="list"
         aria-label="Data table (mobile card view)"
         aria-describedby={mobileDescriptionId}
@@ -308,8 +332,8 @@ function DataTableLayout({
           </div>
         ) : (
           <div className="bg-card flex flex-col overflow-hidden rounded-2xl border shadow-xs">
-            {data.map((row, i) => {
-              const rowKey = rowKeys[i];
+            {rows.map((row, i) => {
+              const rowKey = shownKeys[i];
               return (
                 <DataTableAccordionCard
                   key={rowKey}
@@ -320,9 +344,11 @@ function DataTableLayout({
                 />
               );
             })}
+            {showMore && <div className="border-t py-1 text-center">{showMore}</div>}
           </div>
         )}
       </div>
+      )}
 
       {sortAnnouncement && (
         <div className="sr-only" aria-live="polite">
@@ -397,11 +423,17 @@ export const DataTable = Object.assign(DataTableRoot, {
   Provider: DataTableProvider,
 }) as DataTableComponent;
 
-function DataTableContent() {
+interface DataTableContentProps {
+  rows: DataTableRowData[];
+  rowKeys: string[];
+  footer: React.ReactNode;
+}
+
+function DataTableContent({ rows, rowKeys, footer }: DataTableContentProps) {
   return (
     <>
       <DataTableHeader />
-      <DataTableBody />
+      <DataTableBody rows={rows} rowKeys={rowKeys} footer={footer} />
     </>
   );
 }
@@ -637,16 +669,8 @@ function DataTableHead({
   );
 }
 
-function DataTableBody() {
+function DataTableBody({ rows, rowKeys, footer }: DataTableContentProps) {
   const { data, rowIdKey } = useDataTable<DataTableRowData>();
-  const rowKeys = React.useMemo(
-    () =>
-      createDataTableRowKeys(
-        data as Array<Record<string, unknown>>,
-        rowIdKey ? String(rowIdKey) : undefined,
-      ),
-    [data, rowIdKey],
-  );
   const hasWarnedRowKeyRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -665,10 +689,11 @@ function DataTableBody() {
 
   return (
     <TableBody>
-      {data.map((row, index) => {
+      {rows.map((row, index) => {
         const rowKey = rowKeys[index];
         return <DataTableRow key={rowKey} row={row} />;
       })}
+      {footer}
     </TableBody>
   );
 }
