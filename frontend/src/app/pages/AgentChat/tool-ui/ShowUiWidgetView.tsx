@@ -7,6 +7,8 @@ import VendoredToolUi from '@toolui/VendoredToolUi';
 import type { ShowUiPayload } from './showUiPayload';
 import { useOpenUrlInBrowserCard } from './useOpenUrlInBrowserCard';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { ambientShape } from './showUiAmbient';
+import { perfBaselineFor } from '@/shared/perfBaseline';
 
 /** One switch for every surface that renders a ShowUI payload (chat bubble, pill artifact); ambient = low-cost render for resting surfaces. */
 function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambient?: boolean }): React.ReactElement | null {
@@ -32,7 +34,16 @@ function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambien
       const fallback = [raw.src, raw.url].find((v): v is string => typeof v === 'string');
       if (fallback) nav.href = fallback;
     }
-    let widget = <VendoredToolUi name={payload.name} props={payload.props} quietFail={ambient} extraProps={nav} />;
+    const shaped = ambient && !perfBaselineFor('ambient') ? ambientShape(payload.name, raw) : { props: payload.props, note: null };
+    let widget = <VendoredToolUi name={payload.name} props={shaped.props} quietFail={ambient} extraProps={nav} />;
+    if (shaped.note) {
+      widget = (
+        <div>
+          {widget}
+          <div style={{ fontSize: '0.75rem', color: c.text.secondary, padding: '6px 8px 2px' }}>{shaped.note}</div>
+        </div>
+      );
+    }
     // The post components only wire clicks on their media, so a text-only post has no way to reach the actual post; the whole card opens it, like the platforms themselves (skipped on ambient pills, where a click means expand).
     if (postUrl && !ambient) {
       widget = (
@@ -67,4 +78,5 @@ function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambien
   return null;
 }
 
-export default ShowUiWidgetView;
+// Memoized: a chat re-renders on every streamed delta and this sits inside every ShowUI message; the payload is memoized upstream on the message objects.
+export default perfBaselineFor('ambient') ? ShowUiWidgetView : React.memo(ShowUiWidgetView);

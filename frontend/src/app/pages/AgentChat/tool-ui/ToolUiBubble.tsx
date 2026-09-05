@@ -1,22 +1,17 @@
 import React, { useMemo, useRef } from 'react';
 import Box from '@mui/material/Box';
 import ToolCallBubble from '../tool-bubbles/ToolCallBubble';
-import type { ToolPair } from '../tool-bubbles/ToolCallBubble';
+import { toolUiBubblePropsEqual, type ToolUiBubbleProps } from './toolUiBubbleEqual';
+import { perfBaselineFor } from '@/shared/perfBaseline';
 import { parseShowUiPayload, freezeIfDone } from './showUiPayload';
 import ShowUiWidgetView from './ShowUiWidgetView';
 import WidgetCopyChip from './WidgetCopyChip';
 
-interface ToolUiBubbleProps {
-  pair: ToolPair;
-  sessionId: string;
-  isPending: boolean;
-  suppressReveal: boolean;
-  sessionRunning?: boolean;
-}
 
 /** Renders a ShowUI call as its inline component; any schema mismatch falls back to the plain tool bubble. */
 function ToolUiBubble({ pair, sessionId, isPending, suppressReveal, sessionRunning = false }: ToolUiBubbleProps): React.ReactElement {
-  const rawPayload = parseShowUiPayload(pair);
+  // Keyed on the message objects, not the pair: the transcript rebuilds its pair list on every delta while the messages keep their identity.
+  const rawPayload = useMemo(() => parseShowUiPayload(pair), [pair.call, pair.result]);
   const widgetRef = useRef<HTMLDivElement>(null);
   const payload = useMemo(
     () => (rawPayload ? freezeIfDone(rawPayload, sessionRunning) : null),
@@ -57,4 +52,4 @@ function ToolUiBubble({ pair, sessionId, isPending, suppressReveal, sessionRunni
   );
 }
 
-export default ToolUiBubble;
+export default perfBaselineFor('ambient') ? ToolUiBubble : React.memo(ToolUiBubble, toolUiBubblePropsEqual);

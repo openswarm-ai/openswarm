@@ -158,6 +158,7 @@ interface StatCardProps {
   locale?: string;
   isSingle?: boolean;
   index?: number;
+  compact?: boolean;
 }
 
 function StatCard({
@@ -165,6 +166,7 @@ function StatCard({
   locale,
   isSingle = false,
   index = 0,
+  compact = false,
 }: StatCardProps) {
   const sparklineColor = stat.sparkline?.color ?? "var(--muted-foreground)";
   const hasSparkline = Boolean(stat.sparkline);
@@ -173,7 +175,8 @@ function StatCard({
   return (
     <div
       className={cn(
-        "relative flex min-h-28 flex-col gap-1 px-6",
+        "relative flex flex-col gap-1",
+        compact ? "min-h-16 px-3" : "min-h-28 px-6",
         isSingle ? "justify-center" : "justify-end",
       )}
     >
@@ -200,7 +203,7 @@ function StatCard({
         <span
           className={cn(
             "font-light tracking-normal",
-            isSingle ? "text-5xl" : "text-3xl",
+            isSingle ? "text-5xl" : compact ? "text-xl" : "text-3xl",
           )}
         >
           <FormattedValue
@@ -222,7 +225,8 @@ export function StatsDisplay({
   stats,
   className,
   locale: localeProp,
-}: StatsDisplayProps) {
+  compact = false,
+}: StatsDisplayProps & { compact?: boolean }) {
   const locale =
     localeProp ??
     (typeof navigator !== "undefined" ? navigator.language : undefined);
@@ -234,7 +238,8 @@ export function StatsDisplay({
       data-slot="stats-display"
       data-tool-ui-id={id}
       className={cn(
-        "w-full min-w-80 max-w-xl",
+        "w-full max-w-xl",
+        compact ? "min-w-0" : "min-w-80",
         isSingle && "max-w-sm",
         className,
       )}
@@ -254,7 +259,8 @@ export function StatsDisplay({
           <div
             className="grid @[440px]:-ml-px @[440px]:-mt-px"
             style={{
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              // Under a collapsed pill (compact) three cells must sit side by side at ~380 px; the page-sized minimum stacked them into a 336 px column.
+              gridTemplateColumns: compact ? "repeat(auto-fit, minmax(110px, 1fr))" : "repeat(auto-fit, minmax(220px, 1fr))",
             }}
           >
             {stats.map((stat, index) => (
@@ -270,6 +276,7 @@ export function StatsDisplay({
                   locale={locale}
                   isSingle={isSingle}
                   index={index}
+                  compact={compact}
                 />
               </div>
             ))}

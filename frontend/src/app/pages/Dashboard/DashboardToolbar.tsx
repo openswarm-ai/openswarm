@@ -7,6 +7,7 @@ import Snackbar from '@mui/material/Snackbar';
 import Icon from '@mui/material/Icon';
 
 import DesktopSpawnPill from './desktop/DesktopSpawnPill';
+import { coveredByTiledZones } from './canvas/spawnPillCover';
 import SearchIcon from '@mui/icons-material/Search';
 import { motion } from 'framer-motion';
 import ChatInput from '@/app/pages/AgentChat/ChatInput';
@@ -79,6 +80,22 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const dispatch = useAppDispatch();
     const elementSelection = useElementSelection();
     const containerRef = useRef<HTMLDivElement>(null);
+    // The pill steps aside when a tiled card sits on it; measured from its own rect, re-checked when the tiles or the window change.
+    const tiledZonesKey = useAppSelector((s) => Object.values(s.dashboardLayout.tiledCards).sort().join(','));
+    const [pillCovered, setPillCovered] = useState(false);
+    useEffect(() => {
+      const check = (): void => {
+        const el = containerRef.current;
+        if (!el) { setPillCovered(false); return; }
+        const r = el.getBoundingClientRect();
+        const zones = tiledZonesKey ? tiledZonesKey.split(',') : [];
+        setPillCovered(zones.length > 0 && coveredByTiledZones(zones, { x: r.left, y: r.top, w: r.width, h: r.height }));
+      };
+      check();
+      window.addEventListener('resize', check);
+      const t = window.setTimeout(check, 400);
+      return () => { window.removeEventListener('resize', check); window.clearTimeout(t); };
+    }, [tiledZonesKey]);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const historyInputRef = useRef<HTMLInputElement>(null);
     const historyListRef = useRef<HTMLDivElement>(null);
@@ -465,7 +482,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onHistoryScroll={handleHistoryScroll}
             />
           </div>
-        ) : canvasEmpty ? null : (
+        ) : canvasEmpty || pillCovered ? null : (
           <DesktopSpawnPill
             onOpenComposer={() => {
               if (newAgentBounce) onNewAgentBounceEnd?.();
