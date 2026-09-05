@@ -132,8 +132,8 @@ def test_only_terminal_states_count_as_dead():
     # "unavailable" alone is NOT enough: the router stamps it for throttles and 5xx as well, so it
     # cannot distinguish a dead credential from a bad minute (corrected after a live false positive).
     assert lp.connection_is_dead({"testStatus": "unavailable"}) is False
-    assert lp.connection_is_dead({"errorCode": 401}) is True
-    assert lp.connection_is_dead({"errorCode": 403}) is True
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 401}) is True
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 403}) is True
     # A slow, rate-limited or merely idle connection is NOT dead; grounding those would be the bug.
     assert lp.connection_is_dead({"testStatus": "active", "errorCode": 429}) is False
     assert lp.connection_is_dead({"testStatus": "active", "errorCode": 502}) is False
@@ -171,4 +171,24 @@ def test_a_rate_limited_lane_is_not_a_dead_credential():
 
 def test_only_auth_shaped_failures_send_the_user_to_settings():
     assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 401}) is True
-    assert lp.connection_is_dead({"testStatus": "active", "errorCode": 403}) is True
+    assert lp.connection_is_dead({"testStatus": "unavailable", "errorCode": 403}) is True
+    # The auth code has to be the router's CURRENT verdict: a row it calls active is serving traffic (2026-09-05, Eric's claude row).
+    assert lp.connection_is_dead({"testStatus": "active", "errorCode": 403}) is False
+
+
+# The router's own row for a WORKING claude login (2026-09-05, db.json): the 401 is stale, the status is current.
+P_STALE_401_ACTIVE = [{"provider": "claude", "testStatus": "active", "errorCode": 401, "lastError": None, "lastErrorAt": None, "backoffLevel": 0}]
+
+
+def test_an_active_row_with_a_stale_401_is_not_dead_and_bounces_nothing(monkeypatch):
+    st = p_providers(monkeypatch, P_STALE_401_ACTIVE)
+    assert lp.connection_is_dead(P_STALE_401_ACTIVE[0]) is False
+    assert asyncio.run(lp.preflight_lane("cc/claude-sonnet-5")) is None
+    assert st["bounced"] == 0, "a lane the router calls active must never trigger a router restart"
+
+
+def test_a_throttle_is_still_not_death():
+    # testStatus unavailable with a 429 is the Google case the docstring cites; the tightened rule keeps it.
+    assert lp.connection_is_dead({"provider": "gemini-cli", "testStatus": "unavailable", "errorCode": 429}) is False
+    assert lp.connection_is_dead({"provider": "codex", "testStatus": "unavailable", "errorCode": 401}) is True
+

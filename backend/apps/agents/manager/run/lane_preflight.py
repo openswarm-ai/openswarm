@@ -86,8 +86,13 @@ def connection_is_dead(conn: Dict) -> bool:
     another half hour and merely 429'd. Advising a reconnect for a throttle is the same lie as
     "just rotated" for a dead token, pointing the other way, so the bar here is evidence that
     waiting cannot help: 401 or 403.
+
+    And the 401 has to be the router's CURRENT verdict: 0.3.60 leaves `errorCode: 401` on a row it has
+    since marked `testStatus: "active"` (Eric's claude row carried it while serving 424 requests on
+    2026-09-05), so errorCode alone read a healthy lane as dead and asked for a router bounce at
+    every turn start.
     """
-    return conn.get("errorCode") in (401, 403)
+    return conn.get("errorCode") in (401, 403) and conn.get("testStatus") == "unavailable"
 
 
 # The shape the router publishes for a credential it has given up on, and the shape a drill injects.
