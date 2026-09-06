@@ -58,6 +58,7 @@ if (typeof window !== 'undefined') {
   };
   const prefetchAll = () => {
     void import('./pages/Analytics/Analytics');
+    void import('@toolui/registry').then((m) => m.preloadToolUi());
   };
   const ric = (window as any).requestIdleCallback as
     | ((cb: () => void, opts?: { timeout?: number }) => number)

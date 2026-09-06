@@ -45,10 +45,11 @@ const warnedShapes = new Set<string>();
 // fallback boundary lost its retry above the memoized bubble (measured 2026-09-05: chunk loaded, module resolved, skeleton
 // forever), so the component arrives through state, which re-renders THIS component no matter what memo sits above it.
 const loadedComponents = new Map<ToolUiEntry, Promise<React.ComponentType<any>>>();
-function componentFor(entry: ToolUiEntry): Promise<React.ComponentType<any>> {
+export function componentFor(entry: ToolUiEntry): Promise<React.ComponentType<any>> {
   let p = loadedComponents.get(entry);
   if (!p) {
-    p = entry.load();
+    // A rejection is forgotten, so the next widget of this kind fetches again instead of inheriting one blip for the rest of the page.
+    p = entry.load().catch((e) => { if (loadedComponents.get(entry) === p) loadedComponents.delete(entry); throw e; });
     loadedComponents.set(entry, p);
   }
   return p;

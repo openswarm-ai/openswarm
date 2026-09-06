@@ -133,3 +133,19 @@ export const TOOL_UI_REGISTRY: Record<string, ToolUiEntry> = {
 export function isToolUiComponent(name: string): boolean {
   return Object.prototype.hasOwnProperty.call(TOOL_UI_REGISTRY, name);
 }
+
+let warmed = false;
+/** Warm every widget chunk and schema once the page is idle, so the first ShowUI in a chat mounts as content rather than a skeleton; a failed warm is silent and the widget's own mount retries it. */
+export function preloadToolUi(): void {
+  if (warmed) return;
+  warmed = true;
+  const run = (): void => {
+    for (const e of Object.values(TOOL_UI_REGISTRY)) {
+      e.load().catch(() => {});
+      e.loadSchema().catch(() => {});
+    }
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
+  else setTimeout(run, 1500);
+}
+

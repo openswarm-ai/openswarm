@@ -23,3 +23,24 @@ test('every registry entry exposes a plain loader and none is a React.lazy', () 
   assert.equal(entries, 26);
   assert.equal(loaders, entries, 'one load() per entry');
 });
+
+test('a failed chunk load is not remembered: the next mount fetches again', async () => {
+  const { componentFor } = await import('./VendoredToolUi');
+  let calls = 0;
+  const entry = { load: () => { calls += 1; return calls === 1 ? Promise.reject(new Error('blip')) : Promise.resolve(() => null); }, loadSchema: () => Promise.resolve({} as never) };
+  await assert.rejects(componentFor(entry as never));
+  const second = await componentFor(entry as never);
+  assert.equal(typeof second, 'function');
+  assert.equal(calls, 2, 'the rejection was forgotten and the load ran again');
+  const third = await componentFor(entry as never);
+  assert.equal(third, second);
+  assert.equal(calls, 2, 'a success IS remembered');
+});
+
+test('the widget chunks are warmed at idle from the app shell', () => {
+  const main = fs.readFileSync(path.join(process.cwd(), 'src/app/Main.tsx'), 'utf8');
+  assert.ok(main.includes("import('@toolui/registry').then((m) => m.preloadToolUi())"));
+  const reg = fs.readFileSync(path.join(process.cwd(), 'src/toolui/registry.tsx'), 'utf8');
+  assert.ok(reg.includes('export function preloadToolUi'));
+});
+
