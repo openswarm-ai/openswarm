@@ -1,10 +1,10 @@
-import React, { lazy } from 'react';
+import React from 'react';
 import type { ZodType } from 'zod';
 import './toolui.css';
 
-/** One vendored tool-ui component: lazy renderer + the upstream Serializable wire schema. */
+/** One vendored tool-ui component: a loader for the renderer + the upstream Serializable wire schema. */
 export interface ToolUiEntry {
-  Component: React.LazyExoticComponent<React.ComponentType<any>>;
+  load: () => Promise<React.ComponentType<any>>;
   loadSchema: () => Promise<ZodType<any>>;
 }
 
@@ -21,111 +21,111 @@ function wrapAsPost<P extends { id?: unknown }>(Inner: React.ComponentType<{ pos
 
 export const TOOL_UI_REGISTRY: Record<string, ToolUiEntry> = {
   'audio': {
-    Component: lazy(() => import('./components/audio').then((m) => ({ default: m.Audio }))),
+    load: () => import('./components/audio').then((m) => m.Audio),
     loadSchema: () => import('./components/audio/schema').then((m) => m.SerializableAudioSchema),
   },
   'chart': {
-    Component: lazy(() => import('./components/chart').then((m) => ({ default: m.Chart }))),
+    load: () => import('./components/chart').then((m) => m.Chart),
     loadSchema: () => import('./components/chart/schema').then((m) => m.SerializableChartSchema),
   },
   'code-block': {
-    Component: lazy(() => import('./components/code-block').then((m) => ({ default: m.CodeBlock }))),
+    load: () => import('./components/code-block').then((m) => m.CodeBlock),
     loadSchema: () => import('./components/code-block/schema').then((m) => m.SerializableCodeBlockSchema),
   },
   'code-diff': {
-    Component: lazy(() => import('./components/code-diff').then((m) => ({ default: m.CodeDiff }))),
+    load: () => import('./components/code-diff').then((m) => m.CodeDiff),
     loadSchema: () => import('./components/code-diff/schema').then((m) => m.SerializableCodeDiffSchema),
   },
   'geo-map': {
-    Component: lazy(() => import('./components/geo-map').then((m) => ({ default: m.GeoMap }))),
+    load: () => import('./components/geo-map').then((m) => m.GeoMap),
     loadSchema: () => import('./components/geo-map/schema').then((m) => m.SerializableGeoMapSchema),
   },
   'approval-card': {
-    Component: lazy(() => import('./components/approval-card').then((m) => ({ default: m.ApprovalCard }))),
+    load: () => import('./components/approval-card').then((m) => m.ApprovalCard),
     loadSchema: () => import('./components/approval-card/schema').then((m) => m.SerializableApprovalCardSchema),
   },
   'citation': {
-    Component: lazy(() => import('./components/citation').then((m) => ({ default: m.Citation }))),
+    load: () => import('./components/citation').then((m) => m.Citation),
     loadSchema: () => import('./components/citation/schema').then((m) => m.SerializableCitationSchema),
   },
   'data-table': {
     // Force the real grid (.Table) instead of the responsive default: every chat surface we render
     // into (card ~380px, fullscreen column ~442px) sits just under the component's @md breakpoint,
     // so "auto" always fell back to the mobile accordion that buries every column but the first.
-    Component: lazy(() => import('./components/data-table').then((m) => ({ default: m.DataTable.Table }))),
+    load: () => import('./components/data-table').then((m) => m.DataTable.Table),
     loadSchema: () => import('./components/data-table/schema').then((m) => m.SerializableDataTableSchema),
   },
   'image': {
-    Component: lazy(() => import('./components/image').then((m) => ({ default: m.Image }))),
+    load: () => import('./components/image').then((m) => m.Image),
     loadSchema: () => import('./components/image/schema').then((m) => m.SerializableImageSchema),
   },
   'image-gallery': {
-    Component: lazy(() => import('./components/image-gallery').then((m) => ({ default: m.ImageGallery }))),
+    load: () => import('./components/image-gallery').then((m) => m.ImageGallery),
     loadSchema: () => import('./components/image-gallery/schema').then((m) => m.SerializableImageGallerySchema),
   },
   'instagram-post': {
-    Component: lazy(() => import('./components/instagram-post').then((m) => ({ default: wrapAsPost(m.InstagramPost) }))),
+    load: () => import('./components/instagram-post').then((m) => wrapAsPost(m.InstagramPost)),
     loadSchema: () => import('./components/instagram-post/schema').then((m) => m.SerializableInstagramPostSchema),
   },
   'item-carousel': {
-    Component: lazy(() => import('./components/item-carousel').then((m) => ({ default: m.ItemCarousel }))),
+    load: () => import('./components/item-carousel').then((m) => m.ItemCarousel),
     loadSchema: () => import('./components/item-carousel/schema').then((m) => m.SerializableItemCarouselSchema),
   },
   'link-preview': {
-    Component: lazy(() => import('./components/link-preview').then((m) => ({ default: m.LinkPreview }))),
+    load: () => import('./components/link-preview').then((m) => m.LinkPreview),
     loadSchema: () => import('./components/link-preview/schema').then((m) => m.SerializableLinkPreviewSchema),
   },
   'linkedin-post': {
-    Component: lazy(() => import('./components/linkedin-post').then((m) => ({ default: wrapAsPost(m.LinkedInPost) }))),
+    load: () => import('./components/linkedin-post').then((m) => wrapAsPost(m.LinkedInPost)),
     loadSchema: () => import('./components/linkedin-post/schema').then((m) => m.SerializableLinkedInPostSchema),
   },
   'message-draft': {
-    Component: lazy(() => import('./components/message-draft').then((m) => ({ default: m.MessageDraft }))),
+    load: () => import('./components/message-draft').then((m) => m.MessageDraft),
     loadSchema: () => import('./components/message-draft/schema').then((m) => m.SerializableEmailDraftSchema),
   },
   'option-list': {
-    Component: lazy(() => import('./components/option-list').then((m) => ({ default: m.OptionList }))),
+    load: () => import('./components/option-list').then((m) => m.OptionList),
     loadSchema: () => import('./components/option-list/schema').then((m) => m.SerializableOptionListSchema),
   },
   'order-summary': {
-    Component: lazy(() => import('./components/order-summary').then((m) => ({ default: m.OrderSummary }))),
+    load: () => import('./components/order-summary').then((m) => m.OrderSummary),
     loadSchema: () => import('./components/order-summary/schema').then((m) => m.SerializableOrderSummarySchema),
   },
   'parameter-slider': {
-    Component: lazy(() => import('./components/parameter-slider').then((m) => ({ default: m.ParameterSlider }))),
+    load: () => import('./components/parameter-slider').then((m) => m.ParameterSlider),
     loadSchema: () => import('./components/parameter-slider/schema').then((m) => m.SerializableParameterSliderSchema),
   },
   'plan': {
-    Component: lazy(() => import('./components/plan').then((m) => ({ default: m.Plan }))),
+    load: () => import('./components/plan').then((m) => m.Plan),
     loadSchema: () => import('./components/plan/schema').then((m) => m.SerializablePlanSchema),
   },
   'preferences-panel': {
-    Component: lazy(() => import('./components/preferences-panel').then((m) => ({ default: m.PreferencesPanel }))),
+    load: () => import('./components/preferences-panel').then((m) => m.PreferencesPanel),
     loadSchema: () => import('./components/preferences-panel/schema').then((m) => m.SerializablePreferencesPanelSchema),
   },
   'progress-tracker': {
-    Component: lazy(() => import('./components/progress-tracker').then((m) => ({ default: m.ProgressTracker }))),
+    load: () => import('./components/progress-tracker').then((m) => m.ProgressTracker),
     loadSchema: () => import('./components/progress-tracker/schema').then((m) => m.SerializableProgressTrackerSchema),
   },
   'question-flow': {
-    Component: lazy(() => import('./components/question-flow').then((m) => ({ default: m.QuestionFlow }))),
+    load: () => import('./components/question-flow').then((m) => m.QuestionFlow),
     // The full union: progressive (step/title), upfront (steps[]), and receipt modes are all valid wire shapes.
     loadSchema: () => import('./components/question-flow/schema').then((m) => m.SerializableQuestionFlowSchema),
   },
   'stats-display': {
-    Component: lazy(() => import('./components/stats-display').then((m) => ({ default: m.StatsDisplay }))),
+    load: () => import('./components/stats-display').then((m) => m.StatsDisplay),
     loadSchema: () => import('./components/stats-display/schema').then((m) => m.SerializableStatsDisplaySchema),
   },
   'terminal': {
-    Component: lazy(() => import('./components/terminal').then((m) => ({ default: m.Terminal }))),
+    load: () => import('./components/terminal').then((m) => m.Terminal),
     loadSchema: () => import('./components/terminal/schema').then((m) => m.SerializableTerminalSchema),
   },
   'video': {
-    Component: lazy(() => import('./components/video').then((m) => ({ default: m.Video }))),
+    load: () => import('./components/video').then((m) => m.Video),
     loadSchema: () => import('./components/video/schema').then((m) => m.SerializableVideoSchema),
   },
   'x-post': {
-    Component: lazy(() => import('./components/x-post').then((m) => ({ default: wrapAsPost(m.XPost) }))),
+    load: () => import('./components/x-post').then((m) => wrapAsPost(m.XPost)),
     loadSchema: () => import('./components/x-post/schema').then((m) => m.SerializableXPostSchema),
   },
 };

@@ -1,6 +1,6 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useThemeMode } from '@/shared/styles/ThemeContext';
-import { TOOL_UI_REGISTRY } from './registry';
+import { TOOL_UI_REGISTRY, type ToolUiEntry } from './registry';
 import { parseLeniently, type Gate } from './parseLeniently';
 
 interface GuardProps { name: string; quiet?: boolean; children: React.ReactNode }
@@ -41,6 +41,18 @@ interface VendoredToolUiProps {
 }
 
 const warnedShapes = new Set<string>();
+// One import per component for the whole page, and the loader owns its own readiness: a code-split component behind a
+// fallback boundary lost its retry above the memoized bubble (measured 2026-09-05: chunk loaded, module resolved, skeleton
+// forever), so the component arrives through state, which re-renders THIS component no matter what memo sits above it.
+const loadedComponents = new Map<ToolUiEntry, Promise<React.ComponentType<any>>>();
+function componentFor(entry: ToolUiEntry): Promise<React.ComponentType<any>> {
+  let p = loadedComponents.get(entry);
+  if (!p) {
+    p = entry.load();
+    loadedComponents.set(entry, p);
+  }
+  return p;
+}
 
 // Rough resting height per component family so the loading skeleton reserves believable space
 // (Lobe/Open WebUI pattern: a breathing block where the card will land, not a tiny sliver).
@@ -69,16 +81,18 @@ function VendoredToolUi({ name, props, extraProps, quietFail = false }: Vendored
   const { mode } = useThemeMode();
   const entry = TOOL_UI_REGISTRY[name];
   const [gate, setGate] = useState<Gate>({ state: 'pending' });
+  const [Component, setComponent] = useState<React.ComponentType<any> | null>(null);
   // Parents rebuild the props object every render; keying the validation on identity re-ran an async zod parse per transcript render (real typing-lag cost in table-bearing chats). Content is the real dependency.
   const propsKey = useMemo(() => { try { return JSON.stringify(props); } catch { return String(Math.random()); } }, [props]);
 
   useEffect(() => {
     let cancelled = false;
     if (!entry) return undefined;
-    entry
-      .loadSchema()
-      .then((schema) => {
-        if (!cancelled) setGate(parseLeniently(schema, props));
+    Promise.all([entry.loadSchema(), componentFor(entry)])
+      .then(([schema, Loaded]) => {
+        if (cancelled) return;
+        setComponent(() => Loaded);
+        setGate(parseLeniently(schema, props));
       })
       .catch(() => { if (!cancelled) setGate({ state: 'bad', problem: 'component failed to load' }); });
     return () => { cancelled = true; };
@@ -101,16 +115,13 @@ function VendoredToolUi({ name, props, extraProps, quietFail = false }: Vendored
       </div>
     );
   }
-  if (gate.state === 'pending') {
+  if (gate.state === 'pending' || !Component) {
     return quietFail ? null : <SkeletonBlock name={name} />;
   }
-  const Component = entry.Component;
   return (
     <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`}>
       <ComponentGuard name={name} quiet={quietFail}>
-        <Suspense fallback={<SkeletonBlock name={name} />}>
-          <Component {...gate.parsed} {...(extraProps || {})} />
-        </Suspense>
+        <Component {...gate.parsed} {...(extraProps || {})} />
       </ComponentGuard>
     </div>
   );
