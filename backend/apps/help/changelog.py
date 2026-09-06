@@ -22,6 +22,24 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.9",
+        headline="A login that dies is reported, chats no longer restart the router, big tables stop weighing the board down, and the Usage page says what its number is.",
+        highlights=[
+            "When your ChatGPT, Claude or Gemini login stops working, the app says so within a few minutes and offers Reconnect, instead of every chat on it failing quietly.",
+            "A long table in a chat loads a screenful at a time with a Show more row, and a collapsed chat shows only the first rows of its table, so a board with big tables no longer stutters on every step.",
+            "The Usage page says its dollar figure is what the work would have cost at API prices, not a bill; subscribers were reading it as a charge. A By lane list shows which login served the requests.",
+            "The agent answers which subscriptions are connected from the app's own router, instead of from old settings fields that told a connected user they were not.",
+        ],
+        fixes=[
+            "Chats no longer ask the app to restart its model router at every turn on a login that works; a stale error left on a healthy login was read as dead.",
+            "A widget whose code had not finished loading when the chat opened used to stay a grey placeholder for good; it now draws when it arrives.",
+            "A collapsed chat's stats card shows its numbers side by side and never clips the last one; in a narrow chat column the same card no longer stacks three numbers into a tower.",
+            "The floating Ask me anything bar and the login pill step out of the way of a chat tiled to the bottom-left instead of covering its composer.",
+            "Docking a browser into a chat grows the slot in instead of dropping it at full height and shoving the transcript in one frame.",
+            "Windows: a .swarm app import is proven on Windows in CI with a bundle shaped like a real client project, so a hollow import can never pass again.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.10-exp.8",
         headline="Answers type out steadily, installs show their progress, the dock stays readable with dozens of chats, and Anthropic keys that span workspaces work.",
         highlights=[
