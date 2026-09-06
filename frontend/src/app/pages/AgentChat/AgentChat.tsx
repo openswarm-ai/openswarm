@@ -89,6 +89,9 @@ import { parseMcpToolName, getMcpInputSummary } from '@/shared/mcpToolMeta';
 import { isNarration } from './parsing/isNarration';
 import { shouldForwardGutterWheel } from './gutterWheel';
 import { openMarketplace } from '@/app/pages/Directory/openMarketplace';
+import Collapse from '@mui/material/Collapse';
+// The docked browser slot used to land at its full height in one frame and re-pin the view 287 px (ENG-468); it grows in over one reveal beat instead.
+const BROWSER_SLOT_REVEAL_MS = 200;
 
 const CONTEXT_WINDOWS: Record<string, number> = {
   'opus-4-8': 1_000_000,
@@ -2119,7 +2122,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 return (
                   <React.Fragment key={`${item.id}-with-browser`}>
                     {rendered}
-                    <Box data-browser-slot={id} ref={announceBrowserSlot} sx={browserSlotSx}>{browserSlotBody}</Box>
+                    <Collapse in appear timeout={BROWSER_SLOT_REVEAL_MS} easing="cubic-bezier(0.32, 0.72, 0, 1)"><Box data-browser-slot={id} ref={announceBrowserSlot} sx={browserSlotSx}>{browserSlotBody}</Box></Collapse>
                   </React.Fragment>
                 );
               }
@@ -2194,7 +2197,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
             )}
             {/* Fallback dock slot for a browser that docked before any browser tool row exists (or whose row was compacted away); once a row appears the slot anchors at it instead (see browserAnchorItemId). The real card overlays this rect geometrically, so the webview never remounts; the mini hides itself when its slot scrolls mostly out of view, since a live webview can't be clipped by the scroller. */}
             {hasDockedBrowser && !browserAnchorItemId && (
-              <Box data-browser-slot={id} ref={announceBrowserSlot} sx={browserSlotSx}>{browserSlotBody}</Box>
+              <Collapse in appear timeout={BROWSER_SLOT_REVEAL_MS} easing="cubic-bezier(0.32, 0.72, 0, 1)"><Box data-browser-slot={id} ref={announceBrowserSlot} sx={browserSlotSx}>{browserSlotBody}</Box></Collapse>
             )}
             </Box>
           </Box>

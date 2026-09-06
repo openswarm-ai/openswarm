@@ -12,3 +12,11 @@ export function coveredByTiledZones(zones: string[], pill: ZoneRect, rectFor: (z
   }
   return false;
 }
+
+export type HealthToastAnchor = { vertical: 'bottom' | 'top'; horizontal: 'left' | 'center' };
+/** The reconnect pill must never hide (a covered composer is row 7, a hidden reconnect is row 5), so when a tile covers its bottom-left spot it moves to the top centre, which no quarter or half tile owns together with the composer. */
+export function healthToastAnchor(zones: string[], toastRect: ZoneRect | null, rectFor: (zone: string) => ZoneRect | null = zoneRect): HealthToastAnchor {
+  if (toastRect && coveredByTiledZones(zones, toastRect, rectFor)) return { vertical: 'top', horizontal: 'center' };
+  return { vertical: 'bottom', horizontal: 'left' };
+}
+

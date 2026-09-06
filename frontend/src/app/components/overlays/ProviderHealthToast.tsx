@@ -10,6 +10,12 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { hideProviderHealthToast } from '@/shared/state/subscriptionsSlice';
 import { openSettingsCard } from '@/shared/state/dashboardLayoutSlice';
+import { healthToastAnchor, type HealthToastAnchor } from '@/app/pages/Dashboard/canvas/spawnPillCover';
+
+// Where the toast would sit at its bottom-left home (MUI's 24 px inset), so a toast already moved up is judged on the spot it came from.
+function HOME_RECT(r: DOMRect): { x: number; y: number; w: number; h: number } {
+  return { x: 24, y: window.innerHeight - 24 - r.height, w: r.width, h: r.height };
+}
 
 export default function ProviderHealthToast() {
   const c = useClaudeTokens();
@@ -17,6 +23,18 @@ export default function ProviderHealthToast() {
   const open = useAppSelector((s) => s.subscriptions.healthToastOpen);
   const dead = useAppSelector((s) => s.subscriptions.healthDead);
   const cliMissing = useAppSelector((s) => s.subscriptions.healthCliMissing);
+  const tiledZonesKey = useAppSelector((s) => Object.values(s.dashboardLayout.tiledCards).sort().join(','));
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = React.useState<HealthToastAnchor>({ vertical: 'bottom', horizontal: 'left' });
+  React.useLayoutEffect(() => {
+    // Measured at its home spot, never at the moved one, or a toast that moved up would never come back down.
+    const el = rootRef.current;
+    if (!el || !open) return;
+    const r = el.getBoundingClientRect();
+    const zones = tiledZonesKey ? tiledZonesKey.split(',') : [];
+    setAnchor(healthToastAnchor(zones, anchor.vertical === 'bottom' ? { x: r.x, y: r.y, w: r.width, h: r.height } : HOME_RECT(r)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiledZonesKey, open]);
 
   const onReconnect = React.useCallback(() => {
     dispatch(openSettingsCard({ tab: 'models' }));
@@ -32,7 +50,8 @@ export default function ProviderHealthToast() {
       autoHideDuration={null}
       // Clickaway would kill the pill on the user's first canvas click, before they read it; only the X or Reconnect dismisses.
       onClose={(event, reason) => { if (reason !== 'clickaway') dispatch(hideProviderHealthToast()); }}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      anchorOrigin={anchor}
+      ref={rootRef}
     >
       <Alert
         icon={false}

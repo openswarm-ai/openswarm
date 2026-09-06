@@ -176,7 +176,7 @@ function StatCard({
     <div
       className={cn(
         "relative flex flex-col gap-1",
-        compact ? "min-h-16 px-3" : "min-h-28 px-6",
+        compact ? "min-h-16 px-3" : "min-h-16 px-3 @[440px]:min-h-28 @[440px]:px-6",
         isSingle ? "justify-center" : "justify-end",
       )}
     >
@@ -203,7 +203,7 @@ function StatCard({
         <span
           className={cn(
             "font-light tracking-normal",
-            isSingle ? "text-5xl" : compact ? "text-xl" : "text-3xl",
+            isSingle ? "text-5xl" : compact ? "text-xl" : "text-xl @[440px]:text-3xl",
           )}
         >
           <FormattedValue
@@ -257,11 +257,13 @@ export function StatsDisplay({
         )}
         <CardContent className="@container overflow-hidden p-0">
           <div
-            className="grid @[440px]:-ml-px @[440px]:-mt-px"
-            style={{
-              // Under a collapsed pill (compact) three cells must sit side by side at ~380 px; the page-sized minimum stacked them into a 336 px column.
-              gridTemplateColumns: compact ? "repeat(auto-fit, minmax(110px, 1fr))" : "repeat(auto-fit, minmax(220px, 1fr))",
-            }}
+            // A chat column or a pill is narrower than the page these were drawn for: cells sit side by side from ~330 px (110 px each) and take the page's 220 px minimum only past 660 px, so a quarter-tiled chat no longer stacks three numbers into a 336 px column (ENG-469).
+            className={cn(
+              "grid @[440px]:-ml-px @[440px]:-mt-px",
+              compact
+                ? "grid-cols-[repeat(auto-fit,minmax(110px,1fr))]"
+                : "grid-cols-[repeat(auto-fit,minmax(110px,1fr))] @[660px]:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]",
+            )}
           >
             {stats.map((stat, index) => (
               <div

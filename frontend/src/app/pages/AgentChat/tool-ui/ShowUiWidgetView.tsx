@@ -6,7 +6,7 @@ import LinksWidget from './LinksWidget';
 import VendoredToolUi from '@toolui/VendoredToolUi';
 import type { ShowUiPayload } from './showUiPayload';
 import { useOpenUrlInBrowserCard } from './useOpenUrlInBrowserCard';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { ambientShape } from './showUiAmbient';
 import { perfBaselineFor } from '@/shared/perfBaseline';
 
@@ -14,6 +14,7 @@ import { perfBaselineFor } from '@/shared/perfBaseline';
 function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambient?: boolean }): React.ReactElement | null {
   const openUrl = useOpenUrlInBrowserCard();
   const c = useClaudeTokens();
+  const { mode } = useThemeMode();
   if (payload.component === 'weather') return <WeatherWidget props={payload.props} ambient={ambient} />;
   if (payload.component === 'plan') return <PlanWidget props={payload.props} />;
   if (payload.component === 'stats') return <StatsWidget props={payload.props} />;
@@ -37,10 +38,11 @@ function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambien
     const shaped = ambient && !perfBaselineFor('ambient') ? ambientShape(payload.name, raw) : { props: payload.props, note: null, extraProps: {} };
     let widget = <VendoredToolUi name={payload.name} props={shaped.props} quietFail={ambient} extraProps={{ ...nav, ...shaped.extraProps }} />;
     if (shaped.note) {
+      // The note sits on the widget's own surface (the tool-ui theme's card colour, tucked under the table's rounded bottom) so it reads as the artifact's footer, not stray canvas text (ENG-474).
       widget = (
-        <div>
+        <div className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`}>
           {widget}
-          <div style={{ fontSize: '0.75rem', color: c.text.secondary, padding: '6px 8px 2px' }}>{shaped.note}</div>
+          <div className="bg-card text-muted-foreground border border-border border-t-0 rounded-b-xl text-xs" style={{ marginTop: -12, padding: '18px 12px 6px' }}>{shaped.note}</div>
         </div>
       );
     }
