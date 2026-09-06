@@ -34,8 +34,8 @@ function ShowUiWidgetView({ payload, ambient }: { payload: ShowUiPayload; ambien
       const fallback = [raw.src, raw.url].find((v): v is string => typeof v === 'string');
       if (fallback) nav.href = fallback;
     }
-    const shaped = ambient && !perfBaselineFor('ambient') ? ambientShape(payload.name, raw) : { props: payload.props, note: null };
-    let widget = <VendoredToolUi name={payload.name} props={shaped.props} quietFail={ambient} extraProps={nav} />;
+    const shaped = ambient && !perfBaselineFor('ambient') ? ambientShape(payload.name, raw) : { props: payload.props, note: null, extraProps: {} };
+    let widget = <VendoredToolUi name={payload.name} props={shaped.props} quietFail={ambient} extraProps={{ ...nav, ...shaped.extraProps }} />;
     if (shaped.note) {
       widget = (
         <div>

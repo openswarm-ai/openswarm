@@ -9,6 +9,8 @@ export interface AmbientShape {
   props: Record<string, unknown>;
   /** One line under the widget when something was left out, or null. */
   note: string | null;
+  /** Merged AFTER the zod gate: the strict parse strips every key the wire schema does not name, which is where a compact flag in the wire props silently died. */
+  extraProps: Record<string, unknown>;
 }
 
 export function ambientShape(name: string, props: Record<string, unknown>): AmbientShape {
@@ -17,9 +19,10 @@ export function ambientShape(name: string, props: Record<string, unknown>): Ambi
     return {
       props: { ...props, data: props.data.slice(0, AMBIENT_TABLE_ROWS) },
       note: `Showing ${AMBIENT_TABLE_ROWS} of ${total.toLocaleString()} rows. Open the chat for the whole table.`,
+      extraProps: {},
     };
   }
   // The vendored stats card stacks its cells vertically under 440 px; the pill is narrower than that.
-  if (name === 'stats-display') return { props: { ...props, compact: true }, note: null };
-  return { props, note: null };
+  if (name === 'stats-display') return { props, note: null, extraProps: { compact: true } };
+  return { props, note: null, extraProps: {} };
 }

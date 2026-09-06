@@ -24,11 +24,14 @@ test('a short table and other widgets pass through untouched', () => {
 
 test('a pill stats card is asked for its compact density', () => {
   const shaped = ambientShape('stats-display', { stats: [] });
-  assert.equal(shaped.props.compact, true);
+  // The wire schema names no compact key and the strict parse strips unknown keys, so the flag rides extraProps (merged after the gate); in the wire props it was inert.
+  assert.equal(shaped.extraProps.compact, true);
+  assert.equal(shaped.props.compact, undefined);
 });
 
 test('the widget view applies the shaping only on the ambient surface, and is memoized', () => {
   const src = fs.readFileSync(path.join(process.cwd(), 'src/app/pages/AgentChat/tool-ui/ShowUiWidgetView.tsx'), 'utf8');
   assert.ok(src.includes("ambient && !perfBaselineFor('ambient') ? ambientShape(payload.name, raw)"), 'the chat keeps the whole table; only the pill is shaped');
+  assert.ok(src.includes('extraProps={{ ...nav, ...shaped.extraProps }}'), 'the shaped extras are merged after the zod gate');
   assert.ok(src.includes("export default perfBaselineFor('ambient') ? ShowUiWidgetView : React.memo(ShowUiWidgetView)"));
 });
