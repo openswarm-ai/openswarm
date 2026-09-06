@@ -8,16 +8,10 @@ testStatus="unavailable" and errorCode=401 the whole time.
 
 import asyncio
 
-import pytest
 
 import backend.apps.agents.manager.run.lane_preflight as lp
 
 
-@pytest.fixture(autouse=True)
-def p_clear_cooldown():
-    lp.LAST_BOUNCE.clear()
-    yield
-    lp.LAST_BOUNCE.clear()
 
 
 def p_providers(monkeypatch, conns, bounce_result=None):
@@ -50,14 +44,6 @@ def test_a_healthy_lane_costs_nothing_and_says_nothing(monkeypatch):
     assert st["bounced"] == 0, "a working lane must never trigger a router restart"
 
 
-def test_the_first_dead_encounter_bounces_and_lets_the_turn_decide(monkeypatch):
-    """The bounce is an attempt, not a verdict. It must not block the turn, and it must not claim
-    a recovery it cannot see."""
-    st = p_providers(monkeypatch, P_DEAD, bounce_result=P_DEAD)
-    assert asyncio.run(lp.preflight_lane("cx/gpt-5.6")) is None, "dispatch is the real test"
-    assert st["bounced"] == 1
-
-
 def test_a_cleared_stamp_is_never_mistaken_for_a_working_credential(monkeypatch):
     """The bug this test exists for shipped for ten minutes on 2026-08-20. The first version
     re-read health after the bounce and returned "recovered" because a fresh router has no
@@ -78,21 +64,6 @@ def test_a_cleared_stamp_is_never_mistaken_for_a_working_credential(monkeypatch)
     )
 
 
-def test_a_lane_still_dead_inside_the_cooldown_DISPATCHES(monkeypatch):
-    """CORRECTED 2026-08-27 (ENG-414). This used to assert the opposite, and the assumption it
-    encoded is the bug: "second encounter inside the cooldown" was read as "we already spent a
-    bounce and a turn on THIS session". `LAST_BOUNCE` is module-global, so in production it meant
-    "some other chat bounced recently" and it hard-stopped a live build on a working credential.
-
-    Preflight has not dispatched, so it cannot know. It dispatches and flags the session; the
-    accurate sentence now comes from handle_run_error after a real 401. The cooldown still holds."""
-    st = p_providers(monkeypatch, P_DEAD, bounce_result=P_DEAD)
-    assert asyncio.run(lp.preflight_lane("cx/gpt-5.6")) is None
-    assert asyncio.run(lp.preflight_lane("cx/gpt-5.6")) is None, \
-        "a throttled bounce is not evidence about the credential"
-    assert st["bounced"] == 1, "the cooldown holds; one restart, not one per ask"
-
-
 def test_the_downstream_card_still_refuses_the_rotation_story():
     """What the old assertion above was really protecting: when the card DOES fire, it must not
     invent a rotation window or claim no action is needed. That copy moved, it did not soften."""
@@ -100,14 +71,6 @@ def test_the_downstream_card_still_refuses_the_rotation_story():
         assert "rotated" not in msg.lower(), "never claim a rotation that did not happen"
         assert "no action needed" not in msg.lower(), "there IS action needed; saying otherwise is the bug"
         assert "reconnect" in msg.lower(), msg
-
-
-def test_the_bounce_is_rate_limited(monkeypatch):
-    """A bounce restarts a process every other session shares, so it is once per lane per window, never once per turn."""
-    st = p_providers(monkeypatch, P_DEAD, bounce_result=P_DEAD)
-    for _ in range(4):
-        asyncio.run(lp.preflight_lane("cx/gpt-5.6"))
-    assert st["bounced"] == 1, f"expected a single bounce, got {st['bounced']}"
 
 
 def test_direct_api_lanes_are_left_alone(monkeypatch):
@@ -138,26 +101,6 @@ def test_only_terminal_states_count_as_dead():
     assert lp.connection_is_dead({"testStatus": "active", "errorCode": 429}) is False
     assert lp.connection_is_dead({"testStatus": "active", "errorCode": 502}) is False
     assert lp.connection_is_dead({}) is False
-
-
-def test_never_dispatches_into_a_router_that_did_not_come_back(monkeypatch):
-    """A bounce that fails to restart leaves nothing listening. Dispatching into that is a
-    guaranteed connection error the user would read as the model failing, rather than as us
-    restarting something underneath them."""
-    async def fake_get_providers():
-        return P_DEAD
-
-    async def failed_bounce(provider):
-        return False
-
-    import backend.apps.nine_router as nr
-    import backend.apps.nine_router.bounce_after_connect as ba
-    monkeypatch.setattr(nr, "get_providers", fake_get_providers, raising=True)
-    monkeypatch.setattr(ba, "bounce_router_after_connect", failed_bounce, raising=True)
-
-    msg = asyncio.run(lp.preflight_lane("cx/gpt-5.6"))
-    assert msg and "restarting" in msg.lower()
-    assert "reconnect" not in msg.lower(), "this is our restart, not the user's credential"
 
 
 def test_a_rate_limited_lane_is_not_a_dead_credential():
@@ -191,4 +134,17 @@ def test_a_throttle_is_still_not_death():
     # testStatus unavailable with a 429 is the Google case the docstring cites; the tightened rule keeps it.
     assert lp.connection_is_dead({"provider": "gemini-cli", "testStatus": "unavailable", "errorCode": 429}) is False
     assert lp.connection_is_dead({"provider": "codex", "testStatus": "unavailable", "errorCode": 401}) is True
+
+
+def test_a_dead_lane_never_restarts_the_router(monkeypatch):
+    """2026-09-06: the preflight bounce was a dead port for every chat on every lane, and a restart cannot revive
+    a dead token. A dead lane dispatches (the real request is the test) and restarts nothing."""
+    st = p_providers(monkeypatch, P_DEAD, bounce_result=P_DEAD)
+    for _ in range(4):
+        assert asyncio.run(lp.preflight_lane("cx/gpt-5.6")) is None
+    assert st["bounced"] == 0, f"preflight must never restart the router, got {st['bounced']}"
+
+
+def test_the_module_no_longer_owns_a_bounce_throttle():
+    assert not hasattr(lp, "LAST_BOUNCE") and not hasattr(lp, "BOUNCE_COOLDOWN_S")
 

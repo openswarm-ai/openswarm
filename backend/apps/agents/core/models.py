@@ -176,6 +176,10 @@ class AgentSession(BaseModel):
     # Input-token level history must regrow past before another proactive prune may commit; a rebuild busts the prompt cache, so one per runway, never one per turn.
     proactive_prune_rearm_tokens: int = 0
     lane_credential_dead: bool = False
+    # The router login this chat died on (a definitive auth failure), so a reconnect of that login can pick the chat back up by itself; cleared on resume.
+    auth_dead_provider: Optional[str] = None
+    # The router login this chat dispatches through (claude, codex, gemini-cli, antigravity), written by the preflight on every turn; None on a direct API key. The error handler reads it instead of guessing from the vendor.
+    lane_provider: Optional[str] = None
     # Transient provider errors arrive as assistant TEXT, so no upstream retry sees them; budgeted apart from auth_retry_used so a rate limit cannot spend the expired-token retry.
     transient_retry_count: int = 0
     # Set once the provider gives a verdict waiting cannot change (a spent plan, a dead credential).

@@ -31,10 +31,14 @@ async def agents_lifespan():
     await agent_manager.restore_all_sessions()
     # Off the critical path: crash-cut turns resume themselves once everything is hydrated.
     asyncio.create_task(agent_manager.auto_resume_crashed_turns())
+    # Subscription logins are renewed ahead of expiry while the app runs; one the router cannot renew is reported at once.
+    from backend.apps.nine_router.oauth_refresh import oauth_refresh_loop
+    p_oauth_refresh = asyncio.create_task(oauth_refresh_loop())
     from backend.apps.agents.manager.run.client_pool import start_pool_sweeper, stop_pool_sweeper, dispose_all_clients
     pool_sweeper = start_pool_sweeper(agent_manager.client_pool)
     yield
     logger.info("Agents sub-app shutting down")
+    p_oauth_refresh.cancel()
     # Stamp before stopping: once stop_agent has run, a live chat is indistinguishable from one the user stopped.
     agent_manager.note_shutdown_stops()
     for session_id in list(agent_manager.tasks.keys()):
@@ -567,6 +571,24 @@ async def subscriptions_connect(body: dict, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def p_after_reconnect(provider: str, bounce) -> None:
+    """The reconnect chokepoint: the router restarts once so its memory of the old token goes, then every chat
+    that died on this login resumes by itself. Nothing here may raise into the OAuth response."""
+    try:
+        await bounce(provider)
+    except Exception:
+        logger.debug("post-reconnect bounce failed", exc_info=True)
+    # The old verdict dies with the old token: the pill closes and the next ask probes the new login.
+    from backend.apps.nine_router.subscription_health import invalidate_health_cache
+    invalidate_health_cache()
+    try:
+        n = await agent_manager.resume_auth_dead_sessions(provider)
+        if n:
+            logger.info(f"reconnect: {n} chat(s) that died on {provider} resumed")
+    except Exception:
+        logger.warning("reconnect-resume failed", exc_info=True)
+
+
 @agents.router.post("/subscriptions/poll")
 async def subscriptions_poll(body: dict):
     """Poll for OAuth completion."""
@@ -590,7 +612,7 @@ async def subscriptions_poll(body: dict):
             await clear_free_trial_on_connect()
             # Background so the UI's "Connected" lands instantly; the bounce takes ~5-10s (ENG-315).
             from backend.apps.nine_router.bounce_after_connect import bounce_router_after_connect
-            asyncio.create_task(bounce_router_after_connect(provider))
+            asyncio.create_task(p_after_reconnect(provider, bounce_router_after_connect))
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -627,6 +649,8 @@ async def subscriptions_exchange(body: dict):
             # A connected subscription takes precedence over the free trial right away.
             from backend.apps.subscription.free_trial import clear_free_trial_on_connect
             await clear_free_trial_on_connect()
+            from backend.apps.nine_router.bounce_after_connect import bounce_router_after_connect
+            asyncio.create_task(p_after_reconnect(provider, bounce_router_after_connect))
         return result
     except Exception as e:
         if state and state in completed_oauth:

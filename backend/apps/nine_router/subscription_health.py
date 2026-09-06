@@ -203,3 +203,37 @@ async def p_recheck(provider: str, model: str) -> None:
     p_cached_result = dead
     from backend.apps.agents.core.ws_manager import ws_manager
     await ws_manager.broadcast_global("subscriptions:health", {"dead": dead})
+
+
+@typechecked
+def note_auth_failure(provider: str) -> None:
+    """A real request on this lane just failed auth. That is stronger evidence than a probe, so it ADVANCES
+    the sighting (the clock starts now if it had not) and drops only the cached answer, so the next ask
+    re-probes; it never resets the clock or cancels a scheduled recheck, which is what invalidating the
+    whole cache on every 401 did (a lane agents kept hitting could restart its own window forever)."""
+    global p_cached_result, p_cached_at
+    if provider not in PREFIX_BY_PROVIDER:
+        return
+    p_refreshing_since.setdefault(provider, time.monotonic())
+    p_cached_result = None
+    p_cached_at = 0.0
+
+
+@typechecked
+async def report_dead_now(provider: str) -> bool:
+    """The turn's retry failed auth as well: waiting cannot fix this login, so say so this second instead of
+    at the next boot-time ask. Idempotent; returns False for a lane the probe does not cover."""
+    global p_cached_result
+    if provider not in PREFIX_BY_PROVIDER:
+        return False
+    for t in p_rechecks.values():
+        t.cancel()
+    p_rechecks.clear()
+    entry = {"provider": provider, "label": LABEL_BY_PROVIDER[provider]}
+    dead = [d for d in (p_cached_result or []) if d.get("provider") != provider] + [entry]
+    p_cached_result = dead
+    logger.warning(f"[sub-health] {provider}: a turn and its retry both failed auth; reporting it dead now")
+    from backend.apps.agents.core.ws_manager import ws_manager
+    await ws_manager.broadcast_global("subscriptions:health", {"dead": dead})
+    return True
+

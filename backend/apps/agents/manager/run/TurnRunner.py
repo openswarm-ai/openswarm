@@ -298,10 +298,13 @@ class TurnRunner(AgentManagerProtocol):
                         f"resuming once in {p_auth_wait}s. err={p_result_err!s}"
                     )
                     try:
-                        from backend.apps.nine_router.subscription_health import invalidate_health_cache
-                        invalidate_health_cache()
+                        from backend.apps.nine_router.subscription_health import note_auth_failure
+                        from backend.apps.agents.manager.run.lane_preflight import provider_for_model
+                        p_lane = provider_for_model(resolved_model)
+                        if p_lane:
+                            note_auth_failure(p_lane)
                     except Exception:
-                        logger.debug("health-cache invalidate before auth resume failed", exc_info=True)
+                        logger.debug("health sighting before auth resume failed", exc_info=True)
                     await p_finalize_interrupted_stream()
                     await asyncio.sleep(p_auth_wait)
                     p_stderr_buffer.clear()
@@ -338,10 +341,13 @@ class TurnRunner(AgentManagerProtocol):
                         flight_recorder.crumb(session_id, "auth-resume", wait_s=p_auth_wait2, err=str(e)[:160])
                         logger.warning(f"Auth-shaped exception on session {session_id}; refreshing and resuming once in {p_auth_wait2}s. exc={e!r}")
                         try:
-                            from backend.apps.nine_router.subscription_health import invalidate_health_cache
-                            invalidate_health_cache()
+                            from backend.apps.nine_router.subscription_health import note_auth_failure
+                            from backend.apps.agents.manager.run.lane_preflight import provider_for_model
+                            p_lane = provider_for_model(resolved_model)
+                            if p_lane:
+                                note_auth_failure(p_lane)
                         except Exception:
-                            logger.debug("health-cache invalidate before auth resume failed", exc_info=True)
+                            logger.debug("health sighting before auth resume failed", exc_info=True)
                         await p_finalize_interrupted_stream()
                         await asyncio.sleep(p_auth_wait2)
                         p_stderr_buffer.clear()

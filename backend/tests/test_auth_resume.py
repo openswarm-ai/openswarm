@@ -83,8 +83,13 @@ def test_the_exception_path_consults_auth_resume_too():
 
 
 def test_the_resume_actively_refreshes_credentials():
+    # Both auth paths feed the credential health verdict before they wait. Since 2026-09-06 that is note_auth_failure
+    # (the sighting ADVANCES; the cached answer is dropped so the next ask re-probes) and never invalidate_health_cache,
+    # which also wiped the first-seen clock and cancelled the scheduled recheck, so a lane agents kept hitting could
+    # restart its own grace window forever.
     src = inspect.getsource(TurnRunner)
-    assert src.count("invalidate_health_cache") >= 2, "both paths must poke the credential health cache, not just wait"
+    assert src.count("note_auth_failure(p_lane)") >= 2, "both paths must feed the credential health sighting, not just wait"
+    assert "invalidate_health_cache" not in src, "a turn's 401 must advance the verdict, never reset it"
 
 
 def test_the_recovery_ledger_counts_auth_resumes():

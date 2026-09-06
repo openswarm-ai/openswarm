@@ -134,6 +134,34 @@ class SessionPersistence(AgentManagerProtocol):
                 logger.warning(f"crash-resume: session {sid} failed to auto-resume; amber chip remains", exc_info=True)
         self.crash_resume_queue = []
 
+    async def resume_auth_dead_sessions(self, provider: str) -> int:
+        """The user just reconnected this login: every chat that died on it picks itself back up with one hidden
+        continuation, the way crash-resume does at boot. Only chats marked by a DEFINITIVE auth failure on this
+        provider resume; a human's Stop always wins. Returns how many were sent."""
+        resumed = 0
+        for sid, session in list(self.sessions.items()):
+            if session.auth_dead_provider != provider or session.ended_by_user:
+                continue
+            if session.status in ("running", "waiting_approval"):
+                continue
+            session.auth_dead_provider = None
+            session.lane_credential_dead = False
+            session.auth_retry_used = False
+            session.provider_verdict_final = False
+            try:
+                p_send = getattr(self, "send_message")
+                await p_send(
+                    sid,
+                    "Your login for this model was reconnected; the earlier failure is cleared. Continue exactly "
+                    "where you left off; do not redo completed steps.",
+                    hidden=True,
+                )
+                resumed += 1
+                logger.info(f"reconnect-resume: session {sid} resumed on {provider}")
+            except Exception:
+                logger.warning(f"reconnect-resume: session {sid} failed to resume", exc_info=True)
+        return resumed
+
     @typechecked
     def note_shutdown_stops(self) -> int:
         """Stamp every chat with a live turn BEFORE the shutdown stops it. The lifespan stops the tasks

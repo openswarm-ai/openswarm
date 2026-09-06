@@ -1,42 +1,28 @@
-"""Do not spend a user's turn on a lane we already know is dead.
+"""Do not spend a user's turn on a lane we already know is dead... and never restart the router for it.
 
 Live drill, 2026-08-20: a codex credential that expired 89 HOURS earlier produced "GPT subscription
 token just rotated (automatic, every couple minutes), retrying automatically, no action needed", a
-75 second wait, a doomed retry, and then five identical cards. Zero files read. Every word of that
-was wrong, and the evidence to know better was already sitting in 9Router's own provider list:
-`testStatus: "unavailable"` with `errorCode: 401`, published before we spend anything.
+75 second wait, a doomed retry, and then five identical cards. Zero files read. The evidence to know
+better was already in 9Router's own provider list: `testStatus: "unavailable"` with `errorCode: 401`.
 
-So this looks first, and it tries to fix it before it complains:
+What this does with it:
 
-  healthy            -> say nothing, cost nothing, dispatch as normal
-  sticky-dead, first -> bounce the router ONCE (re-reads db.json, clears the in-process
-                        `unavailable` stamp and modelLock cooldowns), then DISPATCH ANYWAY and let
-                        the turn itself be the verdict. If it goes through, the user never learns
-                        anything happened.
-  sticky-dead, bounce
-  already throttled  -> DISPATCH ANYWAY too, and flag the session so that if the turn really does
-                        401, handle_run_error can say the accurate sentence with no rotation story.
+  healthy      -> say nothing, cost nothing, dispatch as normal
+  dead         -> DISPATCH ANYWAY, and flag the session so that if the turn really does 401,
+                  handle_run_error says the accurate sentence with no rotation story, and the
+                  dead-login recheck pushes the reconnect pill.
+
+What it deliberately does NOT do any more (2026-09-06): restart the router. A restart cannot revive
+a dead token; it is a dead port for every chat on every lane for 1 to 30 s (ENG-394's shape); and the
+one thing it did fix, stale router memory after the user reconnected, is bounce_after_connect's job on
+the reconnect path. The router's "unavailable" is a timed cooldown it clears on its own.
 
 This file NEVER tells the user a credential is dead, because it has not dispatched and therefore
-cannot know. It used to, off the bounce cooldown, and that cooldown is a GLOBAL router-restart
-throttle: the branch that meant "permanently dead" actually meant "another chat restarted the
-router in the last five minutes". It killed a live build on a working credential while telling the
-user "waiting will not clear this one", which was backwards, since waiting out the throttle is
-exactly what cleared it (ENG-414). The death verdict lives in ONE place now, downstream of a real
-failed dispatch.
-
-The bounce is NOT allowed to declare success on its own, and that mistake is worth recording: the
-first version re-read the health flag afterwards and called a cleared stamp a recovery. But a fresh
-router starts with no stamp, so the check passed for a credential that was still dead, and the turn
-hit the same 401 seconds later. A restart clears the accusation, not the cause. Only a real
-dispatch can tell you whether a credential works, so that is what decides it now.
-
-The bounce is the same one ENG-315 already runs at the connect chokepoint, and is documented safe
-mid-session; the in-flight kill drill on 2026-08-20 confirmed a live turn survives one.
+cannot know (ENG-414: a throttle read as death grounded a working lane). Only a real failed dispatch
+may say that.
 """
 
 import logging
-import time
 from typing import Dict, Optional, TYPE_CHECKING
 
 from typeguard import typechecked
@@ -49,10 +35,6 @@ logger = logging.getLogger(__name__)
 # Router prefix -> the provider name its connection is filed under.
 P_PREFIX_PROVIDER = {"cc/": "claude", "cx/": "codex", "gc/": "antigravity", "ag/": "antigravity"}
 
-# A bounce restarts a process every other session shares, so one per lane per window, never per turn.
-BOUNCE_COOLDOWN_S = 300
-
-LAST_BOUNCE: Dict[str, float] = {}
 
 RECONNECT_COPY = {
     "codex": ("Your ChatGPT subscription needs reconnecting: the saved sign-in expired and could "
@@ -128,6 +110,11 @@ async def preflight_lane(resolved_model: str,
     tried themselves.
     """
     provider = provider_for_model(resolved_model)
+    if session is not None:
+        try:
+            session.lane_provider = provider
+        except Exception:
+            pass
     if provider is None:
         return None
 
@@ -141,37 +128,14 @@ async def preflight_lane(resolved_model: str,
             pass
     if dead is None:
         return None
-
-    now = time.time()
-    if now - LAST_BOUNCE.get(provider, 0.0) >= BOUNCE_COOLDOWN_S:
-        LAST_BOUNCE[provider] = now
-        logger.warning(
-            f"lane preflight: {provider} is {dead.get('testStatus')} (errorCode={dead.get('errorCode')}); "
-            "bouncing the router once, then letting the turn decide"
-        )
-        p_back_up = False
-        try:
-            from backend.apps.nine_router.bounce_after_connect import bounce_router_after_connect
-            p_back_up = await bounce_router_after_connect(provider)
-        except Exception:
-            logger.debug("lane preflight bounce failed", exc_info=True)
-        if not p_back_up:
-            # Dispatching into a router that has not come back is a guaranteed connection error, and
-            # the user would read that as the model failing rather than us restarting something.
-            logger.warning("lane preflight: the router did not come back after the bounce; not dispatching into it")
-            return ("The local AI connection is restarting. This clears itself in a few seconds; "
-                    "send your message again.")
-        # Deliberately no post-bounce health re-read: see the module docstring. Dispatch is the test.
-        return None
-
-    # The bounce was throttled, and that says NOTHING about this credential: LAST_BOUNCE is global,
-    # so the timer belongs to whichever OTHER chat restarted the router last. Carding here declared
-    # a working lane dead and killed a live build (ENG-414), and it broke this file's own rule that
-    # only a real dispatch can decide. So dispatch. If the credential really is gone, the turn 401s
-    # and handle_run_error shows the accurate card immediately off `lane_credential_dead`, which is
-    # the same sentence this used to return, minus the guessing.
-    logger.info(
-        f"lane preflight: {provider} looks dead but the router bounce is throttled; dispatching "
-        "anyway and letting the turn decide"
+    # No restart here. A router bounce cannot revive a dead token, and it is a dead port for 1 to 30 s for
+    # EVERY chat on every lane (the ENG-394 shape) while this lane's own failure was going to be reported
+    # anyway. The one case a restart fixes, stale router memory after the user reconnected, has its own
+    # restart on the reconnect path (bounce_after_connect), and the router's "unavailable" is a timed
+    # cooldown it clears itself. Dispatch is the test: a dead credential 401s, the flag above makes that
+    # card honest at once, and the health recheck pushes the reconnect pill.
+    logger.warning(
+        f"lane preflight: {provider} reads dead in the router (testStatus={dead.get('testStatus')}, "
+        f"errorCode={dead.get('errorCode')}); dispatching so the real request decides, no restart"
     )
     return None

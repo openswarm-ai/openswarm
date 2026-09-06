@@ -162,6 +162,20 @@ async def p_try_runtime_repair(session, session_id: str) -> bool:
         return False
 
 
+async def p_mark_login_dead(session: AgentSession) -> None:
+    """The turn and its one retry both failed auth on a router login: the chat remembers which login, so a
+    reconnect can pick it back up by itself, and the reconnect pill goes up this second (one door, one story)."""
+    lane = getattr(session, "lane_provider", None)
+    if not lane:
+        return
+    session.auth_dead_provider = lane
+    try:
+        from backend.apps.nine_router.subscription_health import report_dead_now
+        await report_dead_now(lane)
+    except Exception:
+        logger.debug("report_dead_now failed", exc_info=True)
+
+
 async def handle_run_error(e: Exception, session: AgentSession, session_id: str, turn: TurnState, p_stderr_buffer: List[str]) -> None:
     logger.exception(f"Agent {session_id} error: {e}")
     session.status = "error"
@@ -522,6 +536,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
         # rotation story is false and the wait is doomed; say the true thing straight away.
         if getattr(session, "lane_credential_dead", False):
             from backend.apps.agents.manager.run.lane_preflight import RECONNECT_COPY
+            await p_mark_login_dead(session)
             p_prov = (session.provider or "").lower()
             friendly_msg = RECONNECT_COPY.get(
                 p_prov,
@@ -594,6 +609,8 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 "reconnect Claude Pro / Max."
             )
             reason = "anthropic_auth_invalid"
+        if reason in ("codex_token_rotating", "anthropic_auth_invalid", "openswarm_pro_auth_expired"):
+            await p_mark_login_dead(session)
         error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
         absorb_repeat_card(session, error_msg)
         try:
