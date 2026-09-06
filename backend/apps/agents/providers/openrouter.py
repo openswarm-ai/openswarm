@@ -21,6 +21,7 @@ p_9router_cache: dict = {"available": None, "checked_at": 0}
 # Per-model published pricing in $/1M tokens (input, output) for direct API key lanes. Sourced from each provider's official pricing page as of May 2026. The Claude Agent SDK ALWAYS computes total_cost_usd at Anthropic rates; for any non-Anthropic upstream the SDK number is 50-1000x wrong and we MUST recompute. Used by agent_manager's cost recompute logic.
 P_DIRECT_API_PRICING: dict[str, tuple[float, float]] = {
     # OpenAI GPT-5.x family (source: platform.openai.com/docs/pricing).
+    "gpt-6-astra":         (10.00, 50.00),
     "gpt-5.5":             (1.25, 10.00),
     "gpt-5.4":             (1.25, 10.00),
     "gpt-5.4-mini":        (0.25,  2.00),

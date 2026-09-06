@@ -148,7 +148,8 @@ function isGpt5Model(model) {
   for (const p of prefixes) {
     if (m.startsWith(p)) { m = m.slice(p.length); break; }
   }
-  return m.startsWith('gpt-5');
+  // GPT-6 Astra (2026-09-03) keeps every GPT-5 contract this patch exists for: max_completion_tokens, no sampling fields, the reasoning floor.
+  return m.startsWith('gpt-5') || m.startsWith('gpt-6');
 }
 
 // GPT-5 burns 8-30K reasoning tokens before any output; the CLI's default 4096 caps before content lands. Floor at 32K and only raise, never lower.

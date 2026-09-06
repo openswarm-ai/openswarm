@@ -39,6 +39,9 @@ MODEL_TIERS: dict[str, tuple[int, int, int]] = {
     "anthropic/claude-3-haiku":     (2, 5, 1),
 
     # OpenAI
+    "gpt-6-astra":              (5, 2, 5),
+    "openai/gpt-6-astra":       (5, 2, 5),
+    "gpt-6":                    (5, 2, 5),
     "gpt-5.5":                  (5, 2, 5),
     "openai/gpt-5.5":           (5, 2, 5),
     "gpt-5.5-pro":              (5, 1, 5),

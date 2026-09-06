@@ -88,6 +88,14 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     ],
 
     "OpenAI": [
+        # GPT-6 Astra (released 2026-09-03; API id gpt-6-astra; 1,050,000 ctx, 128k out; $10/$50 per 1M at short
+        # context, 2x input and 1.5x output above 272K input). The sub lane rides the same cx translator that
+        # forwards the 5.6 family to the ChatGPT Responses backend: EXPECTED, NOT VERIFIED on the pinned 0.3.60,
+        # because the only ChatGPT login on the dev box is dead (ENG-471); verify with one 1-token call once it is
+        # reconnected, and pull the row if ChatGPT's Codex backend names the model differently.
+        {"value": "gpt-6", "label": "GPT-6 Astra",
+         "context_window": 1_050_000, "router_model_id": "cx/gpt-6-astra",
+         "api": "codex", "subscription_only": True, "reasoning": True},
         # Codex sub lanes re-probed 2026-07-26: cx/gpt-5.6-{sol,terra,luna} AND the previously pulled
         # cx/gpt-5.5 all return real completions on the pinned 0.3.60 (the old 404 healed upstream;
         # the cx translator forwards to the ChatGPT Responses backend, which now serves them).
@@ -115,6 +123,9 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         # cp-openai passthrough, whose scrubs prefix-match "gpt-5" (max_tokens rename, sampling strip,
         # and the reasoning_effort-with-tools drop that 5.6 still requires on /chat/completions).
         # 1M+ ctx, 128k out; $5/$30 Sol, $2.50/$15 Terra, $1/$6 Luna per 1M.
+        {"value": "gpt-6-api", "label": "GPT-6 Astra (API key)",
+         "context_window": 1_050_000, "router_model_id": "cp-openai/gpt-6-astra", "model_id": "gpt-6-astra",
+         "api": "openai", "reasoning": True, "route": "api"},
         {"value": "gpt-5.6-api", "label": "GPT-5.6 Sol (API key)",
          "context_window": 1_000_000, "router_model_id": "cp-openai/gpt-5.6-sol", "model_id": "gpt-5.6-sol",
          "api": "openai", "reasoning": True, "route": "api"},
@@ -404,11 +415,15 @@ COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("Anthropic", "opus-4-8"): (5.0, 25.0),
     ("Anthropic", "opus-5"): (5.0, 25.0),
     ("Anthropic", "haiku"): (1.0, 5.0),
+    # OpenAI API-key rates. GPT-6 Astra at its SHORT-context rate ($10/$50, 2026-09-03); above 272K input OpenAI
+    # bills 2x input and 1.5x output, which this flat table cannot express, so a long-context turn is UNDER-estimated here.
+    ("OpenAI", "gpt-6-api"): (10.0, 50.0),
     # OpenAI API-key rates (GPT-5.6 tiers, GA 2026-07-09)
     ("OpenAI", "gpt-5.6-api"): (5.0, 30.0),
     ("OpenAI", "gpt-5.6-terra-api"): (2.5, 15.0),
     ("OpenAI", "gpt-5.6-luna-api"): (1.0, 6.0),
     # OpenAI; Codex subscription path, user pays nothing per token
+    ("OpenAI", "gpt-6"): (0.0, 0.0),
     ("OpenAI", "gpt-5.6"): (0.0, 0.0),
     ("OpenAI", "gpt-5.6-terra"): (0.0, 0.0),
     ("OpenAI", "gpt-5.6-luna"): (0.0, 0.0),

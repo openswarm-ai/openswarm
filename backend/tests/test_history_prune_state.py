@@ -72,3 +72,11 @@ def test_the_patch_loads_the_pruner_eagerly_not_lazily() -> None:
     src = open("backend/apps/agents/9router_gpt5_patch.js").read()
     assert re.search(r"^loadHistoryPrune\(\);", src, re.M), "a lazy load only speaks on the first request; the boot log would stay empty"
     assert src.index("loadHistoryPrune();") < src.index("function historyPrune(")
+
+
+def test_the_gpt5_patch_covers_gpt6():
+    # GPT-6 Astra needs the same body rewrites on /chat/completions (max_completion_tokens, no sampling, the reasoning floor);
+    # a prefix rule that stops at gpt-5 would silently 400 every GPT-6 API-key turn.
+    src = open("backend/apps/agents/9router_gpt5_patch.js").read()
+    assert "m.startsWith('gpt-5') || m.startsWith('gpt-6')" in src
+
