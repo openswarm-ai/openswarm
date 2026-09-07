@@ -11,6 +11,7 @@ import { applyBrowserZoom } from '@/shared/browserZoom';
 import { syncTiledGeometry } from '../../canvas/tiledGeometry';
 import { revealZoom, REVEAL_MIN_ZOOM } from '../../canvas/revealZoom';
 import { classifyWheelDevice } from './classifyWheelDevice';
+import { isScrollContainer, OverflowVerdict } from './scrollContainer';
 
 // Surfaces that are WINDOWS, not canvas cards: they behave like an OS window, so a wheel inside one
 // belongs to it whether or not you clicked in first. Canvas cards (agent, browser, view) keep the
@@ -346,8 +347,8 @@ export function useCanvasControls(
       wheelRafId = requestAnimationFrame(flushWheel);
     };
 
-    // Cache "is this element a scrollable child" decision per node. The Cache getComputedStyle ancestor walks; uncached was the dominant cost of trackpad two-finger nav. ResizeObserver below invalidates on scroll-capacity change.
-    const scrollableCache: WeakMap<HTMLElement, 'scrollable' | 'not'> = new WeakMap();
+    // The overflow style is cached per node, the capacity is read live; scrollContainer.ts says why.
+    const overflowCache: WeakMap<HTMLElement, OverflowVerdict> = new WeakMap();
     const gesture: WheelGesture = { owner: null, at: 0 };
 
     const onWheel = (e: WheelEvent) => {
@@ -399,25 +400,7 @@ export function useCanvasControls(
       const isTrackpadScroll = classifyTrackpad(e, e.deltaX, e.deltaY);
       let target = e.target as HTMLElement | null;
       while (target && target !== el) {
-        let cls = scrollableCache.get(target);
-        if (cls === undefined) {
-          const couldScroll =
-            target.scrollHeight > target.clientHeight ||
-            target.scrollWidth > target.clientWidth;
-          if (couldScroll) {
-            const style = getComputedStyle(target);
-            const oy = style.overflowY;
-            const ox = style.overflowX;
-            const isOverflowScrollable =
-              oy === 'auto' || oy === 'scroll' || ox === 'auto' || ox === 'scroll';
-            cls = isOverflowScrollable ? 'scrollable' : 'not';
-          } else {
-            cls = 'not';
-          }
-          scrollableCache.set(target, cls);
-        }
-
-        if (cls === 'scrollable' && !isModifierWheel && !canvasOwnsGesture) {
+        if (isScrollContainer(target, overflowCache) && !isModifierWheel && !canvasOwnsGesture) {
           // Google Maps model: plain scroll acts on the CANVAS over a CARD (chat, scheduled task) UNLESS you've clicked INTO it. Only a card that isn't scroll-focused diverts to the canvas gesture; non-card scrollable UI (dropdowns, menus, nested panels) always scrolls natively, and a focused card scrolls its content.
           const cardEl = target.closest('[data-select-id]');
           const cardId = cardEl?.getAttribute('data-select-id') ?? null;
