@@ -60,6 +60,8 @@ const inElectron = isElectron();
 const APP_PREVIEW_MIN_PX = 260;   // below this on-screen width the live page is indistinguishable from a still
 const APP_PREVIEW_MARGIN_PX = 400; // resume once the card is within this of the viewport
 const APP_SUSPEND_SETTLE_MS = 1200;
+// A turn's last file write and the app's own hot reload land inside this; capture after, not during.
+const THUMBNAIL_SETTLE_MS = 1500;
 
 
 
@@ -161,6 +163,27 @@ const DashboardViewCard: React.FC<Props> = ({
   // Reveal-born apps stay a light "click to open" card until the first click, so the onboarding curtain
   // lifts instantly instead of behind an in-frame live Vite boot. The click (selecting it) clears the flag.
   const previewDeferred = useAppSelector((s) => !!s.dashboardLayout.viewCards[cardKey]?.preview_deferred);
+  // The stored thumbnail feeds the chat's app embed and the app tile, and nothing ever wrote it (ENG-477):
+  // capture once when the turn that built or changed this app ends, on the dashboard's own JPEG size.
+  const ownerTurnLive = useAppSelector((s) => {
+    const st = output.session_id ? s.agents.sessions[output.session_id]?.status : undefined;
+    return st === 'running' || st === 'waiting_approval';
+  });
+  const ownerTurnWasLiveRef = useRef(false);
+  useEffect(() => {
+    if (ownerTurnLive) { ownerTurnWasLiveRef.current = true; return undefined; }
+    if (!ownerTurnWasLiveRef.current) return undefined;
+    ownerTurnWasLiveRef.current = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const snap = await previewRef.current?.capture?.();
+          if (snap) dispatch(updateOutput({ id: output.id, thumbnail: snap }));
+        } catch { /* no frame: the embed keeps its live capture, the tile its placeholder */ }
+      })();
+    }, THUMBNAIL_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [ownerTurnLive, output.id, dispatch]);
   useEffect(() => {
     if (previewDeferred && (isSelected || interactive)) dispatch(activateViewCardPreview(cardKey));
   }, [previewDeferred, isSelected, interactive, cardKey, dispatch]);

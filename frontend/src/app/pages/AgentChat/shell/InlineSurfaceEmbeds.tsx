@@ -85,12 +85,14 @@ const BrowserEmbed: React.FC<{ c: ClaudeTokens; browserId: string; title: string
 
 
 // An app built in this chat gets the same treatment as a browser: a titled frame with a real view
-// of the thing, not a text row. It was a one-line link while browsers showed a live picture, which
-// is the asymmetry Eric reported ("it should show that it's inside the agent like browser agents").
-// Uses the stored `thumbnail` rather than a live capture: app cards never register a webview in
-// browserRegistry, so captureBrowserShot cannot see them, and inventing that path blind is how a
-// preview becomes a renderer crash.
-const AppEmbed: React.FC<{ c: ClaudeTokens; name: string; thumbnail: string | null; live: boolean; onOpen: () => void }> = ({ c, name, thumbnail, live, onOpen }) => (
+// of the thing, not a text row. The docked app's webview registers in browserRegistry as `app:<id>`
+// (ViewPreview), so the embed captures it on the browser cadence; the stored thumbnail is the
+// fallback for an app whose card is not painting (undocked, resting, or on another dashboard).
+// Nothing ever wrote that thumbnail before (ENG-477), so the view card persists one when its turn ends.
+const AppEmbed: React.FC<{ c: ClaudeTokens; outputId: string; name: string; thumbnail: string | null; live: boolean; onOpen: () => void }> = ({ c, outputId, name, thumbnail, live, onOpen }) => {
+  const shot = useBrowserSnapshot(`app:${outputId}`, live);
+  const picture = shot ?? thumbnail;
+  return (
   <motion.div
     initial={{ opacity: 0, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
@@ -118,8 +120,8 @@ const AppEmbed: React.FC<{ c: ClaudeTokens; name: string; thumbnail: string | nu
           <Typography sx={{ fontSize: '0.625rem', fontWeight: 600 }}>Open on canvas</Typography>
         </Box>
       </Box>
-      {thumbnail ? (
-        <Box component="img" src={thumbnail} alt="" sx={{ display: 'block', width: '100%', maxHeight: 260, objectFit: 'cover', objectPosition: 'top' }} />
+      {picture ? (
+        <Box component="img" src={picture} alt="" sx={{ display: 'block', width: '100%', maxHeight: 260, objectFit: 'cover', objectPosition: 'top' }} />
       ) : (
         <Box sx={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: c.text.ghost, fontSize: '0.75rem' }}>
           {live ? 'Building...' : 'Preview not captured yet'}
@@ -127,7 +129,8 @@ const AppEmbed: React.FC<{ c: ClaudeTokens; name: string; thumbnail: string | nu
       )}
     </Box>
   </motion.div>
-);
+  );
+};
 
 const InlineSurfaceEmbeds: React.FC<{ c: ClaudeTokens; sessionId: string; fullscreen?: boolean }> = ({ c, sessionId, fullscreen }) => {
   const dispatch = useAppDispatch();
@@ -190,6 +193,7 @@ const InlineSurfaceEmbeds: React.FC<{ c: ClaudeTokens; sessionId: string; fullsc
         <AppEmbed
           key={o.id}
           c={c}
+          outputId={o.id}
           name={o.name || 'App'}
           thumbnail={o.thumbnail ?? null}
           live={live}
