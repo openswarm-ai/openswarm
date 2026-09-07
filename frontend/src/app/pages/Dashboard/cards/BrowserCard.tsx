@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { stealthStage, StealthStage } from './stealthStage';
 import { isElectron as detectElectron } from '@/shared/isElectron';
 import { store } from '@/shared/state/store';
 import { requestWebviewAttachSlot, releaseWebviewAttachSlot } from './webviewAttachQueue';
@@ -99,6 +100,8 @@ import { useCanvasWindowResize } from './useCanvasWindowResize';
 // Pill-preview capture cadence: fast until the card has handed the pill a frame, slow upkeep after.
 const PILL_SHOT_WARMUP_MS = 800;
 const PILL_SHOT_REFRESH_MS = 5000;
+// The stealth stage follows THIS dashboard's camera; a short clock keeps the guest inside the viewport through a pan.
+const STEALTH_REMEASURE_MS = 500;
 const PILL_SHOT_WARMUP_MAX_MS = 8000;
 // The pill miniature is 320px wide, so a retina-2x shot is plenty and a quarter of a full-page encode.
 const PILL_SHOT_MAX_W = 640;
@@ -1123,6 +1126,27 @@ const BrowserCard: React.FC<Props> = ({
   // captureScreenshot. So a browser its agent is still working stays on the canvas, collapsed
   // parent or not, and re-parks when the run ends. Watching it work is the point of the canvas.
   const agentDriving = browserAgentSession?.status === 'running' || browserAgentSession?.status === 'waiting_approval';
+  // On a dashboard the user has left, a card whose agent is still working stays composited: placed
+  // inside the viewport at screen size, invisible and click-through (ENG-449). The same DOM slot, so
+  // the guest is never reloaded; re-measured on a short clock because the layer follows this
+  // dashboard's camera, not the card's.
+  const stealth = keepAliveHidden && agentDriving;
+  const [stealthStageRect, setStealthStageRect] = useState<StealthStage | null>(null);
+  useEffect(() => {
+    if (!stealth) { setStealthStageRect(null); return undefined; }
+    const measure = (): void => {
+      const layer = rootElRef.current?.parentElement;
+      if (!layer) return;
+      const lr = layer.getBoundingClientRect();
+      const z = getCanvasState().zoom || 1;
+      setStealthStageRect(stealthStage({ left: lr.left, top: lr.top }, z, displayW, displayH, window.innerWidth, window.innerHeight));
+    };
+    measure();
+    const timer = window.setInterval(measure, STEALTH_REMEASURE_MS);
+    window.addEventListener('resize', measure);
+    return () => { window.clearInterval(timer); window.removeEventListener('resize', measure); };
+  }, [stealth, displayW, displayH, getCanvasState]);
+  const stealthOn = stealth && !!stealthStageRect;
   // Chat collapsed: its docked browser parks off-screen and lives on as the pill's frozen shot,
   // instead of teleporting back to wherever it sat before docking. The park waits for that shot:
   // an off-screen guest never paints again, and capturePage on one never settles (Electron 42).
@@ -1233,13 +1257,13 @@ const BrowserCard: React.FC<Props> = ({
         // Docked = a TRUE miniature: the card keeps its full-size layout and shrinks by uniform
         // transform (centered in the slot), so the page never reflows and agent clicks stay valid.
         // Resizing the webview to the slot re-rendered the page as a narrow window, which is wrong.
-        left: keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followX ?? (dragging ? cardX : displayX))),
-        top: dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followY ?? (dragging ? cardY : displayY)),
+        left: stealthOn ? stealthStageRect!.left : keepAliveHidden || isMinimized || dockParked ? -100000 : (dockActive ? dockRect!.x + (dockRect!.w - displayW * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followX ?? (dragging ? cardX : displayX))),
+        top: stealthOn ? stealthStageRect!.top : dockActive ? dockRect!.y + (dockRect!.h - displayH * Math.min(dockRect!.w / displayW, dockRect!.h / displayH)) / 2 : (followY ?? (dragging ? cardY : displayY)),
         // Following a collapsed pill = a TRUE 320px miniature (uniform scale, no reflow, agent
         // coordinates stay valid), the same contract as the in-chat dock; full-size beside a pill
         // read as a detached window and buried the pill (Eric's 1.7.7 comparison).
-        transform: tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)${followsParent ? ` scale(${Math.min(1, 320 / displayW)})` : ''}` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : followsParent ? `scale(${Math.min(1, 320 / displayW)})` : undefined),
-        transformOrigin: tiledSize || dockActive || followsParent ? '0 0' : undefined,
+        transform: stealthOn ? `scale(${stealthStageRect!.scale})` : tiledSize ? undefined : (dragging ? `translate3d(${dragTx}px, ${dragTy}px, 0)${followsParent ? ` scale(${Math.min(1, 320 / displayW)})` : ''}` : dockActive ? `scale(${Math.min(dockRect!.w / displayW, dockRect!.h / displayH)})` : followsParent ? `scale(${Math.min(1, 320 / displayW)})` : undefined),
+        transformOrigin: stealthOn || tiledSize || dockActive || followsParent ? '0 0' : undefined,
         width: tiledSize ? tiledSize.width : displayW,
         height: tiledSize ? tiledSize.height : displayH,
         // The scale transform shrinks corner radii too (12px at 0.35x paints ~4px, reading as a cut corner next to the pill's capsule); divide by the scale so the MINIATURE'S corners stay visually 12px.
@@ -1251,9 +1275,10 @@ const BrowserCard: React.FC<Props> = ({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: isTiled ? 999990 : (isDragging || isResizing) ? 999999 : dockActive ? (dockParentTiled ? 999991 : dockParentZ + 1) : (zOverride ?? cardZOrder),
+        zIndex: stealthOn ? 0 : isTiled ? 999990 : (isDragging || isResizing) ? 999999 : dockActive ? (dockParentTiled ? 999991 : dockParentZ + 1) : (zOverride ?? cardZOrder),
         // The inline slot scrolls with the transcript; a webview can't be clipped by the scroller, so the mini fades out when its slot is mostly out of view instead of floating over unrelated messages.
-        opacity: (dockActive && !dockVisible) || dockPending ? 0 : 1,
+        // Stealth is 0.01, never display:none or 0: both stop the guest compositing, which is the whole point (ENG-449).
+        opacity: stealthOn ? 0.01 : (dockActive && !dockVisible) || dockPending ? 0 : 1,
         transition: noTransition ? 'none' : 'box-shadow 0.4s ease, border 0.3s ease, opacity 0.14s ease',
         '&:hover .resize-handle': { opacity: 1 },
         ...(isHighlighted && {
