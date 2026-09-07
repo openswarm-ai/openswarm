@@ -5,6 +5,7 @@ have killed 14 running app runtimes whose backend was up. These pin the discrimi
 """
 
 import os
+import pytest
 from unittest.mock import patch
 
 from backend.apps.outputs import reap_ghost_runtimes as mod
@@ -163,6 +164,7 @@ def test_a_cwd_orphan_owned_by_a_live_backend_is_spared(monkeypatch):
     assert rg.find_ghost_runtime_pids() == [], "a live backend's own app runtime must never be killed"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no SIGSTOP freeze, so there is nothing to thaw; the Windows kill path is pinned below")
 def test_a_frozen_ghost_is_thawed_before_being_signalled(monkeypatch):
     """Idle app runtimes are parked with SIGSTOP, and a STOPPED process never handles SIGTERM: it
     queues it and lives forever. Found live as a frozen `bash run.sh` that had survived every reap
@@ -213,3 +215,37 @@ def test_the_two_backend_argv_shapes_are_the_ones_the_spawns_use():
     assert mod.is_backend_argv("/x/python-env/bin/python3 -m backend.serve --port 8324")
     assert not mod.is_backend_argv("node /tmp/ws/frontend/node_modules/.bin/vite")
     assert not mod.is_backend_argv("bash run.sh")
+
+
+def p_win_table(csv_text: str):
+    class R:
+        def __init__(self, out):
+            self.stdout = out
+
+    def run(cmd, **kw):
+        assert cmd[0] == "powershell", "the Windows path must never call ps/lsof/pgrep"
+        return R(csv_text)
+    return run
+
+
+def test_windows_scan_finds_the_orphan_and_spares_the_owned_runtime(monkeypatch):
+    ws = os.path.abspath(mod.WORKSPACE_DIR)
+    monkeypatch.setattr(mod, "p_is_windows", lambda: True)
+    table = (
+        '"ProcessId","ParentProcessId","CommandLine"\n'
+        '"100","4","python -m backend.serve --port 20128"\n'
+        f'"200","100","node {ws}\\app\\vite"\n'
+        f'"300","1","node {ws}\\other\\vite"\n'
+    )
+    with patch.object(mod.subprocess, "run", side_effect=p_win_table(table)):
+        assert mod.find_ghost_runtime_pids() == [300]
+
+
+def test_windows_reap_uses_taskkill_and_never_a_posix_signal(monkeypatch):
+    monkeypatch.setattr(mod, "p_is_windows", lambda: True)
+    monkeypatch.setattr(mod, "find_ghost_runtime_pids", lambda: [300])
+    killed = []
+    monkeypatch.setattr(mod, "kill_descendant_tree", lambda pid, sig="TERM": killed.append((pid, sig)))
+    monkeypatch.setattr(mod.os, "kill", lambda *a: (_ for _ in ()).throw(AssertionError("os.kill on the Windows path")))
+    assert mod.reap_ghost_runtimes() == 1
+    assert killed == [(300, "TERM")]

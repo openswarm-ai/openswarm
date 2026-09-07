@@ -24,6 +24,38 @@ from backend.config.paths import OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
 
 logger = logging.getLogger(__name__)
 
+
+def p_is_windows() -> bool:
+    return os.name == "nt"
+
+
+# Windows has no `ps`, `lsof` or `pgrep`: one CIM query gives pid, ppid and the full command line, and
+# taskkill /T walks the tree. Read at call time through p_is_windows() so a test can drive either path.
+P_WIN_PROCESS_QUERY = (
+    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"
+)
+
+
+@typechecked
+def p_windows_process_table() -> List[tuple]:
+    """(pid, ppid, command line) for every process, or [] when PowerShell is unavailable."""
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", P_WIN_PROCESS_QUERY],
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception:
+        return []
+    import csv
+    import io
+    rows: List[tuple] = []
+    for rec in csv.DictReader(io.StringIO(out.stdout or "")):
+        try:
+            rows.append((int(rec.get("ProcessId") or 0), int(rec.get("ParentProcessId") or 0), rec.get("CommandLine") or ""))
+        except ValueError:
+            continue
+    return [r for r in rows if r[0] > 0]
+
 # Grace between TERM and KILL. Long enough for a run.sh EXIT trap to clean up its ports, short enough
 # that boot does not visibly stall on it.
 REAP_GRACE_SECONDS = float(os.environ.get("OSW_REAP_GRACE_SECONDS", "1.5"))
@@ -45,6 +77,8 @@ def p_live_backend_pids() -> set:
     """PIDs of every running backend. A workspace process descended from one of these is ALIVE and
     owned, not a ghost; a first draft of this reaper matched on the workspace path alone and would
     have killed 14 working app runtimes on a machine where the owning backend was up."""
+    if p_is_windows():
+        return {pid for pid, _ppid, args in p_windows_process_table() if is_backend_argv(args)}
     try:
         out = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True, timeout=8)
     except Exception:
@@ -61,6 +95,8 @@ def p_live_backend_pids() -> set:
 
 @typechecked
 def p_ppid_map() -> dict:
+    if p_is_windows():
+        return {pid: ppid for pid, ppid, _args in p_windows_process_table()}
     try:
         out = subprocess.run(["ps", "-eo", "pid=,ppid="], capture_output=True, text=True, timeout=8)
     except Exception:
@@ -113,10 +149,15 @@ def find_ghost_runtime_pids() -> List[int]:
     # `.../openswarm/...` while our resolved path is `.../OpenSwarm/...`: the same folder, but a
     # case-sensitive `in` check misses it and the ghost survives (found live on a packaged smoke).
     needle = os.path.abspath(WORKSPACE_DIR).casefold()
-    try:
-        out = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True, timeout=8)
-    except Exception:
-        return []
+    if p_is_windows():
+        # No cwd map on Windows: a runtime is matched on its command line alone, the same fact ps gives.
+        p_lines = [f"{pid} {args}" for pid, _ppid, args in p_windows_process_table()]
+    else:
+        try:
+            out = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True, timeout=8)
+        except Exception:
+            return []
+        p_lines = (out.stdout or "").splitlines()
     mine = os.getpid()
     owners = p_live_backend_pids()
     parents = p_ppid_map()
@@ -125,9 +166,9 @@ def find_ghost_runtime_pids() -> List[int]:
     # Boot relied on running before anything spawned; the 10-minute sweep gets no such alibi.
     if not owners or not parents:
         return []
-    by_cwd = p_cwd_map(needle)
+    by_cwd = {} if p_is_windows() else p_cwd_map(needle)
     candidates = dict.fromkeys(by_cwd)
-    for line in (out.stdout or "").splitlines():
+    for line in p_lines:
         line = line.strip()
         if needle not in line.casefold():
             continue
@@ -172,6 +213,12 @@ def reap_ghost_runtimes() -> int:
         len(pids), pids[:12],
     )
     killed = 0
+    if p_is_windows():
+        # No SIGSTOP freeze on Windows, so nothing to thaw; taskkill /T /F takes the whole tree at once.
+        for pid in pids:
+            kill_descendant_tree(pid, "TERM")
+            killed += 1
+        return killed
     for pid in pids:
         try:
             # THAW FIRST. Idle app runtimes are frozen with SIGSTOP, and a stopped process never

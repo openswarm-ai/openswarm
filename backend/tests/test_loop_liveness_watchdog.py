@@ -18,12 +18,13 @@ sys.path.insert(0, ".")
 from backend.apps.system import loop_liveness_watchdog as w
 w.PROBE_INTERVAL_S = 0.3
 w.PROBE_TIMEOUT_S = 0.3
-w.DUMP_PATH = "/tmp/loop_watchdog_test_dump.log"
+w.DUMP_PATH = %(dump)r
 """
 
 
 def test_wedged_loop_is_killed_with_forensics(tmp_path):
-    code = P_PRELUDE + """
+    dump = str(tmp_path / "loop_watchdog_test_dump.log")
+    code = P_PRELUDE % {"dump": dump} + """
 async def main():
     loop = asyncio.get_running_loop()
     assert w.start_loop_liveness_watchdog(loop) is not None
@@ -35,13 +36,13 @@ print("SURVIVED")
     r = p_run_child(code)
     assert r.returncode == w.RESTART_EXIT_CODE, f"expected exit {w.RESTART_EXIT_CODE}, got {r.returncode}: {r.stderr[:300]}"
     assert "SURVIVED" not in r.stdout
-    dump = open("/tmp/loop_watchdog_test_dump.log").read()
+    dump = open(dump, encoding="utf-8").read()
     assert "loop watchdog fired" in dump
     assert "Thread" in dump, "faulthandler stack dump missing"
 
 
-def test_healthy_loop_never_killed():
-    code = P_PRELUDE + """
+def test_healthy_loop_never_killed(tmp_path):
+    code = P_PRELUDE % {"dump": str(tmp_path / "loop_watchdog_test_dump.log")} + """
 async def main():
     loop = asyncio.get_running_loop()
     stop = w.start_loop_liveness_watchdog(loop)
@@ -55,9 +56,9 @@ print("SURVIVED")
     assert r.returncode == 0 and "SURVIVED" in r.stdout
 
 
-def test_slow_but_alive_loop_survives_single_strikes():
+def test_slow_but_alive_loop_survives_single_strikes(tmp_path):
     """Blocks shorter than MAX_STRIKES consecutive misses must never kill (sync httpx on the loop is a known 2s block)."""
-    code = P_PRELUDE + """
+    code = P_PRELUDE % {"dump": str(tmp_path / "loop_watchdog_test_dump.log")} + """
 async def main():
     loop = asyncio.get_running_loop()
     stop = w.start_loop_liveness_watchdog(loop)
@@ -73,8 +74,8 @@ print("SURVIVED")
     assert r.returncode == 0 and "SURVIVED" in r.stdout
 
 
-def test_closed_loop_ends_watchdog_quietly():
-    code = P_PRELUDE + """
+def test_closed_loop_ends_watchdog_quietly(tmp_path):
+    code = P_PRELUDE % {"dump": str(tmp_path / "loop_watchdog_test_dump.log")} + """
 async def main():
     loop = asyncio.get_running_loop()
     w.start_loop_liveness_watchdog(loop)

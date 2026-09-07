@@ -49,6 +49,8 @@ def test_an_abandoned_flow_ages_out(p_store):
 
 
 def test_the_verifier_is_not_world_readable(p_store):
+    if os.name == "nt":
+        pytest.skip("POSIX mode bits do not exist on Windows; the settings dir sits under the per-user profile, whose ACL is the boundary")
     p_store.pending_oauth["state-abc"] = {"provider": "claude", "code_verifier": "secret"}
     mode = os.stat(p_store.PENDING_PATH).st_mode & 0o777
     assert mode == 0o600, f"pending verifiers must be owner-only, got {oct(mode)}"

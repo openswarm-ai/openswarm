@@ -69,8 +69,9 @@ def compose_turn_system_prompt(
         tz_abbr = now_local.strftime("%Z") or tz_name
         time_ctx = (
             "<current_time>\n"
-            f"Today is {now_local.strftime('%A, %B %-d, %Y')}.\n"
-            f"Local time: {now_local.strftime('%-I:%M %p')} {tz_abbr} ({tz_name}).\n"
+            # No %-d / %-I: those are glibc and BSD flags, Windows' strftime raises on them, and the whole pin vanished there.
+            f"Today is {now_local.strftime('%A, %B')} {now_local.day}, {now_local.year}.\n"
+            f"Local time: {int(now_local.strftime('%I'))}:{now_local.strftime('%M %p')} {tz_abbr} ({tz_name}).\n"
             "Use this as ground truth for any date/time/day-of-week question. The timezone also "
             "gives the user's coarse region; when they say 'here' or 'near me' without a place, "
             "infer the likely city from it (say you inferred it) instead of claiming you can't know.\n"

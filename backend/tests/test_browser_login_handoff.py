@@ -47,9 +47,12 @@ def test_first_seen_preserved_last_login_advances():
     assert second["last_login"] >= first["last_login"]
 
 
-def test_record_login_is_fail_open(monkeypatch):
-    # an unwritable path must not raise; the run just treats it as a fresh sign-in next time
-    monkeypatch.setattr(h, "P_STORE_PATH", "/nonexistent-dir-xyz/authenticated_domains.json")
+def test_record_login_is_fail_open(monkeypatch, tmp_path):
+    # an unwritable path must not raise; the run just treats it as a fresh sign-in next time.
+    # A path beneath a regular FILE is unwritable on every OS; /nonexistent-dir-xyz was creatable on a Windows runner.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")
+    monkeypatch.setattr(h, "P_STORE_PATH", str(blocker / "authenticated_domains.json"))
     h.record_login("x.com")  # no exception
     assert h.is_authenticated("x.com") is False
 

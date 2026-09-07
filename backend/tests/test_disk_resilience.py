@@ -99,7 +99,10 @@ def test_atomic_write_fsyncs_directory_after_rename(tmp_path, monkeypatch):
     atomic_write_json(str(tmp_path / "x.json"), {"k": "v"})
 
     assert "file" in fsync_targets, "expected fsync on the data file"
-    assert "dir" in fsync_targets, "expected fsync on the parent directory"
+    if os.name == "nt":
+        assert "dir" not in fsync_targets, "Windows cannot open a directory for fsync; the writer skips it there"
+    else:
+        assert "dir" in fsync_targets, "expected fsync on the parent directory"
 
 
 # ---------------- read_json_or_none ----------------

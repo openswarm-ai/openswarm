@@ -99,7 +99,7 @@ def p_api_callers(root: str) -> List[str]:
                     continue
                 with open(full, "r", encoding="utf-8", errors="replace") as fh:
                     if p_reaches_unserved_backend(fh.read()):
-                        hits.append(os.path.relpath(full, root))
+                        hits.append(os.path.relpath(full, root).replace(os.sep, "/"))
             except OSError:
                 continue
     return sorted(hits)

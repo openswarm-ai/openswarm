@@ -113,7 +113,8 @@ def test_the_routes_start_a_job_and_report_it(monkeypatch: Any) -> None:
     started = client.post("/api/marketplace/install/start", json={"id": "git-graph"})
     assert started.status_code == 200
     job_id = started.json()["job_id"]
-    for _ in range(50):
+    # The job runs on its own thread; a Windows runner took more than the old 1 s to schedule it.
+    for _ in range(500):
         status = client.get(f"/api/marketplace/install/{job_id}").json()
         if status["phase"] == "failed":
             break

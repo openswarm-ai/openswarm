@@ -493,7 +493,7 @@ async def list_skill_files(skill_id: str):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for n in sorted(names):
             path = os.path.join(root, n)
-            rel = os.path.relpath(path, base_abs)
+            rel = os.path.relpath(path, base_abs).replace(os.sep, "/")
             if n.startswith(".") or os.path.getsize(path) > 512_000:
                 continue
             try:

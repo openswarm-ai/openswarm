@@ -41,10 +41,13 @@ def test_an_export_that_yields_nothing_sets_no_variable(tmp_path, monkeypatch):
     assert node_trust.node_ca_env(str(tmp_path / "r.pem")) == {}
 
 
-def test_an_unwritable_destination_sets_no_variable(monkeypatch):
+def test_an_unwritable_destination_sets_no_variable(monkeypatch, tmp_path):
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
     monkeypatch.setattr(node_trust, "p_mac_roots", lambda: ["-----BEGIN CERTIFICATE-----\nx\n"])
-    assert node_trust.node_ca_env("/proc/nope/cannot/write.pem") == {}
+    # A path beneath a regular FILE cannot be created on any OS; /proc/nope was creatable on a Windows runner.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")
+    assert node_trust.node_ca_env(str(blocker / "cannot" / "write.pem")) == {}
 
 
 def test_linux_is_left_alone(monkeypatch, tmp_path):

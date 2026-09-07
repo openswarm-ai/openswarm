@@ -122,6 +122,8 @@ async def test_restoring_a_refresh_token_round_trips(p_router):
 
 @pytest.mark.asyncio
 async def test_written_db_is_owner_only(p_router):
+    if os.name == "nt":
+        pytest.skip("POSIX mode bits do not exist on Windows; the router's data dir sits under the per-user profile, whose ACL is the boundary")
     await store.apply_to_connection("conn-1", changes={}, drop=["refreshToken"])
     mode = stat.S_IMODE(os.stat(store.db_path()).st_mode)
     assert mode & 0o077 == 0

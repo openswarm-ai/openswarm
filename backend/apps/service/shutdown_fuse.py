@@ -40,6 +40,13 @@ def p_descendant_pids() -> List[int]:
 
 @typechecked
 def p_burn() -> None:
+    if os.name == "nt":
+        # taskkill /T takes the whole tree, ourselves included; _exit is the belt in case it refuses.
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(os.getpid())], capture_output=True, timeout=10)
+        except Exception:
+            pass
+        os._exit(0)
     for pid in p_descendant_pids():
         try:
             os.kill(pid, 9)
@@ -55,8 +62,6 @@ p_armed: Optional[threading.Timer] = None
 def arm_shutdown_fuse() -> None:
     """Called at lifespan-shutdown START (already past TERM), so no signal handling: just the timer. Touching signal.signal here would clobber uvicorn's asyncio-installed handlers."""
     global p_armed
-    if os.name == "nt":
-        return
     disarm_shutdown_fuse()
     p_armed = threading.Timer(FUSE_S, p_burn)
     p_armed.daemon = True
