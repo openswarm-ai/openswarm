@@ -158,14 +158,16 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm ci
-      - name: GUI hand selftest (MCP)
-        shell: bash
-        working-directory: e2e
-        run: node mcp/selftest.js
       - name: Run E2E (Playwright)
         shell: bash
         working-directory: e2e
         run: npm test
+      # After the suite, not before: a timeout in this dev tool used to fail the job with no e2e verdict reported. always() so a red suite doesn't skip the check entirely.
+      - name: GUI hand selftest (MCP)
+        if: always()
+        shell: bash
+        working-directory: e2e
+        run: node mcp/selftest.js
       - name: Upload E2E results
         if: always()
         uses: actions/upload-artifact@v4
@@ -267,14 +269,16 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm ci
-      - name: GUI hand selftest (MCP)
-        shell: bash
-        working-directory: e2e
-        run: node mcp/selftest.js
       - name: Run E2E (Playwright)
         shell: bash
         working-directory: e2e
         run: npm test
+      # After the suite, not before: a timeout in this dev tool used to fail the job with no e2e verdict reported. always() so a red suite doesn't skip the check entirely.
+      - name: GUI hand selftest (MCP)
+        if: always()
+        shell: bash
+        working-directory: e2e
+        run: node mcp/selftest.js
       - name: Installer cycle (clean runner)
         shell: pwsh
         run: node scripts/ci/verify-installer.js --destructive
