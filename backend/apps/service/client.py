@@ -30,6 +30,7 @@ from uuid import uuid4
 import httpx
 
 from backend.apps.service import buffer
+from backend.apps.service.machine_facts import machine_facts
 from backend.apps.service.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
@@ -402,6 +403,7 @@ def submit_diagnostic(diagnostic: dict) -> None:
         return
     # The build that wrote an envelope is the first thing a field read needs, and it used to be inferred from which fields were present.
     diagnostic.setdefault("app_version", APP_VERSION)
+    diagnostic.setdefault("machine", machine_facts())
     try:
         from backend.apps.service.ring_buffer import snapshot
         diagnostic["recent_log"] = snapshot()

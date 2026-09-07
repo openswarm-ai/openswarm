@@ -224,6 +224,20 @@ def test_every_diagnostic_carries_the_app_version(sink):
     assert APP_VERSION and APP_VERSION != "unknown"
 
 
+def test_every_diagnostic_says_which_machine_wrote_it(sink):
+    # Every timing verdict came from one developer's M-series Mac; a field envelope now names its own OS, chip, cores and memory.
+    import platform
+    from backend.apps.service.client import submit_diagnostic
+    submit_diagnostic({"kind": "model_error"})
+    _, body = sink[0]
+    machine = body["d"]["diagnostic"]["machine"]
+    assert machine["os"] == platform.system()
+    assert machine["arch"] == platform.machine()
+    assert machine["cpus"] >= 1
+    assert machine["memory_gb"] > 0
+    assert machine["os_version"]
+
+
 # --- spool -------------------------------------------------------------------
 
 def test_buffer_enqueue_and_drain(tmp_path):
