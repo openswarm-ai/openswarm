@@ -51,10 +51,13 @@ async def test_a_second_401_reports_the_login_dead_this_second(monkeypatch):
     from backend.apps.agents.core.ws_manager import ws_manager
     async def fake_broadcast(event, data): sent.append((event, data))
     monkeypatch.setattr(ws_manager, "broadcast_global", fake_broadcast)
+    armed = []
+    monkeypatch.setattr(sh, "schedule_reprobe", lambda provider, model, delay=sh.P_REPROBE_S: armed.append((provider, delay)) or True)
     assert await sh.report_dead_now("codex") is True
     assert sent == [("subscriptions:health", {"dead": [{"provider": "codex", "label": "ChatGPT"}]})]
     assert sh.p_cached_result == [{"provider": "codex", "label": "ChatGPT"}], "a boot-time ask inside the TTL reads the same verdict"
     assert await sh.report_dead_now("openrouter") is False and len(sent) == 1
+    assert armed == [("codex", sh.P_REPROBE_S)], "the dead-now verdict arms its own re-probe"
 
 
 def p_session(sid, provider, status="error", ended=False):
@@ -99,7 +102,7 @@ def test_the_refresh_loop_asks_only_inside_the_margin():
     assert orf.connections_due([conn(3 * 3600)], now) == []
     assert len(orf.connections_due([conn(10 * 60)], now)) == 1
     assert len(orf.connections_due([conn(-5 * 86400)], now)) == 1, "an already-expired login is asked about too"
-    assert orf.connections_due([conn(10 * 60, refreshToken="")], now) == [], "a lent login (no refresh token) is the cloud's to rotate"
+    assert orf.connections_due([conn(10 * 60)], now, lent={"c1"}) == [], "a lent login (no refresh token in the persisted file) is the cloud's to rotate"
     assert orf.connections_due([conn(10 * 60, authType="api_key")], now) == []
 
 
@@ -117,6 +120,10 @@ async def test_a_login_the_router_cannot_renew_is_reported_through_the_one_door(
     now = 1_000_000.0
     conns = [{"id": "c1", "provider": "codex", "authType": "oauth", "isActive": True, "refreshToken": "r", "expiresAt": datetime.fromtimestamp(now - 60, timezone.utc).isoformat()}]
     monkeypatch.setattr(orf, "is_running", lambda: True)
+    async def live():
+        return conns
+
+    monkeypatch.setattr(orf.process, "get_providers", live)
     monkeypatch.setattr(orf.process, "read_persisted_connections", lambda: conns)
     async def fake_test(client, cid): return {"valid": False, "error": "Token expired and refresh failed", "refreshed": False}
     monkeypatch.setattr(orf, "test_connection", fake_test)
@@ -133,6 +140,10 @@ async def test_a_login_the_router_cannot_renew_is_reported_through_the_one_door(
 async def test_a_renewed_login_says_nothing_and_a_down_router_asks_nobody(monkeypatch):
     now = 1_000_000.0
     conns = [{"id": "c1", "provider": "codex", "authType": "oauth", "isActive": True, "refreshToken": "r", "expiresAt": datetime.fromtimestamp(now + 60, timezone.utc).isoformat()}]
+    async def live():
+        return conns
+
+    monkeypatch.setattr(orf.process, "get_providers", live)
     monkeypatch.setattr(orf.process, "read_persisted_connections", lambda: conns)
     async def fake_test(client, cid): return {"valid": True, "refreshed": True}
     monkeypatch.setattr(orf, "test_connection", fake_test)

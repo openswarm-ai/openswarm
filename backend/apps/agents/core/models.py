@@ -178,6 +178,8 @@ class AgentSession(BaseModel):
     lane_credential_dead: bool = False
     # The router login this chat died on (a definitive auth failure), so a reconnect of that login can pick the chat back up by itself; cleared on resume.
     auth_dead_provider: Optional[str] = None
+    # A login that flaps (probe answers, the turn 401s) would otherwise resume and die every re-probe forever.
+    auth_resumes: int = 0
     # The router login this chat dispatches through (claude, codex, gemini-cli, antigravity), written by the preflight on every turn; None on a direct API key. The error handler reads it instead of guessing from the vendor.
     lane_provider: Optional[str] = None
     # Transient provider errors arrive as assistant TEXT, so no upstream retry sees them; budgeted apart from auth_retry_used so a rate limit cannot spend the expired-token retry.

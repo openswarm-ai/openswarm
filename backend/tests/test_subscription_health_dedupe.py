@@ -130,6 +130,8 @@ async def test_the_first_mid_refresh_sighting_gets_its_own_second_look(monkeypat
         sent.append((event, data))
 
     monkeypatch.setattr(ws_manager, "broadcast_global", fake_broadcast)
+    armed = []
+    monkeypatch.setattr(sh, "schedule_reprobe", lambda provider, model, delay=sh.P_REPROBE_S: armed.append((provider, delay)) or True)
     assert await sh.probe_subscription_health([{"provider": "codex", "isActive": True}]) == []
     task = sh.p_rechecks.get("codex")
     assert task is not None, "the first sighting must schedule a recheck"
@@ -137,6 +139,7 @@ async def test_the_first_mid_refresh_sighting_gets_its_own_second_look(monkeypat
     assert slept == [sh.P_ROTATION_WINDOW_S]
     assert sent == [("subscriptions:health", {"dead": [{"provider": "codex", "label": "ChatGPT"}]})]
     assert answers == [], "the recheck spent the second probe"
+    assert armed == [("codex", sh.P_REPROBE_S)], "a dead verdict arms its own re-probe"
     assert sh.p_cached_result == [{"provider": "codex", "label": "ChatGPT"}], "a later boot-time fetch inside the TTL reads the same verdict"
     sh.invalidate_health_cache()
 

@@ -8,7 +8,7 @@ import asyncio
 import logging
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 import httpx
 from typeguard import typechecked
@@ -57,6 +57,9 @@ def invalidate_health_cache() -> None:
     for t in p_rechecks.values():
         t.cancel()
     p_rechecks.clear()
+    for t in p_reprobes.values():
+        t.cancel()
+    p_reprobes.clear()
 
 
 @typechecked
@@ -203,6 +206,7 @@ async def p_recheck(provider: str, model: str) -> None:
     p_cached_result = dead
     from backend.apps.agents.core.ws_manager import ws_manager
     await ws_manager.broadcast_global("subscriptions:health", {"dead": dead})
+    schedule_reprobe(provider, model)
 
 
 @typechecked
@@ -235,5 +239,56 @@ async def report_dead_now(provider: str) -> bool:
     logger.warning(f"[sub-health] {provider}: a turn and its retry both failed auth; reporting it dead now")
     from backend.apps.agents.core.ws_manager import ws_manager
     await ws_manager.broadcast_global("subscriptions:health", {"dead": dead})
+    schedule_reprobe(provider, None)
     return True
+
+
+# A dead verdict owns its second look too. Once the pill was up nothing ever asked again, so a ChatGPT
+# rotation slower than the turn's 75s retry told the user to reconnect a login that healed by itself.
+P_REPROBE_S = 240.0
+P_REPROBE_MAX_S = 1800.0
+p_reprobes: Dict[str, "asyncio.Task[None]"] = {}
+p_healed_hooks: List[Callable[[str], Awaitable[object]]] = []
+
+
+@typechecked
+def schedule_reprobe(provider: str, model: Optional[str], delay: float = P_REPROBE_S) -> bool:
+    if provider not in PREFIX_BY_PROVIDER:
+        return False
+    live = p_reprobes.get(provider)
+    if live is not None and not live.done() and live is not asyncio.current_task():
+        live.cancel()
+    p_reprobes[provider] = asyncio.create_task(p_reprobe(provider, model, delay))
+    return True
+
+
+async def p_reprobe(provider: str, model: Optional[str], delay: float) -> None:
+    await asyncio.sleep(delay)
+    async with httpx.AsyncClient(timeout=P_PROBE_TIMEOUT_S) as client:
+        probe_model = model or await p_pick_probe_model(client, PREFIX_BY_PROVIDER[provider])
+        verdict = await p_probe_one(client, probe_model) if probe_model else "unknown"
+    if verdict == "healthy":
+        await mark_healed(provider)
+        return
+    again = min(delay * 2, P_REPROBE_MAX_S)
+    logger.info(f"[sub-health] {provider}: still {verdict} on the re-probe; asking again in {int(again)}s")
+    schedule_reprobe(provider, probe_model, again)
+
+
+@typechecked
+async def mark_healed(provider: str) -> None:
+    """The lane answers again: the pill closes this second and every chat that died on it resumes."""
+    global p_cached_result, p_cached_at
+    p_refreshing_since.pop(provider, None)
+    dead = [d for d in (p_cached_result or []) if d.get("provider") != provider]
+    p_cached_result = dead
+    p_cached_at = time.monotonic()
+    logger.info(f"[sub-health] {provider}: answered on the re-probe; closing the pill and resuming its chats")
+    from backend.apps.agents.core.ws_manager import ws_manager
+    await ws_manager.broadcast_global("subscriptions:health", {"dead": dead})
+    for hook in list(p_healed_hooks):
+        try:
+            await hook(provider)
+        except Exception:
+            logger.exception(f"[sub-health] {provider}: a healed hook failed")
 

@@ -20,6 +20,8 @@ from backend.apps.agents.manager.session.apply_context_window import apply_conte
 
 logger = logging.getLogger(__name__)
 
+AUTH_RESUME_CAP = 2
+
 
 def auto_resume_held_because() -> Optional[str]:
     """Why auto-resume must not fire this boot, in words, or None to proceed.
@@ -144,6 +146,10 @@ class SessionPersistence(AgentManagerProtocol):
                 continue
             if session.status in ("running", "waiting_approval"):
                 continue
+            if session.auth_resumes >= AUTH_RESUME_CAP:
+                logger.warning(f"reconnect-resume: session {sid} has already been resumed {session.auth_resumes} times on a dead login; leaving it to the user")
+                continue
+            session.auth_resumes += 1
             session.auth_dead_provider = None
             session.lane_credential_dead = False
             session.auth_retry_used = False

@@ -34,6 +34,9 @@ async def agents_lifespan():
     # Subscription logins are renewed ahead of expiry while the app runs; one the router cannot renew is reported at once.
     from backend.apps.nine_router.oauth_refresh import oauth_refresh_loop
     p_oauth_refresh = asyncio.create_task(oauth_refresh_loop())
+    # A lane that answers again after a dead verdict resumes its chats the way a reconnect does.
+    from backend.apps.nine_router import subscription_health as p_sub_health
+    p_sub_health.p_healed_hooks.append(agent_manager.resume_auth_dead_sessions)
     from backend.apps.agents.manager.run.client_pool import start_pool_sweeper, stop_pool_sweeper, dispose_all_clients
     pool_sweeper = start_pool_sweeper(agent_manager.client_pool)
     yield
