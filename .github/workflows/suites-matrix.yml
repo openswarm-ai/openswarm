@@ -47,7 +47,8 @@ jobs:
 
       - name: Backend suite
         shell: bash
-        run: python -m pytest backend/tests -q -p no:cacheprovider
+        # A test that hangs fails by NAME after ten minutes and the leg goes on; without this the first macOS run sat at 97% for 54 minutes and was cancelled nameless.
+        run: python -m pytest backend/tests -q -p no:cacheprovider --timeout 600
 
       - uses: actions/setup-node@v4
         if: always()

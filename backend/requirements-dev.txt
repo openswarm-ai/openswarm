@@ -9,6 +9,8 @@
 
 pytest==8.3.4
 pytest-asyncio==0.25.2
+# A hung test on a CI runner used to burn the 60-minute job and leave no name (macOS arm64, 2026-09-06, stuck at 97%).
+pytest-timeout==2.3.1
 
 # Used by linter/lint.py (the vulture dead-code check). watchfiles, also
 # needed by lint.py, already comes in transitively via uvicorn[standard].
