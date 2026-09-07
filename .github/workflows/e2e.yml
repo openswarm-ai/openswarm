@@ -26,7 +26,7 @@ name: E2E (packaged app, Windows + macOS Intel)
 
 on:
   push:
-    branches: [eric/lock]
+    branches: [eric/dev]
     paths: &build-paths
       - 'electron/**'
       - 'frontend/**'
@@ -38,7 +38,7 @@ on:
       - 'scripts/ci/**'
       - '.github/workflows/e2e.yml'
   pull_request:
-    branches: [main]
+    branches: [main, eric/dev]
     paths: *build-paths
   workflow_dispatch:
 
