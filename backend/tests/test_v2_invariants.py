@@ -672,16 +672,18 @@ def test_banned_models_not_offered():
     selectable and simply did not work, and Opus covers the same ground.)"""
     from backend.apps.agents.providers.registry import BUILTIN_MODELS
     all_values = {m["value"] for models in BUILTIN_MODELS.values() for m in models}
-    for dead in ("gemini-3.1-pro", "gemini-3.1-pro-api", "gemini-3-flash", "gemini-3-flash-api",
-                 "fable-5-cc", "fable-5-api"):
+    # Fable 5 left this list 2026-09-06: a 1-token probe on cc/claude-fable-5 through the pinned router answered 200
+    # with a real completion and a drill turn on the sub lane completed. gpt-5.4 (cx) joined it the same day: OpenAI
+    # answers "The 'gpt-5.4' model is not supported when using Codex with a ChatGPT account" (400, deterministic).
+    for dead in ("gemini-3.1-pro", "gemini-3.1-pro-api", "gemini-3-flash", "gemini-3-flash-api", "gpt-5.4"):
         assert dead not in all_values, f"{dead} is back in the picker"
     assert "gpt-5.5-api" in all_values
     assert "gpt-5.5" in all_values  # cx lane restored 2026-07-26 (live-probed)
     # No '3.1 pro' label survives in any provider group either.
     all_labels = " | ".join(m["label"].lower() for models in BUILTIN_MODELS.values() for m in models)
     assert "3.1 pro" not in all_labels
-    assert "fable" not in all_labels
     assert "gemini 3 flash" not in all_labels
+    assert "gpt-5.4" not in {m["value"] for m in BUILTIN_MODELS["OpenAI"] if m.get("api") == "codex"}
 
 
 # =========================================================================== Group E, 9Router-streamed 401 detection =========================================================================== 9Router sometimes returns upstream auth failures AS the assistant's reply text, not as an exception. We detect the pattern in the stream handler to substitute a friendly bubble.
@@ -1189,9 +1191,10 @@ async def test_aux_returns_sonnet_when_preferred_tier_set():
 
 def test_get_api_type_openai():
     from backend.apps.agents.providers.registry import get_api_type
-    # gpt-5.4 maps to codex (the OpenAI-via-Codex-subscription api family)
-    api = get_api_type("gpt-5.4")
+    # gpt-5.5 maps to codex (the OpenAI-via-Codex-subscription api family); gpt-5.4 left that lane 2026-09-06.
+    api = get_api_type("gpt-5.5")
     assert api in ("openai", "codex"), f"unexpected: {api}"
+    assert get_api_type("gpt-5.4-api") == "openai"
 
 
 def test_find_builtin_model_returns_none_for_unknown():

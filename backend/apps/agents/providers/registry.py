@@ -39,6 +39,12 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         # Opus 5 (added 2026-07-26): drop-in Opus 4.8 successor, same $5/$25, 1M ctx, 128k out. Thinking is ON by default; explicit thinking:disabled is only valid at effort<=high, which is all this app ever sends (run_options_helpers caps at "high"), so the off toggle stays safe.
         {"value": "opus-5", "label": "Claude Opus 5", "context_window": 1_000_000,
          "model_id": "claude-opus-5", "router_model_id": "cc/claude-opus-5", "api": "anthropic", "reasoning": True},
+        # Fable 5.1 (current, $10/$50, 1M ctx, 128k out, adaptive thinking always on) is API-KEY ONLY here: the pinned
+        # 9router 0.3.60 presents itself to Anthropic as "claude-cli/2.1.63" and the subscription endpoint answers
+        # "Claude Code 2.1.63 does not support this model; version 2.1.251 or newer is required" (probed 2026-09-06).
+        # Fable 5 (legacy, same price, retire not before 2027-06-09) serves on the subscription lane: 1-token probe 200.
+        {"value": "fable-5", "label": "Claude Fable 5", "context_window": 1_000_000,
+         "model_id": "claude-fable-5", "router_model_id": "cc/claude-fable-5", "api": "anthropic", "reasoning": True},
         # Opus 4.8 (released 2026-05-28): previous Opus flagship. Adaptive thinking (not extended), effort param defaults to high. 1M ctx, 128k max output, $5/$25. Verified live on the cc sub route (this app runs on it) and the API.
         {"value": "opus-4-8", "label": "Claude Opus 4.8", "context_window": 1_000_000,
          "model_id": "claude-opus-4-8", "router_model_id": "cc/claude-opus-4-8", "api": "anthropic", "reasoning": True},
@@ -52,11 +58,14 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
          "model_id": "claude-sonnet-4-6", "router_model_id": "cc/claude-sonnet-4-6", "api": "anthropic", "reasoning": True},
         {"value": "opus", "label": "Claude Opus 4.6", "context_window": 1_000_000,
          "model_id": "claude-opus-4-6", "router_model_id": "cc/claude-opus-4-6", "api": "anthropic", "reasoning": True},
+        # Retirement "not sooner than October 15, 2026", the soonest in this catalog (model page, read 2026-09-06); no model here is retired today.
         {"value": "haiku", "label": "Claude Haiku 4.5", "context_window": 200_000,
          "model_id": "claude-haiku-4-5", "router_model_id": "cc/claude-haiku-4-5-20251001", "api": "anthropic", "reasoning": True},
         # cc/ pins the user's Claude sub regardless of connection_mode.
         {"value": "opus-5-cc", "label": "Claude Opus 5", "context_window": 1_000_000,
          "model_id": "claude-opus-5", "router_model_id": "cc/claude-opus-5", "api": "anthropic", "reasoning": True, "route": "cc"},
+        {"value": "fable-5-cc", "label": "Claude Fable 5", "context_window": 1_000_000,
+         "model_id": "claude-fable-5", "router_model_id": "cc/claude-fable-5", "api": "anthropic", "reasoning": True, "route": "cc"},
         {"value": "opus-4-8-cc", "label": "Claude Opus 4.8", "context_window": 1_000_000,
          "model_id": "claude-opus-4-8", "router_model_id": "cc/claude-opus-4-8", "api": "anthropic", "reasoning": True, "route": "cc"},
         {"value": "opus-4-7-cc", "label": "Claude Opus 4.7", "context_window": 1_000_000,
@@ -73,6 +82,10 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         # Fable 5 re-added 2026-07-02 after the ban lifted (Eric confirmed access is back); pull both rows again if it errors live.
         {"value": "opus-5-api", "label": "Claude Opus 5 (API key)", "context_window": 1_000_000,
          "model_id": "claude-opus-5", "router_model_id": "claude-opus-5", "api": "anthropic", "reasoning": True, "route": "api"},
+        {"value": "fable-5-1-api", "label": "Claude Fable 5.1 (API key)", "context_window": 1_000_000,
+         "model_id": "claude-fable-5-1", "router_model_id": "claude-fable-5-1", "api": "anthropic", "reasoning": True, "route": "api"},
+        {"value": "fable-5-api", "label": "Claude Fable 5 (API key)", "context_window": 1_000_000,
+         "model_id": "claude-fable-5", "router_model_id": "claude-fable-5", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-4-8-api", "label": "Claude Opus 4.8 (API key)", "context_window": 1_000_000,
          "model_id": "claude-opus-4-8", "router_model_id": "claude-opus-4-8", "api": "anthropic", "reasoning": True, "route": "api"},
         {"value": "opus-4-7-api", "label": "Claude Opus 4.7 (API key)", "context_window": 1_000_000,
@@ -111,9 +124,7 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
         {"value": "gpt-5.5", "label": "GPT-5.5",
          "context_window": 1_000_000, "router_model_id": "cx/gpt-5.5",
          "api": "codex", "subscription_only": True, "reasoning": True},
-        {"value": "gpt-5.4", "label": "GPT-5.4",
-         "context_window": 1_000_000, "router_model_id": "cx/gpt-5.4",
-         "api": "codex", "subscription_only": True, "reasoning": True},
+        # gpt-5.4 has no ChatGPT-lane row: OpenAI refuses it there ("not supported when using Codex with a ChatGPT account", 400, drilled 2026-09-06); the API-key row below stays, unverified on this box.
         {"value": "gpt-5.4-mini", "label": "GPT-5.4 Mini",
          "context_window": 400_000, "router_model_id": "cx/gpt-5.4-mini",
          "api": "codex", "subscription_only": True, "reasoning": True},
@@ -409,7 +420,10 @@ def get_context_window(provider: str, model: str, settings: AppSettings | None =
 COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     # (provider, model): (input_cost_per_1M, output_cost_per_1M) NOTE: real cost numbers come from 9Router's usage stats. These entries are kept so the table matches BUILTIN_MODELS and can be used by any future native-loop path. Subscription-routed models are zero-cost to the user, but API rates are recorded here for reference where they exist. Anthropic (direct API rates).
     ("Anthropic", "sonnet"): (3.0, 15.0),
-    ("Anthropic", "sonnet-5"): (3.0, 15.0),
+    ("Anthropic", "sonnet-5"): (2.0, 10.0),
+    # Fable 5 (legacy, retire not before 2027-06-09) and Fable 5.1, both $10 / $50 (platform.claude.com model pages, read 2026-09-06).
+    ("Anthropic", "fable-5"): (10.0, 50.0),
+    ("Anthropic", "fable-5-1"): (10.0, 50.0),
     ("Anthropic", "opus"): (5.0, 25.0),
     ("Anthropic", "opus-4-7"): (5.0, 25.0),
     ("Anthropic", "opus-4-8"): (5.0, 25.0),
