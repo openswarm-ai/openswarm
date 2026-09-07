@@ -22,6 +22,19 @@ P_RELEASES: List[ReleaseNote] = [
     # GitHub body AND the Help agent's context, so a line written for a planned feature becomes the
     # agent confidently describing something that does not exist.
     ReleaseNote(
+        version="1.7.10-exp.10",
+        headline="Windows gets the fixes its first full test run found, OpenSwarm Pro says plainly when it has no capacity, a browser agent keeps seeing its page after you leave its board, and an app built in a chat shows a real preview.",
+        highlights=[
+            "On Windows, leftover app servers from a crashed session are now cleaned up at the next start, the publish safety check that blocks an app from calling the backend it does not ship holds, skill files list correctly, and the agent knows the current date and time again.",
+            "When OpenSwarm Pro has no working accounts, a chat says so at once and names the way around it (your own key or a connected subscription) instead of showing a retrying spinner for twenty minutes.",
+            "A browser agent working on a board you have left can still take screenshots; its page stays drawn, invisibly, until the task ends.",
+            "An app built inside a chat shows a live picture of itself in the chat and keeps a thumbnail afterwards, instead of Preview not captured yet.",
+        ],
+        fixes=[
+            "The three test suites now run on macOS, macOS Intel and Windows before every cut; the first Windows run found six Windows-only bugs, all fixed here.",
+        ],
+    ),
+    ReleaseNote(
         version="1.7.10-exp.9",
         headline="A login that dies renews itself, is reported when it cannot, and its chats pick themselves up when it is back; the composer scrolls; Fable 5 and GPT-6 are in the picker; big tables stop weighing the board down.",
         highlights=[

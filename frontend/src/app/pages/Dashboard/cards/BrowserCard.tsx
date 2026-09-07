@@ -1211,6 +1211,7 @@ const BrowserCard: React.FC<Props> = ({
       ref={rootElRef}
       className="osw-card"
       data-select-type="browser-card"
+      data-stealth={stealthOn ? "on" : undefined}
       data-select-id={browserId}
       data-select-meta={JSON.stringify({ name: activeTitle || 'Browser', url: activeUrl })}
       // Marks a kept-alive card parked off-screen (it belongs to another dashboard); fit-to-view must skip it or it pans the canvas to chase it and the card bleeds onto the dashboard you're viewing.
