@@ -10,6 +10,7 @@ import { globSync } from 'node:fs';
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url)) + '/..';
@@ -47,7 +48,8 @@ try {
   });
   const built = globSync('**/*.mjs', { cwd: outDir }).concat(globSync('**/*.js', { cwd: outDir }));
   const setup = path.join(root, 'scripts/test-globals.mjs');
-  const res = spawnSync(process.execPath, ['--import', setup, '--test', ...built.map((f) => path.join(outDir, f))],
+  // --import takes a URL: a bare Windows path (D:\...) is read as protocol 'd:' and every test file fails before it starts.
+  const res = spawnSync(process.execPath, ['--import', pathToFileURL(setup).href, '--test', ...built.map((f) => path.join(outDir, f))],
     { stdio: 'inherit', cwd: root });
   status = res.status ?? 1;
 } finally {

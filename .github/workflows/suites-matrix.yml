@@ -11,7 +11,8 @@ on:
 
 concurrency:
   group: suites-matrix-${{ github.ref }}
-  cancel-in-progress: true
+  # A run in flight keeps its verdicts; a push mid-run queues behind it instead of cancelling the Mac legs.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -27,6 +28,8 @@ jobs:
     env:
       OSW_NEVER_KILL_ROUTER: '1'
       OSW_DISABLE_AUTO_RESUME: '1'
+      # The packaged app spawns its backend with PYTHONUTF8=1 (electron/main.js); the suite runs the way the product runs, or Windows' cp1252 default fails collection on the first source read.
+      PYTHONUTF8: '1'
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4

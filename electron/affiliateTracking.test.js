@@ -630,9 +630,13 @@ test("poll loop respects max attempts and gives up", async () => {
     isPackaged: true,
   });
 
-  // Wait long enough for all attempts to fail. 20ms × 30 = 600ms.
-  await delay(900);
-  const state = readJson(path.join(userDataDir, "install.json"));
+  // Wait for the loop to record its last attempt, not for a clock: a fixed 900ms saw 29 of 30 on a loaded Mac.
+  let state = {};
+  for (let i = 0; i < 200; i++) {
+    state = readJson(path.join(userDataDir, "install.json"));
+    if (state.attempts === 30) break;
+    await delay(50);
+  }
   assert.equal(state.ref, null, "no ref after exhausted polls");
   assert.equal(state.attempts, 30, "all attempts recorded");
 });

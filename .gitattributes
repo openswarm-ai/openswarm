@@ -4,3 +4,6 @@
 # anything nested. Together they exclude all 3 bundles from language stats.
 backend/mcp-bundles/* linguist-vendored
 backend/mcp-bundles/**/* linguist-vendored
+
+# Source-pin tests read files and match on \n; a Windows checkout with autocrlf turned every one red. LF everywhere, on every OS.
+* text=auto eol=lf
