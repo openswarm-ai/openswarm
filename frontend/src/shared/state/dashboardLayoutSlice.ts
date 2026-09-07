@@ -806,6 +806,8 @@ const dashboardLayoutSlice = createSlice({
       }>
     ) {
       const { sessionId, x, y, width, height, expandedSessionIds, exact } = action.payload;
+      // A card keyed "undefined" persists, survives every reload, and threw inside the search palette on each render (a probe once dispatched the wrong key); the bad state is unwritable here.
+      if (typeof sessionId !== 'string' || !sessionId) return;
       const pos = exact ? { x, y } : findOpenSpotNear(x, y, collectOccupiedRects(state, expandedSessionIds), width, height);
       state.cards[sessionId] = {
         session_id: sessionId,

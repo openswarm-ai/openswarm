@@ -37,6 +37,8 @@ const CardSearchPalette: React.FC<Props> = ({
   const items = useMemo((): CardSearchItem[] => {
     const result: CardSearchItem[] = [];
     for (const card of Object.values(cards)) {
+      // A layout entry without a session cannot be searched or focused; one such entry took the whole palette down on every render.
+      if (typeof card.session_id !== 'string') continue;
       const session = sessions[card.session_id];
       result.push({
         id: card.session_id,
