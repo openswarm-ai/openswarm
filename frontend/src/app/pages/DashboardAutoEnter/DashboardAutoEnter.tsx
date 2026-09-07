@@ -19,7 +19,8 @@ const DashboardAutoEnter: React.FC = () => {
       const res = await dispatch(fetchDashboards());
       if (cancelled) return;
       if (fetchDashboards.fulfilled.match(res)) {
-        const list = (res.payload as Dashboard[]).slice().sort(byPreviewRecency);
+        // Belt for the thunk's own guard: the entry page must never throw on a payload shape it did not expect.
+        const list = (Array.isArray(res.payload) ? (res.payload as Dashboard[]) : []).slice().sort(byPreviewRecency);
         if (list.length > 0) {
           navigate(`/dashboard/${list[0].id}`, { replace: true });
           return;

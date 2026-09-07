@@ -28,8 +28,11 @@ const initialState: DashboardsState = {
 
 export const fetchDashboards = createAsyncThunk('dashboards/fetchAll', async () => {
   const res = await fetch(`${DASHBOARDS_API}/list`);
+  // A 401 or 5xx answers JSON without a `dashboards` key; a fulfilled thunk carrying undefined took the whole first screen down
+  // ("Cannot read properties of undefined (reading 'slice')" in the auto-enter page, 2026-09-07). Not ok is a rejection; ok means a list.
+  if (!res.ok) throw new Error(`dashboards list answered ${res.status}`);
   const data = await res.json();
-  return data.dashboards as Dashboard[];
+  return (Array.isArray(data?.dashboards) ? data.dashboards : []) as Dashboard[];
 });
 
 export const createDashboard = createAsyncThunk(
