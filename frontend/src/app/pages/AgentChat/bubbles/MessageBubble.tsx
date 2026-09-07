@@ -997,7 +997,12 @@ const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEd
     [displayText, viewportWidth],
   );
 
+  // Only a bubble whose text IS an OpenSwarm error card needs the live context (the parser keys on the text, the
+  // context only phrases the detail). Every other bubble selected an object whose messagesCount moved on each
+  // message, so a 60-bubble transcript re-rendered whole per streamed message (ENG-487).
+  const wantsOverflowCtx = !isUser && parseOpenSwarmError(rawText) !== null;
   const overflowCtx = useAppSelector((state) => {
+    if (!wantsOverflowCtx) return undefined;
     const sid = state.agents.activeSessionId;
     if (!sid) return undefined;
     const s = state.agents.sessions[sid];
