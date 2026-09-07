@@ -36,10 +36,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows-only. macOS legs removed: runner starvation + untriageable
-        # mac-only failures kept the matrix red. Re-add when a Mac maintainer
-        # owns them (and pass --require win32,darwin to verify-release-readiness).
-        os: [windows-latest]
+        # The macOS leg was dropped once for runner starvation and mac-only failures nobody
+        # owned; the desktop app ships to Macs first, so it is back, and a red leg is a finding.
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
