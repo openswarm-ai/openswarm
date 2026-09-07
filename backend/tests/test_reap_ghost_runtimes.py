@@ -11,6 +11,13 @@ from unittest.mock import patch
 from backend.apps.outputs import reap_ghost_runtimes as mod
 
 
+@pytest.fixture(autouse=True)
+def p_posix_scan(monkeypatch):
+    """Every test below feeds the reaper a fake `ps`; on a Windows runner the code rightly took the PowerShell
+    path and never read it (CI run 8, 5 red). The two Windows tests set p_is_windows True themselves."""
+    monkeypatch.setattr(mod, "p_is_windows", lambda: False)
+
+
 def p_ps(pid_args: str, pid_ppid: str):
     """Fake `ps` with two different outputs depending on the requested format."""
     class R:
