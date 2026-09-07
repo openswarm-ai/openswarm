@@ -17,7 +17,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 import httpx
 from typeguard import typechecked
@@ -47,13 +47,20 @@ def p_seconds_left(expires_at: Optional[str], now: Optional[float] = None) -> Op
 
 
 @typechecked
-def connections_due(conns: List[Dict], now: Optional[float] = None) -> List[Dict]:
-    """OAuth connections that hold their own refresh token and are inside the margin (or already past it)."""
+def lent_connection_ids() -> Set[str]:
+    """A lent login (the cloud pool's) has no refresh token of its own; the cloud rotates it, this loop must not."""
+    return {str(c.get("id") or "") for c in process.read_persisted_connections() if not c.get("refreshToken")}
+
+
+@typechecked
+def connections_due(conns: List[Dict], now: Optional[float] = None, lent: Optional[Set[str]] = None) -> List[Dict]:
+    """OAuth connections inside the margin (or already past it), from the router's LIVE view, which redacts
+    tokens; lent logins are named by id from the persisted file, the one place the missing token shows."""
     due = []
     for c in conns:
         if c.get("authType") != "oauth" or not c.get("isActive", True):
             continue
-        if not isinstance(c.get("refreshToken"), str) or not c.get("refreshToken"):
+        if lent and str(c.get("id") or "") in lent:
             continue
         left = p_seconds_left(c.get("expiresAt"), now)
         if left is None or left > REFRESH_MARGIN_S:
@@ -76,10 +83,25 @@ def verdict_from_test(result: Dict) -> str:
 
 async def test_connection(client: httpx.AsyncClient, connection_id: str) -> Dict:
     try:
-        r = await client.get(f"{NINE_ROUTER_API}/providers/{connection_id}/test")
+        # POST, not GET: 0.3.60 answers 405 to a GET, and the loop ran for a day reading that as "unknown" and renewing nothing.
+        r = await client.post(f"{NINE_ROUTER_API}/providers/{connection_id}/test")
         return r.json() if r.status_code == 200 else {"error": f"HTTP {r.status_code}"}
     except Exception as e:
         return {"error": str(e)}
+
+
+p_last_unknown: Dict[str, str] = {}
+
+
+@typechecked
+def note_unknown(provider: str, answer: Dict) -> None:
+    """An answer the loop cannot read is logged the first time it changes shape, never swallowed: a silent
+    "unknown" every five minutes is a guard that stopped guarding."""
+    shape = str(answer)[:200]
+    if p_last_unknown.get(provider) == shape:
+        return
+    p_last_unknown[provider] = shape
+    logger.warning(f"[oauth-refresh] {provider}: the router's answer could not be read as a verdict, so this login is NOT being renewed by the loop: {shape}")
 
 
 async def refresh_pass(now: Optional[float] = None) -> Dict[str, str]:
@@ -88,14 +110,18 @@ async def refresh_pass(now: Optional[float] = None) -> Dict[str, str]:
     verdicts: Dict[str, str] = {}
     if not is_running():
         return verdicts
-    due = connections_due(process.read_persisted_connections(), now)
+    # The router's live view, never db.json: 0.3.60 persists lazily, and the file said a login expired on 08-30 while the router held one good until 09-17.
+    due = connections_due(await process.get_providers(), now, lent_connection_ids())
     if not due:
         return verdicts
     async with httpx.AsyncClient(timeout=TEST_TIMEOUT_S) as client:
         for c in due:
             provider = str(c.get("provider") or "")
-            v = verdict_from_test(await test_connection(client, str(c.get("id") or "")))
+            answer = await test_connection(client, str(c.get("id") or ""))
+            v = verdict_from_test(answer)
             verdicts[provider] = v
+            if v == "unknown":
+                note_unknown(provider, answer)
             if v == "refreshed":
                 logger.info(f"[oauth-refresh] {provider}: token renewed ahead of expiry")
             elif v == "dead":
