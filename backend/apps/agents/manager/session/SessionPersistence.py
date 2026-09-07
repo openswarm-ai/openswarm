@@ -5,6 +5,7 @@ one concern. self.sessions resolves across the MRO as before."""
 
 import logging
 import os
+import time
 import sys
 from typing import Optional
 
@@ -21,6 +22,8 @@ from backend.apps.agents.manager.session.apply_context_window import apply_conte
 logger = logging.getLogger(__name__)
 
 AUTH_RESUME_CAP = 2
+# A chat that died on a dead login in an EARLIER run of the app stays put: the user has moved on, and work restarting days later unasked is the backfire.
+PROCESS_STARTED_AT = time.time()
 
 
 def auto_resume_held_because() -> Optional[str]:
@@ -145,6 +148,9 @@ class SessionPersistence(AgentManagerProtocol):
             if session.auth_dead_provider != provider or session.ended_by_user:
                 continue
             if session.status in ("running", "waiting_approval"):
+                continue
+            if session.auth_dead_at is None or session.auth_dead_at < PROCESS_STARTED_AT:
+                logger.info(f"reconnect-resume: session {sid} died on {provider} before this app run started; leaving it to the user")
                 continue
             if session.auth_resumes >= AUTH_RESUME_CAP:
                 logger.warning(f"reconnect-resume: session {sid} has already been resumed {session.auth_resumes} times on a dead login; leaving it to the user")

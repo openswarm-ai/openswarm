@@ -71,7 +71,7 @@ WIRED_IN = {
 def p_block(kind: str) -> str:
     """The source of the branch that fires one fault, whichever helper name arms it."""
     src = open(WIRED_IN[kind]).read()
-    for call in (f'p_fault_armed("{kind}")', f'p_fault_once("{kind}")'):
+    for call in (f'p_fault_armed("{kind}")', f'p_fault_fire("{kind}")', f'p_fault_once("{kind}")'):
         if call in src:
             return src.split(call)[1].split("if p_fault_")[0]
     raise AssertionError(f"{kind} is armed nowhere in {WIRED_IN[kind]}")
@@ -210,3 +210,15 @@ def test_the_sidecar_wedge_stops_answering_and_stops_breathing():
     assert "if not P_FROZEN:" in src.split("def p_beat")[1].split("threading.Thread")[0]
     env = open("backend/apps/agents/manager/register_builtin_mcp_servers.py").read()
     assert '"OSW_FAULT": os.environ.get("OSW_FAULT", "")' in env, "the sidecar must inherit the drill flag"
+
+
+def test_a_fire_budget_lets_an_every_turn_fault_stop_so_a_heal_drill_can_watch_the_lane_return(monkeypatch):
+    from backend.apps.agents.core import fault_injection as fi
+    monkeypatch.setenv("OSW_FAULT", "auth_401")
+    monkeypatch.setenv("OSW_FAULT_FIRES", "2")
+    fi.reset_fired()
+    assert [fi.fire("auth_401") for _ in range(4)] == [True, True, False, False]
+    assert fi.armed("auth_401"), "the predicate never spends a fire"
+    monkeypatch.setenv("OSW_FAULT_FIRES", "0")
+    fi.reset_fired()
+    assert all(fi.fire("auth_401") for _ in range(5)), "no budget means every turn, as before"

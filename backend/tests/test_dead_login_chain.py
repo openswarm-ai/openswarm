@@ -4,6 +4,7 @@ router cannot renew. Each guard is proven to FIRE, and the innocent case for eac
 from datetime import datetime, timezone
 
 import pytest
+import time
 
 from backend.apps.agents.core.models import AgentSession
 from backend.apps.nine_router import oauth_refresh as orf
@@ -63,6 +64,7 @@ async def test_a_second_401_reports_the_login_dead_this_second(monkeypatch):
 def p_session(sid, provider, status="error", ended=False):
     s = AgentSession(id=sid, name=sid, prompt="x", status=status)
     s.auth_dead_provider = provider
+    s.auth_dead_at = time.time()
     s.ended_by_user = ended
     s.lane_credential_dead = True
     s.auth_retry_used = True
@@ -220,3 +222,24 @@ def test_the_error_handler_marks_the_death_on_both_definitive_branches_and_befor
     final_card = src.index("absorb_repeat_card(session, error_msg)", second_mark)
     assert gate < second_mark < final_card, "the definitive auth card marks only on the auth-shaped reasons, before the card"
 
+
+
+@pytest.mark.asyncio
+async def test_a_chat_that_died_in_an_earlier_app_run_is_left_alone():
+    from backend.apps.agents.manager.session.SessionPersistence import PROCESS_STARTED_AT, SessionPersistence
+
+    class Mgr(SessionPersistence):
+        def __init__(self):
+            old = p_session("old", "codex")
+            old.auth_dead_at = PROCESS_STARTED_AT - 3600
+            never = p_session("never-stamped", "codex")
+            never.auth_dead_at = None
+            self.sessions = {"old": old, "never-stamped": never, "fresh": p_session("fresh", "codex")}
+            self.sent = []
+
+        async def send_message(self, sid, text, hidden=False):
+            self.sent.append(sid)
+
+    m = Mgr()
+    assert await m.resume_auth_dead_sessions("codex") == 1
+    assert m.sent == ["fresh"]

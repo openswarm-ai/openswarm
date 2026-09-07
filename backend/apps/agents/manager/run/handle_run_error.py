@@ -5,6 +5,7 @@ the file ceiling; pure relocation, no self (operates on the passed run state).""
 
 import asyncio
 import logging
+import time
 from typing import List
 from typeguard import typechecked
 
@@ -169,6 +170,7 @@ async def p_mark_login_dead(session: AgentSession) -> None:
     if not lane:
         return
     session.auth_dead_provider = lane
+    session.auth_dead_at = time.time()
     try:
         from backend.apps.nine_router.subscription_health import report_dead_now
         await report_dead_now(lane)

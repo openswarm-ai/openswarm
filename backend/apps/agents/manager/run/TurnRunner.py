@@ -45,7 +45,7 @@ class TurnRunner(AgentManagerProtocol):
                                     global_settings: AppSettings, force_respawn: bool = False) -> None:
         from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
         from claude_agent_sdk.types import StreamEvent, SystemMessage
-        from backend.apps.agents.core.fault_injection import armed as p_fault_armed, armed_once as p_fault_once
+        from backend.apps.agents.core.fault_injection import armed as p_fault_armed, armed_once as p_fault_once, fire as p_fault_fire
 
         # Deliberate faults, so the guards below get drilled instead of waited for. Inert unless
         # OSW_FAULT names them; a shipped build never sets it. Raised HERE because this is the same
@@ -57,7 +57,7 @@ class TurnRunner(AgentManagerProtocol):
                 "\"Output blocked as it seems to violate our Acceptable Use Policy (legal/aup): "
                 "reverse engineering or duplicating model outputs\"}}"
             )
-        if p_fault_armed("auth_401"):
+        if p_fault_fire("auth_401"):
             raise RuntimeError("API Error: 401 {\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}")
         # One-shot: a dead pipe is recoverable, so the drill needs the retry to find a clear road.
         # The type must be one the REAL classifier calls a lost connection, or the drill quietly

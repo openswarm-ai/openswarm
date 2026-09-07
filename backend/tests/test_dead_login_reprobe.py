@@ -1,5 +1,6 @@
 """A dead-login verdict owns its second look: the pill closes and the chats resume when the lane answers again."""
 import asyncio
+import time
 import pathlib
 
 import pytest
@@ -96,6 +97,7 @@ async def test_a_flapping_login_resumes_a_chat_at_most_twice():
         def __init__(self):
             s = AgentSession(id="flap", name="flap", prompt="x", status="error")
             s.auth_dead_provider = "claude"
+            s.auth_dead_at = time.time()
             self.sessions = {"flap": s}
             self.sent = 0
 
@@ -106,6 +108,7 @@ async def test_a_flapping_login_resumes_a_chat_at_most_twice():
     for _ in range(AUTH_RESUME_CAP + 2):
         await m.resume_auth_dead_sessions("claude")
         m.sessions["flap"].auth_dead_provider = "claude"
+        m.sessions["flap"].auth_dead_at = time.time()
         m.sessions["flap"].status = "error"
     assert m.sent == AUTH_RESUME_CAP
     assert m.sessions["flap"].auth_dead_provider == "claude", "the marker stays so the card still says which login died"

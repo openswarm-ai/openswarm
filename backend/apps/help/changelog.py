@@ -23,15 +23,19 @@ P_RELEASES: List[ReleaseNote] = [
     # agent confidently describing something that does not exist.
     ReleaseNote(
         version="1.7.10-exp.9",
-        headline="A login that dies is reported, chats no longer restart the router, big tables stop weighing the board down, and the Usage page says what its number is.",
+        headline="A login that dies renews itself, is reported when it cannot, and its chats pick themselves up when it is back; the composer scrolls; Fable 5 and GPT-6 are in the picker; big tables stop weighing the board down.",
         highlights=[
-            "When your ChatGPT, Claude or Gemini login stops working, the app says so within a few minutes and offers Reconnect, instead of every chat on it failing quietly.",
+            "A ChatGPT, Claude or Gemini login is renewed before it expires while the app runs. When it cannot be renewed, the app says so the second a chat hits it and offers Reconnect; when the login is back, by a reconnect or by itself, the chats that died on it continue where they stopped.",
+            "Claude Fable 5 is back in the picker on both lanes, Claude Fable 5.1 on the API-key lane, and GPT-6 Astra on both lanes. GPT-5.4 left the ChatGPT lane, where OpenAI refuses it; its API-key row stays.",
+            "A chat input that has grown past its height cap scrolls again; the canvas used to take the wheel instead.",
             "A long table in a chat loads a screenful at a time with a Show more row, and a collapsed chat shows only the first rows of its table, so a board with big tables no longer stutters on every step.",
             "The Usage page says its dollar figure is what the work would have cost at API prices, not a bill; subscribers were reading it as a charge. A By lane list shows which login served the requests.",
             "The agent answers which subscriptions are connected from the app's own router, instead of from old settings fields that told a connected user they were not.",
         ],
         fixes=[
             "Chats no longer ask the app to restart its model router at every turn on a login that works; a stale error left on a healthy login was read as dead.",
+            "The app never restarts its model router to fix one login any more; a restart cut every chat on every lane for up to half a minute and could not revive a dead login.",
+            "Agent-to-agent arrows leave the facing edges of their cards and stay legible at any zoom; a collapsed chat pill keeps its label readable zoomed out; cards lose their resting drop shadow; pressing anywhere in a card selects it.",
             "A widget whose code had not finished loading when the chat opened used to stay a grey placeholder for good; it now draws when it arrives.",
             "A collapsed chat's stats card shows its numbers side by side and never clips the last one; in a narrow chat column the same card no longer stacks three numbers into a tower.",
             "The floating Ask me anything bar and the login pill step out of the way of a chat tiled to the bottom-left instead of covering its composer.",

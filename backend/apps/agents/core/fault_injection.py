@@ -94,6 +94,29 @@ def squeezed_context_window() -> int:
 P_FIRED: Set[str] = set()
 
 
+P_FIRES: dict = {}
+
+
+def fires_budget() -> int:
+    """OSW_FAULT_FIRES=N caps how many times an every-turn fault fires in this process (0 = unlimited).
+    Without it a lane can never heal inside a drill, so the heal path stays a unit test."""
+    try:
+        return int(os.environ.get("OSW_FAULT_FIRES", "0") or 0)
+    except ValueError:
+        return 0
+
+
+def fire(name: str) -> bool:
+    """armed() plus the budget: the injection site calls THIS so a predicate read elsewhere never spends a fire."""
+    if not armed(name):
+        return False
+    budget = fires_budget()
+    if budget and P_FIRES.get(name, 0) >= budget:
+        return False
+    P_FIRES[name] = P_FIRES.get(name, 0) + 1
+    return True
+
+
 def armed_once(name: str) -> bool:
     """Fire a recoverable fault exactly ONCE per process.
 
@@ -109,6 +132,7 @@ def armed_once(name: str) -> bool:
 def reset_fired() -> None:
     """Test-only: forget what has fired so a case can arm the same one-shot again."""
     P_FIRED.clear()
+    P_FIRES.clear()
 
 
 def unknown_faults() -> Set[str]:
