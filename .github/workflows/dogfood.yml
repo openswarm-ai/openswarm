@@ -36,9 +36,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The macOS leg was dropped once for runner starvation and mac-only failures nobody
-        # owned; the desktop app ships to Macs first, so it is back, and a red leg is a finding.
-        os: [windows-latest, macos-latest]
+        # Windows-only, and not by neglect: every step below is the Windows build
+        # (build-app-win.ps1), so a macOS leg fails at "Downloading uv for Windows" before it
+        # dogfoods anything (tried 2026-09-06, run 34071494346). A Mac leg needs its own build
+        # step (scripts/build-app.sh) and a Mac dogfood driver; until then a red leg is noise.
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
