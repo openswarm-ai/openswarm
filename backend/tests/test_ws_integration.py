@@ -38,6 +38,15 @@ def test_ws_endpoint_streams_a_full_turn_end_to_end(monkeypatch):
         yield p_result()
 
     monkeypatch.setattr(claude_agent_sdk, "query", fake_query, raising=True)
+    # The loop is the thing under test, not the router: on a runner with no router the env build refused the turn
+    # ("9Router is not running"), the failure never carried the awaited text, and receive_json() waited for a message
+    # that would never come until the job timed out (every CI leg, 2026-09-06). The router is faked present.
+    from backend.apps.agents.manager import configure_provider_env as cpe
+
+    async def router_present(settings):
+        return True
+
+    monkeypatch.setattr(cpe, "router_available", router_present, raising=True)
 
     session = AgentSession(name="t", model="sonnet", dashboard_id="d")
     agent_manager.sessions[session.id] = session
@@ -52,6 +61,9 @@ def test_ws_endpoint_streams_a_full_turn_end_to_end(monkeypatch):
                 ev = ws.receive_json()
                 seen.append(ev.get("event"))
                 if ev.get("event") == "agent:message" and "hello from the loop" in str(ev.get("data", {})):
+                    break
+                # A turn that ended without the reply is a failure to report, not a message to wait for.
+                if ev.get("event") == "agent:status" and str(ev.get("data", {}).get("status")) in ("error", "failed", "completed"):
                     break
         # the real loop's assistant reply made it all the way back over the WS
         assert "agent:message" in seen
