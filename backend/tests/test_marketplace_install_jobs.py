@@ -108,16 +108,17 @@ def test_the_routes_start_a_job_and_report_it(monkeypatch: Any) -> None:
     from fastapi import FastAPI
     app = FastAPI()
     app.include_router(p_mp.marketplace.router, prefix="/api/marketplace")
-    client = TestClient(app)
-    assert client.post("/api/marketplace/install/start", json={"id": "nope"}).status_code == 404
-    started = client.post("/api/marketplace/install/start", json={"id": "git-graph"})
-    assert started.status_code == 200
-    job_id = started.json()["job_id"]
-    # The job runs on its own thread; a Windows runner took more than the old 1 s to schedule it.
-    for _ in range(500):
-        status = client.get(f"/api/marketplace/install/{job_id}").json()
-        if status["phase"] == "failed":
-            break
-        time.sleep(0.02)
-    assert status["phase"] == "failed" and status["error"] == "the download returned 404"
-    assert client.get("/api/marketplace/install/does-not-exist").status_code == 404
+    # As a context manager: a bare TestClient builds a NEW event loop per request and tears it down after the
+    # response, so the job task the route schedules got no tick on a Windows runner and stayed "downloading".
+    with TestClient(app) as client:
+        assert client.post("/api/marketplace/install/start", json={"id": "nope"}).status_code == 404
+        started = client.post("/api/marketplace/install/start", json={"id": "git-graph"})
+        assert started.status_code == 200
+        job_id = started.json()["job_id"]
+        for _ in range(500):
+            status = client.get(f"/api/marketplace/install/{job_id}").json()
+            if status["phase"] == "failed":
+                break
+            time.sleep(0.02)
+        assert status["phase"] == "failed" and status["error"] == "the download returned 404"
+        assert client.get("/api/marketplace/install/does-not-exist").status_code == 404
