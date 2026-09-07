@@ -29,6 +29,7 @@ from backend.apps.agents.core.error_classify import (
     process_exit_code,
     is_stale_tool_schema_error,
     is_transient_capacity_error,
+    is_pool_outage,
     is_free_trial_exhausted,
     is_out_of_tokens,
     has_auth_status,
@@ -396,6 +397,40 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             })
         except Exception:
             logger.debug("submit_diagnostic cli_binary_missing failed", exc_info=True)
+    elif is_pool_outage(e, extra_text=p_stderr_tail):
+        # OpenSwarm Pro's shared pool answered "no capacity" through every silent backoff (335 s). Both
+        # of its accounts dead reads the same as one busy second, and the reconnect ladder would park
+        # this chat for 21 more minutes on a lane only a person can fix. Say so, once, and stop.
+        session.status = "completed" if turn.current_turn_emitted else "error"
+        friendly_msg = (
+            "OpenSwarm Pro has no capacity right now: its shared accounts are signed out and need "
+            "re-authorising by the team. Your own API key or a connected subscription will work in "
+            "the meantime (Settings > Models); send your message again once you have switched."
+        )
+        error_msg = Message(role="system", content=friendly_msg, branch_id=session.active_branch_id)
+        absorb_repeat_card(session, error_msg)
+        try:
+            from backend.apps.service.client import submit_diagnostic
+            submit_diagnostic({
+                "kind": "model_error",
+                "subkind": "pro_unavailable",
+                "model": session.model,
+                "provider": session.provider,
+                "error_preview": redact_for_telemetry(str(e), limit=400),
+                "flight": flight_recorder.build_envelope(session_id, "model_error", "openswarm_pro_unavailable", session.model, "stream" if turn.current_turn_emitted else "spawn", -1),
+            })
+        except Exception:
+            logger.debug("submit_diagnostic pro_unavailable failed", exc_info=True)
+        await ws_manager.send_to_session(session_id, "agent:auth_error", {
+            "session_id": session_id,
+            "reason": "openswarm_pro_unavailable",
+            "message": friendly_msg,
+            "model": session.model,
+        })
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": error_msg.model_dump(mode="json"),
+        })
     elif is_transient_capacity_error(e, extra_text=p_stderr_tail):
         # A genuine throttle (429/overload/capacity) that already burned the whole silent-backoff budget (the only way one reaches here). It's a limit, not a failure, so don't append a system-message card; emit a transient signal for the muted pill and mark the turn completed so it doesn't read as an error.
         # 335s of ladder is a blip's worth of patience, and a closed lid or switched network outlasts it, so park and retry before conceding a turn the user never chose to end.

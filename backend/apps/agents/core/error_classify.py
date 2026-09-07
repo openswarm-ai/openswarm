@@ -566,6 +566,16 @@ def is_transient_capacity_error(exc: BaseException, extra_text: str = "") -> boo
 # Exponential-ish backoff schedule (seconds) for silently retrying a transient upstream capacity error before giving up and surfacing the rate-limit pill.
 CAPACITY_BACKOFFS = [5, 15, 45, 90, 180]
 
+# The OpenSwarm Pro proxy's own words when its shared pool has nothing to serve with (proxyForward.ts):
+# both accounts auth_failed reads exactly like a busy second, and a busy second heals in 5 s while a
+# dead pool needs a person. Past the silent backoffs the difference is the whole card.
+P_POOL_OUTAGE = re.compile(r"no\s+pool\s+capacity|no\s+backup\s+available|primary\s+account\s+failed\s+auth", re.IGNORECASE)
+
+
+@typechecked
+def is_pool_outage(exc: BaseException, extra_text: str = "") -> bool:
+    return bool(P_POOL_OUTAGE.search(f"{exc!s}\n{extra_text}"))
+
 
 @typechecked
 def capacity_retry_wait(exc: BaseException, attempt: int, extra_text: str = "") -> Optional[int]:

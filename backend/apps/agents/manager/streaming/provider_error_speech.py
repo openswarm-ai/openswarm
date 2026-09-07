@@ -64,6 +64,14 @@ POLICY = "policy"
 UNKNOWN = "unknown"
 
 
+P_POOL_OUTAGE_WORDS = ("no pool capacity", "no backup available", "primary account failed auth")
+
+
+def is_pool_outage_text(text: str) -> bool:
+    low = (text or "").lower()
+    return any(w in low for w in P_POOL_OUTAGE_WORDS)
+
+
 class ProviderError(BaseModel):
     """What the provider said, normalised. `kind` drives the caller's choice of recovery."""
 
@@ -184,7 +192,9 @@ def user_facing_sentence(err: ProviderError, model: str) -> str:
     has to whip an answer out of the agent, so a message that only diagnoses is a half-fix.
     """
     who = "This model"
-    if err.lane in ("antigravity", "gc", "ag"):
+    if is_pool_outage_text(err.raw):
+        who = "OpenSwarm Pro"
+    elif err.lane in ("antigravity", "gc", "ag"):
         who = "Gemini"
     elif err.lane in ("codex", "cx"):
         who = "ChatGPT"

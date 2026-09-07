@@ -768,6 +768,10 @@ async def probe_model(body: dict):
     except Exception as e:
         msg = str(e).splitlines()[0] if str(e) else type(e).__name__
         low = msg.lower()
+        from backend.apps.agents.core.error_classify import is_pool_outage
+        if is_pool_outage(e):
+            # The Pro pool with nothing to serve with is not a transient: every chat on it fails until a person re-authorises the accounts.
+            return {"ok": False, "error": "OpenSwarm Pro has no capacity right now: its shared accounts need re-authorising by the team. Your own key or a connected subscription will work."}
         # Suppress transients: chat retries naturally and probe-time alias 404s often differ from chat resolution.
         if any(s in low for s in (
             "timeout", "timed out",
