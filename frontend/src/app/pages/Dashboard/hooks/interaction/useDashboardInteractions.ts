@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useStableCallback } from '@/shared/hooks/useStableCallback';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { store } from '@/shared/state/store';
@@ -76,7 +77,7 @@ export function useDashboardInteractions({
   // Delay single-click collapse so double-click can override
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCardSelect = useCallback((id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => {
+  const handleCardSelectImpl = useCallback((id: string, type: CardType, shiftKey: boolean, originTarget?: EventTarget | null) => {
     report('dashboard', 'card_clicked', { card_type: type, shift: shiftKey });
     if (shiftKey) {
       selection.selectCard(id, type, true);
@@ -136,6 +137,7 @@ export function useDashboardInteractions({
     };
     setTimeout(() => tryFit(0), 100);
   }, [selection, getCardRect, canvas.actions, dispatch, expandedSessionIds]);
+  const handleCardSelect = useStableCallback(handleCardSelectImpl);
 
   const handleBringToFront = useCallback((id: string, type: CardType) => {
     // Deferred past the pointerdown's paint: this fires on EVERY card press and the z-restack was

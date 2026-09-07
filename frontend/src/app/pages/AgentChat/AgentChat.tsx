@@ -397,6 +397,9 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const windowEndRef = useRef(0);
   const windowScrollRafRef = useRef<number | null>(null);
   const [viewportHeight, setViewportHeight] = useState(0);
+  // Bubbles read the height only for the oversized-message threshold, so hand them an 80 px bucket: the scroller's
+  // clientHeight moves a few px as the composer and working slot change, and the raw value re-rendered every bubble per message.
+  const bubbleViewportHeight = Math.round(viewportHeight / 80) * 80;
   const [viewportWidth, setViewportWidth] = useState(0);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const [windowStart, setWindowStart] = useState(0);
@@ -2077,7 +2080,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                       editing={isEditing}
                       onSaveEdit={handleSaveEdit}
                       onCancelEdit={handleCancelEdit}
-                      viewportHeight={viewportHeight}
+                      viewportHeight={bubbleViewportHeight}
                       viewportWidth={viewportWidth}
                       scrollRoot={scrollRoot}
                     />

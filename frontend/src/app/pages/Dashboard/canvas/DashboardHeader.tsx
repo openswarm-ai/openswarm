@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useStableCallback } from '@/shared/hooks/useStableCallback';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -21,9 +22,12 @@ import type { Output } from '@/shared/state/outputsSlice';
 import type { CanvasActions } from '../hooks/interaction/useCanvasControls';
 import { friendlyStatusLabel } from '@/shared/statusLabel';
 
+export type HeaderSession = Pick<AgentSession, 'id' | 'name' | 'status' | 'model'>;
+
 interface DashboardHeaderProps {
   dashboardName: string | undefined;
-  sessions: Record<string, AgentSession>;
+  // Only the fields the list reads: the whole sessions map re-rendered every row on every streamed message.
+  sessions: Record<string, HeaderSession>;
   cards: Record<string, CardPosition>;
   viewCards: Record<string, ViewCardPosition>;
   browserCards: Record<string, BrowserCardPosition>;
@@ -119,6 +123,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     },
     [canvasActions, onHighlightCard],
   );
+  const focusStable = useStableCallback(handleFocus);
 
   const toggle = useCallback(() => {
     if (hasItems) setExpanded((v) => !v);
@@ -272,29 +277,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             {agentItems.length > 0 && (
               <CategoryGroup icon={<SmartToyOutlinedIcon />} label="Agents" count={agentItems.length} c={c}>
                 {agentItems.map((item) => (
-                  <ItemRow key={item.id} onClick={() => handleFocus(item.id, item.card)} c={c}>
-                    <Box
-                      sx={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        bgcolor: STATUS_DOT[item.status] || c.text.tertiary,
-                        flexShrink: 0,
-                        mt: '1px',
-                      }}
-                    />
-                    <Typography
-                      noWrap
-                      sx={{ fontSize: '0.8125rem', color: c.text.primary, flex: 1, minWidth: 0 }}
-                    >
-                      {item.name}
-                    </Typography>
-                    <Typography
-                      sx={{ fontSize: '0.6875rem', color: c.text.ghost, flexShrink: 0 }}
-                    >
-                      {friendlyStatusLabel(item.status)}
-                    </Typography>
-                  </ItemRow>
+                  <AgentRow key={item.id} id={item.id} name={item.name} status={item.status} x={item.card.x} y={item.card.y} width={item.card.width} height={item.card.height} onFocus={focusStable} c={c} />
                 ))}
               </CategoryGroup>
             )}
@@ -378,6 +361,21 @@ const CategoryGroup: React.FC<{
     {children}
   </Box>
 );
+
+// One row per agent on primitives, memoised: the list rebuilt every row's closure on every header render, and the header
+// renders whenever a session's name or status moves, so a 60-card board paid 60 row renders per event.
+const AgentRow = React.memo(({ id, name, status, x, y, width, height, onFocus, c }: {
+  id: string; name: string; status: string; x: number; y: number; width: number; height: number;
+  onFocus: (cardId: string, card: { x: number; y: number; width: number; height: number }) => void;
+  c: ReturnType<typeof useClaudeTokens>;
+}) => (
+  <ItemRow onClick={() => onFocus(id, { x, y, width, height })} c={c}>
+    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: STATUS_DOT[status] || c.text.tertiary, flexShrink: 0, mt: '1px' }} />
+    <Typography noWrap sx={{ fontSize: '0.8125rem', color: c.text.primary, flex: 1, minWidth: 0 }}>{name}</Typography>
+    <Typography sx={{ fontSize: '0.6875rem', color: c.text.ghost, flexShrink: 0 }}>{friendlyStatusLabel(status)}</Typography>
+  </ItemRow>
+));
+AgentRow.displayName = 'AgentRow';
 
 const ItemRow: React.FC<{
   onClick: () => void;

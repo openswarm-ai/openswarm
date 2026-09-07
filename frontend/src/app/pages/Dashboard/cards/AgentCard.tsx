@@ -307,31 +307,18 @@ const AgentCard: React.FC<Props> = ({
   const expanded = expandedInStore || isTiled;
   const isDashboardActive = useDashboardActive();
   const hasApiKey = !!useAppSelector((s) => s.settings.data.anthropic_api_key);
-  const expandedSessionIds = useAppSelector((s) => s.agents.expandedSessionIds);
   const workflowSuggestion = useMemo(() => findWorkflowSuggestion(session), [session]);
   // Suppress the convert-suggestion glow when this chat is already entangled with a workflow. Two cases: (a) The session is one of a workflow's runner sessions, OR (b) The session is the source the workflow was originally derived from. Either way a fresh convert would just clone the workflow, which is confusing identity collapse.
-  const workflowRunsMap = useAppSelector((s) => s.workflows.runs);
-  const workflowItems = useAppSelector((s) => s.workflows.items);
   const linkedWorkflowSidecarId = useAppSelector((s) => {
     const entry = Object.values(s.workflows.openCards).find((card) => card.sidecarSessionId === session.id);
     return entry?.workflowId ?? null;
   });
-  const sourceWorkflow = useMemo(() => {
-    for (const wf of Object.values(workflowItems || {})) {
-      if (wf.source_session_id === session.id) return wf;
-    }
-    return null;
-  }, [workflowItems, session.id]);
-  const isWorkflowRunnerSession = useMemo(() => {
-    // A Test Agent (spawned to validate a workflow draft) isn't a chat to convert; it carries workflow_test_state.
-    if (session.workflow_test_state) return true;
-    for (const arr of Object.values(workflowRunsMap || {})) {
-      for (const r of arr || []) {
-        if (r.session_id === session.id) return true;
-      }
-    }
-    return Boolean(sourceWorkflow);
-  }, [workflowRunsMap, sourceWorkflow, session.id, session.workflow_test_state]);
+  // Per-card answers, not the whole workflow maps: subscribing every card to `workflows.items` and `workflows.runs`
+  // re-rendered the entire board on any run update. The object is a stable reference until that workflow changes.
+  const sourceWorkflow = useAppSelector((s) => Object.values(s.workflows.items || {}).find((wf) => wf.source_session_id === session.id) ?? null);
+  const hasWorkflowRun = useAppSelector((s) => Object.values(s.workflows.runs || {}).some((arr) => (arr || []).some((r) => r.session_id === session.id)));
+  // A Test Agent (spawned to validate a workflow draft) isn't a chat to convert; it carries workflow_test_state.
+  const isWorkflowRunnerSession = Boolean(session.workflow_test_state) || hasWorkflowRun || Boolean(sourceWorkflow);
   const hasUserPrompt = useMemo(
     () => session.messages.length > 0
       ? session.messages.some((m) => m.role === 'user' && !m.hidden)
@@ -375,13 +362,14 @@ const AgentCard: React.FC<Props> = ({
       return;
     }
     if (scheduleWorkflowCount <= baselineScheduleCountRef.current) return;
-    for (const wf of Object.values(workflowItems || {})) {
+    // The count is the trigger; the list is read when it fires, so the map is not a subscription.
+    for (const wf of Object.values(store.getState().workflows.items || {})) {
       if (wf.source_session_id !== session.id) continue;
       if (autoOpenedWorkflowIdsRef.current.has(wf.id)) continue;
       autoOpenedWorkflowIdsRef.current.add(wf.id);
       dispatch(openWorkflowsApp({ workflowId: wf.id }));
     }
-  }, [scheduleWorkflowCount, workflowItems, session.id, dispatch]);
+  }, [scheduleWorkflowCount, session.id, dispatch]);
 
   const cardBoxRef = useRef<HTMLDivElement>(null);
   // Ref so ResizeObserver sees latest value without re-attaching when active flips.
@@ -792,7 +780,8 @@ const AgentCard: React.FC<Props> = ({
       onContextMenu={(e: React.MouseEvent) => { if (isNativeMenuTarget(e)) return; if ((e.target as HTMLElement).closest?.('[data-chat-transcript]')) return; openCardContextMenu(e, {
         rename: { value: displayChatTitle(session), onCommit: (name) => dispatch(renameSession({ sessionId: session.id, name })) },
         items: agentCardMenuRows({
-          session, dispatch, expanded, tileZone, expandedSessionIds,
+          // Read at click time: subscribing every card to the expanded list re-rendered the whole board on each expand (a send expands the new chat).
+          session, dispatch, expanded, tileZone, expandedSessionIds: store.getState().agents.expandedSessionIds,
           card: { x: cardX, y: cardY, width: cardWidth, height: cardHeight },
           onTile, onClose: () => handleRemove(),
         }),

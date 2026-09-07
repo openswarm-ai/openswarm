@@ -1365,15 +1365,18 @@ const ChatMessageBubble: React.FC<Props> = ({ message, editing = false, onSaveEd
           Waiting for the current step to finish. Press Stop to send it now.
         </Typography>
       )}
-      <PlanPickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        title="Upgrade your plan"
-        subtitle="Pick a plan to keep going. Cancel anytime from Stripe."
-        source="upgrade_cta"
-        defaultPlan="pro_plus"
-        onSubscribed={() => setPickerOpen(false)}
-      />
+      {/* Mounted only while open: every bubble carried a closed modal, so a 40-message transcript ran 40 modal renders per streamed message. */}
+      {pickerOpen && (
+        <PlanPickerModal
+          open
+          onClose={() => setPickerOpen(false)}
+          title="Upgrade your plan"
+          subtitle="Pick a plan to keep going. Cancel anytime from Stripe."
+          source="upgrade_cta"
+          defaultPlan="pro_plus"
+          onSubscribed={() => setPickerOpen(false)}
+        />
+      )}
     </Box>
   );
 };

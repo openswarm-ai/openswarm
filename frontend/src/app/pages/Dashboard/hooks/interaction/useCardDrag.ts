@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useStableCallback } from '@/shared/hooks/useStableCallback';
 import { report } from '@/shared/serviceClient';
 import { useAppDispatch } from '@/shared/hooks';
 import { moveCards } from '@/shared/state/dashboardLayoutSlice';
@@ -86,7 +87,7 @@ export function useCardDrag({
     edgePanFrameRef.current = requestAnimationFrame(tickEdgePan);
   }, [viewportRef, canvasActions]);
 
-  const handleCardDragStart = useCallback((id: string, type: CardType) => {
+  const handleCardDragStartImpl = useCallback((id: string, type: CardType) => {
     activeDragCardRef.current = id;
     // Multi only when there is actually company: a lone selected card on this path made every drag after the first pay a setState per frame.
     if (selection.isSelected(id) && selection.selectedArray().length > 1) {
@@ -98,6 +99,7 @@ export function useCardDrag({
       isMultiDragRef.current = false;
     }
   }, [selection]);
+  const handleCardDragStart = useStableCallback(handleCardDragStartImpl);
 
   const handleCardDragMove = useCallback((dx: number, dy: number, mouseX?: number, mouseY?: number) => {
     if (mouseX !== undefined && mouseY !== undefined) {
@@ -143,7 +145,7 @@ export function useCardDrag({
     }
   }, [stopEdgePan, canvasActions]);
 
-  const handleCardDragEnd = useCallback((dx: number, dy: number, didDrag: boolean) => {
+  const handleCardDragEndImpl = useCallback((dx: number, dy: number, didDrag: boolean) => {
     if (didDrag) report('dashboard', 'card_dragged');
     if (isMultiDragRef.current && didDrag) {
       const items = selection.selectedArray()
@@ -154,6 +156,7 @@ export function useCardDrag({
     }
     clearDrag();
   }, [selection, dispatch, clearDrag]);
+  const handleCardDragEnd = useStableCallback(handleCardDragEndImpl);
 
   // Backstop: a pointercancel or a lost pointer capture never reaches the card's onDragEnd, which would otherwise strand the drag with the rAF above panning forever. A normal release runs the card's commit first, since React delegates to the root container and this fires as the event bubbles on past it.
   useEffect(() => {

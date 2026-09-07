@@ -1073,8 +1073,8 @@ const BrowserCard: React.FC<Props> = ({
 
   const accentColor = c.accent.primary;
 
-  const glowingBrowserCards = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards);
-  const browserGlow = glowingBrowserCards[browserId];
+  // Only this card's entry: the whole map re-rendered every browser card on every agent action anywhere.
+  const browserGlow = useAppSelector((s) => s.dashboardLayout.glowingBrowserCards[browserId]);
 
   // Drop the glow the moment the agent's done (fading) so it eases off via the 0.4s box-shadow transition, instead of holding full until the entry clears. The tether arrow already keyed off `fading`; the card never did.
   const showGlow = !!browserGlow && !browserGlow.fading;

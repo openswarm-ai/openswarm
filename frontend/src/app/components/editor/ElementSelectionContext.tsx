@@ -136,28 +136,29 @@ export const ElementSelectionProvider: React.FC<{ children: React.ReactNode }> =
     });
   }, []);
 
+  // One value identity per state change: the inline literal was a new object on every provider render, and every
+  // browser card reads this context, so all of them re-rendered on each render of the app shell (a send, for one).
+  const value = useMemo(() => ({
+    selectMode,
+    toggleSelectMode,
+    setSelectMode,
+    excludeSelectId,
+    setExcludeSelectId,
+    activeOwnerId,
+    setActiveOwnerId,
+    selectedElements,
+    addSelectedElement,
+    updateSelectedElement,
+    removeSelectedElement,
+    clearSelectedElements,
+    elementsByOwner,
+    addElementForOwner,
+    removeOwnerElement,
+    clearOwnerElements,
+    iframeRef,
+  }), [selectMode, toggleSelectMode, excludeSelectId, activeOwnerId, selectedElements, addSelectedElement, updateSelectedElement, removeSelectedElement, clearSelectedElements, elementsByOwner, addElementForOwner, removeOwnerElement, clearOwnerElements]);
   return (
-    <ElementSelectionContext.Provider
-      value={{
-        selectMode,
-        toggleSelectMode,
-        setSelectMode,
-        excludeSelectId,
-        setExcludeSelectId,
-        activeOwnerId,
-        setActiveOwnerId,
-        selectedElements,
-        addSelectedElement,
-        updateSelectedElement,
-        removeSelectedElement,
-        clearSelectedElements,
-        elementsByOwner,
-        addElementForOwner,
-        removeOwnerElement,
-        clearOwnerElements,
-        iframeRef,
-      }}
-    >
+    <ElementSelectionContext.Provider value={value}>
       {children}
     </ElementSelectionContext.Provider>
   );

@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { useStableCallback } from '@/shared/hooks/useStableCallback';
 import { report } from '@/shared/serviceClient';
 import { store } from '@/shared/state/store';
 import { useAppDispatch } from '@/shared/hooks';
@@ -72,7 +73,7 @@ export function useAgentSpawn({
   const dispatch = useAppDispatch();
   const getSpawnPlacement = useSpawnPlacement({ selection, viewportRef, canvasStateRef, expandedSessionIds });
 
-  const handleBranchFromCard = useCallback(
+  const handleBranchFromCardImpl = useCallback(
     (sourceSessionId: string, newSessionId: string) => {
       const sourceCard = cards[sourceSessionId];
       if (!sourceCard) return;
@@ -122,6 +123,7 @@ export function useAgentSpawn({
     }
     setToolbarOpen(true);
   }, [welcomeEligible, onWelcomeNewAgent, setToolbarOpen]);
+  const handleBranchFromCard = useStableCallback(handleBranchFromCardImpl);
 
   const handleToolbarCancel = useCallback(() => {
     setToolbarOpen(false);

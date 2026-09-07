@@ -1,10 +1,11 @@
-import React, { useEffect, type RefObject } from 'react';
+import React, { useEffect, type RefObject, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { addViewCard, addBrowserTab, clearTiledCard, toggleMinimizeCard, selectFullscreenCardId, selectViewportCoveringCardId } from '@/shared/state/dashboardLayoutSlice';
 import { store } from '@/shared/state/store';
 import { buildDockEntries } from '../desktop/dockEntries';
 import DashboardHeader from './DashboardHeader';
+import type { HeaderSession } from './DashboardHeader';
 import TetherLayerHost from './TetherLayerHost';
 import { useLiveMultiDrag } from '../hooks/interaction/useLiveMultiDrag';
 import DashboardCardLayer from './DashboardCardLayer';
@@ -346,6 +347,14 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
     canvas.actions.syncTransform();
   });
 
+  // The header lists id, name, status and model; keyed on those values so a streamed message (a new sessions map) re-lists nothing.
+  const headerSig = Object.values(sessions).map((s) => `${s.id}|${s.name}|${s.status}|${s.model}`).join('\n');
+  const headerSessions = useMemo<Record<string, HeaderSession>>(() => {
+    const out: Record<string, HeaderSession> = {};
+    for (const s of Object.values(sessions)) out[s.id] = { id: s.id, name: s.name, status: s.status, model: s.model };
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headerSig]);
   return (
     <>
     <Box sx={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
@@ -377,7 +386,7 @@ const DashboardCanvas: React.FC<DashboardCanvasProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', pointerEvents: headerRevealed ? 'auto' : 'none' }}>
           <DashboardHeader
             dashboardName={dashboardName}
-            sessions={sessions}
+            sessions={headerSessions}
             cards={cards}
             viewCards={viewCards}
             browserCards={browserCards}
