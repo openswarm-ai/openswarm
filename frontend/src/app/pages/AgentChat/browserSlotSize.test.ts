@@ -85,9 +85,10 @@ test('the component CSS still matches the constants this file tests', async () =
   const url = await import('node:url');
   const here = url.fileURLToPath(new URL('.', import.meta.url));
   // The test runs from .test-build, so resolve the source next to it by name.
+  // Both separators: on Windows `here` is D:\...\.test-build\..., and a '/'-only replace found nothing (CI, 2026-09-06).
   const candidates = [
     here + 'AgentChat.tsx',
-    here.replace('/.test-build/', '/src/') + 'AgentChat.tsx',
+    here.replace(/([\\/])\.test-build([\\/])/, '$1src$2') + 'AgentChat.tsx',
   ];
   const path = candidates.find((p) => fs.existsSync(p));
   assert.ok(path, `could not locate AgentChat.tsx from ${here}`);

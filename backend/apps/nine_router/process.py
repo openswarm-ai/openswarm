@@ -414,10 +414,28 @@ def p_report_start_failure(reason: str, *, detail: str = "", **fields: Any) -> N
         logger.debug("9router start-failure diagnostic submit failed", exc_info=True)
 
 
+def spawn_held_because() -> str | None:
+    """A declared switch, never an incidental fact: the suite and CI set it, the product never does."""
+    if os.environ.get("OSW_NEVER_SPAWN_ROUTER") == "1":
+        return "OSW_NEVER_SPAWN_ROUTER=1 (a test run adopts a router or has none)"
+    return None
+
+
+p_spawn_hold_said = False
+
+
 async def ensure_running():
     """Start 9Router if not already running. Serialized so concurrent callers
     (the background auto-start + a dispatch-time ensure) can't double-spawn."""
-    global p_start_lock
+    global p_start_lock, p_spawn_hold_said
+    held = spawn_held_because()
+    if held:
+        # The boot-time start ran a sync `npm install 9router` (up to 300 s) INSIDE the event loop on a runner with no
+        # router, and the whole suite hung behind it (macOS CI, 2026-09-06). A held spawn says so once and never blocks.
+        if not p_spawn_hold_said:
+            p_spawn_hold_said = True
+            logger.warning(f"[9router] NOT starting the router because {held}; every lane that needs it is unserved in this process")
+        return
     if p_start_lock is None:
         p_start_lock = asyncio.Lock()
     async with p_start_lock:
@@ -566,7 +584,6 @@ async def p_ensure_running_impl():
             if p_process is not None and p_process.poll() is None:
                 logger.info("9Router already running (ours) on port %d", NINE_ROUTER_PORT)
                 return
-            import subprocess as p_sp
             try:
                 p_stale = stale_router_pids()
                 if p_stale and router_kill_held_because():

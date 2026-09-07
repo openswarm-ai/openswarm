@@ -24,7 +24,6 @@ assert "backend.config.paths" not in sys.modules, "conftest must set OPENSWARM_D
 os.environ["OPENSWARM_DATA_ROOT"] = tempfile.mkdtemp(prefix="osw_test_data_")
 
 import asyncio
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -48,6 +47,8 @@ def _isolate_browser_state(monkeypatch):
     monkeypatch.setenv("OSW_DISABLE_AUTO_RESUME", "1")
     # A suite run must never kill a router it did not start; that is the user's app (ENG-393).
     monkeypatch.setenv("OSW_NEVER_KILL_ROUTER", "1")
+    # ...and never START one: the boot hook ran `npm install 9router` inside the event loop on a router-less CI runner and hung the suite.
+    monkeypatch.setenv("OSW_NEVER_SPAWN_ROUTER", "1")
     monkeypatch.setenv("OSW_PRESTAGE", "0")
     monkeypatch.setenv("OSW_FASTREAD_HOP", "0")
     monkeypatch.setenv("OSW_PRELUDE_TRIM", "0")
