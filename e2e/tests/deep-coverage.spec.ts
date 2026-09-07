@@ -60,7 +60,14 @@ test.describe('deep interactive coverage', () => {
 
   test.afterAll(async () => { await app?.close().catch(() => {}); });
 
-  test('home renders without crashing', async ({}, info) => {
+  test('home renders a usable dashboard', async ({}, info) => {
+    await expect(page.locator('[data-onboarding="canvas-controls"]'), 'canvas controls never mounted')
+      .toBeVisible({ timeout: TARGET_TIMEOUT_MS });
+    // Playwright matches accessible names by substring, so a
+    // bare 'Send' also matches the "Send an agent to the web" suggestion chip
+    // and `exact: true` rejects the ambiguity.
+    await expect(page.getByRole('button', { name: 'Send', exact: true }), 'composer Send button never mounted')
+      .toBeVisible({ timeout: TARGET_TIMEOUT_MS });
     await page.screenshot({ path: info.outputPath('home.png') });
     noNewCrashes('home render');
   });
