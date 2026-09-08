@@ -1,6 +1,6 @@
 #!/bin/bash
 # Publishes release-shell/ as the only content of the public shell's main. Tags and releases are never touched:
-# every installed updater and every download link reads them from this repo, and a deleted tag takes its release with it.
+# every installed updater and every download link reads them from this repo, and a deleted tag takes its release off the feed.
 set -euo pipefail
 
 SHELL_REPO="${RELEASE_SHELL_REPO:-openswarm-ai/openswarm}"
