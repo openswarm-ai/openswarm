@@ -12,6 +12,7 @@ import { fetchSettings, updateSettingsPatch, markFreeTrialArmSettled } from '@/s
 import { fetchSubscriptionStatus } from '@/shared/state/subscriptionsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { updateSessionModel, persistSessionModel } from '@/shared/state/agentsSlice';
+import { healTarget } from './modelHealTarget';
 import { API_BASE } from '@/shared/config';
 import {
   setAppVersion,
@@ -302,7 +303,15 @@ const DefaultModelGuard: React.FC<{ children: React.ReactNode }> = ({ children }
       return;
     }
     const known = new Set(knownValues);
-    const target = valid.has(settings.default_model) ? settings.default_model : fallback.value;
+    const p_target = healTarget(flat, settings.default_model, fallback);
+    if (!p_target) {
+      if (!warnedSessionsRef.current.has('free-row-only')) {
+        warnedSessionsRef.current.add('free-row-only');
+        console.warn('[models] only the free row is reachable; chats on retired models stay where they are this tick');
+      }
+      return;
+    }
+    const target = p_target.value;
     let switched = false;
     for (const sess of Object.values(store.getState().agents.sessions)) {
       if (sess.model && !known.has(sess.model)) {
