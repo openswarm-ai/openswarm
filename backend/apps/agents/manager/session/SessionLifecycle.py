@@ -39,12 +39,9 @@ class SessionLifecycle(AgentManagerProtocol):
     @typechecked
     async def close_session(self, session_id: str) -> None:
         """Close a session: pause the agent if running, persist to JSON file,
-        and remove from in-memory state. Also stops browser-agent children."""
-        children = [
-            s for s in self.sessions.values()
-            if s.parent_session_id == session_id and s.mode == "browser-agent"
-        ]
-        for child in children:
+        and remove from in-memory state. Also stops every session it spawned."""
+        from backend.apps.agents.manager.session.descendants import children_of
+        for child in children_of(self.sessions, session_id):
             await self.stop_agent(child.id)
 
         task = self.tasks.get(session_id)
@@ -112,14 +109,11 @@ class SessionLifecycle(AgentManagerProtocol):
     @typechecked
     async def delete_session(self, session_id: str) -> None:
         """Permanently delete a session: remove from memory and JSON file.
-        Also stops browser-agent children first."""
+        Also stops every session it spawned first."""
         from backend.apps.agents.core.flight_recorder import drop_session
         drop_session(session_id)
-        children = [
-            s for s in self.sessions.values()
-            if s.parent_session_id == session_id and s.mode == "browser-agent"
-        ]
-        for child in children:
+        from backend.apps.agents.manager.session.descendants import children_of
+        for child in children_of(self.sessions, session_id):
             await self.stop_agent(child.id)
 
         task = self.tasks.get(session_id)

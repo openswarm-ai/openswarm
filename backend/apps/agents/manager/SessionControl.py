@@ -21,13 +21,9 @@ from backend.apps.agents.manager.AgentManagerProtocol import AgentManagerProtoco
 class SessionControl(AgentManagerProtocol):
     @typechecked
     async def stop_agent(self, session_id: str):
-        """Stop a running agent and all its browser-agent children."""
-        # Stop children first so browser agents get cancelled before parent
-        children = [
-            s for s in self.sessions.values()
-            if s.parent_session_id == session_id and s.mode == "browser-agent"
-        ]
-        for child in children:
+        """Stop a running agent and every session it spawned, leaves first."""
+        from backend.apps.agents.manager.session.descendants import children_of
+        for child in children_of(self.sessions, session_id):
             await self.stop_agent(child.id)
 
         session = self.sessions.get(session_id)
