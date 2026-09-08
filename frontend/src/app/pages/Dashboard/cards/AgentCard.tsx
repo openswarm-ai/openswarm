@@ -1020,8 +1020,8 @@ const AgentCard: React.FC<Props> = ({
               tiled={false}
             />
           </Box>
-          {/* Map-pin rule: the capsule counter-zooms against the camera so its label stays legible zoomed out (12px at half zoom read as 6px). CSS zoom, not transform: it grows the LAYOUT box, so paint containment on the pill cannot clip it; at zoom 1 this is 1. */}
-          <Box className="osw-pill-zoom" sx={{ zoom: 'max(1, min(4, calc(0.9 / var(--canvas-zoom, 1))))' }}>
+          {/* Map-pin rule, capped at 2x: the capsule counter-zooms so its label stays legible to about half zoom, then shrinks with the board like everything else (at 4x it dwarfed the cards at 18%, Haik). CSS zoom, not transform: it grows the LAYOUT box, so paint containment on the pill cannot clip it; at zoom 1 this is 1. */}
+          <Box className="osw-pill-zoom" sx={{ zoom: 'max(1, min(2, calc(0.9 / var(--canvas-zoom, 1))))' }}>
           <AgentNarratorPill
             label={pillLabel}
             running={pillRunning}
