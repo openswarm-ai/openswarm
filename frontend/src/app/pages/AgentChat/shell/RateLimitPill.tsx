@@ -7,6 +7,7 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { clearProviderRetrying, clearRateLimited, clearReconnectWait } from '@/shared/state/agentsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { providerRetryHint, providerRetryLabel } from '@/shared/providerRetryLabel';
 
 /** Mid-turn CLI backoff pill (ENG-178): the provider 500/429'd and the CLI is silently waiting up
  * to tens of seconds; without this the card just sits dead. Auto-clears after the announced delay
@@ -23,14 +24,18 @@ export const ProviderRetryPill: React.FC<{ sessionId: string }> = ({ sessionId }
     return () => clearTimeout(t);
   }, [pr, sessionId, dispatch]);
 
-  const label = pr?.attempt ? `Provider busy, retrying (attempt ${pr.attempt})` : 'Provider busy, retrying';
+  const label = providerRetryLabel(pr?.kind, pr?.attempt);
   const lastLabel = useRef(label);
-  if (pr) lastLabel.current = label;
+  const lastHint = useRef(providerRetryHint(pr?.kind));
+  if (pr) {
+    lastLabel.current = label;
+    lastHint.current = providerRetryHint(pr.kind);
+  }
 
   return (
     <Fade in={!!pr} timeout={{ enter: 200, exit: 220 }} unmountOnExit>
       <Box
-        title="The AI provider had a hiccup; the agent is waiting it out and will continue on its own"
+        title={lastHint.current}
         sx={{
           display: 'inline-flex',
           alignItems: 'center',

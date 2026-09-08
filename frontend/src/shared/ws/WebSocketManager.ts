@@ -790,6 +790,7 @@ class WebSocketManager {
             sessionId: session_id,
             attempt: typeof data.attempt === 'number' ? data.attempt : null,
             delayMs: typeof data.delay_ms === 'number' ? data.delay_ms : null,
+            kind: typeof data.kind === 'string' ? data.kind : null,
           }));
         }
         break;

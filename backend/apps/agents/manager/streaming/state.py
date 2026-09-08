@@ -66,6 +66,7 @@ class TurnState(BaseModel):
     # Provider 500s/429s the CLI retried on its own; the user sees only a long silence, so these are counted rather than lost.
     provider_retries: int = 0
     provider_retry_wait_ms: int = 0
+    provider_retry_kinds: List[str] = []
     # Mid-turn context breaker: fires once per turn, and only after a below-trigger reading (a turn that STARTS over the trigger must run, or a failed shrink would break-loop forever).
     context_break_fired: bool = False
     saw_input_below_trigger: bool = False

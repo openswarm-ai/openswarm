@@ -132,7 +132,8 @@ def build_envelope(
 
 
 @typechecked
-def record_recovery(session_id: str, net: str, model: Optional[str], attempts: int, sessions: Optional[Dict[str, object]] = None) -> None:
+def record_recovery(session_id: str, net: str, model: Optional[str], attempts: int, sessions: Optional[Dict[str, object]] = None,
+                    detail: Optional[Dict[str, object]] = None) -> None:
     """The near-miss ledger: a silent recovery the user never saw still counts in analytics, so
     'how often do the nets fire' has a denominator. Fire-and-forget; failures never block the turn."""
     crumb(session_id, "recovered", net=net, attempts=attempts)
@@ -147,6 +148,7 @@ def record_recovery(session_id: str, net: str, model: Optional[str], attempts: i
             "attempts": attempts,
             "journey": journey_auth_context(),
             "concurrency": concurrency_snapshot(sessions or {}),
+            **(detail or {}),
         })
     except Exception:
         pass

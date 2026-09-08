@@ -124,7 +124,7 @@ export interface AgentSession {
   rate_limited?: { retry_after_s: number | null; at: string } | null;
   // Parked waiting for the connection back; unlike the pills above this can last minutes, so the UI has to say so.
   reconnect_wait?: { retry_in_s: number | null; attempt: number | null; at: string } | null;
-  provider_retrying?: { attempt: number | null; delay_ms: number | null; at: string } | null;
+  provider_retrying?: { attempt: number | null; delay_ms: number | null; kind: string | null; at: string } | null;
   // Set when a view-builder turn installed/changed deps, so the app card does a HARD reload (Vite restart) at turn-finish instead of the soft one. Reset when the next turn starts.
   app_deps_changed?: boolean;
   mcp_suggestions?: Array<{ id: string; title: string; description: string; reason?: string }>;
@@ -1062,13 +1062,14 @@ const agentsSlice = createSlice({
 
     setProviderRetrying(
       state,
-      action: PayloadAction<{ sessionId: string; attempt: number | null; delayMs: number | null }>
+      action: PayloadAction<{ sessionId: string; attempt: number | null; delayMs: number | null; kind: string | null }>
     ) {
       const session = state.sessions[action.payload.sessionId];
       if (session) {
         session.provider_retrying = {
           attempt: action.payload.attempt,
           delay_ms: action.payload.delayMs,
+          kind: action.payload.kind,
           at: new Date().toISOString(),
         };
       }

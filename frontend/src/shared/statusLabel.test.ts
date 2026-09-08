@@ -27,3 +27,9 @@ test('stale pill state on a finished session never overrides its real status', (
   assert.equal(cardStatusWord({ status: 'completed', reconnect_wait: { at }, queued: true }), 'done');
   assert.equal(cardStatusWord({ status: 'error', rate_limited: { at } }), 'needs attention');
 });
+
+test('a router that is not answering is not the provider being busy', () => {
+  assert.equal(cardStatusWord({ status: 'running', provider_retrying: { at, kind: 'unreachable' } }), 'no answer from the model');
+  assert.equal(cardStatusWord({ status: 'running', provider_retrying: { at, kind: 'provider_error' } }), 'provider busy');
+  assert.equal(cardStatusWord({ status: 'running', provider_retrying: { at } }), 'provider busy');
+});
