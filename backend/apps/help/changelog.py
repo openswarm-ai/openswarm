@@ -29,9 +29,15 @@ P_RELEASES: List[ReleaseNote] = [
             "When OpenSwarm Pro has no working accounts, a chat says so at once and names the way around it (your own key or a connected subscription) instead of showing a retrying spinner for twenty minutes.",
             "A browser agent working on a board you have left can still take screenshots; its page stays drawn, invisibly, until the task ends.",
             "An app built inside a chat shows a live picture of itself in the chat and keeps a thumbnail afterwards, instead of Preview not captured yet.",
+            "When Anthropic's filter declines a request on Claude Opus 5 (it does this far more often than on Opus 4.8), the step finishes on Opus 4.8 on the same subscription and says so; your next message goes back to Opus 5.",
+            "Stopping, closing or deleting a chat now stops every agent it spawned, not only its browser agents.",
+            "The retry pill says what the agent is actually waiting on: a model it cannot reach, a provider error, a rate limit or a rejected login, instead of Provider busy for all of them.",
         ],
         fixes=[
             "The three test suites now run on macOS, macOS Intel and Windows before every cut; the first Windows run found six Windows-only bugs, all fixed here.",
+            "A sub-agent declined by the model's filter tells its parent so, and the parent stops spawning replacements for the same task after two declines.",
+            "A chat's collapsed pill no longer grows past twice its size as you zoom out.",
+            "A chat is never moved onto the free Haiku model when its own model is unreachable for a moment.",
         ],
     ),
     ReleaseNote(
