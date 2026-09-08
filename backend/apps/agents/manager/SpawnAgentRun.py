@@ -7,7 +7,7 @@ as AgentLaunch."""
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 from typeguard import typechecked
@@ -22,6 +22,37 @@ from backend.apps.agents.manager.subagent_budget import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Eric's board, 2026-08-26: one parent spawned 21 transcription children and 14 died on the policy filter, each
+# re-dispatched with a rephrased prompt because the return said only "No response from sub-agent."
+DECLINED_CHILDREN_CAP = 2
+
+DECLINED_REPLY = (
+    "The sub-agent's request was declined by the model provider's filter before it finished. Sending the "
+    "same task to another sub-agent will be declined too, so do not spawn another for it. Tell the user what "
+    "was completed and what was declined, and let them decide."
+)
+
+
+@typechecked
+def declined_children_this_turn(sessions: Dict[str, AgentSession], parent: AgentSession) -> List[AgentSession]:
+    """Children of this parent that ended on the filter since the parent's last real message."""
+    p_asks = [m.timestamp for m in parent.messages if m.role == "user" and not m.hidden]
+    p_since = p_asks[-1] if p_asks else parent.created_at
+    return [
+        s for s in sessions.values()
+        if s.parent_session_id == parent.id and s.last_failure_kind == "policy_block" and s.created_at >= p_since
+    ]
+
+
+@typechecked
+def child_reply(child: AgentSession) -> str:
+    if child.last_failure_kind == "policy_block":
+        from backend.apps.agents.core.error_classify import neutralize_provider_refusal
+        p_partial = neutralize_provider_refusal(last_assistant_text(child) or "")
+        return DECLINED_REPLY + (f"\n\nIts last note before stopping: {p_partial}" if p_partial else "")
+    return last_assistant_text(child) or "No response from sub-agent."
 
 
 def last_assistant_text(session: AgentSession) -> Optional[str]:
@@ -52,6 +83,15 @@ class SpawnAgentRun(AgentManagerProtocol):
             if data is None:
                 raise ValueError(f"Parent session {parent_session_id} not found")
             parent = AgentSession(**data)
+
+        p_declined = declined_children_this_turn(self.sessions, parent)
+        if len(p_declined) >= DECLINED_CHILDREN_CAP:
+            logger.warning(f"SpawnAgent refused for {parent_session_id}: {len(p_declined)} children declined by the filter this turn")
+            return {"error": (
+                f"{len(p_declined)} sub-agents for this task were declined by the model provider's filter this turn. "
+                "Not spawning another: the same task will be declined again. Tell the user what was completed "
+                "and what was declined, and let them decide."
+            )}
 
         title = (prompt.strip().splitlines() or [""])[0][:60] or "Sub-agent"
         child = AgentSession(
@@ -103,6 +143,7 @@ class SpawnAgentRun(AgentManagerProtocol):
         await self.run_agent_loop(child.id, p_sent)
         return {
             "session_id": child.id,
-            "response": last_assistant_text(child) or "No response from sub-agent.",
+            "status": child.status,
+            "response": child_reply(child),
             "cost_usd": child.cost_usd,
         }
