@@ -1,6 +1,6 @@
-name: E2E (packaged app, Windows)
+name: E2E (packaged app, Windows + macOS Intel)
 
-# Fast-feedback packaged-app gate, Windows-only. Split into parallel jobs so the
+# Fast-feedback packaged-app gate, Windows and macOS intel. Split into parallel jobs so the
 # push wall-clock stays well under ~10 min:
 #   gate        - cheap pure-node selftests (no build): mutation gate + preflight
 #                 Layers 1-5. Fails the "tests that test the tests" fast.
@@ -8,21 +8,25 @@ name: E2E (packaged app, Windows)
 #                 slow ~2min NSIS LZMA compression) and run the deterministic
 #                 verify-all gate against win-unpacked\OpenSwarm.exe.
 #   playwright  - build the unpacked app and run the renderer-level Playwright e2e.
+#   playwright-mac - the same suite on macos-15-intel, built with build-app.sh.
 #   installer   - full NSIS build + destructive install->verify->uninstall. The
 #                 heaviest leg, so it runs only on PR-to-main / dispatch (NOT on
 #                 routine pushes); release-windows.yml covers it on v* tags.
-# verify + playwright run concurrently; both reuse cached heavy build inputs
-# (bundled Python env, uv, MCP bundles, npm) so warm builds are fast - the build
-# script skips any input already on disk.
+# verify + playwright + playwright-mac run concurrently; they reuse cached heavy build
+# inputs (bundled Python env, uv, MCP bundles, npm) so warm builds are fast - the build
+# script skips any input already on disk. The mac leg caches only uv + MCP bundles: its
+# python-env stages under build-staging/, which build-app.sh wipes before every run.
 #
-# macOS legs were removed (runner starvation + untriageable mac-only failures);
-# re-add when a Mac maintainer can own them. Real Win10 coverage still needs the
-# SELF-HOSTED e2e-win10 job (repo var WIN10_SELF_HOSTED=true + a
-# [self-hosted, windows, win10] runner).
+# macOS legs were removed (runner starvation + untriageable mac-only failures). The Intel
+# leg is back as playwright-mac on macos-15-intel, the free runner intel-x64-verify already
+# uses: Rosetta on an arm64 host has no AVX, so real Intel silicon is the only place the x64
+# artifact is testable at all. arm64 stays out until someone can own it.
+# Real Win10 coverage still needs the SELF-HOSTED e2e-win10 job
+# (repo var WIN10_SELF_HOSTED=true + a [self-hosted, windows, win10] runner).
 
 on:
   push:
-    branches: [eric/lock]
+    branches: [eric/dev]
     paths: &build-paths
       - 'electron/**'
       - 'frontend/**'
@@ -34,7 +38,7 @@ on:
       - 'scripts/ci/**'
       - '.github/workflows/e2e.yml'
   pull_request:
-    branches: [main]
+    branches: [main, eric/dev]
     paths: *build-paths
   workflow_dispatch:
 
@@ -158,14 +162,16 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm ci
-      - name: GUI hand selftest (MCP)
-        shell: bash
-        working-directory: e2e
-        run: node mcp/selftest.js
       - name: Run E2E (Playwright)
         shell: bash
         working-directory: e2e
         run: npm test
+      # After the suite, not before: a timeout in this dev tool used to fail the job with no e2e verdict reported. always() so a red suite doesn't skip the check entirely.
+      - name: GUI hand selftest (MCP)
+        if: always()
+        shell: bash
+        working-directory: e2e
+        run: node mcp/selftest.js
       - name: Upload E2E results
         if: always()
         uses: actions/upload-artifact@v4
@@ -181,6 +187,77 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-traces
+          path: e2e/traces/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # macOS Intel leg: same suite, same specs, built with build-app.sh instead of the .ps1.
+  # Runs concurrently with the Windows legs so one run reports every OS verdict.
+  playwright-mac:
+    runs-on: macos-15-intel
+    # Longer than the Windows leg: this build compiles whisper.cpp from source and
+    # downloads a standalone CPython before electron-builder even starts.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+          cache: npm
+          cache-dependency-path: |
+            electron/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Cache uv binaries
+        uses: actions/cache@v4
+        with:
+          path: backend/uv-bin
+          key: uvbin-mac-${{ hashFiles('scripts/build-app.sh') }}
+      - name: Cache MCP bundles
+        uses: actions/cache@v4
+        with:
+          path: backend/mcp-bundles
+          key: mcpbundles-mac-${{ hashFiles('scripts/build-app.sh') }}
+      - name: Build packaged app
+        shell: bash
+        env:
+          # e2e never drives dictation, so skip the 190MB model download on every run.
+          OPENSWARM_SKIP_WHISPER_MODEL: '1'
+        run: bash scripts/build-app.sh
+      - name: Install e2e deps
+        shell: bash
+        working-directory: e2e
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm ci
+      - name: Run E2E (Playwright)
+        shell: bash
+        working-directory: e2e
+        run: npm test
+      # After the suite, not before: a timeout in this dev tool used to fail the job with no e2e verdict reported. always() so a red suite doesn't skip the check entirely.
+      - name: GUI hand selftest (MCP)
+        if: always()
+        shell: bash
+        working-directory: e2e
+        run: node mcp/selftest.js
+      # Artifact names must differ from the Windows leg: upload-artifact@v4 rejects two
+      # uploads sharing a name within one run.
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-mac
+          path: e2e/results.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload E2E visibility traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces-mac
           path: e2e/traces/
           if-no-files-found: ignore
           retention-days: 14
@@ -267,14 +344,16 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm ci
-      - name: GUI hand selftest (MCP)
-        shell: bash
-        working-directory: e2e
-        run: node mcp/selftest.js
       - name: Run E2E (Playwright)
         shell: bash
         working-directory: e2e
         run: npm test
+      # After the suite, not before: a timeout in this dev tool used to fail the job with no e2e verdict reported. always() so a red suite doesn't skip the check entirely.
+      - name: GUI hand selftest (MCP)
+        if: always()
+        shell: bash
+        working-directory: e2e
+        run: node mcp/selftest.js
       - name: Installer cycle (clean runner)
         shell: pwsh
         run: node scripts/ci/verify-installer.js --destructive

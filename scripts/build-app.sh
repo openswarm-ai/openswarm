@@ -608,22 +608,25 @@ cd "$PROJECT_ROOT/electron"
 # npm ci: lockfile-exact, no drift. See frontend note above.
 npm ci
 
-# macOS mouse-clamp native addon: compile both arches into build-staging/mouseclamp/<arch>
-# so extraResources (mouseclamp/${arch}) is populated whichever target gets packed.
-# Cheap (~2s each); fails the build loudly if a slice can't compile rather than
-# silently shipping the crash. macOS-only.
+# macOS native addons: compile each into build-staging/<addon>/<arch> so
+# extraResources (<addon>/${arch}) is populated for whichever target gets packed.
+# Cheap (~2s each for mouseclamp/haptics/fn-watcher); fails the build loudly if a
+# slice can't compile rather than silently shipping the crash. macOS-only.
+#
+# Build only the arches this run packs (BUILD_ARCHS, top of file). electron-builder
+# resolves ${arch} to the packed arch, so the other slice is never read — building it
+# is wasted work and an extra failure surface: cross-building arm64 from an x86_64
+# host trips ggml's -mcpu=native (build-whisper.sh guards this for the x64 slice with
+# GGML_NATIVE=OFF, but the arm64 branch has no equivalent). Dual-arch publish runs
+# still build both, since that path sets BUILD_ARCHS=(arm64 x64).
 if [[ "$(uname)" == "Darwin" ]]; then
-    echo "Building mouse-clamp native addon (arm64 + x64)..."
-    bash scripts/build-mouseclamp.sh arm64
-    bash scripts/build-mouseclamp.sh x64
-    bash scripts/build-haptics.sh arm64
-    bash scripts/build-haptics.sh x64
-    echo "Building whisper-server for dictation (arm64 + x64)..."
-    bash scripts/build-whisper.sh arm64
-    bash scripts/build-whisper.sh x64
-    echo "Building fn-watcher for dictation's fn key (arm64 + x64)..."
-    bash scripts/build-fn-watcher.sh arm64
-    bash scripts/build-fn-watcher.sh x64
+    echo "Building macOS native addons (${BUILD_ARCHS[*]})..."
+    for A in "${BUILD_ARCHS[@]}"; do
+        bash scripts/build-mouseclamp.sh "$A"
+        bash scripts/build-haptics.sh "$A"
+        bash scripts/build-whisper.sh "$A"
+        bash scripts/build-fn-watcher.sh "$A"
+    done
 fi
 
 # Node's default ~4 GB heap OOMs while codesign'ing the .app on dual-arch

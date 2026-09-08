@@ -53,6 +53,25 @@ function seedTestUserIfClean(): void {
     merged.user_id = 'e2e-fake-user';
     merged.user_email = 'e2e@openswarm.test';
   }
+
+  // On a genuinely fresh profile OnboardingV3 opens a full-screen welcome modal
+  // ("Welcome." + an ArrowRight icon, OnboardingV3Root IntroBeat)
+  // and nothing behind it is clickable, so every spec that wants to reach the app stalls on step one.
+  // useOnboardingV3Gate treats ANY onboarding_v3 value as "not a fresh install", which is what an e2e profile is.
+  //
+  // This deliberately makes first-run onboarding untestable here, and that gap is not
+  // closable from the test side: IntroBeat's button has no text, aria-label,
+  // data-onboarding or data-testid, so there is no stable way to drive it.
+  //
+  // TODO: first-run onboarding needs a spec of its own, and it cannot live in this
+  // suite -- every spec calling launchApp() arrives here already seeded past the modal.
+  // It also needs a genuinely fresh profile on EVERY run, because a packaged build cannot
+  // replay the flow: useOnboardingV3Gate's osw_force_onboarding replay hatch is gated off
+  // by NODE_ENV === 'production'. Blocked on giving IntroBeat's button an accessible name;
+  // that single change closes both the a11y hole and this coverage gap.
+  if (!merged.onboarding_v3) {
+    merged.onboarding_v3 = 'skipped';
+  }
   // Provider keys: read from env each launch so a key never has to live on disk
   // outside the per-user app-support dir (and so rotating just means a new shell).
   const envKeys: Array<[string, string]> = [
