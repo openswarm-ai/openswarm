@@ -26,6 +26,9 @@ PROJECT_ROOT="$(dirname "$PUBLISH_ABSPATH")"
 cd "$PROJECT_ROOT"
 # Local release credentials (Apple notarization + castlabs EVS/Widevine), gitignored. Sourcing here means a push never stalls on a missing cred once .release.env exists. See .release.env.example.
 if [ -f "$PROJECT_ROOT/.release.env" ]; then set -a; . "$PROJECT_ROOT/.release.env"; set +a; echo "==> sourced .release.env"; fi
+# Releases live in the public shell every installed updater polls, whatever repo this checkout came from.
+export GH_REPO="${GH_REPO:-openswarm-ai/openswarm}"
+echo "==> releases go to $GH_REPO"
 
 # electron-builder auto-detects prerelease from semver suffix in electron/package.json
 # (e.g. "1.0.37-exp.1" publishes as GitHub Pre-release; "1.0.37" publishes as stable).
@@ -50,9 +53,10 @@ if [[ "$VERSION" == *-* ]]; then
     # ENG-319 guard: a git tag on origin whose release is a DRAFT poisons releases.atom (the feed
     # lists bare tags), so every experimental updater resolves it first and 404s on its assets.
     # This broke "check for updates" fleet-wide for hours on 2026-08-19. Kill it here, always.
-    if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
-        echo "==> ENG-319 guard: deleting dangling remote tag v$VERSION (release is a draft; a public tag would 404 every experimental updater)"
-        git push origin ":refs/tags/v$VERSION" || echo "WARN: could not delete remote tag v$VERSION; DELETE IT MANUALLY or updaters 404"
+    # The feed is the shell's, so the tag that matters is the shell's, not the build repo's.
+    if gh api "repos/$GH_REPO/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+        echo "==> ENG-319 guard: deleting dangling tag v$VERSION on $GH_REPO (release is a draft; a public tag would 404 every experimental updater)"
+        gh api -X DELETE "repos/$GH_REPO/git/refs/tags/v$VERSION" || echo "WARN: could not delete tag v$VERSION on $GH_REPO; DELETE IT MANUALLY or updaters 404"
     fi
 fi
 

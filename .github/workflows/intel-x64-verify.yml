@@ -32,7 +32,7 @@ jobs:
 
       - name: download published x64 DMG
         run: |
-          curl -sSL -o /tmp/x64.dmg "https://github.com/${{ github.repository }}/releases/latest/download/OpenSwarm-x64.dmg"
+          curl -sSL -o /tmp/x64.dmg "https://github.com/openswarm-ai/openswarm/releases/latest/download/OpenSwarm-x64.dmg"
           ls -la /tmp/x64.dmg
           hdiutil attach -nobrowse -readonly -mountpoint /tmp/oswmnt /tmp/x64.dmg
           mkdir -p /tmp/oswapp
@@ -106,7 +106,7 @@ jobs:
       - name: download published Setup.exe
         shell: pwsh
         run: |
-          curl.exe -sSL -o $env:TEMP\OpenSwarm-Setup-x64.exe "https://github.com/${{ github.repository }}/releases/latest/download/OpenSwarm-Setup-x64.exe"
+          curl.exe -sSL -o $env:TEMP\OpenSwarm-Setup-x64.exe "https://github.com/openswarm-ai/openswarm/releases/latest/download/OpenSwarm-Setup-x64.exe"
           Get-Item $env:TEMP\OpenSwarm-Setup-x64.exe | Select-Object Name,Length
 
       - name: silent install (Squirrel)

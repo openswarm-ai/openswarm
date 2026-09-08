@@ -46,6 +46,8 @@ jobs:
       - name: Download the shipped installer
         env:
           GH_TOKEN: ${{ github.token }}
+          # Draft releases sit in the public shell and are readable only with a token that can see it.
+          RELEASE_SHELL_TOKEN: ${{ secrets.RELEASE_SHELL_TOKEN }}
         run: |
           $exe = Join-Path $env:RUNNER_TEMP "OpenSwarm-Setup-x64.exe"
           $runId = "${{ inputs.run_id }}"
@@ -68,14 +70,15 @@ jobs:
           # "release not found" even though the assets are right there. Resolve it out of the full
           # list and pull the asset by id, which works for drafts and published releases alike.
           $tag = "${{ inputs.tag || 'v1.7.0' }}"
-          $rel = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=50" | ConvertFrom-Json |
+          if ($env:RELEASE_SHELL_TOKEN) { $env:GH_TOKEN = $env:RELEASE_SHELL_TOKEN }
+          $rel = gh api "repos/openswarm-ai/openswarm/releases?per_page=50" | ConvertFrom-Json |
                  Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
           if (-not $rel) { throw "no release (draft or published) tagged $tag" }
           "release: $($rel.tag_name) draft=$($rel.draft)"
           $asset = $rel.assets | Where-Object { $_.name -eq 'OpenSwarm-Setup-x64.exe' } | Select-Object -First 1
           if (-not $asset) { throw "OpenSwarm-Setup-x64.exe is not attached to $tag" }
           $exe = Join-Path $env:RUNNER_TEMP "OpenSwarm-Setup-x64.exe"
-          gh api -H "Accept: application/octet-stream" "repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)" > $exe
+          gh api -H "Accept: application/octet-stream" "repos/openswarm-ai/openswarm/releases/assets/$($asset.id)" > $exe
           $size = (Get-Item $exe).Length
           "installer: $size bytes (release says $($asset.size))"
           if ($size -ne $asset.size) { throw "FAIL: download is truncated" }

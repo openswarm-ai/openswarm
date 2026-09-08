@@ -9,10 +9,9 @@ name: Promotion gate (update feeds agree)
 # missing or versions mismatch, this goes red so the bad release is caught
 # before users auto-update into it.
 
-# Release events fire in the repo that HOLDS the releases: the public shell (openswarm-ai/openswarm).
-# The copy that answers them lives in release-shell/.github/workflows/promotion-gate.yml and is pushed
-# by scripts/release/sync-shell.sh; this one is the by-hand form for the repo that builds.
 on:
+  release:
+    types: [published, released, prereleased]
   workflow_dispatch:
     inputs:
       tag:
@@ -45,7 +44,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p feeds
-          gh release download "${{ steps.tag.outputs.tag }}" --repo openswarm-ai/openswarm \
+          gh release download "${{ steps.tag.outputs.tag }}" --repo "${{ github.repository }}" \
             -p 'latest*.yml' -D feeds || true
           ls -la feeds
       - name: Verify both feeds exist, agree, and resolve
@@ -54,4 +53,4 @@ jobs:
           node scripts/release/verify-release.js \
             --dir feeds \
             --expect-version "${{ steps.tag.outputs.ver }}" \
-            --base-url "https://github.com/openswarm-ai/openswarm/releases/download/${{ steps.tag.outputs.tag }}"
+            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}"

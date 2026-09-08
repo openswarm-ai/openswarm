@@ -4,6 +4,10 @@ name: Suites on every OS
 # CI ran a hermetic subset on Ubuntu. Users run a 2017 iMac, Intel Macs and Windows laptops, so the
 # full suites run on the three hosted OSes. fail-fast is off and every suite runs even after a red
 # one, so one run reports all nine verdicts.
+#
+# A private repo bills macOS minutes at ten times Linux; the two Mac legs ran 579 minutes in the
+# fortnight before the move (5,790 billable against a 2,000-minute month), so a push runs the Windows
+# leg, which no developer machine here can run, and a dispatch runs all three.
 on:
   workflow_dispatch:
   push:
@@ -22,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-15-intel, windows-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["windows-latest"]') || fromJSON('["macos-latest", "macos-15-intel", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:

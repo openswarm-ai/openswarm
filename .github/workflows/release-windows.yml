@@ -138,10 +138,19 @@ jobs:
           "SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "SIGNTOOL_PATH=$signtool"
 
+      - name: The release shell must be reachable with the release token
+        # Releases live in the public shell every installed updater polls (openswarm-ai/openswarm),
+        # never in the repo that builds them, and a workflow's own token cannot write outside its repo.
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_SHELL_TOKEN }}
+        run: bash scripts/release/check-shell-token.sh
+
       - name: Build app
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_SHELL_TOKEN }}
           GOOGLE_OAUTH_CLIENT_ID:     ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
@@ -206,7 +215,9 @@ jobs:
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_SHELL_TOKEN }}
+          # Every gh release call below lands in the shell, whatever repo this workflow runs in.
+          GH_REPO: openswarm-ai/openswarm
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content electron/package.json | ConvertFrom-Json).version

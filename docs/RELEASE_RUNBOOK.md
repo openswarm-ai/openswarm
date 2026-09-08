@@ -71,6 +71,28 @@ Recommended order so neither platform's users skip a version:
 3. Verify both `latest.yml` and `latest-mac.yml` exist on the release and their
    versions match before the release leaves draft.
 
+### Releases live in the public shell, whatever repo builds them
+
+Every installed copy polls `github.com/openswarm-ai/openswarm` for updates (the
+electron-updater feed comes from `electron/package.json`'s `publish` block, the
+Windows Squirrel feed is a literal URL in `electron/main.js`), and the landing
+page's download links point at that repo's `releases/latest`. So that repo is the
+release shell and must stay public with its releases and tags intact; the code
+that builds a release may live anywhere else.
+
+- The release workflows publish with `RELEASE_SHELL_TOKEN`, a fine-grained token
+  with Contents read and write on the shell only. A workflow's own token cannot
+  write outside its repo, so `scripts/release/check-shell-token.sh` runs before a
+  publishing build and fails closed when the token is missing or read-only.
+- `publish.sh` exports `GH_REPO=openswarm-ai/openswarm`, so every `gh release`
+  call and the ENG-319 dangling-tag guard act on the shell.
+- `promotion-gate.yml` fires on release events, which happen in the shell, so the
+  live copy of that workflow is the one in `release-shell/`; `scripts/release/sync-shell.sh`
+  publishes that directory as the shell's `main` (dry run by default). The shell
+  also keeps `electron/build/icon.ico` at its old path because the Squirrel
+  installer fetches its icon from `raw.githubusercontent.com` on `main`.
+- `electron/releaseShell.test.js` pins all of the above.
+
 ## Auto-update verification (before promoting)
 
 The auto-updater (electron-updater) checks GitHub Releases on launch and every

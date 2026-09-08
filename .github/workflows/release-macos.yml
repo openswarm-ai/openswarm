@@ -99,13 +99,22 @@ jobs:
         shell: bash
         run: python3 -m pip install --upgrade castlabs-evs
 
+      - name: The release shell must be reachable with the release token
+        # Releases live in the public shell every installed updater polls (openswarm-ai/openswarm),
+        # never in the repo that builds them, and a workflow's own token cannot write outside its repo.
+        if: ${{ env.APPLE_ID != '' && (github.event_name == 'push' || github.event.inputs.publish == 'true') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_SHELL_TOKEN }}
+        run: bash scripts/release/check-shell-token.sh
+
       - name: Build app
         # Skip (green) when Apple signing secrets aren't in CI: Mac ships via local
         # publish.sh, so a secret-less CI run should no-op, not fail red.
         if: ${{ env.APPLE_ID != '' }}
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_SHELL_TOKEN }}
           GOOGLE_OAUTH_CLIENT_ID:     ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
