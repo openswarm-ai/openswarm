@@ -189,6 +189,22 @@ def write_would_suicide(field: str, new_value: Any, powering: PoweringCredential
     return False
 
 
+# Anthropic's abuse classifier declines Opus 5 requests it passes on every other model: 78 of 84 fleet
+# blocks in the fortnight to 2026-09-07 were on opus-5 against 0 on opus-4-8 across a comparable error
+# volume, and Anthropic's own block text says to switch models. The sibling is the same vendor on the
+# SAME lane and wallet, so a step can finish there without spending anything the user did not connect.
+POLICY_BLOCK_SIBLING: dict[str, str] = {
+    "opus-5": "opus-4-8",
+    "opus-5-cc": "opus-4-8-cc",
+    "opus-5-api": "opus-4-8-api",
+}
+
+
+def policy_block_sibling(model_value: str) -> Optional[str]:
+    """The same-lane model a policy-blocked step may finish on, or None when there is no such sibling."""
+    return POLICY_BLOCK_SIBLING.get(model_value)
+
+
 def api_key_twin_model(model_value: str, settings: AppSettings) -> Optional[str]:
     """The same Claude model on the user's OWN Anthropic API key, when this run was on a subscription
     lane and such a key is configured; None otherwise. Never the OpenSwarm Pro pool (not their money to

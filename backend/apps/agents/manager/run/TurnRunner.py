@@ -50,7 +50,8 @@ class TurnRunner(AgentManagerProtocol):
         # Deliberate faults, so the guards below get drilled instead of waited for. Inert unless
         # OSW_FAULT names them; a shipped build never sets it. Raised HERE because this is the same
         # door a real provider failure comes through, so the drill exercises the real recovery.
-        if p_fault_armed("policy_block"):
+        # Budgeted like auth_401 (OSW_FAULT_FIRES=N), so a drill can block ONE turn and watch the failover finish the ask.
+        if p_fault_fire("policy_block"):
             # The provider's real wording, so the drill hits the same classifier a field block does.
             raise RuntimeError(
                 "API Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":"

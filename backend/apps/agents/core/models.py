@@ -169,6 +169,8 @@ class AgentSession(BaseModel):
     # moment they send again. Failing over is for finishing THE CURRENT ASK; leaving the chat on a
     # metered key forever would bill them per token with one line said about it, once (ENG-383).
     lane_failover_from: Optional[str] = None
+    # How the last turn ended when it ended on a card; a parent reads it off a child so a declined task is not re-dispatched.
+    last_failure_kind: Optional[Literal["policy_block"]] = None
     # Consecutive dirty deaths this session was MID-TURN for; the crash auto-resume breaker (hermes #30719 pairing: auto-resume must never outrun its circuit breaker).
     crash_interrupt_count: int = 0
     # Outage rounds spent on this ask: the in-turn ladder covers only 335s, and the work is checkpointed, so a longer drop is waited out rather than ending the task.

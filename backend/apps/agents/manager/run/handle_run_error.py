@@ -47,7 +47,7 @@ from backend.apps.agents.core.extract_reset_hint import extract_reset_hint
 from backend.apps.agents.core.redact_for_telemetry import redact_for_telemetry
 from backend.apps.agents.core import flight_recorder
 from backend.apps.agents.manager.run.empty_finish import count_tool_calls
-from backend.apps.agents.session_credential import api_key_twin_model
+from backend.apps.agents.session_credential import api_key_twin_model, policy_block_sibling
 
 logger = logging.getLogger(__name__)
 
@@ -502,8 +502,35 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
                 "this turn, rely on the visible conversation.")
             logger.warning(f"Agent {session_id}: provider content-policy block on a turn carrying a {p_sent} history prefix; retrying with {session.history_prefix_mode}")
             return
+        # Nothing left to strip. The classifier declines Opus 5 where it passes Opus 4.8 (fleet, 2026-09-07:
+        # 78 blocks vs 0 across a comparable error volume), so the step finishes on the same lane's sibling
+        # first: same subscription, same wallet, nothing billed. One ask, announced, and the next real
+        # message puts the chat back on the model the user chose (Messaging restores lane_failover_from).
+        p_sibling = policy_block_sibling(session.model or "") if not session.lane_failover_from else None
+        if p_sibling:
+            p_from = session.model
+            session.model = p_sibling
+            session.lane_failover_from = p_from
+            session.needs_fresh_session = True
+            session.pending_continuation = True
+            session.pending_continuation_prompt = "Continue where you left off and finish the task, then answer in plain text."
+            p_notice = Message(
+                role="system",
+                content=("Anthropic's filter declined this request on Claude Opus 5, which it does far more often "
+                         "than on other models. This step is finishing on Claude Opus 4.8 on the same subscription; "
+                         "your next message goes back to Opus 5. If it keeps happening, switch this chat to Opus 4.8 or Sonnet 5."),
+                branch_id=session.active_branch_id,
+            )
+            absorb_repeat_card(session, p_notice)
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id, "message": p_notice.model_dump(mode="json"),
+            })
+            flight_recorder.record_recovery(session_id, "policy_sibling", session.model, 1)
+            logger.warning(f"Agent {session_id}: policy block on {p_from}; finishing this ask on the same-lane sibling {p_sibling}")
+            return
         # The subscription lane declined and nothing is left to strip; fleet data says the same request passes on an API key (0 of 328 vs 4.4%), so a user who connected their own Anthropic key continues there, told in one line, instead of losing the ask (ENG-383).
-        p_twin = api_key_twin_model(session.model or "", load_settings())
+        # One failover per ask, whichever door it took: a borrowed sibling that is blocked again ends on the card, never on a second borrow that bills the key.
+        p_twin = api_key_twin_model(session.model or "", load_settings()) if not session.lane_failover_from else None
         if p_twin:
             p_from = session.model
             session.model = p_twin
@@ -526,6 +553,7 @@ async def handle_run_error(e: Exception, session: AgentSession, session_id: str,
             logger.warning(f"Agent {session_id}: policy block on the subscription lane; failing over {p_from} -> {p_twin}")
             return
         p_retried = session.history_prefix_mode == "none"
+        session.last_failure_kind = "policy_block"
         friendly_msg = (
             "The model provider declined this request (its automated policy filter flagged the "
             "conversation's content)"

@@ -244,6 +244,7 @@ class AgentManager(SessionLifecycle, SessionHistory, SessionPersistence, Messagi
             return
 
         session.status = "running"
+        session.last_failure_kind = None
 
         # Resolve the model id now so every closure (approval hook, tool executed handler, etc.) has both the short name and the 9Router-prefixed id available without re-resolving. The short name is what the user sees; the router id is what 9Router reports its per-model counters under.
         from backend.apps.agents.providers.registry import (

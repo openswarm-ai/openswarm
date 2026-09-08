@@ -82,6 +82,7 @@ def test_block_on_a_recap_bearing_turn_drops_to_none_and_retries_silently(monkey
 def test_block_with_no_recap_renders_the_honest_terminal_card(monkeypatch):
     captured: list = []
     s = p_session_with_history()
+    s.model = "sonnet-5"
     s.history_prefix_mode = "none"
     s.history_prefix_sent = "none"
     p_block(s, captured, monkeypatch, text="The agent runtime reported this turn failed (error_during_execution). API Error: 400 https://www.anthrop" + FIELD_TAIL)
@@ -134,11 +135,11 @@ def test_api_key_twin_only_for_a_subscription_lane_with_the_users_own_key():
 def test_block_with_no_recap_fails_over_to_the_users_own_api_key(monkeypatch):
     captured: list = []
     s = p_session_with_history()
-    s.model = "opus-5-cc"
+    s.model = "sonnet-5-cc"
     s.history_prefix_mode = "none"
     s.history_prefix_sent = "none"
     p_block(s, captured, monkeypatch, settings=p_settings(anthropic_api_key="sk-ant-x"))
-    assert s.model == "opus-5-api"
+    assert s.model == "sonnet-5-api"
     assert s.pending_continuation is True and s.needs_fresh_session is True
     cards = [m for m in s.messages if m.role == "system"]
     assert len(cards) == 1 and "API key" in str(cards[0].content) and "declined" not in str(cards[0].content).lower().replace("declined this request on your subscription", "")
@@ -150,9 +151,58 @@ def test_block_with_no_recap_fails_over_to_the_users_own_api_key(monkeypatch):
 def test_block_with_no_recap_and_no_key_still_ends_with_the_card(monkeypatch):
     captured: list = []
     s = p_session_with_history()
-    s.model = "opus-5-cc"
+    s.model = "sonnet-5-cc"
     s.history_prefix_mode = "none"
     s.history_prefix_sent = "none"
     p_block(s, captured, monkeypatch, settings=p_settings())
-    assert s.model == "opus-5-cc" and s.pending_continuation is False
+    assert s.model == "sonnet-5-cc" and s.pending_continuation is False
     assert [m for m in s.messages if m.role == "system"][0].content.startswith("The model provider declined")
+
+
+# Fleet, 14 days to 2026-09-07: 78 policy blocks on opus-5 against 0 on opus-4-8 (87 errors of every other
+# kind there), every one at spawn on the subscription lane. The same lane's sibling is free and passes.
+def test_policy_block_sibling_is_opus_5_to_opus_4_8_on_the_same_lane_only():
+    from backend.apps.agents.session_credential import policy_block_sibling
+    assert policy_block_sibling("opus-5") == "opus-4-8"
+    assert policy_block_sibling("opus-5-cc") == "opus-4-8-cc"
+    assert policy_block_sibling("opus-5-api") == "opus-4-8-api"
+    assert policy_block_sibling("opus-4-8") is None, "the sibling has no sibling, so a block there cards"
+    assert policy_block_sibling("sonnet-5") is None
+    assert policy_block_sibling("gpt-5.6") is None
+
+
+def test_opus_5_block_with_nothing_to_strip_finishes_on_opus_4_8_and_says_so(monkeypatch):
+    captured: list = []
+    s = p_session_with_history()
+    s.model = "opus-5-cc"
+    s.history_prefix_mode = "none"
+    s.history_prefix_sent = "none"
+    p_block(s, captured, monkeypatch, settings=p_settings(anthropic_api_key="sk-ant-x"))
+    assert s.model == "opus-4-8-cc", "the free same-lane sibling comes before the billed API-key twin"
+    assert s.lane_failover_from == "opus-5-cc"
+    assert s.pending_continuation is True and s.needs_fresh_session is True
+    cards = [m for m in s.messages if m.role == "system"]
+    assert len(cards) == 1 and "Opus 4.8" in str(cards[0].content) and "next message goes back" in str(cards[0].content)
+    kinds = [(d.get("kind"), d.get("subkind")) for d in captured]
+    assert ("model_error", "policy_block:none") in kinds, "the block itself is still reported"
+    assert ("recovered", "policy_sibling") in kinds
+
+
+def test_a_block_on_the_sibling_never_chains_to_a_third_model(monkeypatch):
+    """A borrowed ask that is blocked again ends on the card; without this the failover could walk twin -> sibling -> twin."""
+    captured: list = []
+    s = p_session_with_history()
+    s.model = "opus-4-8-cc"
+    s.lane_failover_from = "opus-5-cc"
+    s.history_prefix_mode = "none"
+    s.history_prefix_sent = "none"
+    p_block(s, captured, monkeypatch, settings=p_settings(anthropic_api_key="sk-ant-x"))
+    assert s.model == "opus-4-8-cc" and s.pending_continuation is False
+    assert [m for m in s.messages if m.role == "system"][0].content.startswith("The model provider declined")
+
+
+def test_the_sibling_door_sits_above_the_api_key_twin_door():
+    """Ordering is the contract: the free lane sibling is tried before the user's key is spent."""
+    import inspect
+    src = inspect.getsource(hre.handle_run_error)
+    assert src.index("policy_block_sibling(") < src.index("api_key_twin_model(")
