@@ -1,0 +1,8 @@
+{
+  "version": "1.7.10-exp.11",
+  "sourceRepository": "openswarm-ai/magic-os",
+  "sourceCommit": "776e4be657c7eecd10c14a5b62666268ce07a51c",
+  "windowsVerification": "https://github.com/openswarm-ai/magic-os/actions/runs/34436027844",
+  "appleSiliconVerification": "https://github.com/openswarm-ai/magic-os/actions/runs/34438504081",
+  "intelVerification": "https://github.com/openswarm-ai/magic-os/actions/runs/34440173191"
+}
