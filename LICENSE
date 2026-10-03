@@ -1,0 +1,45 @@
+OpenSwarm Proprietary Software Licence
+
+Copyright (c) 2026 Open Swarm. All rights reserved.
+
+This software and its source code are proprietary and confidential. They are made
+available only to people expressly authorised by Open Swarm, and only for the purpose
+Open Swarm authorised.
+
+You may not copy, modify, merge, publish, distribute, sublicense, sell, or create
+derivative works from this software or its source code, in whole or in part, and you
+may not disclose it to anyone outside your authorisation, without prior written
+permission from Open Swarm.
+
+You may not reverse engineer, decompile, disassemble, or decrypt any part of this
+software, or otherwise attempt to derive its source code, structure, or algorithms from
+the compiled application, and you may not remove, bypass, or defeat any measure that
+protects it, except to the extent applicable law expressly permits this despite this
+restriction.
+
+You may not use this software, its source code, or any part or derivative of either,
+for any commercial purpose, including to build, offer, or train any product or service,
+without prior written permission from Open Swarm.
+
+These restrictions apply to the source code and to the compiled OpenSwarm application
+alike.
+
+Use of the compiled OpenSwarm application is also governed by the terms of service and
+any end user licence agreement published at https://openswarm.com. Those terms add to
+this file; they do not relax the restrictions above unless they say so expressly.
+
+Third-party components distributed with this software remain under their own licences,
+which are unaffected by this file.
+
+Earlier public releases: versions of this software published before 8 September 2026
+were released under the GNU Affero General Public License version 3. Those releases,
+and the source published with them, remain available under that licence, and nothing in
+this file withdraws, narrows, or otherwise affects the rights any person already
+received under it. This licence governs this version and later ones only.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE.

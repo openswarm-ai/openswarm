@@ -1,0 +1,56 @@
+name: Promotion gate (update feeds agree)
+
+# The "don't let a half-baked release become latest" gate. Releases should be
+# cut as DRAFT first (publish.sh drafts experimental builds; do the same for
+# stable and only un-draft after dogfooding — see docs/RELEASE_CHECKLIST.md).
+# When a release is published / un-drafted, this verifies BOTH auto-updater
+# feeds exist, agree on version (with each other and the tag), and that every
+# referenced asset actually resolves (HEAD 200). If a platform's feed is
+# missing or versions mismatch, this goes red so the bad release is caught
+# before users auto-update into it.
+
+on:
+  release:
+    types: [published, released, prereleased]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g. v1.2.3)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-feeds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          [ -z "$tag" ] && tag="${{ github.event.inputs.tag }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
+      - name: Download release feeds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          mkdir -p feeds
+          gh release download "${{ steps.tag.outputs.tag }}" --repo "${{ github.repository }}" \
+            -p 'latest*.yml' -D feeds || true
+          ls -la feeds
+      - name: Verify both feeds exist, agree, and resolve
+        shell: bash
+        run: |
+          node scripts/release/verify-release.js \
+            --dir feeds \
+            --expect-version "${{ steps.tag.outputs.ver }}" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}"
